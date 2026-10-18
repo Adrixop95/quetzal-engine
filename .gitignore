@@ -1,0 +1,6 @@
+game/
+ghidra/
+work/
+build/
+*.exe
+*.xbe
