@@ -63,3 +63,10 @@ Niezrealizowane: dodawanie złota (pole nie jest zwykłym int/float/double w tab
 skryptu snap/diff/fsnap/ddiff w backend.c).
 Komendy skryptu testowego: wait, move, click, rclick, down, up, key, keydown, keyup, shot, quit, f9, ovclick X Y,
 cheat unlock|win, scan/scan16/snap/diff/fsnap/fdiff/fdiffd/fdifff/dsnap/ddiff/poke/pokeb/pokeside/dumpside (diagnostyka pamięci).
+
+## Mysz: wirtualny kursor (2026-10-18)
+Wskaźnik systemowy jest zablokowany w oknie (SDL relative mouse mode), więc nie ucieka na żadnym kompozytorze.
+Ruch względny jest całkowany do wirtualnego kursora we współrzędnych obrazu (niezależnie od skalowania i pasów
+przy proporcjach), z czułością z menu F9 (`mouse_speed` w aztec_settings.ini, domyślnie 100%).
+Pozycja jest wpisywana do zmiennych kursora gry (0x4c5468/0x4c546c, 0x4c4f50/0x4c4f54), nakładka F9 rysuje własną strzałkę.
+Debug: `tools/debug_run.sh` (log w debug/<czas>/debug.log, kategorie mouse/window/render/dinput/overlay/state).

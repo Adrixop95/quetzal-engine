@@ -148,12 +148,27 @@ void overlay_event(const SDL_Event* e, SDL_Renderer* ren) {
     if (e->key.keysym.sym == SDLK_ESCAPE || e->key.keysym.sym == SDLK_F9) { is_open = 0; backend_overlay_cursor(0); }
     if (e->key.keysym.sym == SDLK_TAB) tab = !tab;
   } else if (e->type == SDL_MOUSEMOTION || e->type == SDL_MOUSEBUTTONDOWN) {
-    int x = e->type == SDL_MOUSEMOTION ? e->motion.x : e->button.x, y = e->type == SDL_MOUSEMOTION ? e->motion.y : e->button.y;
-    extern void backend_window_to_logical(int wx, int wy, int* lx, int* ly);
-    backend_window_to_logical(x, y, &mx, &my);
+    extern void backend_virtual_cursor(int* x, int* y);
+    backend_virtual_cursor(&mx, &my);   // the pointer is locked to the window; the backend integrates it into this cursor
     if (e->type == SDL_MOUSEBUTTONDOWN && e->button.button == SDL_BUTTON_LEFT) { clicked = 1; click_time = SDL_GetTicks(); }
-    if (getenv("RT_TRACE_INPUT") && e->type == SDL_MOUSEBUTTONDOWN) rt_log("overlay click window=(%d,%d) logical=(%d,%d)", x, y, mx, my);
+    if (getenv("RT_TRACE_INPUT") && e->type == SDL_MOUSEBUTTONDOWN) rt_log("overlay click virtual cursor=(%d,%d)", mx, my);
   }
+}
+
+// Arrow cursor for the menu (the game's own cursor is not drawn while the overlay captures input).
+static const char* const arrow[] = {
+  "X           ", "XX          ", "X.X         ", "X..X        ", "X...X       ", "X....X      ", "X.....X     ", "X......X    ",
+  "X.......X   ", "X........X  ", "X.....XXXXX ", "X..X..X     ", "X.X X..X    ", "XX  X..X    ", "X    X..X   ", "     X..X   ", "      XX    ",
+};
+static void draw_cursor(SDL_Renderer* ren, int x, int y) {
+  for (int r = 0; r < 17; r++)
+    for (int c = 0; c < 12; c++) {
+      char ch = arrow[r][c];
+      if (ch == ' ') continue;
+      if (ch == 'X') SDL_SetRenderDrawColor(ren, 0, 0, 0, 255); else SDL_SetRenderDrawColor(ren, 255, 255, 255, 255);
+      SDL_Rect px = {x + c * 2, y + r * 2, 2, 2};
+      SDL_RenderFillRect(ren, &px);
+    }
 }
 
 void overlay_draw(SDL_Renderer* ren, int lw, int lh) {
@@ -172,7 +187,7 @@ void overlay_draw(SDL_Renderer* ren, int lw, int lh) {
   SDL_SetRenderDrawColor(ren, 0, 0, 0, 150);
   SDL_Rect full = {0, 0, lw, lh};
   SDL_RenderFillRect(ren, &full);
-  int pw = 720, ph = 470, px = (lw - pw) / 2, py = (lh - ph) / 2;
+  int pw = 720, ph = 540, px = (lw - pw) / 2, py = (lh - ph) / 2;
   if (px < 0) px = 0;
   if (py < 0) py = 0;
   SDL_SetRenderDrawColor(ren, 45, 32, 22, 245);
@@ -197,6 +212,11 @@ void overlay_draw(SDL_Renderer* ren, int lw, int lh) {
     y += 56;
     d = chooser(ren, px + 20, y, "Filmy:", g_settings.video ? "Włączone" : "Wyłączone");
     if (d) { g_settings.video = !g_settings.video; settings_save(); }
+    y += 56;
+    char spd[32];
+    snprintf(spd, sizeof spd, "%d%%", g_settings.mouse_speed);
+    d = chooser(ren, px + 20, y, "Czułość myszy:", spd);
+    if (d) { g_settings.mouse_speed += 25 * d; if (g_settings.mouse_speed < 25) g_settings.mouse_speed = 25; if (g_settings.mouse_speed > 400) g_settings.mouse_speed = 400; settings_save(); DBG("overlay", "mouse speed -> %d%%", g_settings.mouse_speed); }
     y += 62;
     draw_text(ren, px + 20, y, "Rozdzielczość gry zmienia się po ponownym uruchomieniu.", 1, 200, 190, 170);
     if (button(ren, px + 20, py + ph - 56, 440, 40, "Zapisz i uruchom ponownie")) restart_game();
@@ -211,7 +231,8 @@ void overlay_draw(SDL_Renderer* ren, int lw, int lh) {
   }
   if (button(ren, px + pw - 190, py + ph - 56, 170, 40, "Zamknij")) { is_open = 0; backend_overlay_cursor(0); }
   if (SDL_GetTicks() < status_until) draw_text(ren, px + 20, py + ph - 88, status, 2, 255, 230, 160);
-  if (clicked && SDL_GetTicks() - click_time > 300) clicked = 0;   // a click survives until the next frame that can use it
+  if (clicked && SDL_GetTicks() - click_time > 300) clicked = 0;
+  draw_cursor(ren, mx, my);   // a click survives until the next frame that can use it
 }
 
 // Runs on the game's main thread (called from PeekMessage), where calling guest code is safe.

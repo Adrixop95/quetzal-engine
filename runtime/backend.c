@@ -89,7 +89,7 @@ void backend_create_window(const char* title, int w, int h) {
     DBG("window", "renderer '%s' flags=%#x max texture=%dx%d", ri.name, ri.flags, ri.max_texture_width, ri.max_texture_height);
   }
   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, g_settings.smooth ? "linear" : "nearest");
-  if (!getenv("RT_NO_GRAB")) { SDL_SetWindowGrab(win, SDL_TRUE); DBG("mouse", "window grab ON (initial)"); }
+  if (!getenv("RT_NO_GRAB")) { int rc = SDL_SetRelativeMouseMode(SDL_TRUE); DBG("mouse", "relative mouse mode ON (initial) rc=%d %s", rc, rc ? SDL_GetError() : ""); }
   if (getenv("RT_MENU")) overlay_toggle();
 }
 
@@ -102,17 +102,15 @@ void backend_set_mode(int w, int h, int bpp) {
   DBG("render", "set_mode %dx%d bpp=%d -> logical size %dx%d", w, h, bpp, cur_lw, cur_lh);
 }
 
-static int game_cursor_visible = 1;   // what the game asked for; the overlay forces the cursor on while open
+static int game_cursor_visible = 1;   // what the game asked for (informational: we always draw the game's own cursor)
 void backend_show_cursor(int show) {
   ensure_sdl();
   game_cursor_visible = show;
-  DBG("cursor", "game requested system cursor %s (overlay open=%d)", show ? "visible" : "hidden", overlay_is_open());
-  if (!overlay_is_open()) SDL_ShowCursor(show ? SDL_ENABLE : SDL_DISABLE);
+  DBG("cursor", "game requested system cursor %s (ignored: the pointer is locked and the game draws its own cursor)", show ? "visible" : "hidden");
 }
 void backend_overlay_cursor(int open) {
-  DBG("cursor", "overlay %s: system cursor %s, grab %s", open ? "opened" : "closed", (open || game_cursor_visible) ? "visible" : "hidden", open ? "OFF" : "ON");
-  SDL_ShowCursor((open || game_cursor_visible) ? SDL_ENABLE : SDL_DISABLE);
-  if (win) SDL_SetWindowGrab(win, open ? SDL_FALSE : SDL_TRUE);   // free the pointer for the menu, trap it for the game
+  // Pointer stays locked (relative mode) with a virtual cursor; the overlay draws its own arrow, so nothing to switch.
+  DBG("cursor", "overlay %s: virtual cursor continues", open ? "opened" : "closed");
   if (!open) mouse_resync();
 }
 
@@ -162,6 +160,28 @@ void backend_window_to_logical(int wx, int wy, int* lx, int* ly) {
   *lx = x < 0 ? 0 : x >= cur_lw ? cur_lw - 1 : x;
   *ly = y < 0 ? 0 : y >= cur_lh ? cur_lh - 1 : y;
 }
+
+// ---- virtual cursor ---------------------------------------------------------------------------------------
+// The OS pointer is locked to the window (SDL relative mode, no escaping on any compositor). We integrate the
+// relative motion into a virtual cursor expressed in picture coordinates, so pointer speed is independent of the
+// window size / letterboxing and can be tuned in the F9 menu.
+static double vcx = 400, vcy = 300;
+static double window_scale(void) {
+  int ww = 1, wh = 1;
+  if (win) SDL_GetWindowSize(win, &ww, &wh);
+  double sc = (double)ww / cur_lw < (double)wh / cur_lh ? (double)ww / cur_lw : (double)wh / cur_lh;
+  return sc > 0.01 ? sc : 1.0;
+}
+static void vcursor_move(int dx, int dy) {
+  double k = g_settings.mouse_speed / 100.0 / window_scale();
+  vcx += dx * k; vcy += dy * k;
+  if (vcx < 0) vcx = 0;
+  if (vcy < 0) vcy = 0;
+  if (vcx > cur_lw - 1) vcx = cur_lw - 1;
+  if (vcy > cur_lh - 1) vcy = cur_lh - 1;
+}
+void backend_virtual_cursor(int* x, int* y) { *x = (int)vcx; *y = (int)vcy; }
+void backend_set_virtual_cursor(int x, int y) { vcx = x; vcy = y; }
 
 // The game keeps its own cursor: position = previous position (guest 0x4c5468/0x4c546c) + the delta read from
 // DirectInput, clamped to the screen size (0x4dd368/0x4dd36c). Instead of faking deltas (which depend on the game's
@@ -404,6 +424,10 @@ void rt_pump_events(void) {
       overlay_toggle(); memset(g_dik_down, 0, sizeof g_dik_down); memset(g_mouse_btn, 0, sizeof g_mouse_btn);
       continue;
     }
+    if (overlay_is_open() && e.type == SDL_MOUSEMOTION) {
+      if (SDL_GetRelativeMouseMode()) vcursor_move(e.motion.xrel, e.motion.yrel);
+      else { int lx2, ly2; backend_window_to_logical(e.motion.x, e.motion.y, &lx2, &ly2); backend_set_virtual_cursor(lx2, ly2); }
+    }
     if (overlay_is_open() && e.type != SDL_QUIT && e.type != SDL_WINDOWEVENT) {
       if (e.type == SDL_MOUSEBUTTONDOWN || e.type == SDL_MOUSEBUTTONUP) DBG("overlay", "mouse button event %s button=%d window=(%d,%d)", e.type == SDL_MOUSEBUTTONDOWN ? "down" : "up", e.button.button, e.button.x, e.button.y);
       else if (e.type == SDL_MOUSEMOTION) DBG_EVERY(40, "overlay", "mouse motion window=(%d,%d)", e.motion.x, e.motion.y);
@@ -419,14 +443,16 @@ void rt_pump_events(void) {
       }
       case SDL_MOUSEMOTION: {
         int lx, ly;
-        backend_window_to_logical(e.motion.x, e.motion.y, &lx, &ly);
+        if (SDL_GetRelativeMouseMode()) vcursor_move(e.motion.xrel, e.motion.yrel);
+        else backend_window_to_logical(e.motion.x, e.motion.y, &lx, &ly), backend_set_virtual_cursor(lx, ly);
+        lx = (int)vcx; ly = (int)vcy;
         g_mouse_x = lx; g_mouse_y = ly;
         tgt_x = lx; tgt_y = ly; tgt_valid = 1;
         n_motion++;
         if (n_motion <= 60 || n_motion % 40 == 0) {
           int ww, wh;
           SDL_GetWindowSize(win, &ww, &wh);
-          DBG("mouse", "motion #%lu: window=(%d,%d) rel=(%d,%d) window size=%dx%d logical size=%dx%d -> logical=(%d,%d)", n_motion, e.motion.x, e.motion.y, e.motion.xrel, e.motion.yrel, ww, wh, cur_lw, cur_lh, lx, ly);
+          DBG("mouse", "motion #%lu: rel=(%d,%d) abs=(%d,%d) relmode=%d speed=%d%% window=%dx%d logical=%dx%d scale=%.3f -> virtual cursor=(%.1f,%.1f)", n_motion, e.motion.xrel, e.motion.yrel, e.motion.x, e.motion.y, SDL_GetRelativeMouseMode(), g_settings.mouse_speed, ww, wh, cur_lw, cur_lh, window_scale(), vcx, vcy);
         }
         break;
       }
@@ -441,11 +467,11 @@ void rt_pump_events(void) {
         int ww, wh;
         SDL_GetWindowSize(win, &ww, &wh);
         DBG("window", "event %s data=(%d,%d) -> window size now %dx%d, overlay open=%d", win_event_name(e.window.event), e.window.data1, e.window.data2, ww, wh, overlay_is_open());
-        if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED || e.window.event == SDL_WINDOWEVENT_ENTER) {
+        if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
           mouse_resync();
-          if (!overlay_is_open() && !getenv("RT_NO_GRAB")) { SDL_SetWindowGrab(win, SDL_TRUE); DBG("mouse", "grab ON (%s)", win_event_name(e.window.event)); }
+          if (!getenv("RT_NO_GRAB")) { int rc = SDL_SetRelativeMouseMode(SDL_TRUE); DBG("mouse", "relative mode ON (focus gained) rc=%d", rc); }
         }
-        if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST) { SDL_SetWindowGrab(win, SDL_FALSE); DBG("mouse", "grab OFF (focus lost)"); }
+        if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST) { SDL_SetRelativeMouseMode(SDL_FALSE); DBG("mouse", "relative mode OFF (focus lost)"); }
         break;
       }
       default: break;
@@ -468,6 +494,7 @@ static void backend_dump(FILE* f) {
     fprintf(f, "mouse in window=(%d,%d) global=(%d,%d) focus_window_is_ours=%d mouse_focus_is_ours=%d\n", mxp, myp, gx, gy, SDL_GetKeyboardFocus() == win, SDL_GetMouseFocus() == win);
   }
   fprintf(f, "logical=%dx%d mode=%dx%d stage=%dx%d tex=%dx%d stage_dirty=%d overlay_open=%d game_cursor_visible=%d\n", cur_lw, cur_lh, mode_w, mode_h, stage_w, stage_h, tex_w, tex_h, (int)stage_dirty, overlay_is_open(), game_cursor_visible);
+  fprintf(f, "virtual cursor=(%.1f,%.1f) speed=%d%% relative_mode=%d\n", vcx, vcy, g_settings.mouse_speed, SDL_GetRelativeMouseMode());
   fprintf(f, "g_mouse xy=(%d,%d) pending dxdy=(%d,%d) btn=%d%d%d target=(%d,%d) valid=%d poke=%d\n", g_mouse_x, g_mouse_y, g_mouse_dx, g_mouse_dy, g_mouse_btn[0], g_mouse_btn[1], g_mouse_btn[2], tgt_x, tgt_y, tgt_valid, (int)g_mouse_poke);
   if (g_mem) {
     fprintf(f, "game cursor: cur=(%d,%d) prev=(%d,%d) game screen=%ux%u buttons=%02x%02x%02x\n", (int)GU32(0x4c4f50), (int)GU32(0x4c4f54), (int)GU32(0x4c5468), (int)GU32(0x4c546c), GU32(0x4dd368), GU32(0x4dd36c), GU8(0x4c4f4a), GU8(0x4c4f49), GU8(0x4c4f48));
@@ -517,9 +544,10 @@ static void* script_thread(void* arg) {
     else if (!strcmp(cmd, "diff")) { extern void rt_debug_diff(void); rt_debug_diff(); }
     else if (!strcmp(cmd, "close")) { SDL_Event ev; memset(&ev, 0, sizeof ev); ev.type = SDL_QUIT; SDL_PushEvent(&ev); }
     else if (!strcmp(cmd, "f9")) { SDL_Event ev; memset(&ev, 0, sizeof ev); ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_F9; SDL_PushEvent(&ev); }
-    else if (!strcmp(cmd, "winmove")) { SDL_Event ev; memset(&ev, 0, sizeof ev); ev.type = SDL_MOUSEMOTION; ev.motion.x = x; ev.motion.y = y; SDL_PushEvent(&ev); gdelay(120); }
+    else if (!strcmp(cmd, "winmove")) { int lx, ly; backend_window_to_logical(x, y, &lx, &ly); backend_set_virtual_cursor(lx, ly); SDL_Event ev; memset(&ev, 0, sizeof ev); ev.type = SDL_MOUSEMOTION; ev.motion.x = x; ev.motion.y = y; SDL_PushEvent(&ev); gdelay(120); }
     else if (!strcmp(cmd, "ovclick")) {
       SDL_Event ev; memset(&ev, 0, sizeof ev);
+      { int lx, ly; backend_window_to_logical(x, y, &lx, &ly); backend_set_virtual_cursor(lx, ly); }
       ev.type = SDL_MOUSEMOTION; ev.motion.x = x; ev.motion.y = y; SDL_PushEvent(&ev); gdelay(150);
       memset(&ev, 0, sizeof ev); ev.type = SDL_MOUSEBUTTONDOWN; ev.button.button = SDL_BUTTON_LEFT; ev.button.x = x; ev.button.y = y; SDL_PushEvent(&ev); gdelay(200);
     }

@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-Settings g_settings = {0, 0, 0, 0, 1};
+Settings g_settings = {0, 0, 0, 0, 1, 100};
 static char path[1100];
 
 void settings_init(const char* exe_path) {
@@ -22,6 +22,7 @@ void settings_init(const char* exe_path) {
       else if (sscanf(line, "window_mode=%d", &v) == 1) g_settings.window_mode = v;
       else if (sscanf(line, "smooth=%d", &v) == 1) g_settings.smooth = v;
       else if (sscanf(line, "video=%d", &v) == 1) g_settings.video = v;
+      else if (sscanf(line, "mouse_speed=%d", &v) == 1) g_settings.mouse_speed = v < 20 ? 20 : v > 500 ? 500 : v;
     }
     fclose(f);
   }
@@ -37,7 +38,7 @@ void settings_save(void) {
   DBG("settings", "saving %s: res=%dx%d window_mode=%d smooth=%d video=%d", path, g_settings.res_w, g_settings.res_h, g_settings.window_mode, g_settings.smooth, g_settings.video);
   FILE* f = fopen(path, "w");
   if (!f) return;
-  fprintf(f, "resolution=%dx%d\nwindow_mode=%d\nsmooth=%d\nvideo=%d\n", g_settings.res_w, g_settings.res_h,
-          g_settings.window_mode, g_settings.smooth, g_settings.video);
+  fprintf(f, "resolution=%dx%d\nwindow_mode=%d\nsmooth=%d\nvideo=%d\nmouse_speed=%d\n", g_settings.res_w, g_settings.res_h,
+          g_settings.window_mode, g_settings.smooth, g_settings.video, g_settings.mouse_speed);
   fclose(f);
 }

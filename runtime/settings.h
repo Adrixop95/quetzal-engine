@@ -5,6 +5,7 @@ typedef struct {
   int window_mode;      // 0 windowed, 1 borderless, 2 fullscreen (desktop)
   int smooth;           // 0 nearest-neighbour, 1 linear scaling
   int video;            // play movies
+  int mouse_speed;      // pointer speed in percent (virtual cursor), 100 = 1 screen pixel per pixel
 } Settings;
 extern Settings g_settings;
 void settings_init(const char* exe_path);   // load from file, then apply RT_* environment overrides

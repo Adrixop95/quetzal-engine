@@ -30,7 +30,8 @@ int dbg_enabled(void) { return enabled; }
 static uint64_t now_ms(void) {
   struct timespec t;
   clock_gettime(CLOCK_MONOTONIC, &t);
-  return (uint64_t)(t.tv_sec - t0.tv_sec) * 1000 + (uint64_t)(t.tv_nsec - t0.tv_nsec) / 1000000;
+  int64_t ms = (int64_t)(t.tv_sec - t0.tv_sec) * 1000 + (int64_t)(t.tv_nsec - t0.tv_nsec) / 1000000;
+  return ms < 0 ? 0 : (uint64_t)ms;
 }
 
 void dbg_log(const char* cat, const char* fmt, ...) {
