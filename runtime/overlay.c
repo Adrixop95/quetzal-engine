@@ -14,6 +14,7 @@ static int is_open;
 static int tab;                       // 0 settings, 1 helpers
 static SDL_Texture* atlas;
 static int mx, my, clicked;           // logical mouse position, click edge
+static uint32_t click_time;
 static char status[160];
 static uint32_t status_until;
 static int pending_action;
@@ -144,10 +145,10 @@ void overlay_event(const SDL_Event* e, SDL_Renderer* ren) {
     if (e->key.keysym.sym == SDLK_TAB) tab = !tab;
   } else if (e->type == SDL_MOUSEMOTION || e->type == SDL_MOUSEBUTTONDOWN) {
     int x = e->type == SDL_MOUSEMOTION ? e->motion.x : e->button.x, y = e->type == SDL_MOUSEMOTION ? e->motion.y : e->button.y;
-    float fx, fy;
-    SDL_RenderWindowToLogical(ren, x, y, &fx, &fy);
-    mx = (int)fx; my = (int)fy;
-    if (e->type == SDL_MOUSEBUTTONDOWN && e->button.button == SDL_BUTTON_LEFT) clicked = 1;
+    extern void backend_window_to_logical(int wx, int wy, int* lx, int* ly);
+    backend_window_to_logical(x, y, &mx, &my);
+    if (e->type == SDL_MOUSEBUTTONDOWN && e->button.button == SDL_BUTTON_LEFT) { clicked = 1; click_time = SDL_GetTicks(); }
+    if (getenv("RT_TRACE_INPUT") && e->type == SDL_MOUSEBUTTONDOWN) rt_log("overlay click window=(%d,%d) logical=(%d,%d)", x, y, mx, my);
   }
 }
 
@@ -206,7 +207,7 @@ void overlay_draw(SDL_Renderer* ren, int lw, int lh) {
   }
   if (button(ren, px + pw - 190, py + ph - 56, 170, 40, "Zamknij")) { is_open = 0; backend_overlay_cursor(0); }
   if (SDL_GetTicks() < status_until) draw_text(ren, px + 20, py + ph - 88, status, 2, 255, 230, 160);
-  clicked = 0;
+  if (clicked && SDL_GetTicks() - click_time > 300) clicked = 0;   // a click survives until the next frame that can use it
 }
 
 // Runs on the game's main thread (called from PeekMessage), where calling guest code is safe.

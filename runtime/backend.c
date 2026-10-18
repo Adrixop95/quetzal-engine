@@ -17,6 +17,8 @@ extern void overlay_event(const SDL_Event* e, SDL_Renderer* ren);
 extern void overlay_draw(SDL_Renderer* ren, int lw, int lh);
 extern void overlay_request(int action);
 static int tex_reset;
+static void mouse_resync(void);
+static int cur_lw = 800, cur_lh = 600;   // logical size currently used for presentation
 
 static SDL_Window* win;
 static SDL_Renderer* ren;
@@ -54,6 +56,7 @@ void backend_create_window(const char* title, int w, int h) {
   if (!ren) ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE);
   if (!ren) rt_fatal("SDL_CreateRenderer: %s", SDL_GetError());
   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, g_settings.smooth ? "linear" : "nearest");
+  if (!getenv("RT_NO_GRAB")) SDL_SetWindowGrab(win, SDL_TRUE);
   if (getenv("RT_MENU")) overlay_toggle();
 }
 
@@ -63,6 +66,7 @@ void backend_set_mode(int w, int h, int bpp) {
   if (!win) backend_create_window("Aztec Empire", w, h);
   mode_w = w; mode_h = h;
   SDL_RenderSetLogicalSize(ren, w, h);  // keeps aspect ratio on any window shape
+  cur_lw = w; cur_lh = h;
 }
 
 static int game_cursor_visible = 1;   // what the game asked for; the overlay forces the cursor on while open
@@ -71,7 +75,11 @@ void backend_show_cursor(int show) {
   game_cursor_visible = show;
   if (!overlay_is_open()) SDL_ShowCursor(show ? SDL_ENABLE : SDL_DISABLE);
 }
-void backend_overlay_cursor(int open) { SDL_ShowCursor((open || game_cursor_visible) ? SDL_ENABLE : SDL_DISABLE); }
+void backend_overlay_cursor(int open) {
+  SDL_ShowCursor((open || game_cursor_visible) ? SDL_ENABLE : SDL_DISABLE);
+  if (win) SDL_SetWindowGrab(win, open ? SDL_FALSE : SDL_TRUE);   // free the pointer for the menu, trap it for the game
+  if (!open) mouse_resync();
+}
 
 static volatile int shot_pending;
 static volatile int shot_index;
@@ -105,6 +113,34 @@ static uint32_t* stage;
 static int stage_w, stage_h;
 static volatile int stage_dirty;
 static pthread_mutex_t stage_lock = PTHREAD_MUTEX_INITIALIZER;
+
+// Window coordinates (as delivered in mouse events) -> picture coordinates, accounting for the aspect-preserving
+// letterbox. Done by hand because SDL's renderer helper misbehaves on some Wayland/sdl2-compat setups.
+void backend_window_to_logical(int wx, int wy, int* lx, int* ly) {
+  int ww = 1, wh = 1;
+  if (win) SDL_GetWindowSize(win, &ww, &wh);
+  if (ww < 1) ww = 1;
+  if (wh < 1) wh = 1;
+  double sc = (double)ww / cur_lw < (double)wh / cur_lh ? (double)ww / cur_lw : (double)wh / cur_lh;
+  double ox = (ww - cur_lw * sc) / 2, oy = (wh - cur_lh * sc) / 2;
+  int x = (int)((wx - ox) / sc), y = (int)((wy - oy) / sc);
+  *lx = x < 0 ? 0 : x >= cur_lw ? cur_lw - 1 : x;
+  *ly = y < 0 ? 0 : y >= cur_lh ? cur_lh - 1 : y;
+}
+
+// The game keeps its own cursor and only reads relative motion from DirectInput. To make the picture follow the
+// real pointer at any scale we first pin the game cursor to the corner, then send the absolute target as a delta.
+static int cur_sync = 1;        // 0 = estimate valid, 1 = pin needed, 2 = pin sent, waiting for the game to read it
+static int cur_x, cur_y, tgt_x, tgt_y, tgt_valid;
+static void mouse_follow(void) {
+  if (cur_sync == 1) { g_mouse_dx -= 4000; g_mouse_dy -= 4000; cur_x = cur_y = 0; cur_sync = 2; return; }
+  if (cur_sync == 2) { if (!g_mouse_dx && !g_mouse_dy) cur_sync = 0; return; }
+  if (tgt_valid) {
+    g_mouse_dx += tgt_x - cur_x; g_mouse_dy += tgt_y - cur_y;
+    cur_x = tgt_x; cur_y = tgt_y; tgt_valid = 0;
+  }
+}
+static void mouse_resync(void) { cur_sync = 1; }
 static int on_main_thread(void);
 
 static void present_stage(void) {
@@ -119,7 +155,7 @@ static void present_stage(void) {
     }
     if (tex) {
       static int lw, lh;
-      if (lw != stage_w || lh != stage_h) { SDL_RenderSetLogicalSize(ren, stage_w, stage_h); lw = stage_w; lh = stage_h; }
+      if (lw != stage_w || lh != stage_h) { SDL_RenderSetLogicalSize(ren, stage_w, stage_h); lw = stage_w; lh = stage_h; cur_lw = stage_w; cur_lh = stage_h; }
       SDL_UpdateTexture(tex, NULL, stage, stage_w * 4);
       SDL_RenderClear(ren);
       SDL_RenderCopy(ren, tex, NULL, NULL);
@@ -287,12 +323,10 @@ void rt_pump_events(void) {
         break;
       }
       case SDL_MOUSEMOTION: {
-        float fx, fy;
-        SDL_RenderWindowToLogical(ren, e.motion.x, e.motion.y, &fx, &fy);
-        int lx = (int)fx, ly = (int)fy;
-        g_mouse_dx += e.motion.xrel; g_mouse_dy += e.motion.yrel;
-        g_mouse_x = lx < 0 ? 0 : lx >= mode_w ? mode_w - 1 : lx;
-        g_mouse_y = ly < 0 ? 0 : ly >= mode_h ? mode_h - 1 : ly;
+        int lx, ly;
+        backend_window_to_logical(e.motion.x, e.motion.y, &lx, &ly);
+        g_mouse_x = lx; g_mouse_y = ly;
+        tgt_x = lx; tgt_y = ly; tgt_valid = 1;
         break;
       }
       case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP: {
@@ -300,9 +334,14 @@ void rt_pump_events(void) {
         if (b >= 0) g_mouse_btn[b] = e.type == SDL_MOUSEBUTTONDOWN;
         break;
       }
+      case SDL_WINDOWEVENT:
+        if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED || e.window.event == SDL_WINDOWEVENT_ENTER) { mouse_resync(); if (!overlay_is_open()) SDL_SetWindowGrab(win, SDL_TRUE); }
+        if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST) SDL_SetWindowGrab(win, SDL_FALSE);
+        break;
       default: break;
     }
   }
+  if (!overlay_is_open()) mouse_follow();
   rt_dinput_poll();
 }
 
@@ -348,6 +387,7 @@ static void* script_thread(void* arg) {
     else if (!strcmp(cmd, "snap")) { extern void rt_debug_snap(uint32_t); rt_debug_snap((uint32_t)x); }
     else if (!strcmp(cmd, "diff")) { extern void rt_debug_diff(void); rt_debug_diff(); }
     else if (!strcmp(cmd, "f9")) { SDL_Event ev; memset(&ev, 0, sizeof ev); ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_F9; SDL_PushEvent(&ev); }
+    else if (!strcmp(cmd, "winmove")) { SDL_Event ev; memset(&ev, 0, sizeof ev); ev.type = SDL_MOUSEMOTION; ev.motion.x = x; ev.motion.y = y; SDL_PushEvent(&ev); gdelay(120); }
     else if (!strcmp(cmd, "ovclick")) {
       SDL_Event ev; memset(&ev, 0, sizeof ev);
       ev.type = SDL_MOUSEMOTION; ev.motion.x = x; ev.motion.y = y; SDL_PushEvent(&ev); gdelay(150);
