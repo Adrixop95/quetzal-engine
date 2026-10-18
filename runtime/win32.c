@@ -47,7 +47,8 @@ static int ci_resolve(const char* in, char* out, size_t outsz) {
   char cur[1024];
   size_t cl = 0;
   const char* s = tmp;
-  if (*s == '/') { cur[cl++] = '/'; s++; } else { cur[0] = '.'; cl = 1; }
+  while (*s == '/') s++;                      // guest paths are Windows paths: \\x or D:\\x means "relative to the game directory"
+  cur[0] = '.'; cl = 1;
   cur[cl] = 0;
   while (*s) {
     char comp[256];
@@ -721,13 +722,13 @@ SH(GetPrivateProfileIntA) {
 #define AZ "Software\\New Media Generation\\The Aztec"
 static const struct { const char* key; const char* name; int is_dword; uint32_t dw; const char* sz; } reg_defaults[] = {
   {AZ, "Language", 1, 0, 0}, {AZ, "Difficulty", 1, 0, 0}, {AZ, "MouseSpeed", 1, 3, 0},
-  {AZ, "Path", 0, 0, "C:\\Aztec\\Aztec.exe"}, {AZ, "CampaignPath", 0, 0, "Campaign\\Maps"},
+  {AZ, "Path", 0, 0, "C:\\Aztec\\Aztec.exe"}, {AZ, "CampaignPath", 0, 0, "D:\\Maps"},
   {AZ "\\Net", "DefaultProvider", 1, 1, 0}, {AZ "\\Net", "Phone", 0, 0, ""}, {AZ "\\Net", "IPHost", 0, 0, ""},
   {AZ "\\Release", "", 0, 0, ""},
-  {AZ "\\Sound", "MusicPath", 0, 0, "Campaign\\Music"}, {AZ "\\Sound", "Scheme", 0, 0, "default"},
+  {AZ "\\Sound", "MusicPath", 0, 0, "D:\\Music"}, {AZ "\\Sound", "Scheme", 0, 0, "default"},
   {AZ "\\Sound", "SFXVolume", 1, 0, 0}, {AZ "\\Sound", "MusicVolume", 1, 0, 0}, {AZ "\\Sound", "SpeechVolume", 1, 0, 0},
   {AZ "\\Sound", "Frequency", 1, 22050, 0}, {AZ "\\Sound", "Acknowledgement", 1, 1, 0},
-  {AZ "\\Video", "Path", 0, 0, "Campaign\\Video"},
+  {AZ "\\Video", "Path", 0, 0, "D:\\Video"},
   {AZ "\\View", "DisplayMode", 1, 0, 0}, {AZ "\\View", "GameSpeed", 1, 83, 0}, {AZ "\\View", "ScrollSpeed", 1, 48, 0},
   {AZ "\\View", "Gamma", 1, 1, 0}, {AZ "\\View", "ViewAll", 1, 0, 0},
 };

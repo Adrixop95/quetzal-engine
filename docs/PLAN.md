@@ -39,3 +39,8 @@ Do zrobienia: filmy (ffmpeg), sieć, dźwięk (sprawdzić), widescreen, Windows/
 Komendy skryptu (czas w ms czasu gry): `wait MS`, `move X Y`, `click X Y`, `rclick X Y`, `down`, `up`,
 `key DIK`, `keydown DIK`, `keyup DIK`, `shot` (zapis klatki shot_NN.ppm), `quit`.
 Scenariusz "utwórz gracza" trwa ok. 5 s zamiast 25 s. Pliki graczy (*.plr) powstają w katalogu gry.
+
+## Przejście od menu do misji (2026-10-18)
+Ścieżka: menu (Wybierz gracza) -> Gra pojedyncza -> Kampania -> Graj misję -> odprawa -> "Start Game" (tarcza) -> mapa misji 1.
+Układ katalogu gry (jak na płytach): Maps/ (mapy instalacyjne + misje z obu CD), Video/, Music/, Res/.
+Wirtualny rejestr podaje ścieżki "D:\Maps", "D:\Video", "D:\Music" (gra używa pierwszych 3 znaków jako "napędu CD").
