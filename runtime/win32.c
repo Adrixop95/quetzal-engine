@@ -81,6 +81,7 @@ typedef struct {
   HType t;
   int fd;                       // file / mapping
   int signaled, manual;         // event
+  unsigned pulse_gen;           // PulseEvent generation: wakes threads that were already waiting
   int count, max;               // semaphore
   int owner_depth;              // mutex
   pthread_t th; int done; uint32_t exit_code; int suspended;  // thread
@@ -268,7 +269,7 @@ SH(CreateEventA) {
 SH(OpenEventA) { UNUSED; return 0; }
 SH(SetEvent) { UNUSED; if (getenv("RT_TRACE_WAIT")) rt_log("SetEvent tid=%u h=%08x", TI(c)->tid, a[0]); Obj* o = obj_get(a[0]); if (!o) return 0; pthread_mutex_lock(&objlock); o->signaled = 1; pthread_cond_broadcast(&objcv); pthread_mutex_unlock(&objlock); return 1; }
 SH(ResetEvent) { UNUSED; Obj* o = obj_get(a[0]); if (!o) return 0; pthread_mutex_lock(&objlock); o->signaled = 0; pthread_mutex_unlock(&objlock); return 1; }
-SH(PulseEvent) { UNUSED; Obj* o = obj_get(a[0]); if (!o) return 0; pthread_mutex_lock(&objlock); pthread_cond_broadcast(&objcv); pthread_mutex_unlock(&objlock); return 1; }
+SH(PulseEvent) { UNUSED; Obj* o = obj_get(a[0]); if (!o) return 0; pthread_mutex_lock(&objlock); o->pulse_gen++; pthread_cond_broadcast(&objcv); pthread_mutex_unlock(&objlock); return 1; }
 SH(CreateMutexA) { UNUSED; uint32_t h = obj_new(H_MUTEX); return h; }
 SH(ReleaseMutex) { UNUSED; return 1; }
 SH(CreateSemaphoreA) { UNUSED; uint32_t h = obj_new(H_SEM); Obj* o = obj_get(h); o->count = (int)a[1]; o->max = (int)a[2]; return h; }
@@ -292,21 +293,33 @@ static int obj_ready_locked(Obj* o) {  // consume if ready
     default: return 1;
   }
 }
+void rt_signal_event(uint32_t h) {
+  Obj* o = obj_get(h);
+  if (!o) return;
+  pthread_mutex_lock(&objlock);
+  o->signaled = 1;
+  pthread_cond_broadcast(&objcv);
+  pthread_mutex_unlock(&objlock);
+}
 static uint32_t wait_objs(uint32_t n, const uint32_t* hs, int all, uint32_t ms, int msgs) {
   struct timespec dl;
   clock_gettime(CLOCK_REALTIME, &dl);
   uint64_t add = ms == 0xFFFFFFFFu ? 0 : ms;
   dl.tv_sec += add / 1000; dl.tv_nsec += (add % 1000) * 1000000; if (dl.tv_nsec >= 1000000000) { dl.tv_sec++; dl.tv_nsec -= 1000000000; }
   uint32_t result = 0x102;
-  pthread_mutex_lock(&objlock);
+  unsigned gens[64];
+  for (uint32_t i = 0; i < n && i < 64; i++) { Obj* o = obj_get(hs[i]); gens[i] = o ? o->pulse_gen : 0; }
   for (;;) {
+    int pending = msgs ? rt_events_pending() : 0;   // pumps SDL events and may signal DirectInput events
+    pthread_mutex_lock(&objlock);
     for (uint32_t i = 0; i < n; i++) {
       Obj* o = obj_get(hs[i]);
       if (!o) continue;
+      if (i < 64 && o->t == H_EVENT && o->pulse_gen != gens[i]) { result = i; goto done; }   // pulsed while we waited
       if (obj_ready_locked(o)) { result = i; goto done; }
     }
     (void)all;
-    if (msgs && rt_events_pending()) { result = n; goto done; }
+    if (pending) { result = n; goto done; }
     if (ms == 0) goto done;
     struct timespec slice;
     clock_gettime(CLOCK_REALTIME, &slice);
@@ -318,10 +331,12 @@ static uint32_t wait_objs(uint32_t n, const uint32_t* hs, int all, uint32_t ms, 
       clock_gettime(CLOCK_REALTIME, &now);
       if (now.tv_sec > dl.tv_sec || (now.tv_sec == dl.tv_sec && now.tv_nsec >= dl.tv_nsec)) goto done;
     }
+    pthread_mutex_unlock(&objlock);
+    continue;
+  done:
+    pthread_mutex_unlock(&objlock);
+    return result;
   }
-done:
-  pthread_mutex_unlock(&objlock);
-  return result;
 }
 SH(WaitForSingleObject) { UNUSED; uint32_t h = a[0]; return wait_objs(1, &h, 0, a[1], 0); }
 SH(WaitForMultipleObjects) {

@@ -301,6 +301,7 @@ public class LiftAll extends GhidraScript {
             if (isWide(sz)) w.printf("  %s %s; memset(&%s, 0, sizeof %s);%n", U(sz), p[0], p[0], p[0]);
             else w.printf("  %s %s = 0;%n", U(sz), p[0]);
         }
+        if (insns.get(0).getAddress().getOffset() != entry) w.printf("  goto L_%08x;  /* shared code lies below the entry */%n", entry);
         w.print(bodySw);
         w.println("}\n");
     }

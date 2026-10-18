@@ -12,7 +12,7 @@
 static SDL_Window* win;
 static SDL_Renderer* ren;
 static SDL_Texture* tex;
-static int tex_w, tex_h, tex_fmt;
+static int tex_w, tex_h;
 static int mode_w = 640, mode_h = 480;
 static pthread_t main_thread;
 static int main_thread_set;
@@ -21,6 +21,7 @@ uint8_t g_dik_down[256];
 int g_mouse_dx, g_mouse_dy, g_mouse_x, g_mouse_y;
 uint8_t g_mouse_btn[3];
 
+void backend_start_script(void);
 static void ensure_sdl(void) {
   if (!main_thread_set) { main_thread = pthread_self(); main_thread_set = 1; }
   if (!SDL_WasInit(SDL_INIT_VIDEO)) {
@@ -31,6 +32,7 @@ static void ensure_sdl(void) {
 void backend_create_window(const char* title, int w, int h) {
   ensure_sdl();
   if (win) return;
+  backend_start_script();
   if (w < 320) w = 640;
   if (h < 200) h = 480;
   win = SDL_CreateWindow(title && *title ? title : "Aztec Empire", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w, h,
@@ -52,14 +54,17 @@ void backend_set_mode(int w, int h, int bpp) {
 
 void backend_show_cursor(int show) { ensure_sdl(); SDL_ShowCursor(show ? SDL_ENABLE : SDL_DISABLE); }
 
+static volatile int shot_pending;
+static volatile int shot_index;
 static void dump_frame(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette) {
   static int n;
   const char* dir = getenv("RT_DUMP_DIR");
   if (!dir) return;
   n++;
-  if (!(n == 1 || n % 50 == 0)) return;
   char path[512];
-  snprintf(path, sizeof path, "%s/frame_%05d.ppm", dir, n);
+  if (shot_pending) { snprintf(path, sizeof path, "%s/shot_%02d.ppm", dir, shot_index); shot_pending = 0; }
+  else if (n == 1 || n % 500 == 0) snprintf(path, sizeof path, "%s/frame_%05d.ppm", dir, n);
+  else return;
   FILE* f = fopen(path, "wb");
   if (!f) return;
   fprintf(f, "P6\n%d %d\n255\n", w, h);
@@ -76,30 +81,65 @@ static void dump_frame(const void* pixels, int pitch, int w, int h, int bpp, con
   fclose(f);
 }
 
+// The SDL renderer (OpenGL) must only be used from the thread that created it. Game threads convert the
+// frame into a staging buffer; the main thread (event pump) uploads and presents it.
+static uint32_t* stage;
+static int stage_w, stage_h;
+static volatile int stage_dirty;
+static pthread_mutex_t stage_lock = PTHREAD_MUTEX_INITIALIZER;
+static int on_main_thread(void);
+
+static void present_stage(void) {
+  pthread_mutex_lock(&stage_lock);
+  if (stage_dirty && ren && stage) {
+    if (!tex || tex_w != stage_w || tex_h != stage_h) {
+      if (tex) SDL_DestroyTexture(tex);
+      tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, stage_w, stage_h);
+      if (!tex) rt_log("SDL_CreateTexture failed: %s", SDL_GetError());
+      tex_w = stage_w; tex_h = stage_h;
+    }
+    if (tex) {
+      SDL_UpdateTexture(tex, NULL, stage, stage_w * 4);
+      SDL_RenderClear(ren);
+      SDL_RenderCopy(ren, tex, NULL, NULL);
+      SDL_RenderPresent(ren);
+    }
+    stage_dirty = 0;
+  }
+  pthread_mutex_unlock(&stage_lock);
+}
+
 void backend_present(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette) {
   dump_frame(pixels, pitch, w, h, bpp, palette);
   if (!ren) return;
-  int fmt = bpp == 16 ? SDL_PIXELFORMAT_RGB565 : bpp == 15 ? SDL_PIXELFORMAT_RGB555 : SDL_PIXELFORMAT_ARGB8888;
-  if (!tex || tex_w != w || tex_h != h || tex_fmt != fmt) {
-    if (tex) SDL_DestroyTexture(tex);
-    tex = SDL_CreateTexture(ren, fmt, SDL_TEXTUREACCESS_STREAMING, w, h);
-    tex_w = w; tex_h = h; tex_fmt = fmt;
-  }
-  if (bpp == 8) {
-    void* dst; int dp;
-    SDL_LockTexture(tex, NULL, &dst, &dp);
-    for (int y = 0; y < h; y++) {
-      const uint8_t* s = (const uint8_t*)pixels + (size_t)y * pitch;
-      uint32_t* d = (uint32_t*)((uint8_t*)dst + (size_t)y * dp);
-      for (int x = 0; x < w; x++) d[x] = palette[s[x]];
+  pthread_mutex_lock(&stage_lock);
+  if (!stage || stage_w != w || stage_h != h) { free(stage); stage = malloc((size_t)w * h * 4); stage_w = w; stage_h = h; }
+  for (int y = 0; y < h; y++) {
+    const uint8_t* s = (const uint8_t*)pixels + (size_t)y * pitch;
+    uint32_t* d = stage + (size_t)y * w;
+    if (bpp == 8) {
+      for (int x = 0; x < w; x++) d[x] = palette ? palette[s[x]] : 0xFF000000u | s[x] * 0x010101u;
+    } else if (bpp == 16) {
+      const uint16_t* p16 = (const uint16_t*)s;
+      for (int x = 0; x < w; x++) {
+        uint32_t v = p16[x];
+        uint32_t r = (v >> 11) & 31, g = (v >> 5) & 63, b = v & 31;
+        d[x] = 0xFF000000u | ((r << 3 | r >> 2) << 16) | ((g << 2 | g >> 4) << 8) | (b << 3 | b >> 2);
+      }
+    } else if (bpp == 15) {
+      const uint16_t* p16 = (const uint16_t*)s;
+      for (int x = 0; x < w; x++) {
+        uint32_t v = p16[x];
+        uint32_t r = (v >> 10) & 31, g = (v >> 5) & 31, b = v & 31;
+        d[x] = 0xFF000000u | ((r << 3 | r >> 2) << 16) | ((g << 3 | g >> 2) << 8) | (b << 3 | b >> 2);
+      }
+    } else {
+      memcpy(d, s, (size_t)w * 4);
     }
-    SDL_UnlockTexture(tex);
-  } else {
-    SDL_UpdateTexture(tex, NULL, pixels, pitch);
   }
-  SDL_RenderClear(ren);
-  SDL_RenderCopy(ren, tex, NULL, NULL);
-  SDL_RenderPresent(ren);
+  stage_dirty = 1;
+  pthread_mutex_unlock(&stage_lock);
+  if (on_main_thread()) present_stage();
 }
 
 // SDL scancode -> DirectInput (DIK_*) scan code
@@ -176,8 +216,11 @@ int backend_vk_state(int vk) {
 
 static int on_main_thread(void) { return main_thread_set && pthread_equal(pthread_self(), main_thread); }
 
+extern void rt_dinput_poll(void);
 void rt_pump_events(void) {
+  rt_dinput_poll();
   if (!win || !on_main_thread()) return;
+  present_stage();
   SDL_Event e;
   while (SDL_PollEvent(&e)) {
     switch (e.type) {
@@ -204,4 +247,43 @@ void rt_pump_events(void) {
       default: break;
     }
   }
+  rt_dinput_poll();
+}
+
+// ---- scripted input for automated tests: RT_SCRIPT=file with lines
+//   wait MS | move X Y | click X Y | rclick X Y | key DIK | keydown DIK | keyup DIK | shot
+static void* script_thread(void* arg) {
+  FILE* f = fopen((const char*)arg, "r");
+  if (!f) return NULL;
+  char line[256];
+  while (fgets(line, sizeof line, f)) {
+    char cmd[32] = "";
+    int x = 0, y = 0;
+    sscanf(line, "%31s %d %d", cmd, &x, &y);
+    if (!strcmp(cmd, "wait")) SDL_Delay((Uint32)x);
+    else if (!strcmp(cmd, "move") || !strcmp(cmd, "click") || !strcmp(cmd, "rclick")) {
+      g_mouse_dx -= 3000; g_mouse_dy -= 3000; SDL_Delay(60);   // pin to the corner, then move relative
+      for (int i = 0; i < 4; i++) { g_mouse_dx += x / 4; g_mouse_dy += y / 4; SDL_Delay(30); }
+      g_mouse_dx += x - 4 * (x / 4); g_mouse_dy += y - 4 * (y / 4);
+      g_mouse_x = x; g_mouse_y = y;
+      SDL_Delay(120);
+      if (strcmp(cmd, "move")) {
+        int b = !strcmp(cmd, "rclick") ? 1 : 0;
+        g_mouse_btn[b] = 1; SDL_Delay(120); g_mouse_btn[b] = 0; SDL_Delay(120);
+      }
+    } else if (!strcmp(cmd, "key")) { g_dik_down[x & 255] = 1; SDL_Delay(120); g_dik_down[x & 255] = 0; SDL_Delay(80); }
+    else if (!strcmp(cmd, "keydown")) g_dik_down[x & 255] = 1;
+    else if (!strcmp(cmd, "keyup")) g_dik_down[x & 255] = 0;
+    else if (!strcmp(cmd, "shot")) { shot_index++; shot_pending = 1; SDL_Delay(400); }
+  }
+  fclose(f);
+  return NULL;
+}
+void backend_start_script(void) {
+  const char* path = getenv("RT_SCRIPT");
+  if (!path) return;
+  static char saved[512];
+  snprintf(saved, sizeof saved, "%s", path);
+  pthread_t t;
+  pthread_create(&t, NULL, script_thread, saved);
 }

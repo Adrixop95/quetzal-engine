@@ -222,6 +222,7 @@ static void shim_call(CPU* c, uint32_t addr) {
 void f_dispatch(CPU* c, uint32_t addr) {
   if (addr >= SHIM_BASE) { shim_call(c, addr); return; }
   void (*fn)(CPU*) = lookup_fn(addr);
+  if (!fn && getenv("RT_IATDUMP")) { for (uint32_t q = 0x48f040; q < 0x48f070; q += 4) rt_log("IAT[%08x]=%08x", q, GU32(q)); }
   if (!fn) rt_fatal("call to unlifted guest address %08x (return address %08x, esp %08x, ecx %08x, edi %08x [edi]=%08x)", addr, GU32(GREG(c, R_ESP)), GREG(c, R_ESP), GREG(c, R_ECX), GREG(c, R_EDI), GU32(GREG(c, R_EDI)));
   fn(c);
 }
@@ -379,6 +380,15 @@ void rt_run_main(const char* exe_path, int argc, char** argv) {
   if (!rt_load_pe(exe_path, &entry)) rt_fatal("cannot load %s", exe_path);
   static CPU cpu;
   rt_win32_init(&cpu, exe_path);
+  if (getenv("RT_SELFTEST")) {
+    uint32_t str = gmalloc(64);
+    strcpy((char*)GPTR(str), "Hello player\nsecond line");
+    for (int k = 0; k < 8; k++) {   // misaligned starts exercise the word-at-a-time path
+      uint32_t r = rt_call_guest(&cpu, 0x4818e0, 2, str + k, 10);
+      rt_log("strchr(str+%d) = %08x, str=%08x, expected %08x", k, r, str, str + 12);
+    }
+    return;
+  }
   rt_call_guest(&cpu, entry, 0);
 }
 
