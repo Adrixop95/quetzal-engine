@@ -76,7 +76,7 @@ uint32_t gmalloc(uint32_t size) {
     heap_top += sz;
   }
   BlockHdr* h = (BlockHdr*)GPTR(blk);
-  h->cls = k;
+  h->cls = (uint32_t)k | 0xA1100000u;   // live-block magic: lets gfree reject double frees
   h->size = size;
   memset(g_mem + blk + 8, 0, size);  // the game assumes fresh heap memory is zeroed
   dbg_alloc(blk + 8, size);
@@ -87,8 +87,15 @@ void gfree(uint32_t ptr) {
   dbg_free(ptr);
   uint32_t blk = ptr - 8;
   BlockHdr* h = (BlockHdr*)GPTR(blk);
-  GU32(blk + 8) = free_lists[h->cls];
-  free_lists[h->cls] = blk;
+  if ((h->cls & 0xFFFF0000u) != 0xA1100000u) {   // Windows tolerated this; a naive free list would hand the block out twice
+    static int warned;
+    if (warned++ < 8) rt_log("gfree: ignoring double or invalid free of %08x", ptr);
+    return;
+  }
+  uint32_t k = h->cls & 0xFFFFu;
+  h->cls = k | 0xDEAD0000u;
+  GU32(blk + 8) = free_lists[k];
+  free_lists[k] = blk;
 }
 uint32_t gmsize(uint32_t ptr) { return ptr ? ((BlockHdr*)GPTR(ptr - 8))->size : 0; }
 uint32_t gmrealloc(uint32_t ptr, uint32_t size) {
@@ -369,8 +376,14 @@ int rt_load_pe(const char* path, uint32_t* entry_out) {
 
 extern void rt_win32_init(CPU* main_cpu, const char* exe_path);
 
+char** rt_saved_argv;
+extern void settings_init(const char* exe_path);
+extern void overlay_set_argv0(const char* a);
 void rt_run_main(const char* exe_path, int argc, char** argv) {
-  (void)argc; (void)argv;
+  (void)argc;
+  rt_saved_argv = argv;
+  overlay_set_argv0(argv[0]);
+  settings_init(exe_path);
   g_mem = mmap(NULL, 0x100000000ull, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
   if (g_mem == MAP_FAILED) rt_fatal("cannot reserve 4 GiB of guest address space");
   build_fn_hash();
@@ -418,3 +431,126 @@ void rt_trace_enter(uint32_t addr) {
   if (i < sizeof call_counts / sizeof *call_counts) __sync_fetch_and_add(&call_counts[i], 1);
 }
 #endif
+
+// Debug helper (script command "scan N"): list guest addresses holding 32-bit value N, tagged with the side struct
+// array (base at guest 0x4dd2f4, stride 0x69c) when they fall inside it.
+void rt_debug_scan(uint32_t value) {
+  uint32_t side_base = GU32(0x4dd2f4);
+  rt_log("scan %u: sides base=%08x", value, side_base);
+  int found = 0;
+  for (uint32_t a = 0x49b000; a < 0x531000; a += 4)
+    if (GU32(a) == value) { rt_log("  data  %08x", a); found++; }
+  for (uint32_t a = 0x10000000; a < heap_top && found < 400; a += 4)
+    if (GU32(a) == value) {
+      if (side_base && a >= side_base && a < side_base + 0x69c * 8)
+        rt_log("  SIDE[%u]+%#x  (%08x)", (a - side_base) / 0x69c, (a - side_base) % 0x69c, a);
+      else { found++; rt_log("  heap  %08x", a); }
+    }
+  rt_log("scan done (%d other hits)", found);
+}
+
+static uint32_t snap_addrs[100000];
+static int snap_n;
+static uint32_t snap_value;
+void rt_debug_snap(uint32_t value) {   // remember every address currently holding `value`
+  snap_n = 0; snap_value = value;
+  for (uint32_t a = 0x49b000; a < 0x531000 && snap_n < 100000; a += 4) if (GU32(a) == value) snap_addrs[snap_n++] = a;
+  for (uint32_t a = 0x10000000; a < heap_top && snap_n < 100000; a += 4) if (GU32(a) == value) snap_addrs[snap_n++] = a;
+  rt_log("snap: %d addresses hold %u", snap_n, value);
+}
+void rt_debug_diff(void) {              // report remembered addresses whose value changed
+  uint32_t side_base = GU32(0x4dd2f4);
+  int shown = 0;
+  for (int i = 0; i < snap_n; i++) {
+    uint32_t v = GU32(snap_addrs[i]);
+    if (v != snap_value && shown < 60) {
+      uint32_t a = snap_addrs[i];
+      if (side_base && a >= side_base && a < side_base + 0x69c * 8) rt_log("  changed SIDE[%u]+%#x: %u -> %u", (a - side_base) / 0x69c, (a - side_base) % 0x69c, snap_value, v);
+      else rt_log("  changed %08x: %u -> %u", a, snap_value, v);
+      shown++;
+    }
+  }
+  rt_log("diff done, %d shown", shown);
+}
+
+void rt_debug_scan16(uint32_t value) {   // 16-bit aligned scan inside the side array and the heap (first hits only)
+  uint32_t side_base = GU32(0x4dd2f4);
+  rt_log("scan16 %u: sides base=%08x", value, side_base);
+  int n = 0;
+  if (side_base)
+    for (uint32_t a = side_base; a < side_base + 0x69c * 4; a += 2)
+      if (GU16(a) == (value & 0xffff)) { rt_log("  SIDE[%u]+%#x", (a - side_base) / 0x69c, (a - side_base) % 0x69c); n++; }
+  rt_log("scan16 done (%d)", n);
+}
+
+static uint8_t* fsnap_data;
+static uint32_t fsnap_len;
+void rt_debug_fsnap(void) {   // copy of the whole guest heap
+  free(fsnap_data);
+  fsnap_len = heap_top - 0x10000000u;
+  fsnap_data = malloc(fsnap_len);
+  memcpy(fsnap_data, g_mem + 0x10000000u, fsnap_len);
+  rt_log("fsnap: %u bytes", fsnap_len);
+}
+void rt_debug_fdiff(int delta) {   // addresses whose 32-bit value dropped by exactly `delta`
+  int shown = 0;
+  uint32_t side_base = GU32(0x4dd2f4);
+  for (uint32_t off = 0; off + 4 <= fsnap_len && shown < 40; off += 4) {
+    uint32_t old = *(uint32_t*)(fsnap_data + off), now = GU32(0x10000000u + off);
+    if (old - now == (uint32_t)delta && old > 100 && old < 100000) {
+      uint32_t a = 0x10000000u + off;
+      rt_log("  %08x: %u -> %u%s", a, old, now, (side_base && a >= side_base && a < side_base + 0x69c * 8) ? "  (in SIDE array)" : "");
+      shown++;
+    }
+  }
+  rt_log("fdiff done (%d)", shown);
+}
+
+void rt_debug_fdiffd(void) {   // 8-byte doubles in 1000..2000 that decreased since fsnap
+  int shown = 0;
+  uint32_t side_base = GU32(0x4dd2f4);
+  for (uint32_t off = 0; off + 8 <= fsnap_len && shown < 40; off += 4) {
+    double o, n;
+    memcpy(&o, fsnap_data + off, 8);
+    memcpy(&n, g_mem + 0x10000000u + off, 8);
+    if (o > 900 && o < 2000 && n < o && o - n < 300) {
+      uint32_t a = 0x10000000u + off;
+      rt_log("  double %08x: %.3f -> %.3f%s", a, o, n, (side_base && a >= side_base && a < side_base + 0x69c * 8) ? "  (in SIDE array)" : "");
+      shown++;
+    }
+  }
+  rt_log("fdiffd done (%d)", shown);
+}
+
+void rt_debug_fdifff(void) {   // 32-bit floats in 900..2000 that decreased since fsnap
+  int shown = 0;
+  uint32_t side_base = GU32(0x4dd2f4);
+  for (uint32_t off = 0; off + 4 <= fsnap_len && shown < 40; off += 4) {
+    float o, n;
+    memcpy(&o, fsnap_data + off, 4);
+    memcpy(&n, g_mem + 0x10000000u + off, 4);
+    if (o > 900 && o < 2000 && n < o && o - n < 300) {
+      uint32_t a = 0x10000000u + off;
+      rt_log("  float %08x: %.3f -> %.3f%s", a, o, n, (side_base && a >= side_base && a < side_base + 0x69c * 8) ? "  (in SIDE array)" : "");
+      shown++;
+    }
+  }
+  rt_log("fdifff done (%d)", shown);
+}
+
+static uint8_t dsnap_data[0x531000 - 0x49b000];
+void rt_debug_dsnap(void) { memcpy(dsnap_data, g_mem + 0x49b000, sizeof dsnap_data); rt_log("dsnap done"); }
+void rt_debug_ddiff(void) {   // globals (.data/.bss) that decreased as int / float / double since dsnap, money-like ranges
+  int shown = 0;
+  for (uint32_t off = 0; off + 8 <= sizeof dsnap_data && shown < 60; off += 4) {
+    uint32_t a = 0x49b000 + off;
+    int32_t oi = *(int32_t*)(dsnap_data + off), ni = (int32_t)GU32(a);
+    float of, nf; double od, nd;
+    memcpy(&of, dsnap_data + off, 4); memcpy(&nf, g_mem + a, 4);
+    memcpy(&od, dsnap_data + off, 8); memcpy(&nd, g_mem + a, 8);
+    if (oi > 900 && oi < 100000000 && ni < oi && oi - ni < oi / 5) { rt_log("  int    %08x: %d -> %d", a, oi, ni); shown++; }
+    else if (of > 900 && of < 2000 && nf < of && of - nf < 300) { rt_log("  float  %08x: %.3f -> %.3f", a, of, nf); shown++; }
+    else if (od > 900 && od < 2000 && nd < od && od - nd < 300) { rt_log("  double %08x: %.3f -> %.3f", a, od, nd); shown++; }
+  }
+  rt_log("ddiff done (%d)", shown);
+}

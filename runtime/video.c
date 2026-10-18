@@ -11,6 +11,7 @@
 
 #include "aztec_rt.h"
 #include "backend.h"
+#include "settings.h"
 
 extern int rt_time_scale;
 
@@ -44,7 +45,7 @@ static int skip_requested(void) {
 
 int rt_video_play(const char* host_path, uint32_t w, uint32_t h, uint32_t us_per_frame, uint32_t notify_hwnd) {
   (void)notify_hwnd;
-  if (getenv("RT_NO_VIDEO") || rt_time_scale > 1) { rt_log("movie: %s (skipped)", host_path); return 1; }
+  if (!g_settings.video || rt_time_scale > 1) { rt_log("movie: %s (skipped)", host_path); return 1; }
   if (us_per_frame < 10000 || us_per_frame > 200000) us_per_frame = 83333;
   char q[2200], cmd[2600];
   shell_quote(q, sizeof q, host_path);

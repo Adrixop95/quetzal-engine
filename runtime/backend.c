@@ -9,6 +9,14 @@
 #include <string.h>
 
 #include "aztec_rt.h"
+#include "settings.h"
+
+extern int overlay_is_open(void);
+extern void overlay_toggle(void);
+extern void overlay_event(const SDL_Event* e, SDL_Renderer* ren);
+extern void overlay_draw(SDL_Renderer* ren, int lw, int lh);
+extern void overlay_request(int action);
+static int tex_reset;
 
 static SDL_Window* win;
 static SDL_Renderer* ren;
@@ -36,13 +44,17 @@ void backend_create_window(const char* title, int w, int h) {
   backend_start_script();
   if (w < 320) w = 640;
   if (h < 200) h = 480;
-  win = SDL_CreateWindow(title && *title ? title : "Aztec Empire", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w, h,
-                         SDL_WINDOW_RESIZABLE);
+  if (g_settings.res_w > 0 && g_settings.window_mode != 2) { w = g_settings.res_w; h = g_settings.res_h; }
+  Uint32 flags = SDL_WINDOW_RESIZABLE;
+  if (g_settings.window_mode == 1) flags |= SDL_WINDOW_BORDERLESS;
+  if (g_settings.window_mode == 2) flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+  win = SDL_CreateWindow(title && *title ? title : "Aztec Empire", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w, h, flags);
   if (!win) rt_fatal("SDL_CreateWindow: %s", SDL_GetError());
   ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
   if (!ren) ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE);
   if (!ren) rt_fatal("SDL_CreateRenderer: %s", SDL_GetError());
-  SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
+  SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, g_settings.smooth ? "linear" : "nearest");
+  if (getenv("RT_MENU")) overlay_toggle();
 }
 
 void backend_set_mode(int w, int h, int bpp) {
@@ -63,8 +75,7 @@ static void dump_frame(const void* pixels, int pitch, int w, int h, int bpp, con
   if (!dir) return;
   n++;
   char path[512];
-  if (shot_pending) { snprintf(path, sizeof path, "%s/shot_%02d.ppm", dir, shot_index); shot_pending = 0; }
-  else if (n == 1 || n % 500 == 0) snprintf(path, sizeof path, "%s/frame_%05d.ppm", dir, n);
+  if (n == 1 || n % 500 == 0) snprintf(path, sizeof path, "%s/frame_%05d.ppm", dir, n);
   else return;
   FILE* f = fopen(path, "wb");
   if (!f) return;
@@ -93,7 +104,8 @@ static int on_main_thread(void);
 static void present_stage(void) {
   pthread_mutex_lock(&stage_lock);
   if (stage_dirty && ren && stage) {
-    if (!tex || tex_w != stage_w || tex_h != stage_h) {
+    if (!tex || tex_w != stage_w || tex_h != stage_h || tex_reset) {
+      tex_reset = 0;
       if (tex) SDL_DestroyTexture(tex);
       tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, stage_w, stage_h);
       if (!tex) rt_log("SDL_CreateTexture failed: %s", SDL_GetError());
@@ -105,6 +117,25 @@ static void present_stage(void) {
       SDL_UpdateTexture(tex, NULL, stage, stage_w * 4);
       SDL_RenderClear(ren);
       SDL_RenderCopy(ren, tex, NULL, NULL);
+      overlay_draw(ren, stage_w, stage_h);
+      if (shot_pending) {   // final composed window image (game + overlay)
+        shot_pending = 0;
+        const char* dir = getenv("RT_DUMP_DIR");
+        int ow, oh;
+        SDL_GetRendererOutputSize(ren, &ow, &oh);
+        uint32_t* rb = malloc((size_t)ow * oh * 4);
+        if (dir && rb && SDL_RenderReadPixels(ren, NULL, SDL_PIXELFORMAT_ARGB8888, rb, ow * 4) == 0) {
+          char path[512];
+          snprintf(path, sizeof path, "%s/shot_%02d.ppm", dir, shot_index);
+          FILE* f = fopen(path, "wb");
+          if (f) {
+            fprintf(f, "P6\n%d %d\n255\n", ow, oh);
+            for (int i = 0; i < ow * oh; i++) { uint8_t rgb[3] = {rb[i] >> 16, rb[i] >> 8, rb[i]}; fwrite(rgb, 1, 3, f); }
+            fclose(f);
+          }
+        }
+        free(rb);
+      }
       SDL_RenderPresent(ren);
     }
     stage_dirty = 0;
@@ -240,6 +271,8 @@ void rt_pump_events(void) {
   present_stage();
   SDL_Event e;
   while (SDL_PollEvent(&e)) {
+    if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_F9 && !e.key.repeat) { overlay_toggle(); memset(g_dik_down, 0, sizeof g_dik_down); memset(g_mouse_btn, 0, sizeof g_mouse_btn); continue; }
+    if (overlay_is_open() && e.type != SDL_QUIT && e.type != SDL_WINDOWEVENT) { overlay_event(&e, ren); stage_dirty = 1; continue; }
     switch (e.type) {
       case SDL_QUIT: rt_post_message(0x10 /*WM_CLOSE*/, 0, 0); break;
       case SDL_KEYDOWN: case SDL_KEYUP: {
@@ -295,6 +328,27 @@ static void* script_thread(void* arg) {
     else if (!strcmp(cmd, "key")) { g_dik_down[x & 255] = 1; gdelay(120); g_dik_down[x & 255] = 0; gdelay(80); }
     else if (!strcmp(cmd, "keydown")) g_dik_down[x & 255] = 1;
     else if (!strcmp(cmd, "keyup")) g_dik_down[x & 255] = 0;
+    else if (!strcmp(cmd, "pokeside")) { extern uint8_t* g_mem; int v = 0; sscanf(line, "%*s %d %d", &x, &v); uint32_t base = *(uint32_t*)(g_mem + 0x4dd2f4); *(uint32_t*)(g_mem + base + (uint32_t)x) = (uint32_t)v; }
+    else if (!strcmp(cmd, "scan16")) { extern void rt_debug_scan16(uint32_t); rt_debug_scan16((uint32_t)x); }
+    else if (!strcmp(cmd, "dumpside")) { extern uint8_t* g_mem; uint32_t base = *(uint32_t*)(g_mem + 0x4dd2f4); FILE* df = fopen("/tmp/side0.bin", "wb"); if (df) { fwrite(g_mem + base, 1, 0x69c * 2, df); fclose(df); } }
+    else if (!strcmp(cmd, "fsnap")) { extern void rt_debug_fsnap(void); rt_debug_fsnap(); }
+    else if (!strcmp(cmd, "fdiff")) { extern void rt_debug_fdiff(int); rt_debug_fdiff(x); }
+    else if (!strcmp(cmd, "fdiffd")) { extern void rt_debug_fdiffd(void); rt_debug_fdiffd(); }
+    else if (!strcmp(cmd, "fdifff")) { extern void rt_debug_fdifff(void); rt_debug_fdifff(); }
+    else if (!strcmp(cmd, "dsnap")) { extern void rt_debug_dsnap(void); rt_debug_dsnap(); }
+    else if (!strcmp(cmd, "ddiff")) { extern void rt_debug_ddiff(void); rt_debug_ddiff(); }
+    else if (!strcmp(cmd, "pokeb")) { extern uint8_t* g_mem; unsigned ad = 0, v = 0; sscanf(line, "%*s %x %u", &ad, &v); g_mem[ad] = (uint8_t)v; }
+    else if (!strcmp(cmd, "poke")) { extern uint8_t* g_mem; unsigned ad = 0, v = 0; sscanf(line, "%*s %x %u", &ad, &v); *(uint32_t*)(g_mem + ad) = v; }
+    else if (!strcmp(cmd, "snap")) { extern void rt_debug_snap(uint32_t); rt_debug_snap((uint32_t)x); }
+    else if (!strcmp(cmd, "diff")) { extern void rt_debug_diff(void); rt_debug_diff(); }
+    else if (!strcmp(cmd, "f9")) { SDL_Event ev; memset(&ev, 0, sizeof ev); ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_F9; SDL_PushEvent(&ev); }
+    else if (!strcmp(cmd, "ovclick")) {
+      SDL_Event ev; memset(&ev, 0, sizeof ev);
+      ev.type = SDL_MOUSEMOTION; ev.motion.x = x; ev.motion.y = y; SDL_PushEvent(&ev); gdelay(150);
+      memset(&ev, 0, sizeof ev); ev.type = SDL_MOUSEBUTTONDOWN; ev.button.button = SDL_BUTTON_LEFT; ev.button.x = x; ev.button.y = y; SDL_PushEvent(&ev); gdelay(200);
+    }
+    else if (!strcmp(cmd, "cheat")) { char nm[32] = ""; sscanf(line, "%*s %31s", nm); overlay_request(!strcmp(nm, "unlock") ? 1 : !strcmp(nm, "win") ? 2 : 0); }
+    else if (!strcmp(cmd, "scan")) { extern void rt_debug_scan(uint32_t); rt_debug_scan((uint32_t)x); }
     else if (!strcmp(cmd, "quit")) { fflush(NULL); _exit(0); }
     else if (!strcmp(cmd, "shot")) { shot_index++; shot_pending = 1; gdelay(400); }
   }
@@ -308,4 +362,17 @@ void backend_start_script(void) {
   snprintf(saved, sizeof saved, "%s", path);
   pthread_t t;
   pthread_create(&t, NULL, script_thread, saved);
+}
+
+void backend_apply_window_mode(int mode) {
+  if (!win) return;
+  if (mode == 2) SDL_SetWindowFullscreen(win, SDL_WINDOW_FULLSCREEN_DESKTOP);
+  else {
+    SDL_SetWindowFullscreen(win, 0);
+    SDL_SetWindowBordered(win, mode == 1 ? SDL_FALSE : SDL_TRUE);
+  }
+}
+void backend_set_smooth(int smooth) {
+  SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, smooth ? "linear" : "nearest");
+  tex_reset = 1;   // the hint applies to textures created afterwards
 }

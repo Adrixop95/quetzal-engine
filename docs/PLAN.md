@@ -51,3 +51,15 @@ Mechanizm: gra trzyma tablicę rozdzielczości (0x515510) i białą listę tryb�
 oraz 1280x1024 na żądany rozmiar i dodaje go do `EnumDisplayModes`. Widok mapy skaluje się, panel boczny
 zostaje stałego rozmiaru (kosmetyka: pusty obszar pod panelem). Menu (800x600) jest wycinane w backendzie, gdy reszta
 powierzchni jest czarna. Nie sprawdzone: bardzo duże rozdzielczości (bufory statyczne gry).
+
+## Menu pomocnicze (F9) i cheaty
+Nakładka SDL (runtime/overlay.c, czcionka z tools/gen_font.py) otwierana klawiszem F9 lub `--menu`.
+Ustawienia (zapis w game/aztec_settings.ini): rozdzielczość, tryb okna (okno / bez ramki / pełny ekran, na żywo),
+skalowanie (ostre / gładkie), filmy. Zmiana rozdzielczości wymaga ponownego uruchomienia (przycisk w menu).
+Pomoc w grze: "Odblokuj wszystkie misje" (wywołuje funkcję gry 0x43f560(15): zapisuje postęp 15 w pliku gracza *.plr,
+zweryfikowane) i "Natychmiastowe zwycięstwo" (ustawia flagę jak wbudowany klawisz CheatWin: DAT_004dd2f4+0x140+idx*0x69c,
+zweryfikowane baner WYGRANA). W Keys.ini istnieje też wbudowana akcja `CheatWin <klawisz>`.
+Niezrealizowane: dodawanie złota (pole nie jest zwykłym int/float/double w tablicy stron; do dalszego śledzenia komendami
+skryptu snap/diff/fsnap/ddiff w backend.c).
+Komendy skryptu testowego: wait, move, click, rclick, down, up, key, keydown, keyup, shot, quit, f9, ovclick X Y,
+cheat unlock|win, scan/scan16/snap/diff/fsnap/fdiff/fdiffd/fdifff/dsnap/ddiff/poke/pokeb/pokeside/dumpside (diagnostyka pamięci).

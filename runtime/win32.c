@@ -15,6 +15,7 @@
 
 #include "aztec_rt.h"
 #include "backend.h"
+#include "settings.h"
 
 // ------------------------------------------------------------ thread state
 typedef struct ThreadInfo {
@@ -774,7 +775,7 @@ SH(RegQueryValueExA) {  // hkey, name, reserved, *type, data, *cb
   const char* name = a[1] ? (const char*)GPTR(a[1]) : "";
   for (size_t i = 0; i < N_REG; i++) {
     if (strcasecmp(reg_defaults[i].key, path) || strcasecmp(reg_defaults[i].name, name)) continue;
-    if (!strcmp(name, "DisplayMode") && (getenv("RT_DISPLAYMODE") || getenv("RT_RESOLUTION"))) { if (a[3]) GU32(a[3]) = 4; if (a[4]) GU32(a[4]) = getenv("RT_DISPLAYMODE") ? (uint32_t)atoi(getenv("RT_DISPLAYMODE")) : (getenv("RT_RES_INDEX") ? (uint32_t)atoi(getenv("RT_RES_INDEX")) : 0u); if (a[5]) GU32(a[5]) = 4; return 0; }
+    if (!strcmp(name, "DisplayMode") && (getenv("RT_DISPLAYMODE") || g_settings.res_w > 0)) { if (a[3]) GU32(a[3]) = 4; if (a[4]) GU32(a[4]) = getenv("RT_DISPLAYMODE") ? (uint32_t)atoi(getenv("RT_DISPLAYMODE")) : (getenv("RT_RES_INDEX") ? (uint32_t)atoi(getenv("RT_RES_INDEX")) : 0u); if (a[5]) GU32(a[5]) = 4; return 0; }
     uint32_t type = reg_defaults[i].is_dword ? 4 : 1;
     uint32_t len = reg_defaults[i].is_dword ? 4 : (uint32_t)strlen(reg_defaults[i].sz) + 1;
     if (a[3]) GU32(a[3]) = type;
@@ -831,8 +832,10 @@ SH(CreateWindowExA) {
 SH(DestroyWindow) { UNUSED; if (wndproc_addr) rt_call_guest(c, wndproc_addr, 4, HWND_MAIN, 0x02, 0, 0); return 1; }
 SH(DefWindowProcA) { UNUSED; if (a[1] == 0x10) rt_post_message(0x2 /*WM_DESTROY*/, 0, 0); return 0; }
 SH(PostQuitMessage) { UNUSED; rt_post_message(0x12, a[0], 0); return 0; }
+extern void overlay_run_actions(CPU* c);
 SH(PeekMessageA) {
   UNUSED;
+  overlay_run_actions(c);
   rt_pump_events();
   pthread_mutex_lock(&mq_lock);
   if (mq_head == mq_tail) { pthread_mutex_unlock(&mq_lock); return 0; }

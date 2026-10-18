@@ -12,6 +12,8 @@ void backend_show_cursor(int show);
 // Present a frame. bpp: 8 (uses 256 ARGB palette), 15 (RGB555), 16 (RGB565), 32 (xRGB).
 void backend_present(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette);
 int backend_vk_state(int vk);
+void backend_apply_window_mode(int mode);   // 0 windowed, 1 borderless, 2 fullscreen
+void backend_set_smooth(int smooth);
 
 // Input state (DirectInput scan codes)
 extern uint8_t g_dik_down[256];

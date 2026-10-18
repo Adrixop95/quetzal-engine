@@ -5,6 +5,7 @@
 
 #include "aztec_rt.h"
 #include "backend.h"
+#include "settings.h"
 
 enum { DD_OK = 0, DDERR_UNSUPPORTED = 0x80004001u, DDERR_GENERIC = 0x80004005u, E_NOINTERFACE = 0x80004002u,
        DDERR_INVALIDPARAMS = 0x80070057u, DDERR_NOTFOUND = 0x887600FFu };
@@ -334,9 +335,8 @@ static uint32_t dd_createsurface(CPU* c, uint32_t* a) {  // desc*, **surf, outer
 // Widescreen: the game keeps a table of selectable resolutions at 0x515510 (w,h pairs, index = DisplayMode).
 // RT_RESOLUTION=WxH replaces entry 2 (default 1152x864; the game clamps DisplayMode to 0..2) and selects it.
 static void patch_resolution_table(void) {
-  const char* r = getenv("RT_RESOLUTION");
-  int w, h;
-  if (!r || sscanf(r, "%dx%d", &w, &h) != 2 || w < 640 || h < 480) return;
+  int w = g_settings.res_w, h = g_settings.res_h;
+  if (w < 640 || h < 480) return;
   uint32_t ent = 0x515510 + 8u * (uint32_t)(getenv("RT_RES_INDEX") ? atoi(getenv("RT_RES_INDEX")) : 0);
   GU32(ent) = (uint32_t)w;   // selectable-resolution table entry
   GU32(ent + 4) = (uint32_t)h;
@@ -348,9 +348,7 @@ static uint32_t dd_enumdisplaymodes(CPU* c, uint32_t* a) {  // flags, desc*, ctx
   struct { int w, h, bpp; } modes[] = {{640, 480, 8}, {640, 480, 16}, {800, 600, 8}, {800, 600, 16}, {1024, 768, 16}, {0, 0, 16}};
   unsigned n_modes = 5;
   {
-    int cw, ch;
-    const char* r = getenv("RT_RESOLUTION");
-    if (r && sscanf(r, "%dx%d", &cw, &ch) == 2) { modes[5].w = cw; modes[5].h = ch; n_modes = 6; }
+    if (g_settings.res_w >= 640 && g_settings.res_h >= 480) { modes[5].w = g_settings.res_w; modes[5].h = g_settings.res_h; n_modes = 6; }
   }
   uint32_t d = gmalloc(108);
   for (unsigned i = 0; i < n_modes; i++) {
