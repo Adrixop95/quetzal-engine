@@ -1,0 +1,20 @@
+cmake_minimum_required(VERSION 3.16)
+project(aztec LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
+add_library(aztec_core
+  src/core/archive.cpp src/core/sprite.cpp src/core/palette.cpp src/core/map.cpp src/core/ini.cpp)
+target_include_directories(aztec_core PUBLIC src)
+target_compile_options(aztec_core PRIVATE -Wall -Wextra)
+
+find_package(SDL2 REQUIRED)
+add_executable(aztec_view src/app/view.cpp)
+target_link_libraries(aztec_view aztec_core SDL2::SDL2)
+
+enable_testing()
+add_executable(test_formats tests/test_formats.cpp)
+target_link_libraries(test_formats aztec_core)
+add_test(NAME formats COMMAND test_formats ${CMAKE_SOURCE_DIR}/game)
