@@ -65,7 +65,13 @@ void backend_set_mode(int w, int h, int bpp) {
   SDL_RenderSetLogicalSize(ren, w, h);  // keeps aspect ratio on any window shape
 }
 
-void backend_show_cursor(int show) { ensure_sdl(); SDL_ShowCursor(show ? SDL_ENABLE : SDL_DISABLE); }
+static int game_cursor_visible = 1;   // what the game asked for; the overlay forces the cursor on while open
+void backend_show_cursor(int show) {
+  ensure_sdl();
+  game_cursor_visible = show;
+  if (!overlay_is_open()) SDL_ShowCursor(show ? SDL_ENABLE : SDL_DISABLE);
+}
+void backend_overlay_cursor(int open) { SDL_ShowCursor((open || game_cursor_visible) ? SDL_ENABLE : SDL_DISABLE); }
 
 static volatile int shot_pending;
 static volatile int shot_index;

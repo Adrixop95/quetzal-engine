@@ -131,14 +131,16 @@ static void restart_game(void) {
   say("Nie udało się uruchomić ponownie");
 }
 
+extern void backend_overlay_cursor(int open);
 void overlay_toggle(void) {
   is_open = !is_open;
   if (is_open) sync_res_index();
+  backend_overlay_cursor(is_open);
 }
 
 void overlay_event(const SDL_Event* e, SDL_Renderer* ren) {
   if (e->type == SDL_KEYDOWN) {
-    if (e->key.keysym.sym == SDLK_ESCAPE || e->key.keysym.sym == SDLK_F9) is_open = 0;
+    if (e->key.keysym.sym == SDLK_ESCAPE || e->key.keysym.sym == SDLK_F9) { is_open = 0; backend_overlay_cursor(0); }
     if (e->key.keysym.sym == SDLK_TAB) tab = !tab;
   } else if (e->type == SDL_MOUSEMOTION || e->type == SDL_MOUSEBUTTONDOWN) {
     int x = e->type == SDL_MOUSEMOTION ? e->motion.x : e->button.x, y = e->type == SDL_MOUSEMOTION ? e->motion.y : e->button.y;
@@ -202,7 +204,7 @@ void overlay_draw(SDL_Renderer* ren, int lw, int lh) {
     y += 66;
     draw_text(ren, px + 20, y, "Odblokowane misje widać po ponownym wejściu w ekran Kampania.", 1, 200, 190, 170);
   }
-  if (button(ren, px + pw - 190, py + ph - 56, 170, 40, "Zamknij")) is_open = 0;
+  if (button(ren, px + pw - 190, py + ph - 56, 170, 40, "Zamknij")) { is_open = 0; backend_overlay_cursor(0); }
   if (SDL_GetTicks() < status_until) draw_text(ren, px + 20, py + ph - 88, status, 2, 255, 230, 160);
   clicked = 0;
 }
