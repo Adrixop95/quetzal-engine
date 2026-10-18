@@ -1,6 +1,7 @@
 // Guest memory, allocator, dispatcher, PE loader, x87-ish float helpers.
 #define _GNU_SOURCE
 #include "aztec_rt.h"
+#include "dbg.h"
 
 #include <math.h>
 #include <stdarg.h>
@@ -13,20 +14,23 @@ uint8_t* g_mem;
 
 // ------------------------------------------------------------------ logging
 void rt_log(const char* fmt, ...) {
+  char buf[1024];
   va_list ap;
   va_start(ap, fmt);
-  vfprintf(stderr, fmt, ap);
+  vsnprintf(buf, sizeof buf, fmt, ap);
   va_end(ap);
-  fputc('\n', stderr);
+  fprintf(stderr, "%s\n", buf);
+  DBG("log", "%s", buf);
 }
 void rt_fatal(const char* fmt, ...) {
+  char buf[1024];
   va_list ap;
-  fputs("FATAL: ", stderr);
   va_start(ap, fmt);
-  vfprintf(stderr, fmt, ap);
+  vsnprintf(buf, sizeof buf, fmt, ap);
   va_end(ap);
-  fputc('\n', stderr);
+  fprintf(stderr, "FATAL: %s\n", buf);
   fflush(stderr);
+  dbg_fatal_hook(buf);
   abort();
 }
 void rt_unlifted(CPU* c, uint32_t addr) { (void)c; rt_fatal("unlifted function %08x", addr); }
@@ -208,6 +212,19 @@ static void shim_call(CPU* c, uint32_t addr) {
     name = com_thunks[id].m->name;
   }
   if (!fn) rt_fatal("unimplemented API: %s (esp=%08x)", name, esp);
+  dbg_api_record(name, nargs > 0 ? a[0] : 0, nargs > 1 ? a[1] : 0, nargs > 2 ? a[2] : 0, nargs > 3 ? a[3] : 0);
+  if (dbg_enabled()) {
+    // chatty calls are sampled, everything else is logged in full
+    static const char* const noisy[] = {"Lock", "Unlock", "GetProcessHeap", "HeapAlloc", "HeapFree", "lstrcmpA", "lstrcpynA", "lstrlenA",
+      "lstrcpyA", "lstrcatA", "GetDeviceState", "WaitForSingleObject", "MsgWaitForMultipleObjects", "timeGetTime", "EnterCriticalSection",
+      "LeaveCriticalSection", "ReleaseMutex", "PeekMessageA", "BltFast", "Blt", "GetAsyncKeyState", "TlsGetValue", "SetLastError", "GetLastError",
+      "GetTickCount", "Sleep", "PulseEvent", "SetEvent", "GetKeyState", "GetDeviceData", NULL};
+    int is_noisy = 0;
+    for (int i = 0; noisy[i]; i++) if (!strcmp(name, noisy[i])) { is_noisy = 1; break; }
+    static unsigned long cnt;
+    if (!is_noisy || (++cnt % 1000) == 0)
+      dbg_log("api", "%s(%08x,%08x,%08x,%08x)%s", name, nargs > 0 ? a[0] : 0, nargs > 1 ? a[1] : 0, nargs > 2 ? a[2] : 0, nargs > 3 ? a[3] : 0, is_noisy ? " [sampled]" : "");
+  }
   static int trace = -1;
   if (trace < 0) trace = getenv("RT_TRACE_API") != NULL;
   if (trace) rt_log("API[%u] %s(%08x,%08x,%08x,%08x)", c->thread ? *(uint32_t*)((char*)c->thread + 64 * 4 + 4) : 0, name, nargs > 0 ? a[0] : 0, nargs > 1 ? a[1] : 0, nargs > 2 ? a[2] : 0, nargs > 3 ? a[3] : 0);
@@ -230,6 +247,12 @@ void f_dispatch(CPU* c, uint32_t addr) {
   if (addr >= SHIM_BASE) { shim_call(c, addr); return; }
   void (*fn)(CPU*) = lookup_fn(addr);
   if (!fn && getenv("RT_IATDUMP")) { for (uint32_t q = 0x48f040; q < 0x48f070; q += 4) rt_log("IAT[%08x]=%08x", q, GU32(q)); }
+  if (!fn && dbg_enabled()) {
+    dbg_log("guest", "unlifted target %08x; guest stack at esp=%08x:", addr, GREG(c, R_ESP));
+    for (int k = 0; k < 24; k++) dbg_log("guest", "  [esp+%02x] = %08x", 4 * k, GU32(GREG(c, R_ESP) + 4 * k));
+    FILE* mf = fopen("rt_missing_entries.txt", "a");   // feed tools/extra_entries.txt
+    if (mf) { fprintf(mf, "%08x\n", addr); fclose(mf); }
+  }
   if (!fn) rt_fatal("call to unlifted guest address %08x (return address %08x, esp %08x, ecx %08x, edi %08x [edi]=%08x)", addr, GU32(GREG(c, R_ESP)), GREG(c, R_ESP), GREG(c, R_ECX), GREG(c, R_EDI), GU32(GREG(c, R_EDI)));
   fn(c);
 }
@@ -377,6 +400,15 @@ int rt_load_pe(const char* path, uint32_t* entry_out) {
 extern void rt_win32_init(CPU* main_cpu, const char* exe_path);
 
 char** rt_saved_argv;
+static CPU* main_cpu_ptr;
+static void dump_main_cpu(FILE* f) {
+  if (!main_cpu_ptr) return;
+  CPU* c = main_cpu_ptr;
+  fprintf(f, "eax=%08x ecx=%08x edx=%08x ebx=%08x esp=%08x ebp=%08x esi=%08x edi=%08x fs_base=%08x\n", GREG(c, R_EAX), GREG(c, R_ECX), GREG(c, R_EDX), GREG(c, R_EBX), GREG(c, R_ESP), GREG(c, R_EBP), GREG(c, R_ESI), GREG(c, R_EDI), GREG(c, R_FS_OFFSET));
+  uint32_t sp = GREG(c, R_ESP);
+  if (sp > 0x1000 && sp < 0xF0000000u) for (int k = 0; k < 16; k++) fprintf(f, "  [esp+%02x] = %08x\n", 4 * k, GU32(sp + 4 * k));
+  fprintf(f, "heap_top=%08x\n", heap_top);
+}
 extern void settings_init(const char* exe_path);
 extern void overlay_set_argv0(const char* a);
 void rt_run_main(const char* exe_path, int argc, char** argv) {
@@ -384,6 +416,7 @@ void rt_run_main(const char* exe_path, int argc, char** argv) {
   rt_saved_argv = argv;
   overlay_set_argv0(argv[0]);
   settings_init(exe_path);
+  dbg_init();
   g_mem = mmap(NULL, 0x100000000ull, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
   if (g_mem == MAP_FAILED) rt_fatal("cannot reserve 4 GiB of guest address space");
   build_fn_hash();
@@ -392,6 +425,9 @@ void rt_run_main(const char* exe_path, int argc, char** argv) {
   uint32_t entry;
   if (!rt_load_pe(exe_path, &entry)) rt_fatal("cannot load %s", exe_path);
   static CPU cpu;
+  main_cpu_ptr = &cpu;
+  dbg_register_dumper("guest main CPU", dump_main_cpu);
+  DBG("init", "exe=%s guest image mapped, entry=%08x, heap base=%08x", exe_path, entry, HEAP_BASE);
   rt_win32_init(&cpu, exe_path);
   if (getenv("RT_SELFTEST")) {
     uint32_t str = gmalloc(64);

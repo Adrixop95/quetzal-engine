@@ -4,12 +4,14 @@
 #include <string.h>
 
 #include "aztec_rt.h"
+#include "dbg.h"
 #include "backend.h"
 
 enum { DI_OK = 0, DIERR_NOINTERFACE = 0x80004002u };
 
 typedef struct { uint32_t ofs; int kind; int index; } DiObj;   // kind: 0 X, 1 Y, 2 Z, 3 button, 4 key
 typedef struct { int is_mouse; int n_objs; DiObj objs[300]; uint32_t datasize; uint8_t prev_keys[256]; uint8_t prev_btn[3]; uint32_t seq; uint32_t event; uint8_t sig_keys[256]; uint8_t sig_btn[3]; } DiDev;
+extern volatile int g_mouse_poke;
 static DiDev* devs[8];
 static int n_devs;
 extern void rt_signal_event(uint32_t h);
@@ -22,15 +24,16 @@ void rt_dinput_poll(void) {
     int changed = 0;
     if (d->is_mouse) {
       if (g_mouse_dx || g_mouse_dy) changed = 1;
+      if (g_mouse_poke) { changed = 1; g_mouse_poke = 0; }   // absolute cursor placement: wake the game without a delta
       for (int b = 0; b < 3; b++) if (g_mouse_btn[b] != d->sig_btn[b]) { d->sig_btn[b] = g_mouse_btn[b]; changed = 1; }
     } else {
       for (int k = 0; k < 256; k++) if (g_dik_down[k] != d->sig_keys[k]) { d->sig_keys[k] = g_dik_down[k]; changed = 1; }
     }
-    if (changed) rt_signal_event(d->event);
+    if (changed) { rt_signal_event(d->event); DBG_EVERY(50, "dinput", "signalled %s event %08x (dx=%d dy=%d poke=%d)", d->is_mouse ? "mouse" : "keyboard", d->event, g_mouse_dx, g_mouse_dy, (int)g_mouse_poke); }
   }
 }
 
-static uint32_t dev_seteventnotification(CPU* c, uint32_t* a) { (void)c; DiDev* d = com_host(a[0]); d->event = a[1]; return DI_OK; }
+static uint32_t dev_seteventnotification(CPU* c, uint32_t* a) { (void)c; DiDev* d = com_host(a[0]); d->event = a[1]; DBG("dinput", "SetEventNotification(%s) event handle=%08x", d->is_mouse ? "mouse" : "keyboard", a[1]); return DI_OK; }
 
 static uint32_t com_addref(CPU* c, uint32_t* a) { (void)c; (void)a; return 2; }
 static uint32_t com_release(CPU* c, uint32_t* a) { (void)c; (void)a; return 1; }
@@ -67,6 +70,7 @@ static uint32_t dev_getstate(CPU* c, uint32_t* a) {  // size, buf
   (void)c;
   DiDev* d = com_host(a[0]);
   rt_pump_events();
+  DBG_EVERY(200, "dinput", "GetDeviceState(%s) size=%u pending dx=%d dy=%d btn=%d%d%d", d->is_mouse ? "mouse" : "keyboard", a[1], g_mouse_dx, g_mouse_dy, g_mouse_btn[0], g_mouse_btn[1], g_mouse_btn[2]);
   memset(GPTR(a[2]), 0, a[1]);
   if (d->n_objs == 0) {  // no format set: legacy DIMOUSESTATE / 256-byte keyboard
     if (!d->is_mouse) { for (uint32_t i = 0; i < a[1] && i < 256; i++) GU8(a[2] + i) = g_dik_down[i] ? 0x80 : 0; return DI_OK; }
@@ -151,6 +155,7 @@ static uint32_t di_createdevice(CPU* c, uint32_t* a) {  // guid*, **dev, outer
   DiDev* d = calloc(1, sizeof *d);
   d->is_mouse = GU32(a[1]) == 0x6F1D2B60u;  // GUID_SysMouse data1; keyboard is ...61
   if (n_devs < 8) devs[n_devs++] = d;
+  DBG("dinput", "CreateDevice: %s (guid data1=%08x)", d->is_mouse ? "mouse" : "keyboard", GU32(a[1]));
   GU32(a[2]) = com_create(dev_methods, 18, d);
   return DI_OK;
 }

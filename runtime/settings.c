@@ -1,4 +1,5 @@
 #include "settings.h"
+#include "dbg.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,6 +25,7 @@ void settings_init(const char* exe_path) {
     }
     fclose(f);
   }
+  DBG("settings", "loaded %s: res=%dx%d window_mode=%d smooth=%d video=%d (file %s)", path, g_settings.res_w, g_settings.res_h, g_settings.window_mode, g_settings.smooth, g_settings.video, f ? "found" : "MISSING, defaults");
   int w, h;
   const char* r = getenv("RT_RESOLUTION");
   if (r && sscanf(r, "%dx%d", &w, &h) == 2) { g_settings.res_w = w; g_settings.res_h = h; }
@@ -32,6 +34,7 @@ void settings_init(const char* exe_path) {
 }
 
 void settings_save(void) {
+  DBG("settings", "saving %s: res=%dx%d window_mode=%d smooth=%d video=%d", path, g_settings.res_w, g_settings.res_h, g_settings.window_mode, g_settings.smooth, g_settings.video);
   FILE* f = fopen(path, "w");
   if (!f) return;
   fprintf(f, "resolution=%dx%d\nwindow_mode=%d\nsmooth=%d\nvideo=%d\n", g_settings.res_w, g_settings.res_h,

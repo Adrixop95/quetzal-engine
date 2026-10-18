@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include "aztec_rt.h"
+#include "dbg.h"
 #include "backend.h"
 #include "font8x16.h"
 #include "settings.h"
@@ -87,7 +88,7 @@ static int button(SDL_Renderer* ren, int x, int y, int w, int h, const char* lab
   SDL_SetRenderDrawColor(ren, 220, 180, 100, 255);
   SDL_RenderDrawRect(ren, &r);
   draw_text(ren, x + (w - text_width(label, 2)) / 2, y + (h - 32) / 2, label, 2, 255, 240, 200);
-  if (hot && clicked) { clicked = 0; return 1; }
+  if (hot && clicked) { clicked = 0; DBG("overlay", "button '%s' clicked (logical mouse %d,%d)", label, mx, my); return 1; }
   return 0;
 }
 
@@ -112,6 +113,7 @@ static void sync_res_index(void) {
 }
 
 static void apply_resolution_choice(int idx) {
+  DBG("overlay", "resolution choice index %d ('%s')", idx, res_presets[idx].label);
   if (res_presets[idx].w == -1) {
     SDL_DisplayMode dm;
     if (SDL_GetDesktopDisplayMode(0, &dm) == 0) { g_settings.res_w = dm.w; g_settings.res_h = dm.h; }
@@ -122,6 +124,7 @@ static void apply_resolution_choice(int idx) {
 }
 
 static void restart_game(void) {
+  DBG("overlay", "restart requested: res=%dx%d mode=%d", g_settings.res_w, g_settings.res_h, g_settings.window_mode);
   settings_save();
   fflush(NULL);
   char self[1100];
@@ -135,6 +138,7 @@ static void restart_game(void) {
 extern void backend_overlay_cursor(int open);
 void overlay_toggle(void) {
   is_open = !is_open;
+  DBG("overlay", "toggle -> %s (tab=%d, settings res=%dx%d mode=%d smooth=%d video=%d)", is_open ? "OPEN" : "closed", tab, g_settings.res_w, g_settings.res_h, g_settings.window_mode, g_settings.smooth, g_settings.video);
   if (is_open) sync_res_index();
   backend_overlay_cursor(is_open);
 }
@@ -215,6 +219,7 @@ void overlay_run_actions(CPU* c) {
   int a = pending_action;
   if (!a) return;
   pending_action = 0;
+  DBG("overlay", "running action %d on the main thread", a);
   if (a == ACT_UNLOCK_MISSIONS) {
     rt_call_guest(c, 0x43f560, 1, 15);   // set "missions reached" = 15 and save the player file
     say("Misje odblokowane");

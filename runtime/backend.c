@@ -10,6 +10,7 @@
 
 #include "aztec_rt.h"
 #include "settings.h"
+#include "dbg.h"
 
 extern int overlay_is_open(void);
 extern void overlay_toggle(void);
@@ -33,10 +34,31 @@ int g_mouse_dx, g_mouse_dy, g_mouse_x, g_mouse_y;
 uint8_t g_mouse_btn[3];
 
 void backend_start_script(void);
+static void backend_dump(FILE* f);
 static void ensure_sdl(void) {
-  if (!main_thread_set) { main_thread = pthread_self(); main_thread_set = 1; }
+  static int dumper_registered;
+  if (!dumper_registered) { dumper_registered = 1; dbg_register_dumper("backend (window/render/mouse)", backend_dump); }
+  if (!main_thread_set) { main_thread = pthread_self(); main_thread_set = 1; DBG("sdl", "main (render/event) thread registered"); }
   if (!SDL_WasInit(SDL_INIT_VIDEO)) {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) rt_fatal("SDL_Init: %s", SDL_GetError());
+    SDL_version cv, lv;
+    SDL_VERSION(&cv);
+    SDL_GetVersion(&lv);
+    DBG("sdl", "SDL compiled=%d.%d.%d linked=%d.%d.%d revision=%s", cv.major, cv.minor, cv.patch, lv.major, lv.minor, lv.patch, SDL_GetRevision());
+    DBG("sdl", "video driver=%s, %d displays", SDL_GetCurrentVideoDriver(), SDL_GetNumVideoDisplays());
+    for (int d = 0; d < SDL_GetNumVideoDisplays(); d++) {
+      SDL_Rect b;
+      SDL_DisplayMode dm;
+      float ddpi = 0, hdpi = 0, vdpi = 0;
+      SDL_GetDisplayBounds(d, &b);
+      SDL_GetDesktopDisplayMode(d, &dm);
+      SDL_GetDisplayDPI(d, &ddpi, &hdpi, &vdpi);
+      DBG("sdl", "display %d '%s': bounds=%d,%d %dx%d desktop mode=%dx%d@%dHz dpi=%.1f/%.1f/%.1f", d, SDL_GetDisplayName(d), b.x, b.y, b.w, b.h, dm.w, dm.h, dm.refresh_rate, ddpi, hdpi, vdpi);
+    }
+    for (int i = 0; i < SDL_GetNumRenderDrivers(); i++) {
+      SDL_RendererInfo ri;
+      if (SDL_GetRenderDriverInfo(i, &ri) == 0) DBG("sdl", "render driver %d: %s flags=%#x max_tex=%dx%d", i, ri.name, ri.flags, ri.max_texture_width, ri.max_texture_height);
+    }
   }
 }
 
@@ -50,32 +72,45 @@ void backend_create_window(const char* title, int w, int h) {
   Uint32 flags = SDL_WINDOW_RESIZABLE;
   if (g_settings.window_mode == 1) flags |= SDL_WINDOW_BORDERLESS;
   if (g_settings.window_mode == 2) flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+  DBG("window", "create: title='%s' requested %dx%d flags=%#x (settings: res=%dx%d mode=%d smooth=%d video=%d)", title ? title : "", w, h, flags, g_settings.res_w, g_settings.res_h, g_settings.window_mode, g_settings.smooth, g_settings.video);
   win = SDL_CreateWindow(title && *title ? title : "Aztec Empire", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w, h, flags);
   if (!win) rt_fatal("SDL_CreateWindow: %s", SDL_GetError());
   ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-  if (!ren) ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE);
+  if (!ren) { DBG("window", "accelerated renderer failed (%s), falling back to software", SDL_GetError()); ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE); }
   if (!ren) rt_fatal("SDL_CreateRenderer: %s", SDL_GetError());
+  {
+    int ww, wh, ow, oh, wx, wy;
+    SDL_RendererInfo ri;
+    SDL_GetWindowSize(win, &ww, &wh);
+    SDL_GetWindowPosition(win, &wx, &wy);
+    SDL_GetRendererOutputSize(ren, &ow, &oh);
+    SDL_GetRendererInfo(ren, &ri);
+    DBG("window", "created: window size=%dx%d pos=%d,%d renderer output=%dx%d (scale %.2f) display index=%d flags=%#x", ww, wh, wx, wy, ow, oh, ww ? (double)ow / ww : 0.0, SDL_GetWindowDisplayIndex(win), SDL_GetWindowFlags(win));
+    DBG("window", "renderer '%s' flags=%#x max texture=%dx%d", ri.name, ri.flags, ri.max_texture_width, ri.max_texture_height);
+  }
   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, g_settings.smooth ? "linear" : "nearest");
-  if (!getenv("RT_NO_GRAB")) SDL_SetWindowGrab(win, SDL_TRUE);
+  if (!getenv("RT_NO_GRAB")) { SDL_SetWindowGrab(win, SDL_TRUE); DBG("mouse", "window grab ON (initial)"); }
   if (getenv("RT_MENU")) overlay_toggle();
 }
 
 void backend_set_mode(int w, int h, int bpp) {
-  (void)bpp;
   ensure_sdl();
   if (!win) backend_create_window("Aztec Empire", w, h);
   mode_w = w; mode_h = h;
   SDL_RenderSetLogicalSize(ren, w, h);  // keeps aspect ratio on any window shape
   cur_lw = w; cur_lh = h;
+  DBG("render", "set_mode %dx%d bpp=%d -> logical size %dx%d", w, h, bpp, cur_lw, cur_lh);
 }
 
 static int game_cursor_visible = 1;   // what the game asked for; the overlay forces the cursor on while open
 void backend_show_cursor(int show) {
   ensure_sdl();
   game_cursor_visible = show;
+  DBG("cursor", "game requested system cursor %s (overlay open=%d)", show ? "visible" : "hidden", overlay_is_open());
   if (!overlay_is_open()) SDL_ShowCursor(show ? SDL_ENABLE : SDL_DISABLE);
 }
 void backend_overlay_cursor(int open) {
+  DBG("cursor", "overlay %s: system cursor %s, grab %s", open ? "opened" : "closed", (open || game_cursor_visible) ? "visible" : "hidden", open ? "OFF" : "ON");
   SDL_ShowCursor((open || game_cursor_visible) ? SDL_ENABLE : SDL_DISABLE);
   if (win) SDL_SetWindowGrab(win, open ? SDL_FALSE : SDL_TRUE);   // free the pointer for the menu, trap it for the game
   if (!open) mouse_resync();
@@ -128,19 +163,26 @@ void backend_window_to_logical(int wx, int wy, int* lx, int* ly) {
   *ly = y < 0 ? 0 : y >= cur_lh ? cur_lh - 1 : y;
 }
 
-// The game keeps its own cursor and only reads relative motion from DirectInput. To make the picture follow the
-// real pointer at any scale we first pin the game cursor to the corner, then send the absolute target as a delta.
-static int cur_sync = 1;        // 0 = estimate valid, 1 = pin needed, 2 = pin sent, waiting for the game to read it
-static int cur_x, cur_y, tgt_x, tgt_y, tgt_valid;
+// The game keeps its own cursor: position = previous position (guest 0x4c5468/0x4c546c) + the delta read from
+// DirectInput, clamped to the screen size (0x4dd368/0x4dd36c). Instead of faking deltas (which depend on the game's
+// internal state) we write the wanted absolute position into those variables and poke the device event so the game
+// processes it. This runs on the game's main thread, the same thread that evaluates the cursor, so it cannot race.
+volatile int g_mouse_poke;
+static int tgt_x, tgt_y, tgt_valid;
 static void mouse_follow(void) {
-  if (cur_sync == 1) { g_mouse_dx -= 4000; g_mouse_dy -= 4000; cur_x = cur_y = 0; cur_sync = 2; return; }
-  if (cur_sync == 2) { if (!g_mouse_dx && !g_mouse_dy) cur_sync = 0; return; }
-  if (tgt_valid) {
-    g_mouse_dx += tgt_x - cur_x; g_mouse_dy += tgt_y - cur_y;
-    cur_x = tgt_x; cur_y = tgt_y; tgt_valid = 0;
-  }
+  if (!tgt_valid) return;
+  tgt_valid = 0;
+  uint32_t sw = GU32(0x4dd368), sh = GU32(0x4dd36c);
+  int x = tgt_x, y = tgt_y;
+  if (sw && x >= (int)sw) x = (int)sw - 1;
+  if (sh && y >= (int)sh) y = (int)sh - 1;
+  GU32(0x4c5468) = (uint32_t)x; GU32(0x4c546c) = (uint32_t)y;
+  GU32(0x4c4f50) = (uint32_t)x; GU32(0x4c4f54) = (uint32_t)y;
+  g_mouse_poke = 1;
+  DBG_EVERY(25, "mouse", "follow: placed game cursor at (%d,%d) [target (%d,%d), game screen %ux%u], poke event", x, y, tgt_x, tgt_y, sw, sh);
 }
-static void mouse_resync(void) { cur_sync = 1; }
+static void mouse_resync(void) { tgt_valid = 1; }   // re-send the last known position (after focus / overlay changes)
+
 static int on_main_thread(void);
 
 static void present_stage(void) {
@@ -150,15 +192,23 @@ static void present_stage(void) {
       tex_reset = 0;
       if (tex) SDL_DestroyTexture(tex);
       tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, stage_w, stage_h);
-      if (!tex) rt_log("SDL_CreateTexture failed: %s", SDL_GetError());
+      if (!tex) rt_log("SDL_CreateTexture %dx%d failed: %s", stage_w, stage_h, SDL_GetError());
+      DBG("render", "texture (re)created %dx%d -> %s (smooth=%d)", stage_w, stage_h, tex ? "ok" : "FAILED", g_settings.smooth);
       tex_w = stage_w; tex_h = stage_h;
     }
     if (tex) {
       static int lw, lh;
-      if (lw != stage_w || lh != stage_h) { SDL_RenderSetLogicalSize(ren, stage_w, stage_h); lw = stage_w; lh = stage_h; cur_lw = stage_w; cur_lh = stage_h; }
-      SDL_UpdateTexture(tex, NULL, stage, stage_w * 4);
+      if (lw != stage_w || lh != stage_h) {
+        int rc = SDL_RenderSetLogicalSize(ren, stage_w, stage_h);
+        int ww, wh;
+        SDL_GetWindowSize(win, &ww, &wh);
+        DBG("render", "logical size %dx%d -> %dx%d (rc=%d); window=%dx%d", lw, lh, stage_w, stage_h, rc, ww, wh);
+        lw = stage_w; lh = stage_h; cur_lw = stage_w; cur_lh = stage_h;
+      }
+      uint64_t t_start = SDL_GetPerformanceCounter();
+      if (SDL_UpdateTexture(tex, NULL, stage, stage_w * 4) != 0) DBG_EVERY(100, "render", "SDL_UpdateTexture failed: %s", SDL_GetError());
       SDL_RenderClear(ren);
-      SDL_RenderCopy(ren, tex, NULL, NULL);
+      if (SDL_RenderCopy(ren, tex, NULL, NULL) != 0) DBG_EVERY(100, "render", "SDL_RenderCopy failed: %s", SDL_GetError());
       overlay_draw(ren, stage_w, stage_h);
       if (shot_pending) {   // final composed window image (game + overlay)
         shot_pending = 0;
@@ -179,6 +229,25 @@ static void present_stage(void) {
         free(rb);
       }
       SDL_RenderPresent(ren);
+      if (dbg_enabled()) {   // per-second presentation statistics
+        static unsigned frames;
+        static double acc_ms;
+        static uint64_t last_report;
+        uint64_t now = SDL_GetTicks64();
+        frames++;
+        acc_ms += (double)(SDL_GetPerformanceCounter() - t_start) * 1000.0 / (double)SDL_GetPerformanceFrequency();
+        if (now - last_report >= 1000) {
+          DBG("render", "presented %u frames in last %llu ms, avg present cost %.2f ms, stage=%dx%d logical=%dx%d overlay=%d", frames, (unsigned long long)(now - last_report), frames ? acc_ms / frames : 0.0, stage_w, stage_h, cur_lw, cur_lh, overlay_is_open());
+          if (g_mem) {
+            int ww, wh, mxp, myp;
+            SDL_GetWindowSize(win, &ww, &wh);
+            SDL_GetMouseState(&mxp, &myp);
+            DBG("state", "window=%dx%d grab=%d focus=%d | system mouse=(%d,%d) -> logical target=(%d,%d) | game cursor cur=(%d,%d) prev=(%d,%d) game screen=%ux%u | btn=%d%d%d",
+                ww, wh, SDL_GetWindowGrab(win), SDL_GetKeyboardFocus() == win, mxp, myp, tgt_x, tgt_y, (int)GU32(0x4c4f50), (int)GU32(0x4c4f54), (int)GU32(0x4c5468), (int)GU32(0x4c546c), GU32(0x4dd368), GU32(0x4dd36c), g_mouse_btn[0], g_mouse_btn[1], g_mouse_btn[2]);
+          }
+          frames = 0; acc_ms = 0; last_report = now;
+        }
+      }
     }
     stage_dirty = 0;
   }
@@ -199,7 +268,12 @@ static int outside_800x600_is_black(const void* pixels, int pitch, int w, int h,
 }
 
 void backend_present(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette) {
-  if (outside_800x600_is_black(pixels, pitch, w, h, bpp)) { w = 800; h = 600; }   // pitch stays, rows are cropped
+  {
+    static int last_crop = -1, last_w, last_h;
+    int crop = outside_800x600_is_black(pixels, pitch, w, h, bpp);
+    if (crop != last_crop || w != last_w || h != last_h) { DBG("render", "game frame %dx%d bpp=%d: menu-crop=%d (was %d)", w, h, bpp, crop, last_crop); last_crop = crop; last_w = w; last_h = h; }
+    if (crop) { w = 800; h = 600; }   // pitch stays, rows are cropped
+  }
   dump_frame(pixels, pitch, w, h, bpp, palette);
   if (!ren) return;
   pthread_mutex_lock(&stage_lock);
@@ -307,18 +381,39 @@ int backend_vk_state(int vk) {
 static int on_main_thread(void) { return main_thread_set && pthread_equal(pthread_self(), main_thread); }
 
 extern void rt_dinput_poll(void);
+static const char* win_event_name(int ev) {
+  switch (ev) {
+    case SDL_WINDOWEVENT_SHOWN: return "shown"; case SDL_WINDOWEVENT_HIDDEN: return "hidden"; case SDL_WINDOWEVENT_EXPOSED: return "exposed";
+    case SDL_WINDOWEVENT_MOVED: return "moved"; case SDL_WINDOWEVENT_RESIZED: return "resized"; case SDL_WINDOWEVENT_SIZE_CHANGED: return "size_changed";
+    case SDL_WINDOWEVENT_MINIMIZED: return "minimized"; case SDL_WINDOWEVENT_MAXIMIZED: return "maximized"; case SDL_WINDOWEVENT_RESTORED: return "restored";
+    case SDL_WINDOWEVENT_ENTER: return "mouse_enter"; case SDL_WINDOWEVENT_LEAVE: return "mouse_leave"; case SDL_WINDOWEVENT_FOCUS_GAINED: return "focus_gained";
+    case SDL_WINDOWEVENT_FOCUS_LOST: return "focus_lost"; case SDL_WINDOWEVENT_CLOSE: return "close"; case SDL_WINDOWEVENT_TAKE_FOCUS: return "take_focus";
+    case SDL_WINDOWEVENT_DISPLAY_CHANGED: return "display_changed"; default: return "other";
+  }
+}
+
 void rt_pump_events(void) {
   rt_dinput_poll();
   if (!win || !on_main_thread()) return;
   present_stage();
+  static unsigned long n_motion;
   SDL_Event e;
   while (SDL_PollEvent(&e)) {
-    if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_F9 && !e.key.repeat) { overlay_toggle(); memset(g_dik_down, 0, sizeof g_dik_down); memset(g_mouse_btn, 0, sizeof g_mouse_btn); continue; }
-    if (overlay_is_open() && e.type != SDL_QUIT && e.type != SDL_WINDOWEVENT) { overlay_event(&e, ren); stage_dirty = 1; continue; }
+    if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_F9 && !e.key.repeat) {
+      DBG("input", "F9 pressed: toggling overlay (was open=%d)", overlay_is_open());
+      overlay_toggle(); memset(g_dik_down, 0, sizeof g_dik_down); memset(g_mouse_btn, 0, sizeof g_mouse_btn);
+      continue;
+    }
+    if (overlay_is_open() && e.type != SDL_QUIT && e.type != SDL_WINDOWEVENT) {
+      if (e.type == SDL_MOUSEBUTTONDOWN || e.type == SDL_MOUSEBUTTONUP) DBG("overlay", "mouse button event %s button=%d window=(%d,%d)", e.type == SDL_MOUSEBUTTONDOWN ? "down" : "up", e.button.button, e.button.x, e.button.y);
+      else if (e.type == SDL_MOUSEMOTION) DBG_EVERY(40, "overlay", "mouse motion window=(%d,%d)", e.motion.x, e.motion.y);
+      overlay_event(&e, ren); stage_dirty = 1; continue;
+    }
     switch (e.type) {
-      case SDL_QUIT: rt_post_message(0x10 /*WM_CLOSE*/, 0, 0); break;
+      case SDL_QUIT: DBG("input", "SDL_QUIT -> posting WM_CLOSE to the game"); rt_post_message(0x10 /*WM_CLOSE*/, 0, 0); break;
       case SDL_KEYDOWN: case SDL_KEYUP: {
         int d = dik_of(e.key.keysym.scancode);
+        DBG("input", "key %s scancode=%d sym=%d -> DIK %d", e.type == SDL_KEYDOWN ? "down" : "up", e.key.keysym.scancode, e.key.keysym.sym, d);
         if (d) g_dik_down[d] = e.type == SDL_KEYDOWN;
         break;
       }
@@ -327,22 +422,56 @@ void rt_pump_events(void) {
         backend_window_to_logical(e.motion.x, e.motion.y, &lx, &ly);
         g_mouse_x = lx; g_mouse_y = ly;
         tgt_x = lx; tgt_y = ly; tgt_valid = 1;
+        n_motion++;
+        if (n_motion <= 60 || n_motion % 40 == 0) {
+          int ww, wh;
+          SDL_GetWindowSize(win, &ww, &wh);
+          DBG("mouse", "motion #%lu: window=(%d,%d) rel=(%d,%d) window size=%dx%d logical size=%dx%d -> logical=(%d,%d)", n_motion, e.motion.x, e.motion.y, e.motion.xrel, e.motion.yrel, ww, wh, cur_lw, cur_lh, lx, ly);
+        }
         break;
       }
       case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP: {
         int b = e.button.button == SDL_BUTTON_LEFT ? 0 : e.button.button == SDL_BUTTON_RIGHT ? 1 : e.button.button == SDL_BUTTON_MIDDLE ? 2 : -1;
+        DBG("mouse", "button %s sdl_button=%d -> game button %d window=(%d,%d) clicks=%d", e.type == SDL_MOUSEBUTTONDOWN ? "DOWN" : "UP", e.button.button, b, e.button.x, e.button.y, e.button.clicks);
         if (b >= 0) g_mouse_btn[b] = e.type == SDL_MOUSEBUTTONDOWN;
         break;
       }
-      case SDL_WINDOWEVENT:
-        if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED || e.window.event == SDL_WINDOWEVENT_ENTER) { mouse_resync(); if (!overlay_is_open()) SDL_SetWindowGrab(win, SDL_TRUE); }
-        if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST) SDL_SetWindowGrab(win, SDL_FALSE);
+      case SDL_MOUSEWHEEL: DBG("mouse", "wheel x=%d y=%d (ignored)", e.wheel.x, e.wheel.y); break;
+      case SDL_WINDOWEVENT: {
+        int ww, wh;
+        SDL_GetWindowSize(win, &ww, &wh);
+        DBG("window", "event %s data=(%d,%d) -> window size now %dx%d, overlay open=%d", win_event_name(e.window.event), e.window.data1, e.window.data2, ww, wh, overlay_is_open());
+        if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED || e.window.event == SDL_WINDOWEVENT_ENTER) {
+          mouse_resync();
+          if (!overlay_is_open() && !getenv("RT_NO_GRAB")) { SDL_SetWindowGrab(win, SDL_TRUE); DBG("mouse", "grab ON (%s)", win_event_name(e.window.event)); }
+        }
+        if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST) { SDL_SetWindowGrab(win, SDL_FALSE); DBG("mouse", "grab OFF (focus lost)"); }
         break;
+      }
       default: break;
     }
   }
   if (!overlay_is_open()) mouse_follow();
   rt_dinput_poll();
+}
+
+static void backend_dump(FILE* f) {
+  fprintf(f, "window=%p renderer=%p texture=%p\n", (void*)win, (void*)ren, (void*)tex);
+  if (win) {
+    int ww, wh, wx, wy, ow = 0, oh = 0, mxp, myp, gx, gy;
+    SDL_GetWindowSize(win, &ww, &wh);
+    SDL_GetWindowPosition(win, &wx, &wy);
+    if (ren) SDL_GetRendererOutputSize(ren, &ow, &oh);
+    SDL_GetMouseState(&mxp, &myp);
+    SDL_GetGlobalMouseState(&gx, &gy);
+    fprintf(f, "window size=%dx%d pos=%d,%d flags=%#x grab=%d renderer output=%dx%d\n", ww, wh, wx, wy, SDL_GetWindowFlags(win), SDL_GetWindowGrab(win), ow, oh);
+    fprintf(f, "mouse in window=(%d,%d) global=(%d,%d) focus_window_is_ours=%d mouse_focus_is_ours=%d\n", mxp, myp, gx, gy, SDL_GetKeyboardFocus() == win, SDL_GetMouseFocus() == win);
+  }
+  fprintf(f, "logical=%dx%d mode=%dx%d stage=%dx%d tex=%dx%d stage_dirty=%d overlay_open=%d game_cursor_visible=%d\n", cur_lw, cur_lh, mode_w, mode_h, stage_w, stage_h, tex_w, tex_h, (int)stage_dirty, overlay_is_open(), game_cursor_visible);
+  fprintf(f, "g_mouse xy=(%d,%d) pending dxdy=(%d,%d) btn=%d%d%d target=(%d,%d) valid=%d poke=%d\n", g_mouse_x, g_mouse_y, g_mouse_dx, g_mouse_dy, g_mouse_btn[0], g_mouse_btn[1], g_mouse_btn[2], tgt_x, tgt_y, tgt_valid, (int)g_mouse_poke);
+  if (g_mem) {
+    fprintf(f, "game cursor: cur=(%d,%d) prev=(%d,%d) game screen=%ux%u buttons=%02x%02x%02x\n", (int)GU32(0x4c4f50), (int)GU32(0x4c4f54), (int)GU32(0x4c5468), (int)GU32(0x4c546c), GU32(0x4dd368), GU32(0x4dd36c), GU8(0x4c4f4a), GU8(0x4c4f49), GU8(0x4c4f48));
+  }
 }
 
 // ---- scripted input for automated tests: RT_SCRIPT=file with lines
@@ -386,6 +515,7 @@ static void* script_thread(void* arg) {
     else if (!strcmp(cmd, "poke")) { extern uint8_t* g_mem; unsigned ad = 0, v = 0; sscanf(line, "%*s %x %u", &ad, &v); *(uint32_t*)(g_mem + ad) = v; }
     else if (!strcmp(cmd, "snap")) { extern void rt_debug_snap(uint32_t); rt_debug_snap((uint32_t)x); }
     else if (!strcmp(cmd, "diff")) { extern void rt_debug_diff(void); rt_debug_diff(); }
+    else if (!strcmp(cmd, "close")) { SDL_Event ev; memset(&ev, 0, sizeof ev); ev.type = SDL_QUIT; SDL_PushEvent(&ev); }
     else if (!strcmp(cmd, "f9")) { SDL_Event ev; memset(&ev, 0, sizeof ev); ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_F9; SDL_PushEvent(&ev); }
     else if (!strcmp(cmd, "winmove")) { SDL_Event ev; memset(&ev, 0, sizeof ev); ev.type = SDL_MOUSEMOTION; ev.motion.x = x; ev.motion.y = y; SDL_PushEvent(&ev); gdelay(120); }
     else if (!strcmp(cmd, "ovclick")) {

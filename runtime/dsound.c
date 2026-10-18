@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "aztec_rt.h"
+#include "dbg.h"
 
 enum { DS_OK = 0 };
 
@@ -134,6 +135,7 @@ static uint32_t buf_lock(CPU* c, uint32_t* a) {  // off, bytes, p1*, b1*, p2*, b
 }
 static uint32_t buf_play(CPU* c, uint32_t* a) {  // res, prio, flags
   (void)c;
+  DBG_EVERY(20, "sound", "Play flags=%08x", a[3]);
   SndBuf* s = com_host(a[0]);
   ensure_audio();
   LOCKED(s)
@@ -159,6 +161,7 @@ static const ComMethod buf_methods[] = {
 
 static uint32_t ds_createbuffer(CPU* c, uint32_t* a) {  // desc*, **buf, outer
   (void)c;
+  DBG("sound", "CreateSoundBuffer flags=%08x bytes=%u", GU32(a[1] + 4), GU32(a[1] + 8));
   uint32_t d = a[1];
   SndBuf* s = calloc(1, sizeof *s);
   uint32_t flags = GU32(d + 4);

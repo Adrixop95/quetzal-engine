@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "aztec_rt.h"
+#include "dbg.h"
 #include "backend.h"
 #include "settings.h"
 
@@ -46,6 +47,7 @@ static void pixel_format(uint32_t p, int bpp) {
 
 static void present(Surface* s) {
   if (!s) return;
+  DBG_EVERY(300, "ddraw", "present primary %dx%d bpp=%d pitch=%d", s->w, s->h, s->bpp, s->pitch);
   backend_present(GPTR(s->pixels), s->pitch, s->w, s->h, s->bpp, s->pal ? s->pal->argb : NULL);
   rt_pump_events();
 }
@@ -87,6 +89,7 @@ static const ComMethod surf_methods[];
 #define NSURF_METHODS 36
 
 static Surface* new_surface(int w, int h, int bpp, int is_primary) {
+  DBG("ddraw", "new surface %dx%d bpp=%d primary=%d (%u bytes)", w, h, bpp, is_primary, (unsigned)(((w * bytespp(bpp) + 31) & ~31) * h));
   Surface* s = calloc(1, sizeof *s);
   s->w = w; s->h = h; s->bpp = bpp;
   s->pitch = (w * bytespp(bpp) + 31) & ~31;
@@ -340,10 +343,12 @@ static void patch_resolution_table(void) {
   uint32_t ent = 0x515510 + 8u * (uint32_t)(getenv("RT_RES_INDEX") ? atoi(getenv("RT_RES_INDEX")) : 0);
   GU32(ent) = (uint32_t)w;   // selectable-resolution table entry
   GU32(ent + 4) = (uint32_t)h;
+  DBG("ddraw", "patching resolution tables for %dx%d: game table entry at %08x, mode whitelist at 0x495510/0x49551c", w, h, ent);
   GU32(0x495510) = (uint32_t)w; GU32(0x495514) = (uint32_t)h;   // whitelist of accepted modes: replace 1280x1024 (8 and 16 bpp)
   GU32(0x49551c) = (uint32_t)w; GU32(0x495520) = (uint32_t)h;
 }
 static uint32_t dd_enumdisplaymodes(CPU* c, uint32_t* a) {  // flags, desc*, ctx, callback
+  DBG("ddraw", "EnumDisplayModes (settings resolution %dx%d)", g_settings.res_w, g_settings.res_h);
   patch_resolution_table();
   struct { int w, h, bpp; } modes[] = {{640, 480, 8}, {640, 480, 16}, {800, 600, 8}, {800, 600, 16}, {1024, 768, 16}, {0, 0, 16}};
   unsigned n_modes = 5;
@@ -357,7 +362,9 @@ static uint32_t dd_enumdisplaymodes(CPU* c, uint32_t* a) {  // flags, desc*, ctx
     GU32(d + 4) = 0x2 | 0x4 | 0x1000 | 0x20000;
     GU32(d + 8) = (uint32_t)modes[i].h; GU32(d + 12) = (uint32_t)modes[i].w;
     pixel_format(d + 72, modes[i].bpp);
-    if (!rt_call_guest(c, a[4], 2, d, a[3])) break;  // callback returns DDENUMRET_OK(1) to continue
+    int cont = (int)rt_call_guest(c, a[4], 2, d, a[3]);
+    DBG("ddraw", "  enumerated mode %dx%dx%d -> callback returned %d", modes[i].w, modes[i].h, modes[i].bpp, cont);
+    if (!cont) break;  // callback returns DDENUMRET_OK(1) to continue
   }
   gfree(d);
   return DD_OK;
@@ -382,9 +389,10 @@ static uint32_t dd_getdisplaymode(CPU* c, uint32_t* a) {
   pixel_format(d + 72, mode.bpp);
   return DD_OK;
 }
-static uint32_t dd_setcooplevel(CPU* c, uint32_t* a) { (void)c; (void)a; return DD_OK; }
+static uint32_t dd_setcooplevel(CPU* c, uint32_t* a) { (void)c; DBG("ddraw", "SetCooperativeLevel hwnd=%08x flags=%08x", a[1], a[2]); return DD_OK; }
 static uint32_t dd_setdisplaymode(CPU* c, uint32_t* a) {
   (void)c;
+  DBG("ddraw", "SetDisplayMode requested %ux%ux%u (previous %dx%dx%d)", a[1], a[2], a[3], mode.w, mode.h, mode.bpp);
   mode.w = (int)a[1]; mode.h = (int)a[2]; mode.bpp = (int)a[3];
   if (mode.bpp == 15 || mode.bpp == 24) mode.bpp = 16;
   rt_log("DirectDraw SetDisplayMode %dx%dx%d", mode.w, mode.h, mode.bpp);

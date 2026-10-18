@@ -9,7 +9,7 @@ if [ ! -d "$ROOT/ghidra/AztecProj.rep" ]; then
   "$GHIDRA/support/analyzeHeadless" "$ROOT/ghidra" AztecProj -import "$GAME/Aztec.exe" -overwrite
 fi
 "$GHIDRA/support/analyzeHeadless" "$ROOT/ghidra" AztecProj -process Aztec.exe -readOnly -noanalysis \
-  -scriptPath "$ROOT/tools/ghidra_scripts" -postScript LiftAll.java "$ROOT/work/gen" 40
+  -scriptPath "$ROOT/tools/ghidra_scripts" -postScript LiftAll.java "$ROOT/work/gen" 40 "$ROOT/tools/extra_entries.txt"
 cmake -S "$ROOT" -B "$ROOT/build" -DAZTEC_GEN_DIR="$ROOT/work/gen"
 cmake --build "$ROOT/build" --target aztec_recomp -j"$(nproc)"
 echo "run: $ROOT/build/aztec_recomp $GAME/Aztec.exe"

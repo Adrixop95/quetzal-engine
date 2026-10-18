@@ -14,6 +14,7 @@
 #include <unistd.h>
 
 #include "aztec_rt.h"
+#include "dbg.h"
 #include "backend.h"
 #include "settings.h"
 
@@ -146,11 +147,11 @@ SH(GetProcAddress) {
   uint32_t t = rt_shim_thunk("KERNEL32.dll", name);
   return t;
 }
-SH(LoadLibraryA) { UNUSED; rt_log("LoadLibraryA(%s) -> fail", (char*)GPTR(a[0])); set_err(c, 126); return 0; }
+SH(LoadLibraryA) { UNUSED; DBG("win32", "LoadLibraryA('%s') -> fail", (char*)GPTR(a[0])); rt_log("LoadLibraryA(%s) -> fail", (char*)GPTR(a[0])); set_err(c, 126); return 0; }
 SH(LoadLibraryExA) { UNUSED; rt_log("LoadLibraryExA(%s,%u) -> fail", (char*)GPTR(a[0]), a[2]); set_err(c, 126); return 0; }
 SH(FreeLibrary) { UNUSED; return 1; }
-SH(ExitProcess) { UNUSED; fflush(NULL); _exit((int)a[0]); }
-SH(TerminateProcess) { UNUSED; fflush(NULL); _exit((int)a[1]); }
+SH(ExitProcess) { UNUSED; DBG("exit", "ExitProcess(%u) called by the game", a[0]); dbg_dump_context("ExitProcess"); fflush(NULL); _exit((int)a[0]); }
+SH(TerminateProcess) { UNUSED; DBG("exit", "TerminateProcess(%u) called by the game", a[1]); dbg_dump_context("TerminateProcess"); fflush(NULL); _exit((int)a[1]); }
 SH(GetCurrentProcess) { UNUSED; return 0xFFFFFFFF; }
 SH(GetCurrentThread) { UNUSED; return 0xFFFFFFFE; }
 SH(GetCurrentThreadId) { UNUSED; return TI(c)->tid; }
@@ -395,6 +396,7 @@ static void* thread_main(void* arg) {
 }
 SH(CreateThread) {
   UNUSED;
+  DBG("win32", "CreateThread start=%08x param=%08x flags=%08x", a[2], a[3], a[4]);
   uint32_t h = obj_new(H_THREAD);
   Obj* o = obj_get(h);
   o->suspended = (a[4] & 4) != 0;
@@ -427,6 +429,7 @@ SH(CreateFileA) {
   }
   int exists = ci_resolve(name, path, sizeof path);
   if (getenv("RT_TRACE_API")) rt_log("  CreateFileA \"%s\" -> %s", name, exists ? path : "(missing)");
+  DBG("file", "CreateFileA '%s' access=%08x disp=%u -> %s", name, a[1], a[4], exists ? path : "(missing)");
   uint32_t access = a[1], disp = a[4];
   int flags = (access & 0x40000000) ? ((access & 0x80000000) ? O_RDWR : O_WRONLY) : O_RDONLY;
   switch (disp) {
@@ -770,6 +773,7 @@ SH(RegOpenKeyA) { UNUSED; return reg_open(a[0], (const char*)GPTR(a[1]), a[2]); 
 SH(RegOpenKeyExA) { UNUSED; return reg_open(a[0], (const char*)GPTR(a[1]), a[4]); }
 SH(RegQueryValueExA) {  // hkey, name, reserved, *type, data, *cb
   UNUSED;
+  DBG("registry", "RegQueryValueEx key=%08x name='%s'", a[0], a[1] ? (const char*)GPTR(a[1]) : "");
   if (a[0] < 0x1000 || a[0] >= 0x1000 + 64) return 6;
   const char* path = reg_paths[a[0] - 0x1000];
   const char* name = a[1] ? (const char*)GPTR(a[1]) : "";
@@ -798,6 +802,7 @@ static uint32_t wndproc_addr;
 static const uint32_t HWND_MAIN = 0x10001;
 
 void rt_post_message(uint32_t msg, uint32_t w, uint32_t l) {
+  DBG("msg", "post message %04x wparam=%08x lparam=%08x", msg, w, l);
   pthread_mutex_lock(&mq_lock);
   int next = (mq_tail + 1) & 255;
   if (next != mq_head) { mq[mq_tail] = (QMsg){msg, w, l}; mq_tail = next; }
@@ -815,6 +820,7 @@ SH(RegisterClassA) { UNUSED; wndproc_addr = GU32(a[0] + 4); return 0xC001; }
 SH(CreateWindowExA) {
   UNUSED;
   // CreateWindowExA(exstyle, class, title, style, x, y, w, h, parent, menu, inst, param)
+  DBG("win32", "CreateWindowExA exstyle=%08x style=%08x title='%s' x=%d y=%d w=%d h=%d", a[0], a[3], (const char*)GPTR(a[2]), (int32_t)a[4], (int32_t)a[5], (int32_t)a[6], (int32_t)a[7]);
   backend_create_window((const char*)GPTR(a[2]), (int32_t)a[6], (int32_t)a[7]);
   if (wndproc_addr) {
     uint32_t cs = gmalloc(48);
@@ -831,7 +837,7 @@ SH(CreateWindowExA) {
 }
 SH(DestroyWindow) { UNUSED; if (wndproc_addr) rt_call_guest(c, wndproc_addr, 4, HWND_MAIN, 0x02, 0, 0); return 1; }
 SH(DefWindowProcA) { UNUSED; if (a[1] == 0x10) rt_post_message(0x2 /*WM_DESTROY*/, 0, 0); return 0; }
-SH(PostQuitMessage) { UNUSED; rt_post_message(0x12, a[0], 0); return 0; }
+SH(PostQuitMessage) { UNUSED; DBG("win32", "PostQuitMessage(%u): game is shutting down", a[0]); rt_post_message(0x12, a[0], 0); return 0; }
 extern void overlay_run_actions(CPU* c);
 SH(PeekMessageA) {
   UNUSED;
@@ -851,6 +857,8 @@ SH(TranslateMessage) { UNUSED; return 1; }
 SH(DispatchMessageA) {
   UNUSED;
   uint32_t p = a[0];
+  DBG_EVERY(50, "msg", "DispatchMessage hwnd=%08x msg=%04x wparam=%08x lparam=%08x", GU32(p), GU32(p + 4), GU32(p + 8), GU32(p + 12));
+  if (GU32(p + 4) != 0x200 && GU32(p + 4) != 0x2A3) DBG("msg", "window message %04x wparam=%08x lparam=%08x", GU32(p + 4), GU32(p + 8), GU32(p + 12));
   if (GU32(p + 4) == 0x12) return 0;
   if (!wndproc_addr) return 0;
   return rt_call_guest(c, wndproc_addr, 4, GU32(p), GU32(p + 4), GU32(p + 8), GU32(p + 12));
@@ -861,9 +869,9 @@ SH(GetWindowLongA) { UNUSED; return 0; }
 SH(LoadCursorA) { UNUSED; return 0x30001; }
 SH(LoadIconA) { UNUSED; return 0x30002; }
 static int cursor_count = 0;  // Win32 display counter: cursor visible while >= 0
-SH(ShowCursor) { UNUSED; cursor_count += a[0] ? 1 : -1; backend_show_cursor(cursor_count >= 0); return (uint32_t)cursor_count; }
+SH(ShowCursor) { UNUSED; DBG("cursor", "ShowCursor(%u): counter %d -> %d", a[0], cursor_count, cursor_count + (a[0] ? 1 : -1)); cursor_count += a[0] ? 1 : -1; backend_show_cursor(cursor_count >= 0); return (uint32_t)cursor_count; }
 SH(GetStockObject) { UNUSED; return 0x40000 + a[0]; }
-SH(MessageBoxA) { UNUSED; rt_log("MessageBox: [%s] %s", (char*)GPTR(a[2]), (char*)GPTR(a[1])); return 1; }
+SH(MessageBoxA) { UNUSED; DBG("win32", "MessageBox title='%s' text='%s' type=%08x", (char*)GPTR(a[2]), (char*)GPTR(a[1]), a[3]); rt_log("MessageBox: [%s] %s", (char*)GPTR(a[2]), (char*)GPTR(a[1])); return 1; }
 SH(CharLowerA) { UNUSED; if (a[0] < 0x10000) return (uint32_t)tolower((int)a[0]); char* s = (char*)GPTR(a[0]); for (; *s; s++) *s = (char)tolower((unsigned char)*s); return a[0]; }
 SH(IsCharAlphaNumericA) { UNUSED; return isalnum((int)(a[0] & 0xff)) != 0; }
 SH(OpenClipboard) { UNUSED; return 0; }
@@ -988,6 +996,7 @@ void rt_register_all_shims(void) {
 
 void rt_win32_init(CPU* cpu, const char* exe_path) {
   clock_gettime(CLOCK_MONOTONIC, &t_start);
+  DBG("init", "win32 layer init: exe=%s", exe_path);
   if (getenv("RT_TIMESCALE")) { rt_time_scale = atoi(getenv("RT_TIMESCALE")); if (rt_time_scale < 1) rt_time_scale = 1; }
   snprintf(exe_path_g, sizeof exe_path_g, "%s", exe_path);
   snprintf(game_dir, sizeof game_dir, "%s", exe_path);

@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include "aztec_rt.h"
+#include "dbg.h"
 #include "backend.h"
 #include "settings.h"
 
@@ -45,6 +46,7 @@ static int skip_requested(void) {
 
 int rt_video_play(const char* host_path, uint32_t w, uint32_t h, uint32_t us_per_frame, uint32_t notify_hwnd) {
   (void)notify_hwnd;
+  DBG("video", "play request: %s %ux%u us/frame=%u (video enabled=%d, timescale=%d)", host_path, w, h, us_per_frame, g_settings.video, rt_time_scale);
   if (!g_settings.video || rt_time_scale > 1) { rt_log("movie: %s (skipped)", host_path); return 1; }
   if (us_per_frame < 10000 || us_per_frame > 200000) us_per_frame = 83333;
   char q[2200], cmd[2600];
@@ -67,6 +69,7 @@ int rt_video_play(const char* host_path, uint32_t w, uint32_t h, uint32_t us_per
       pthread_create(&at, NULL, audio_feeder, &af);
     }
   }
+  DBG("video", "ffmpeg started (video pipe %s, audio pipe %s)", vp ? "ok" : "FAILED", ap ? "ok" : "FAILED");
   size_t fsz = (size_t)w * h * 4;
   uint8_t* frame = malloc(fsz);
   struct timespec t0;
@@ -88,6 +91,7 @@ int rt_video_play(const char* host_path, uint32_t w, uint32_t h, uint32_t us_per
       rt_pump_events();
     } while (!skip_requested());
   }
+  DBG("video", "playback finished: %llu frames shown, skipped by user=%d", (unsigned long long)i, skipped);
   free(frame);
   pclose(vp);
   if (at) { af.stop = 1; pthread_join(at, NULL); }

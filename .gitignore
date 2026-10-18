@@ -4,3 +4,5 @@ work/
 build/
 *.exe
 *.xbe
+debug/
+rt_missing_entries.txt
