@@ -28,6 +28,13 @@ extern uint8_t* g_mem;  // base of the 4 GiB guest address space
 #define GU16(a) (*(uint16_t*)(g_mem + (uint32_t)(a)))
 #define GU8(a) (*(uint8_t*)(g_mem + (uint32_t)(a)))
 
+#ifdef RT_TRACE_CALLS
+void rt_trace_enter(uint32_t addr);
+#define RT_ENTER(a) rt_trace_enter(a)
+#else
+#define RT_ENTER(a) ((void)0)
+#endif
+
 typedef struct { uint32_t addr; void (*fn)(CPU*); } FuncEntry;
 extern const FuncEntry g_func_table[];
 extern const unsigned g_func_count;

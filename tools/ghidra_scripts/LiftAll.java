@@ -294,7 +294,7 @@ public class LiftAll extends GhidraScript {
         }
         b.flush();
 
-        w.printf("void f_%08x(CPU* c) { /* %s */%n", entry, f.getName());
+        w.printf("void f_%08x(CPU* c) { /* %s */%n  RT_ENTER(0x%08x);%n", entry, f.getName(), entry);
         for (String t : temps) {
             String[] p = t.split(":");
             int sz = Integer.parseInt(p[1]);
@@ -361,7 +361,8 @@ public class LiftAll extends GhidraScript {
             Varnode o = op.getOutput();
             if (o != null && isFlag(o)) {
                 int off = (int) o.getOffset();
-                if (!live.get(off) && skip != null) { skip[k] = true; continue; }
+                // DF (0x20a) steers string instructions and is part of the ABI: never drop its writes
+                if (!live.get(off) && skip != null && off != 0x20a) { skip[k] = true; continue; }
                 live.clear(off);
             }
             for (int j = 0; j < op.getNumInputs(); j++) {

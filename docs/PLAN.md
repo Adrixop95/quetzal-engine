@@ -24,3 +24,12 @@ Repo nie zawiera Aztec.exe, assetów ani kodu pochodzącego z binarki. Użytkown
 ## Iteracja
 Nieobsłużone API lub adres kończy się komunikatem `FATAL`. Brakujące adresy trafiają do
 `tools/extra_entries.txt`, brakujące shimy do `runtime/`.
+
+## Stan (2026-10-18)
+Zlifowana gra uruchamia się na Linuxie i renderuje menu główne (800x600, 16 bpp, SDL2).
+Rozwiązane po drodze: odkrywanie funkcji (wskaźniki w danych i stałe w kodzie), DF nie może być eliminowana
+jako martwa flaga, DirectDraw2 (SetDisplayMode ma 5 argumentów), wirtualny rejestr, MCI dla filmów,
+GetVersionExA musi walidować rozmiar struktury.
+Diagnostyka: RT_TRACE_API, RT_TRACE_WAIT, RT_DUMP_DIR (zrzut klatek PPM), RT_DUMP_SURF, RT_WATCH_ADDR,
+-DAZTEC_TRACE_CALLS=ON (licznik wejść do funkcji gościa), -DAZTEC_HEAPDEBUG=ON.
+Do zrobienia: filmy (ffmpeg), sieć, dźwięk (sprawdzić), widescreen, Windows/macOS, drugi dysk (muzyka CD2).

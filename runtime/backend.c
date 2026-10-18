@@ -52,7 +52,32 @@ void backend_set_mode(int w, int h, int bpp) {
 
 void backend_show_cursor(int show) { ensure_sdl(); SDL_ShowCursor(show ? SDL_ENABLE : SDL_DISABLE); }
 
+static void dump_frame(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette) {
+  static int n;
+  const char* dir = getenv("RT_DUMP_DIR");
+  if (!dir) return;
+  n++;
+  if (!(n == 1 || n % 50 == 0)) return;
+  char path[512];
+  snprintf(path, sizeof path, "%s/frame_%05d.ppm", dir, n);
+  FILE* f = fopen(path, "wb");
+  if (!f) return;
+  fprintf(f, "P6\n%d %d\n255\n", w, h);
+  for (int y = 0; y < h; y++) {
+    const uint8_t* row = (const uint8_t*)pixels + (size_t)y * pitch;
+    for (int x = 0; x < w; x++) {
+      uint8_t rgb[3];
+      if (bpp == 8) { uint32_t c = palette ? palette[row[x]] : row[x] * 0x010101u; rgb[0] = c >> 16; rgb[1] = c >> 8; rgb[2] = c; }
+      else if (bpp == 16) { uint16_t v = ((const uint16_t*)row)[x]; rgb[0] = (v >> 11) << 3; rgb[1] = ((v >> 5) & 63) << 2; rgb[2] = (v & 31) << 3; }
+      else { uint32_t v = ((const uint32_t*)row)[x]; rgb[0] = v >> 16; rgb[1] = v >> 8; rgb[2] = v; }
+      fwrite(rgb, 1, 3, f);
+    }
+  }
+  fclose(f);
+}
+
 void backend_present(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette) {
+  dump_frame(pixels, pitch, w, h, bpp, palette);
   if (!ren) return;
   int fmt = bpp == 16 ? SDL_PIXELFORMAT_RGB565 : bpp == 15 ? SDL_PIXELFORMAT_RGB555 : SDL_PIXELFORMAT_ARGB8888;
   if (!tex || tex_w != w || tex_h != h || tex_fmt != fmt) {

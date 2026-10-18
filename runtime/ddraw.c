@@ -230,7 +230,30 @@ static uint32_t surf_lock(CPU* c, uint32_t* a) {  // rect, desc, flags, event
   pixel_format(d + 72, s->bpp);
   return DD_OK;
 }
-static uint32_t surf_unlock(CPU* c, uint32_t* a) { (void)c; Surface* s = com_host(a[0]); if (s->primary) present(s); return DD_OK; }
+static void dump_surface(Surface* s) {
+  const char* dir = getenv("RT_DUMP_SURF");
+  if (!dir) return;
+  static int count;
+  if (++count % 200 != 1) return;
+  const uint16_t* px = (const uint16_t*)GPTR(s->pixels);
+  int nonzero = 0;
+  for (int y = 0; y < s->h && !nonzero; y++)
+    for (int x = 0; x < s->w; x++) if (s->bpp == 16 ? px[(size_t)y * s->pitch / 2 + x] : ((uint8_t*)px)[(size_t)y * s->pitch + x]) { nonzero = 1; break; }
+  char path[512];
+  snprintf(path, sizeof path, "%s/s%08x_%d_%s.ppm", dir, s->self, count, nonzero ? "data" : "empty");
+  FILE* f = fopen(path, "wb");
+  if (!f) return;
+  fprintf(f, "P6\n%d %d\n255\n", s->w, s->h);
+  for (int y = 0; y < s->h; y++)
+    for (int x = 0; x < s->w; x++) {
+      uint8_t rgb[3];
+      if (s->bpp == 16) { uint16_t v = px[(size_t)y * s->pitch / 2 + x]; rgb[0] = (v >> 11) << 3; rgb[1] = ((v >> 5) & 63) << 2; rgb[2] = (v & 31) << 3; }
+      else { uint8_t v = ((uint8_t*)px)[(size_t)y * s->pitch + x]; uint32_t cc = s->pal ? s->pal->argb[v] : v * 0x010101u; rgb[0] = cc >> 16; rgb[1] = cc >> 8; rgb[2] = cc; }
+      fwrite(rgb, 1, 3, f);
+    }
+  fclose(f);
+}
+static uint32_t surf_unlock(CPU* c, uint32_t* a) { (void)c; Surface* s = com_host(a[0]); dump_surface(s); if (s->primary) present(s); return DD_OK; }
 static uint32_t surf_restore(CPU* c, uint32_t* a) { (void)c; (void)a; return DD_OK; }
 static uint32_t surf_setcolorkey(CPU* c, uint32_t* a) {
   (void)c;
@@ -266,7 +289,20 @@ static const ComMethod surf_methods[NSURF_METHODS] = {
 };
 
 // ----------------------------------------------------------- IDirectDraw
-static uint32_t dd_qi(CPU* c, uint32_t* a) { (void)c; GU32(a[2]) = a[0]; return DD_OK; }
+static uint32_t dd2_obj;
+static const ComMethod dd2_methods[];
+static uint32_t dd_qi(CPU* c, uint32_t* a) {
+  (void)c;
+  uint32_t iid1 = GU32(a[1]);
+  if (iid1 == 0xB3A6F3E0u) {  // IID_IDirectDraw2
+    if (!dd2_obj) dd2_obj = com_create(dd2_methods, 24, NULL);
+    GU32(a[2]) = dd2_obj;
+    rt_log("QI DD2 -> %08x vtbl=%08x ppv=%08x", dd2_obj, GU32(dd2_obj), a[2]);
+    return DD_OK;
+  }
+  if (iid1 == 0x6C14DB80u) { GU32(a[2]) = dd_obj ? dd_obj : a[0]; return DD_OK; }  // IID_IDirectDraw
+  return E_NOINTERFACE;
+}
 static uint32_t dd_createpalette(CPU* c, uint32_t* a) {  // flags, entries, **pal, outer
   (void)c;
   Palette* p = calloc(1, sizeof *p);
@@ -349,9 +385,22 @@ static const ComMethod dd_methods[] = {
   {"SetCooperativeLevel", 2, dd_setcooplevel}, {"SetDisplayMode", 3, dd_setdisplaymode}, {"WaitForVerticalBlank", 2, dd_ok},
 };
 
+static uint32_t dd2_setdisplaymode(CPU* c, uint32_t* a) { return dd_setdisplaymode(c, a); }  // + refresh, flags
+static uint32_t dd2_getavailvidmem(CPU* c, uint32_t* a) { (void)c; if (a[2]) GU32(a[2]) = 48u << 20; if (a[3]) GU32(a[3]) = 40u << 20; return DD_OK; }
+static const ComMethod dd2_methods[24] = {
+  {"QueryInterface", 2, dd_qi}, {"AddRef", 0, com_addref}, {"Release", 0, com_release}, {"Compact", 0, dd_ok},
+  {"CreateClipper", 3, NULL}, {"CreatePalette", 4, dd_createpalette}, {"CreateSurface", 3, dd_createsurface},
+  {"DuplicateSurface", 2, NULL}, {"EnumDisplayModes", 4, dd_enumdisplaymodes}, {"EnumSurfaces", 4, NULL},
+  {"FlipToGDISurface", 0, dd_ok}, {"GetCaps", 2, dd_getcaps}, {"GetDisplayMode", 1, dd_getdisplaymode},
+  {"GetFourCCCodes", 2, NULL}, {"GetGDISurface", 1, NULL}, {"GetMonitorFrequency", 1, NULL}, {"GetScanLine", 1, NULL},
+  {"GetVerticalBlankStatus", 1, NULL}, {"Initialize", 1, NULL}, {"RestoreDisplayMode", 0, dd_ok},
+  {"SetCooperativeLevel", 2, dd_setcooplevel}, {"SetDisplayMode", 5, dd2_setdisplaymode}, {"WaitForVerticalBlank", 2, dd_ok},
+  {"GetAvailableVidMem", 3, dd2_getavailvidmem},
+};
 static uint32_t sh_DirectDrawCreate(CPU* c, uint32_t* a) {
   (void)c;
   if (!dd_obj) dd_obj = com_create(dd_methods, 23, NULL);
+  rt_log("DirectDrawCreate: guid=%08x pp=%08x -> obj=%08x", a[0], a[1], dd_obj);
   GU32(a[1]) = dd_obj;
   return DD_OK;
 }

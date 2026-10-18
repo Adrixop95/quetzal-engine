@@ -95,7 +95,7 @@ static pthread_cond_t objcv = PTHREAD_COND_INITIALIZER;
 static uint32_t obj_new(HType t) {
   pthread_mutex_lock(&objlock);
   for (int i = 8; i < MAX_OBJ; i++)
-    if (objs[i].t == H_NONE) { memset(&objs[i], 0, sizeof objs[i]); objs[i].t = t; objs[i].fd = -1; pthread_mutex_unlock(&objlock); return 4u * i; }
+    if (objs[i].t == H_NONE) { memset(&objs[i], 0, sizeof objs[i]); objs[i].t = t; objs[i].fd = -1; if (getenv("RT_TRACE_WAIT")) rt_log("obj_new type=%d -> %08x", (int)t, 4u * i); pthread_mutex_unlock(&objlock); return 4u * i; }
   pthread_mutex_unlock(&objlock);
   return 0;
 }
@@ -118,8 +118,9 @@ SH(SetLastError) { UNUSED; TI(c)->last_error = a[0]; return 0; }
 SH(GetVersion) { UNUSED; return 0x0A280105; }
 SH(GetVersionExA) {
   UNUSED;
-  uint32_t p = a[0];
-  memset(GPTR(p + 4), 0, GU32(p) - 4);
+  uint32_t p = a[0], sz = GU32(p);
+  if (sz != 148 && sz != 156 && sz != 276) { set_err(c, 87); return 0; }  // ERROR_INVALID_PARAMETER like Windows
+  memset(GPTR(p + 4), 0, sz - 4);
   GU32(p + 4) = 5; GU32(p + 8) = 1; GU32(p + 12) = 2600; GU32(p + 16) = 2;
   return 1;
 }
@@ -202,6 +203,7 @@ SH(GetProcessHeap) { UNUSED; return 0x00010000; }
 SH(HeapAlloc) {
   UNUSED;
   uint32_t p = gmalloc(a[2]);
+  if (getenv("RT_TRACE_HEAP")) rt_log("HeapAlloc(%u) -> %08x", a[2], p);
   if (p && (a[1] & 8)) memset(GPTR(p), 0, a[2]);
   return p;
 }
@@ -222,6 +224,7 @@ SH(VirtualAlloc) {
   uint32_t size = (a[1] + 0xfff) & ~0xfffu;
   uint32_t addr = a[0];
   if (!addr) { addr = vtop; vtop += size; }
+  if (getenv("RT_TRACE_API")) rt_log("  VirtualAlloc(%08x, %u, type=%08x) -> %08x", a[0], a[1], a[2], addr);
   return addr;  // guest memory is already zero-filled and committed
 }
 SH(VirtualFree) { UNUSED; return 1; }
@@ -263,7 +266,7 @@ SH(CreateEventA) {
   return h;
 }
 SH(OpenEventA) { UNUSED; return 0; }
-SH(SetEvent) { UNUSED; Obj* o = obj_get(a[0]); if (!o) return 0; pthread_mutex_lock(&objlock); o->signaled = 1; pthread_cond_broadcast(&objcv); pthread_mutex_unlock(&objlock); return 1; }
+SH(SetEvent) { UNUSED; if (getenv("RT_TRACE_WAIT")) rt_log("SetEvent tid=%u h=%08x", TI(c)->tid, a[0]); Obj* o = obj_get(a[0]); if (!o) return 0; pthread_mutex_lock(&objlock); o->signaled = 1; pthread_cond_broadcast(&objcv); pthread_mutex_unlock(&objlock); return 1; }
 SH(ResetEvent) { UNUSED; Obj* o = obj_get(a[0]); if (!o) return 0; pthread_mutex_lock(&objlock); o->signaled = 0; pthread_mutex_unlock(&objlock); return 1; }
 SH(PulseEvent) { UNUSED; Obj* o = obj_get(a[0]); if (!o) return 0; pthread_mutex_lock(&objlock); pthread_cond_broadcast(&objcv); pthread_mutex_unlock(&objlock); return 1; }
 SH(CreateMutexA) { UNUSED; uint32_t h = obj_new(H_MUTEX); return h; }
@@ -321,8 +324,16 @@ done:
   return result;
 }
 SH(WaitForSingleObject) { UNUSED; uint32_t h = a[0]; return wait_objs(1, &h, 0, a[1], 0); }
-SH(WaitForMultipleObjects) { UNUSED; return wait_objs(a[0], (uint32_t*)GPTR(a[1]), (int)a[2], a[3], 0); }
-SH(MsgWaitForMultipleObjects) { UNUSED; return wait_objs(a[0], (uint32_t*)GPTR(a[1]), (int)a[2], a[3], 1); }
+SH(WaitForMultipleObjects) {
+  UNUSED;
+  if (getenv("RT_TRACE_WAIT")) { rt_log("WaitMulti tid=%u n=%u all=%u ms=%u", TI(c)->tid, a[0], a[2], a[3]); for (uint32_t i = 0; i < a[0]; i++) rt_log("   h=%08x", GU32(a[1] + 4 * i)); }
+  return wait_objs(a[0], (uint32_t*)GPTR(a[1]), (int)a[2], a[3], 0);
+}
+SH(MsgWaitForMultipleObjects) {
+  UNUSED;
+  if (getenv("RT_TRACE_WAIT")) rt_log("MsgWait n=%u h0=%08x ms=%u mask=%08x", a[0], a[0] ? GU32(a[1]) : 0, a[3], a[4]);
+  return wait_objs(a[0], (uint32_t*)GPTR(a[1]), (int)a[2], a[3], 1);
+}
 SH(CloseHandle) {
   UNUSED;
   Obj* o = obj_get(a[0]);
@@ -382,6 +393,7 @@ SH(CreateFileA) {
   char path[1100];
   const char* name = (const char*)GPTR(a[0]);
   int exists = ci_resolve(name, path, sizeof path);
+  if (getenv("RT_TRACE_API")) rt_log("  CreateFileA \"%s\" -> %s", name, exists ? path : "(missing)");
   uint32_t access = a[1], disp = a[4];
   int flags = (access & 0x40000000) ? ((access & 0x80000000) ? O_RDWR : O_WRONLY) : O_RDONLY;
   switch (disp) {
@@ -522,7 +534,8 @@ SH(MapViewOfFile) {
   map_next += (len + 0xffff) & ~0xffffu;
   if (map_next > 0xF0000000u) rt_fatal("out of mapping space");
   void* p = mmap(g_mem + addr, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_FIXED, o->fd, a[3]);
-  if (p == MAP_FAILED) return 0;
+  if (p == MAP_FAILED) { rt_log("MapViewOfFile: mmap failed: %s", strerror(errno)); return 0; }
+  if (getenv("RT_TRACE_API")) rt_log("  MapViewOfFile -> %08x len=%u first=%08x", addr, len, GU32(addr));
   return addr;
 }
 SH(UnmapViewOfFile) { UNUSED; return 1; }
@@ -684,10 +697,63 @@ SH(GetPrivateProfileIntA) {
   return a[2];
 }
 
-// ============================================================ ADVAPI32 (registry: always absent)
-SH(RegOpenKeyExA) { UNUSED; return 2; }
-SH(RegOpenKeyA) { UNUSED; return 2; }
-SH(RegQueryValueExA) { UNUSED; return 2; }
+// ============================================================ ADVAPI32: read-only virtual registry
+// The game's installer wrote its settings to HKLM\\Software\\New Media Generation\\The Aztec; we serve the same values.
+#define AZ "Software\\New Media Generation\\The Aztec"
+static const struct { const char* key; const char* name; int is_dword; uint32_t dw; const char* sz; } reg_defaults[] = {
+  {AZ, "Language", 1, 0, 0}, {AZ, "Difficulty", 1, 0, 0}, {AZ, "MouseSpeed", 1, 3, 0},
+  {AZ, "Path", 0, 0, "C:\\Aztec\\Aztec.exe"}, {AZ, "CampaignPath", 0, 0, "Campaign\\Maps"},
+  {AZ "\\Net", "DefaultProvider", 1, 1, 0}, {AZ "\\Net", "Phone", 0, 0, ""}, {AZ "\\Net", "IPHost", 0, 0, ""},
+  {AZ "\\Release", "", 0, 0, ""},
+  {AZ "\\Sound", "MusicPath", 0, 0, "Campaign\\Music"}, {AZ "\\Sound", "Scheme", 0, 0, "default"},
+  {AZ "\\Sound", "SFXVolume", 1, 0, 0}, {AZ "\\Sound", "MusicVolume", 1, 0, 0}, {AZ "\\Sound", "SpeechVolume", 1, 0, 0},
+  {AZ "\\Sound", "Frequency", 1, 22050, 0}, {AZ "\\Sound", "Acknowledgement", 1, 1, 0},
+  {AZ "\\Video", "Path", 0, 0, "Campaign\\Video"},
+  {AZ "\\View", "DisplayMode", 1, 0, 0}, {AZ "\\View", "GameSpeed", 1, 83, 0}, {AZ "\\View", "ScrollSpeed", 1, 48, 0},
+  {AZ "\\View", "Gamma", 1, 1, 0}, {AZ "\\View", "ViewAll", 1, 0, 0},
+};
+#define N_REG (sizeof reg_defaults / sizeof reg_defaults[0])
+static char reg_paths[64][256];
+static int reg_n = 1;  // handle 0 unused; handle value = 0x1000 + index
+
+static int reg_key_exists(const char* path) {
+  size_t n = strlen(path);
+  for (size_t i = 0; i < N_REG; i++)
+    if (!strncasecmp(reg_defaults[i].key, path, n) && (reg_defaults[i].key[n] == 0 || reg_defaults[i].key[n] == '\\')) return 1;
+  return 0;
+}
+static uint32_t reg_open(uint32_t parent, const char* sub, uint32_t out) {
+  char path[256] = "";
+  if (parent >= 0x1000 && parent < 0x1000 + 64) snprintf(path, sizeof path, "%s", reg_paths[parent - 0x1000]);
+  else if (parent != 0x80000002u) return 2;  // only HKEY_LOCAL_MACHINE is populated
+  if (*sub) snprintf(path + strlen(path), sizeof path - strlen(path), "%s%s", *path ? "\\" : "", sub);
+  if (*path && !reg_key_exists(path)) return 2;
+  if (reg_n >= 64) return 8;
+  snprintf(reg_paths[reg_n], sizeof reg_paths[0], "%s", path);
+  GU32(out) = 0x1000u + (uint32_t)reg_n++;
+  return 0;
+}
+SH(RegOpenKeyA) { UNUSED; return reg_open(a[0], (const char*)GPTR(a[1]), a[2]); }
+SH(RegOpenKeyExA) { UNUSED; return reg_open(a[0], (const char*)GPTR(a[1]), a[4]); }
+SH(RegQueryValueExA) {  // hkey, name, reserved, *type, data, *cb
+  UNUSED;
+  if (a[0] < 0x1000 || a[0] >= 0x1000 + 64) return 6;
+  const char* path = reg_paths[a[0] - 0x1000];
+  const char* name = a[1] ? (const char*)GPTR(a[1]) : "";
+  for (size_t i = 0; i < N_REG; i++) {
+    if (strcasecmp(reg_defaults[i].key, path) || strcasecmp(reg_defaults[i].name, name)) continue;
+    uint32_t type = reg_defaults[i].is_dword ? 4 : 1;
+    uint32_t len = reg_defaults[i].is_dword ? 4 : (uint32_t)strlen(reg_defaults[i].sz) + 1;
+    if (a[3]) GU32(a[3]) = type;
+    if (a[4]) {
+      if (a[5] && GU32(a[5]) < len) { GU32(a[5]) = len; return 234; }
+      if (reg_defaults[i].is_dword) GU32(a[4]) = reg_defaults[i].dw; else memcpy(GPTR(a[4]), reg_defaults[i].sz, len);
+    }
+    if (a[5]) GU32(a[5]) = len;
+    return 0;
+  }
+  return 2;
+}
 
 // ============================================================ USER32 + message queue
 typedef struct { uint32_t msg, wparam, lparam; } QMsg;
@@ -724,6 +790,9 @@ SH(CreateWindowExA) {
     rt_call_guest(c, wndproc_addr, 4, HWND_MAIN, 0x01, 0, cs);   // WM_CREATE
     gfree(cs);
   }
+  rt_post_message(0x06 /*WM_ACTIVATE*/, 1, 0);
+  rt_post_message(0x1C /*WM_ACTIVATEAPP*/, 1, 0);
+  rt_post_message(0x07 /*WM_SETFOCUS*/, 0, 0);
   return HWND_MAIN;
 }
 SH(DestroyWindow) { UNUSED; if (wndproc_addr) rt_call_guest(c, wndproc_addr, 4, HWND_MAIN, 0x02, 0, 0); return 1; }
@@ -755,7 +824,8 @@ SH(EndPaint) { UNUSED; return 1; }
 SH(GetWindowLongA) { UNUSED; return 0; }
 SH(LoadCursorA) { UNUSED; return 0x30001; }
 SH(LoadIconA) { UNUSED; return 0x30002; }
-SH(ShowCursor) { UNUSED; backend_show_cursor((int)a[0]); return 0; }
+static int cursor_count = 0;  // Win32 display counter: cursor visible while >= 0
+SH(ShowCursor) { UNUSED; cursor_count += a[0] ? 1 : -1; backend_show_cursor(cursor_count >= 0); return (uint32_t)cursor_count; }
 SH(GetStockObject) { UNUSED; return 0x40000 + a[0]; }
 SH(MessageBoxA) { UNUSED; rt_log("MessageBox: [%s] %s", (char*)GPTR(a[2]), (char*)GPTR(a[1])); return 1; }
 SH(CharLowerA) { UNUSED; if (a[0] < 0x10000) return (uint32_t)tolower((int)a[0]); char* s = (char*)GPTR(a[0]); for (; *s; s++) *s = (char)tolower((unsigned char)*s); return a[0]; }
@@ -766,7 +836,70 @@ SH(EmptyClipboard) { UNUSED; return 1; }
 SH(SetClipboardData) { UNUSED; return 0; }
 SH(GetKeyState) { UNUSED; return (uint16_t)backend_vk_state((int)a[0]); }
 SH(GetAsyncKeyState) { UNUSED; return (uint16_t)backend_vk_state((int)a[0]); }
-SH(mciSendCommandA) { UNUSED; return 0x122; }  // MCIERR_DEVICE_NOT_INSTALLED-ish: no CD audio
+// ---- MCI digital video (AVI) as used by the game's movie class; playback is done by video.c.
+typedef struct { int used; char path[512]; uint32_t w, h, frames, us_per_frame; int playing, played; } MciDev;
+static MciDev mci_devs[16];
+static void avi_info(MciDev* d) {
+  char host[1100];
+  d->w = 640; d->h = 480; d->frames = 1; d->us_per_frame = 83333;
+  if (!ci_resolve(d->path, host, sizeof host)) return;
+  FILE* f = fopen(host, "rb");
+  if (!f) return;
+  uint8_t h[0x60];
+  if (fread(h, 1, sizeof h, f) == sizeof h && !memcmp(h, "RIFF", 4) && !memcmp(h + 0x18, "avih", 4)) {
+    uint32_t v[14];
+    memcpy(v, h + 0x20, sizeof v);  // dwMicroSecPerFrame .. dwHeight
+    d->us_per_frame = v[0]; d->frames = v[4]; d->w = v[8]; d->h = v[9];
+  }
+  fclose(f);
+}
+extern int rt_video_play(const char* host_path, uint32_t w, uint32_t h, uint32_t device, uint32_t notify_hwnd);
+SH(mciSendCommandA) {  // id, cmd, flags, parms
+  UNUSED;
+  uint32_t id = a[0], cmd = a[1], flags = a[2], p = a[3];
+  MciDev* d = (id >= 1 && id <= 16) ? &mci_devs[id - 1] : NULL;
+  switch (cmd) {
+    case 0x803: {  // MCI_OPEN
+      for (int i = 0; i < 16; i++) if (!mci_devs[i].used) {
+        mci_devs[i].used = 1; mci_devs[i].played = 0; mci_devs[i].playing = 0;
+        snprintf(mci_devs[i].path, sizeof mci_devs[i].path, "%s", GU32(p + 12) ? (const char*)GPTR(GU32(p + 12)) : "");
+        avi_info(&mci_devs[i]);
+        GU32(p + 4) = (uint32_t)i + 1;
+        return 0;
+      }
+      return 0x122;
+    }
+    case 0x804: if (d) d->used = 0; return 0;  // MCI_CLOSE
+    case 0x843:  // MCI_WHERE: source/destination rectangle
+      if (d) { GU32(p + 4) = 0; GU32(p + 8) = 0; GU32(p + 12) = d->w; GU32(p + 16) = d->h; }
+      return 0;
+    case 0x841: case 0x842: case 0x807: return 0;  // WINDOW / PUT / SEEK
+    case 0x814: {  // MCI_STATUS
+      uint32_t item = GU32(p + 8), ret = 0;
+      switch (item) {
+        case 1: ret = d ? d->frames : 0; break;                 // length (frames)
+        case 2: ret = (d && (d->playing || d->played)) ? d->frames : 0; break;  // position
+        case 4: ret = (d && d->playing) ? 526 : 525; break;     // mode: playing / stopped
+        case 6: ret = 3; break;                                  // time format: frames
+        default: ret = 1; break;
+      }
+      GU32(p + 4) = ret;
+      return 0;
+    }
+    case 0x806: {  // MCI_PLAY
+      if (!d) return 0x122;
+      char host[1100];
+      ci_resolve(d->path, host, sizeof host);
+      d->playing = 1;
+      int ok = rt_video_play(host, d->w, d->h, id, GU32(p));
+      d->playing = 0;
+      d->played = 1;
+      if (flags & 1) rt_post_message(0x3B9 /*MM_MCINOTIFY*/, ok ? 1u : 4u, id);
+      return 0;
+    }
+    default: rt_log("mciSendCommand: unhandled cmd %04x", cmd); return 0x122;
+  }
+}
 
 // ============================================================ registration
 #define K "KERNEL32.dll"

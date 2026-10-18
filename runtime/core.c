@@ -44,6 +44,24 @@ static int size_class(uint32_t n) {
   return k;
 }
 
+#ifdef RT_HEAPDEBUG
+static struct { uint32_t p, n; int live; } dbg_blocks[400000];
+static int dbg_n;
+static void dbg_alloc(uint32_t p, uint32_t n) {
+  for (int i = 0; i < dbg_n; i++)
+    if (dbg_blocks[i].live && p < dbg_blocks[i].p + dbg_blocks[i].n && dbg_blocks[i].p < p + n)
+      rt_fatal("heap overlap: new %08x+%u overlaps live %08x+%u", p, n, dbg_blocks[i].p, dbg_blocks[i].n);
+  dbg_blocks[dbg_n].p = p; dbg_blocks[dbg_n].n = n; dbg_blocks[dbg_n++].live = 1;
+}
+static void dbg_free(uint32_t p) {
+  for (int i = 0; i < dbg_n; i++) if (dbg_blocks[i].live && dbg_blocks[i].p == p) { dbg_blocks[i].live = 0; return; }
+  rt_fatal("free of unknown/dead block %08x", p);
+}
+#else
+#define dbg_alloc(p, n) ((void)0)
+#define dbg_free(p) ((void)0)
+#endif
+
 uint32_t gmalloc(uint32_t size) {
   if (size == 0) size = 1;
   int k = size_class(size + 8);
@@ -60,10 +78,13 @@ uint32_t gmalloc(uint32_t size) {
   BlockHdr* h = (BlockHdr*)GPTR(blk);
   h->cls = k;
   h->size = size;
+  memset(g_mem + blk + 8, 0, size);  // the game assumes fresh heap memory is zeroed
+  dbg_alloc(blk + 8, size);
   return blk + 8;
 }
 void gfree(uint32_t ptr) {
   if (!ptr) return;
+  dbg_free(ptr);
   uint32_t blk = ptr - 8;
   BlockHdr* h = (BlockHdr*)GPTR(blk);
   GU32(blk + 8) = free_lists[h->cls];
@@ -180,7 +201,20 @@ static void shim_call(CPU* c, uint32_t addr) {
     name = com_thunks[id].m->name;
   }
   if (!fn) rt_fatal("unimplemented API: %s (esp=%08x)", name, esp);
+  static int trace = -1;
+  if (trace < 0) trace = getenv("RT_TRACE_API") != NULL;
+  if (trace) rt_log("API[%u] %s(%08x,%08x,%08x,%08x)", c->thread ? *(uint32_t*)((char*)c->thread + 64 * 4 + 4) : 0, name, nargs > 0 ? a[0] : 0, nargs > 1 ? a[1] : 0, nargs > 2 ? a[2] : 0, nargs > 3 ? a[3] : 0);
   uint32_t r = fn(c, a);
+  {
+    static int watch = -1;
+    static uint32_t last = 0;
+    if (watch < 0) watch = getenv("RT_WATCH_ADDR") != NULL;
+    if (watch) {
+      uint32_t wa = (uint32_t)strtoul(getenv("RT_WATCH_ADDR"), NULL, 16);
+      uint32_t v = GU32(wa);
+      if (v != last) { rt_log("WATCH %08x: %08x -> %08x after %s", wa, last, v, name); last = v; }
+    }
+  }
   GREG(c, R_EAX) = r;
   GREG(c, R_ESP) = esp + 4 + (nargs > 0 ? 4u * nargs : 0);
 }
@@ -188,7 +222,7 @@ static void shim_call(CPU* c, uint32_t addr) {
 void f_dispatch(CPU* c, uint32_t addr) {
   if (addr >= SHIM_BASE) { shim_call(c, addr); return; }
   void (*fn)(CPU*) = lookup_fn(addr);
-  if (!fn) rt_fatal("call to unlifted guest address %08x", addr);
+  if (!fn) rt_fatal("call to unlifted guest address %08x (return address %08x, esp %08x, ecx %08x, edi %08x [edi]=%08x)", addr, GU32(GREG(c, R_ESP)), GREG(c, R_ESP), GREG(c, R_ECX), GREG(c, R_EDI), GU32(GREG(c, R_EDI)));
   fn(c);
 }
 
@@ -347,3 +381,30 @@ void rt_run_main(const char* exe_path, int argc, char** argv) {
   rt_win32_init(&cpu, exe_path);
   rt_call_guest(&cpu, entry, 0);
 }
+
+#ifdef RT_TRACE_CALLS
+#include <pthread.h>
+#include <unistd.h>
+static uint32_t call_counts[0x140000];
+static pthread_t trace_thread;
+static int trace_started;
+static void* trace_dump_loop(void* arg) {
+  (void)arg;
+  const char* path = getenv("RT_CALLS_FILE");
+  if (!path) path = "calls.txt";
+  for (;;) {
+    sleep(1);
+    FILE* f = fopen(path, "w");
+    if (!f) continue;
+    for (uint32_t i = 0; i < sizeof call_counts / sizeof *call_counts; i++)
+      if (call_counts[i]) fprintf(f, "%08x %u\n", 0x400000u + i, call_counts[i]);
+    fclose(f);
+  }
+  return NULL;
+}
+void rt_trace_enter(uint32_t addr) {
+  if (!trace_started) { trace_started = 1; pthread_create(&trace_thread, NULL, trace_dump_loop, NULL); }
+  uint32_t i = addr - 0x400000u;
+  if (i < sizeof call_counts / sizeof *call_counts) __sync_fetch_and_add(&call_counts[i], 1);
+}
+#endif
