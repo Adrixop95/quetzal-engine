@@ -8,7 +8,8 @@
 - Typy grup: 0x44c / 0x454 = obrazy (nagłówek elementu zaczyna się od `00 00 ac e0`), 0x515 = animacje, Snd 0x460 = pliki WAV, Pal 0x44f/0x450/0x452/0x453/0x479 = palety i tablice kolorów.
 
 ## Maps/*.map
-- `u16 szerokość, u16 wysokość`, potem `szer*wys` wartości `u32` (indeksy kafli).
+- `u16 szerokość, u16 wysokość`, potem `szer*wys` wartości `u32`. Dolne 16 bitów = indeks kafla bazowego w `Tiles{0,1}.xbe` (typ 0x44c, 48x48, zakres od 1000); górne 16 bitów = nakładka (indeks z grupy 0x454, np. 0x132d), 0 = brak.
+- Teren rysowany z góry: kafle 48x48, paleta 4, poziom cieniowania 14 (src/tools/render_map.py).
 
 ## Sprite (elementy typu 0x44c i 0x454 w archiwach)
 Nagłówek: `u32 magic=0xE0AC0000, u16 w, u16 h, u8 flags(+8), u8 +9, u8 +10, u8 +11, u32 +12, i16 ox, i16 oy (+0x14)`, od +0x18 dane.
