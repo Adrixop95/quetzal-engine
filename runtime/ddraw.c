@@ -331,10 +331,29 @@ static uint32_t dd_createsurface(CPU* c, uint32_t* a) {  // desc*, **surf, outer
   GU32(a[2]) = s->self;
   return DD_OK;
 }
+// Widescreen: the game keeps a table of selectable resolutions at 0x515510 (w,h pairs, index = DisplayMode).
+// RT_RESOLUTION=WxH replaces entry 2 (default 1152x864; the game clamps DisplayMode to 0..2) and selects it.
+static void patch_resolution_table(void) {
+  const char* r = getenv("RT_RESOLUTION");
+  int w, h;
+  if (!r || sscanf(r, "%dx%d", &w, &h) != 2 || w < 640 || h < 480) return;
+  uint32_t ent = 0x515510 + 8u * (uint32_t)(getenv("RT_RES_INDEX") ? atoi(getenv("RT_RES_INDEX")) : 0);
+  GU32(ent) = (uint32_t)w;   // selectable-resolution table entry
+  GU32(ent + 4) = (uint32_t)h;
+  GU32(0x495510) = (uint32_t)w; GU32(0x495514) = (uint32_t)h;   // whitelist of accepted modes: replace 1280x1024 (8 and 16 bpp)
+  GU32(0x49551c) = (uint32_t)w; GU32(0x495520) = (uint32_t)h;
+}
 static uint32_t dd_enumdisplaymodes(CPU* c, uint32_t* a) {  // flags, desc*, ctx, callback
-  static const struct { int w, h, bpp; } modes[] = {{640, 480, 8}, {640, 480, 16}, {800, 600, 8}, {800, 600, 16}, {1024, 768, 16}};
+  patch_resolution_table();
+  struct { int w, h, bpp; } modes[] = {{640, 480, 8}, {640, 480, 16}, {800, 600, 8}, {800, 600, 16}, {1024, 768, 16}, {0, 0, 16}};
+  unsigned n_modes = 5;
+  {
+    int cw, ch;
+    const char* r = getenv("RT_RESOLUTION");
+    if (r && sscanf(r, "%dx%d", &cw, &ch) == 2) { modes[5].w = cw; modes[5].h = ch; n_modes = 6; }
+  }
   uint32_t d = gmalloc(108);
-  for (unsigned i = 0; i < sizeof modes / sizeof *modes; i++) {
+  for (unsigned i = 0; i < n_modes; i++) {
     memset(GPTR(d), 0, 108);
     GU32(d) = 108;
     GU32(d + 4) = 0x2 | 0x4 | 0x1000 | 0x20000;

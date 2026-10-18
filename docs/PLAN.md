@@ -44,3 +44,10 @@ Scenariusz "utwórz gracza" trwa ok. 5 s zamiast 25 s. Pliki graczy (*.plr) pows
 Ścieżka: menu (Wybierz gracza) -> Gra pojedyncza -> Kampania -> Graj misję -> odprawa -> "Start Game" (tarcza) -> mapa misji 1.
 Układ katalogu gry (jak na płytach): Maps/ (mapy instalacyjne + misje z obu CD), Video/, Music/, Res/.
 Wirtualny rejestr podaje ścieżki "D:\Maps", "D:\Video", "D:\Music" (gra używa pierwszych 3 znaków jako "napędu CD").
+
+## Widescreen (2026-10-18)
+Misje renderują się w dowolnej rozdzielczości (zweryfikowane 1280x720): `./run_aztec.sh --res 1920x1080`.
+Mechanizm: gra trzyma tablicę rozdzielczości (0x515510) i białą listę trybów (0x495498); runtime podmienia wpis 0
+oraz 1280x1024 na żądany rozmiar i dodaje go do `EnumDisplayModes`. Widok mapy skaluje się, panel boczny
+zostaje stałego rozmiaru (kosmetyka: pusty obszar pod panelem). Menu (800x600) jest wycinane w backendzie, gdy reszta
+powierzchni jest czarna. Nie sprawdzone: bardzo duże rozdzielczości (bufory statyczne gry).

@@ -412,6 +412,18 @@ SH(CreateFileA) {
   UNUSED;
   char path[1100];
   const char* name = (const char*)GPTR(a[0]);
+  // "No-CD": both discs live in one directory tree. Missions 10, 11, 12, 14, 15 shipped on disc 2 with their
+  // own Music.xbe, so pick the music archive by the mission that was loaded last.
+  static int mission_no = 0;
+  {
+    const char* m = strcasestr(name, "mission_");
+    if (m) mission_no = atoi(m + 8);
+  }
+  char music_alt[1100];
+  if (strcasestr(name, "music.xbe") && (mission_no == 10 || mission_no == 11 || mission_no == 12 || mission_no == 14 || mission_no == 15)) {
+    snprintf(music_alt, sizeof music_alt, "Music\\Music_cd2.xbe");
+    name = music_alt;
+  }
   int exists = ci_resolve(name, path, sizeof path);
   if (getenv("RT_TRACE_API")) rt_log("  CreateFileA \"%s\" -> %s", name, exists ? path : "(missing)");
   uint32_t access = a[1], disp = a[4];
@@ -762,6 +774,7 @@ SH(RegQueryValueExA) {  // hkey, name, reserved, *type, data, *cb
   const char* name = a[1] ? (const char*)GPTR(a[1]) : "";
   for (size_t i = 0; i < N_REG; i++) {
     if (strcasecmp(reg_defaults[i].key, path) || strcasecmp(reg_defaults[i].name, name)) continue;
+    if (!strcmp(name, "DisplayMode") && (getenv("RT_DISPLAYMODE") || getenv("RT_RESOLUTION"))) { if (a[3]) GU32(a[3]) = 4; if (a[4]) GU32(a[4]) = getenv("RT_DISPLAYMODE") ? (uint32_t)atoi(getenv("RT_DISPLAYMODE")) : (getenv("RT_RES_INDEX") ? (uint32_t)atoi(getenv("RT_RES_INDEX")) : 0u); if (a[5]) GU32(a[5]) = 4; return 0; }
     uint32_t type = reg_defaults[i].is_dword ? 4 : 1;
     uint32_t len = reg_defaults[i].is_dword ? 4 : (uint32_t)strlen(reg_defaults[i].sz) + 1;
     if (a[3]) GU32(a[3]) = type;
@@ -873,7 +886,7 @@ static void avi_info(MciDev* d) {
   }
   fclose(f);
 }
-extern int rt_video_play(const char* host_path, uint32_t w, uint32_t h, uint32_t device, uint32_t notify_hwnd);
+extern int rt_video_play(const char* host_path, uint32_t w, uint32_t h, uint32_t us_per_frame, uint32_t notify_hwnd);
 SH(mciSendCommandA) {  // id, cmd, flags, parms
   UNUSED;
   uint32_t id = a[0], cmd = a[1], flags = a[2], p = a[3];
@@ -911,7 +924,7 @@ SH(mciSendCommandA) {  // id, cmd, flags, parms
       char host[1100];
       ci_resolve(d->path, host, sizeof host);
       d->playing = 1;
-      int ok = rt_video_play(host, d->w, d->h, id, GU32(p));
+      int ok = rt_video_play(host, d->w, d->h, d->us_per_frame, GU32(p));
       d->playing = 0;
       d->played = 1;
       if (flags & 1) rt_post_message(0x3B9 /*MM_MCINOTIFY*/, ok ? 1u : 4u, id);

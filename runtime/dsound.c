@@ -1,6 +1,7 @@
 // IDirectSound / IDirectSoundBuffer software mixer on SDL audio.
 #include <SDL2/SDL.h>
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -25,6 +26,7 @@ static SndBuf* bufs[MAX_BUFS];
 static SDL_AudioDeviceID audio_dev;
 static int mix_rate = 44100;
 
+static FILE* audio_dump;
 static void audio_cb(void* ud, uint8_t* stream, int len) {
   (void)ud;
   int16_t* out = (int16_t*)stream;
@@ -68,6 +70,7 @@ static void audio_cb(void* ud, uint8_t* stream, int len) {
       }
     }
   }
+  if (audio_dump) fwrite(stream, 1, (size_t)len, audio_dump);
 }
 
 static void ensure_audio(void) {
@@ -76,7 +79,7 @@ static void ensure_audio(void) {
   SDL_AudioSpec want = {0}, have;
   want.freq = mix_rate; want.format = AUDIO_S16SYS; want.channels = 2; want.samples = 1024; want.callback = audio_cb;
   audio_dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-  if (audio_dev) { mix_rate = have.freq; SDL_PauseAudioDevice(audio_dev, 0); }
+  if (audio_dev) { mix_rate = have.freq; SDL_PauseAudioDevice(audio_dev, 0); if (getenv("RT_AUDIO_DUMP")) audio_dump = fopen(getenv("RT_AUDIO_DUMP"), "wb"); }
   else rt_log("audio disabled: %s", SDL_GetError());
 }
 

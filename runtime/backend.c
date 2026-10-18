@@ -100,6 +100,8 @@ static void present_stage(void) {
       tex_w = stage_w; tex_h = stage_h;
     }
     if (tex) {
+      static int lw, lh;
+      if (lw != stage_w || lh != stage_h) { SDL_RenderSetLogicalSize(ren, stage_w, stage_h); lw = stage_w; lh = stage_h; }
       SDL_UpdateTexture(tex, NULL, stage, stage_w * 4);
       SDL_RenderClear(ren);
       SDL_RenderCopy(ren, tex, NULL, NULL);
@@ -110,7 +112,21 @@ static void present_stage(void) {
   pthread_mutex_unlock(&stage_lock);
 }
 
+// Widescreen: the menus are 800x600 pictures drawn in the corner of a larger surface. When everything outside
+// that corner is black (sparse sample), present only the corner so the menu fills the window.
+static int outside_800x600_is_black(const void* pixels, int pitch, int w, int h, int bpp) {
+  if (bpp != 16 || (w <= 800 && h <= 600)) return 0;
+  const uint8_t* base = (const uint8_t*)pixels;
+  for (int y = 0; y < h; y += (y < 600 ? 37 : 9))
+    for (int x = (y < 600 ? 800 : 0); x < w; x += 7) {
+      if (y >= 600 && x >= 800 + 0 && x > 0 && 0) continue;
+      if (*(const uint16_t*)(base + (size_t)y * pitch + (size_t)x * 2)) return 0;
+    }
+  return 1;
+}
+
 void backend_present(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette) {
+  if (outside_800x600_is_black(pixels, pitch, w, h, bpp)) { w = 800; h = 600; }   // pitch stays, rows are cropped
   dump_frame(pixels, pitch, w, h, bpp, palette);
   if (!ren) return;
   pthread_mutex_lock(&stage_lock);
