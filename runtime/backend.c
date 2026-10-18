@@ -3,6 +3,7 @@
 
 #include <SDL2/SDL.h>
 #include <pthread.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -252,6 +253,8 @@ void rt_pump_events(void) {
 
 // ---- scripted input for automated tests: RT_SCRIPT=file with lines
 //   wait MS | move X Y | click X Y | rclick X Y | key DIK | keydown DIK | keyup DIK | shot
+extern int rt_time_scale;
+static void gdelay(unsigned ms) { SDL_Delay(ms / (unsigned)rt_time_scale + 1); }
 static void* script_thread(void* arg) {
   FILE* f = fopen((const char*)arg, "r");
   if (!f) return NULL;
@@ -260,21 +263,24 @@ static void* script_thread(void* arg) {
     char cmd[32] = "";
     int x = 0, y = 0;
     sscanf(line, "%31s %d %d", cmd, &x, &y);
-    if (!strcmp(cmd, "wait")) SDL_Delay((Uint32)x);
+    if (!strcmp(cmd, "wait")) gdelay((Uint32)x);
     else if (!strcmp(cmd, "move") || !strcmp(cmd, "click") || !strcmp(cmd, "rclick")) {
-      g_mouse_dx -= 3000; g_mouse_dy -= 3000; SDL_Delay(60);   // pin to the corner, then move relative
-      for (int i = 0; i < 4; i++) { g_mouse_dx += x / 4; g_mouse_dy += y / 4; SDL_Delay(30); }
+      g_mouse_dx -= 3000; g_mouse_dy -= 3000; gdelay(60);   // pin to the corner, then move relative
+      for (int i = 0; i < 4; i++) { g_mouse_dx += x / 4; g_mouse_dy += y / 4; gdelay(30); }
       g_mouse_dx += x - 4 * (x / 4); g_mouse_dy += y - 4 * (y / 4);
       g_mouse_x = x; g_mouse_y = y;
-      SDL_Delay(120);
+      gdelay(120);
       if (strcmp(cmd, "move")) {
         int b = !strcmp(cmd, "rclick") ? 1 : 0;
-        g_mouse_btn[b] = 1; SDL_Delay(120); g_mouse_btn[b] = 0; SDL_Delay(120);
+        g_mouse_btn[b] = 1; gdelay(120); g_mouse_btn[b] = 0; gdelay(120);
       }
-    } else if (!strcmp(cmd, "key")) { g_dik_down[x & 255] = 1; SDL_Delay(120); g_dik_down[x & 255] = 0; SDL_Delay(80); }
+    } else if (!strcmp(cmd, "down")) g_mouse_btn[0] = 1;
+    else if (!strcmp(cmd, "up")) g_mouse_btn[0] = 0;
+    else if (!strcmp(cmd, "key")) { g_dik_down[x & 255] = 1; gdelay(120); g_dik_down[x & 255] = 0; gdelay(80); }
     else if (!strcmp(cmd, "keydown")) g_dik_down[x & 255] = 1;
     else if (!strcmp(cmd, "keyup")) g_dik_down[x & 255] = 0;
-    else if (!strcmp(cmd, "shot")) { shot_index++; shot_pending = 1; SDL_Delay(400); }
+    else if (!strcmp(cmd, "quit")) { fflush(NULL); _exit(0); }
+    else if (!strcmp(cmd, "shot")) { shot_index++; shot_pending = 1; gdelay(400); }
   }
   fclose(f);
   return NULL;

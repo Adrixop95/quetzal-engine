@@ -177,14 +177,17 @@ SH(GetComputerNameA) { UNUSED; strcpy((char*)GPTR(a[0]), "AZTEC"); GU32(a[1]) = 
 SH(GetUserNameA) { UNUSED; strcpy((char*)GPTR(a[0]), "player"); GU32(a[1]) = 7; return 1; }
 
 // time
+int rt_time_scale = 1;   // RT_TIMESCALE: run game time faster than real time (tests only)
 static uint32_t tick_ms(void) {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
-  return (uint32_t)((ts.tv_sec - t_start.tv_sec) * 1000 + (ts.tv_nsec - t_start.tv_nsec) / 1000000) + 100000;
+  uint64_t ms = (uint64_t)(ts.tv_sec - t_start.tv_sec) * 1000 + (uint64_t)(ts.tv_nsec - t_start.tv_nsec) / 1000000;
+  return (uint32_t)(ms * (uint64_t)rt_time_scale) + 100000;
 }
+uint32_t rt_game_ms(void) { return tick_ms(); }
 SH(GetTickCount) { UNUSED; return tick_ms(); }
 SH(timeGetTime) { UNUSED; return tick_ms(); }
-SH(Sleep) { UNUSED; rt_pump_events(); usleep(a[0] * 1000u); return 0; }
+SH(Sleep) { UNUSED; rt_pump_events(); usleep(a[0] * 1000u / (uint32_t)rt_time_scale); return 0; }
 static void fill_systemtime(uint32_t p, int local) {
   time_t t = time(NULL);
   struct tm tm;
@@ -302,6 +305,7 @@ void rt_signal_event(uint32_t h) {
   pthread_mutex_unlock(&objlock);
 }
 static uint32_t wait_objs(uint32_t n, const uint32_t* hs, int all, uint32_t ms, int msgs) {
+  if (ms != 0xFFFFFFFFu && rt_time_scale > 1) ms = ms / (uint32_t)rt_time_scale;
   struct timespec dl;
   clock_gettime(CLOCK_REALTIME, &dl);
   uint64_t add = ms == 0xFFFFFFFFu ? 0 : ms;
@@ -967,6 +971,7 @@ void rt_register_all_shims(void) {
 
 void rt_win32_init(CPU* cpu, const char* exe_path) {
   clock_gettime(CLOCK_MONOTONIC, &t_start);
+  if (getenv("RT_TIMESCALE")) { rt_time_scale = atoi(getenv("RT_TIMESCALE")); if (rt_time_scale < 1) rt_time_scale = 1; }
   snprintf(exe_path_g, sizeof exe_path_g, "%s", exe_path);
   snprintf(game_dir, sizeof game_dir, "%s", exe_path);
   char* sl = strrchr(game_dir, '/');

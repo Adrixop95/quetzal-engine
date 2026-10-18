@@ -33,3 +33,9 @@ GetVersionExA musi walidować rozmiar struktury.
 Diagnostyka: RT_TRACE_API, RT_TRACE_WAIT, RT_DUMP_DIR (zrzut klatek PPM), RT_DUMP_SURF, RT_WATCH_ADDR,
 -DAZTEC_TRACE_CALLS=ON (licznik wejść do funkcji gościa), -DAZTEC_HEAPDEBUG=ON.
 Do zrobienia: filmy (ffmpeg), sieć, dźwięk (sprawdzić), widescreen, Windows/macOS, drugi dysk (muzyka CD2).
+
+## Tryb testowy (szybki)
+`RT_TIMESCALE=3 RT_SCRIPT=scenariusz.txt RT_DUMP_DIR=katalog ./build/aztec_recomp game/Aztec.exe`
+Komendy skryptu (czas w ms czasu gry): `wait MS`, `move X Y`, `click X Y`, `rclick X Y`, `down`, `up`,
+`key DIK`, `keydown DIK`, `keyup DIK`, `shot` (zapis klatki shot_NN.ppm), `quit`.
+Scenariusz "utwórz gracza" trwa ok. 5 s zamiast 25 s. Pliki graczy (*.plr) powstają w katalogu gry.
