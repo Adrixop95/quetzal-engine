@@ -1,21 +1,26 @@
-# Aztec Empire - plan odtworzenia silnika
+# Aztec Empire: plan odtworzenia
 
-Cel: wierna reimplementacja (Aztec.exe 1999/2000, New Media Generation) w C++17 + SDL2,
-działająca na Linux/Windows/macOS. Bez assetów w repo: gracz wskazuje własną instalację.
+Cel: grywalny build Aztec Empire (New Media Generation, 1999) na Linux/Windows/macOS, z poprawkami (widescreen).
+Repo nie zawiera Aztec.exe, assetów ani kodu pochodzącego z binarki. Użytkownik dostarcza własną instalację gry.
 
-## Zasady
-- Repo zawiera tylko własny kod, specyfikacje formatów i narzędzia. Nie ma w nim Aztec.exe, assetów ani surowego outputu dekompilatora.
-- Surowa dekompilacja żyje w `work/` (poza gitem). Do repo trafia kod przepisany ręcznie.
-- Weryfikacja: porównanie zachowania z oryginałem pod wine (zrzuty stanu, pliki zapisów, replaye).
+## Strategia: statyczna rekompilacja
+1. `tools/ghidra_scripts/LiftAll.java` (Ghidra headless) zamienia P-code każdej funkcji x86-32 na C
+   (`work/gen/gen_*.c`). Plik wynikowy jest pochodną Aztec.exe i nigdy nie trafia do gita.
+2. `runtime/` to ręcznie pisany runtime: 4 GiB pamięci gościa, loader PE, dyspozytor funkcji,
+   shimy WinAPI (win32.c) i DirectX na SDL2 (ddraw.c, dsound.c, dinput.c, backend.c).
+3. `src/core`, `src/app`, `src/tools`: własne dekodery formatów (archiwa .xbe, sprite'y, palety, mapy)
+   i przeglądarka SDL2. Służą do weryfikacji i do przyszłej czystej reimplementacji.
 
-## Fazy
-1. Formaty: archiwa Res/*.xbe, mapy (.map/.dat/.rm/.spr/.vis/.scn/.mp/.mit), strbase.bds, Keys.ini, zapisy. Narzędzia CLI + testy na plikach z płyt.
-2. Platforma: okno SDL2, paleta 8-bit (jeśli tryb indeksowany), wejście, dźwięk, wideo (ffmpeg/Indeo), logika czasu.
-3. Renderer: kafle, sprite'y, mgła/światło, UI. Viewport niezależny od rozdzielczości (widescreen).
-4. Silnik gry: obiekty, jednostki, budynki, AI, pathfinding, skrypty scenariuszy (.scn), kampania.
-5. Multiplayer: protokół sieciowy (DirectPlay/IPX/TCP?), do ustalenia z kodu.
-6. Edytor, menu, zapisy, polerka, CI na 3 platformy.
-7. Weryfikacja 100%: pokrycie funkcji z functions.txt (tabela: funkcja -> moduł -> status).
+## Etapy
+- [x] Formaty zasobów rozpoznane i zweryfikowane (docs/formats.md).
+- [x] Lifter: 100% funkcji kompiluje się do C.
+- [~] Runtime: uruchomienie startu CRT i WinMain, kolejne brakujące shimy i adresy.
+- [ ] Grywalny tryb jednego gracza na Linuxie (menu, misje, dźwięk, wideo Indeo przez ffmpeg).
+- [ ] Widescreen: SetDisplayMode/viewport (patch stałych w grze lub reimplementacja widoku).
+- [ ] Windows i macOS (VirtualAlloc zamiast mmap, long double na ARM).
+- [ ] Multiplayer (protokół sieciowy z kodu `Network`).
+- [ ] Stopniowa zamiana zlifowanych funkcji na czysty C++ (moduł po module, wg ścieżek z `map_modules.py`).
 
-## Śledzenie
-`docs/coverage.md`: lista funkcji Ghidry i status (todo/zrobione/nie dotyczy).
+## Iteracja
+Nieobsłużone API lub adres kończy się komunikatem `FATAL`. Brakujące adresy trafiają do
+`tools/extra_entries.txt`, brakujące shimy do `runtime/`.

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(aztec LANGUAGES CXX)
+project(aztec LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(NOT CMAKE_BUILD_TYPE)
@@ -18,3 +18,15 @@ enable_testing()
 add_executable(test_formats tests/test_formats.cpp)
 target_link_libraries(test_formats aztec_core)
 add_test(NAME formats COMMAND test_formats ${CMAKE_SOURCE_DIR}/game)
+
+# ---- static recompilation runtime: needs generated C from tools/ghidra_scripts/LiftAll.java
+# cmake -DAZTEC_GEN_DIR=work/gen ..   (generated code is derived from the user's own Aztec.exe; never commit it)
+set(AZTEC_GEN_DIR "" CACHE PATH "Directory with gen_*.c produced by LiftAll.java")
+if(AZTEC_GEN_DIR)
+  file(GLOB AZTEC_GEN_SRC ${AZTEC_GEN_DIR}/gen_*.c)
+  add_executable(aztec_recomp runtime/main.c runtime/core.c runtime/win32.c runtime/backend.c
+                 runtime/ddraw.c runtime/dsound.c runtime/dinput.c runtime/directx.c ${AZTEC_GEN_SRC})
+  target_include_directories(aztec_recomp PRIVATE runtime ${AZTEC_GEN_DIR})
+  target_compile_options(aztec_recomp PRIVATE -O1 -fno-strict-aliasing -w)
+  target_link_libraries(aztec_recomp SDL2::SDL2 m pthread)
+endif()
