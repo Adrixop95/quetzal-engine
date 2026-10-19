@@ -677,6 +677,14 @@ static void* script_thread(void* arg) {
     }
     else if (!strcmp(cmd, "cheat")) { char nm[32] = ""; sscanf(line, "%*s %31s", nm); overlay_request(!strcmp(nm, "unlock") ? 1 : !strcmp(nm, "win") ? 2 : !strcmp(nm, "gold") ? 3 : 0); }
     else if (!strcmp(cmd, "scan")) { extern void rt_debug_scan(uint32_t); rt_debug_scan((uint32_t)x); }
+    else if (!strcmp(cmd, "objscan")) {   // objscan VTABLES_FILE OUT_FILE: list live objects (dword at a == known vtable) in heap and VirtualAlloc regions
+      extern void rt_objscan(const char*, const char*); char a1[300] = "", a2[300] = ""; sscanf(line, "%*s %299s %299s", a1, a2); rt_objscan(a1, a2);
+    }
+    else if (!strcmp(cmd, "heapdump")) {   // raw guest heap + data section for offline analysis: heapdump PATH
+      extern uint32_t rt_heap_top(void); char path[400] = ""; sscanf(line, "%*s %399s", path);
+      FILE* hf = fopen(path, "wb");
+      if (hf) { uint32_t top = rt_heap_top(); fwrite(&top, 4, 1, hf); fwrite(g_mem + 0x49b000, 1, 0x531000 - 0x49b000, hf); fwrite(g_mem + 0x10000000u, 1, top - 0x10000000u, hf); fclose(hf); }
+    }
     else if (!strcmp(cmd, "quit")) { fflush(NULL); _exit(0); }
     else if (!strcmp(cmd, "shot")) { shot_index++; shot_pending = 1; gdelay(400); }
   }

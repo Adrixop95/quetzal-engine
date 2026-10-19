@@ -494,6 +494,31 @@ void rt_trace_enter(uint32_t addr) {
 
 // Debug helper (script command "scan N"): list guest addresses holding 32-bit value N, tagged with the side struct
 // array (base at guest 0x4dd2f4, stride 0x69c) when they fall inside it.
+uint32_t rt_heap_top(void) { return heap_top; }
+#include <sys/mman.h>
+void rt_objscan(const char* vtfile, const char* outfile) {
+  static uint8_t is_vt[0x100000];   // vtable addresses are in 0x48f000..0x4c4000: index (addr - 0x400000) >> 2 would be big; use a hash-free bitmap
+  memset(is_vt, 0, sizeof is_vt);
+  FILE* f = fopen(vtfile, "r");
+  if (!f) return;
+  unsigned v;
+  while (fscanf(f, "%x", &v) == 1) if (v >= 0x400000 && v < 0x800000) is_vt[(v - 0x400000) >> 2 >> 3] |= 1u << (((v - 0x400000) >> 2) & 7);
+  fclose(f);
+  FILE* o = fopen(outfile, "w");
+  if (!o) return;
+  struct { uint32_t lo, hi; } rg[2] = {{0x10000000u, heap_top}, {0x50000000u, 0x6e000000u}};
+  for (int r = 0; r < 2; r++) {
+    for (uint64_t pg = rg[r].lo & ~0xfffu; pg < rg[r].hi; pg += 0x1000) {
+      unsigned char vec;
+      if (mincore(g_mem + pg, 0x1000, &vec) != 0 || !(vec & 1)) continue;
+      for (uint32_t a = (uint32_t)pg; a < pg + 0x1000; a += 4) {
+        uint32_t x = GU32(a);
+        if (x >= 0x400000 && x < 0x800000 && (is_vt[(x - 0x400000) >> 2 >> 3] >> (((x - 0x400000) >> 2) & 7) & 1)) fprintf(o, "%08x %08x\n", a, x);
+      }
+    }
+  }
+  fclose(o);
+}
 void rt_debug_scan(uint32_t value) {
   uint32_t side_base = GU32(0x4dd2f4);
   rt_log("scan %u: sides base=%08x", value, side_base);
