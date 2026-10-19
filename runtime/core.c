@@ -285,7 +285,12 @@ static long double fget(int sz, const void* p) {
 static void fput(int sz, void* p, long double v) {
   if (sz == 4) { float f = (float)v; memcpy(p, &f, 4); }
   else if (sz == 8) { double d = (double)v; memcpy(p, &d, 8); }
-  else if (sz == 10) { memset(p, 0, 10); memcpy(p, &v, 10); }
+  else if (sz == 10) {
+    static int fpu53 = -1;   // MSVC's runtime runs the x87 with 53-bit precision control; RT_FPU53=0 keeps full 64-bit precision
+    if (fpu53 < 0) fpu53 = getenv("RT_FPU53") ? atoi(getenv("RT_FPU53")) : 1;
+    if (fpu53) v = (long double)(double)v;
+    memset(p, 0, 10); memcpy(p, &v, 10);
+  }
   else rt_fatal("float size %d", sz);
 }
 static void bput(int osz, void* o, int v) { memset(o, 0, osz); *(uint8_t*)o = (uint8_t)v; }

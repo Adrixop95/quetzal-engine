@@ -86,7 +86,7 @@ typedef struct {
   int signaled, manual;         // event
   unsigned pulse_gen;           // PulseEvent generation: wakes threads that were already waiting
   int count, max;               // semaphore
-  int owner_depth;              // mutex
+  uint32_t owner; int rec;      // mutex: owning thread id and recursion count
   pthread_t th; int done; uint32_t exit_code; int suspended;  // thread
   uint64_t size;
   DIR* dir; char pattern[260]; char dirpath[1024];  // find
@@ -225,16 +225,82 @@ SH(GlobalAlloc) {
 }
 SH(GlobalLock) { UNUSED; return a[0]; }
 SH(GlobalUnlock) { UNUSED; return 0; }
-static uint32_t vtop = 0x50000000u;
-SH(VirtualAlloc) {
-  UNUSED;
-  uint32_t size = (a[1] + 0xfff) & ~0xfffu;
-  uint32_t addr = a[0];
-  if (!addr) { addr = vtop; vtop += size; }
-  if (getenv("RT_TRACE_API")) rt_log("  VirtualAlloc(%08x, %u, type=%08x) -> %08x", a[0], a[1], a[2], addr);
-  return addr;  // guest memory is already zero-filled and committed
+// Page-granular regions for VirtualAlloc: first fit over [VBASE, VEND) with coalescing, so VirtualFree really
+// returns address space (the game allocates and frees buffers continuously; a bump pointer ran out and collided
+// with thread stacks and file mappings).
+#define VBASE 0x50000000u
+#define VEND  0x6e000000u
+typedef struct { uint32_t base, size; int used; } VRegion;
+static VRegion* vregs;
+static int n_vregs, cap_vregs;
+static pthread_mutex_t vlock = PTHREAD_MUTEX_INITIALIZER;
+
+static void vinit(void) {
+  if (vregs) return;
+  cap_vregs = 1024;
+  vregs = malloc(cap_vregs * sizeof *vregs);
+  vregs[0] = (VRegion){VBASE, VEND - VBASE, 0};
+  n_vregs = 1;
 }
-SH(VirtualFree) { UNUSED; return 1; }
+static void vinsert(int at, VRegion r) {
+  if (n_vregs == cap_vregs) { cap_vregs *= 2; vregs = realloc(vregs, cap_vregs * sizeof *vregs); }
+  memmove(vregs + at + 1, vregs + at, (size_t)(n_vregs - at) * sizeof *vregs);
+  vregs[at] = r;
+  n_vregs++;
+}
+static uint32_t valloc_pages(uint32_t size) {
+  size = (size + 0xfffu) & ~0xfffu;
+  pthread_mutex_lock(&vlock);
+  vinit();
+  for (int i = 0; i < n_vregs; i++) {
+    if (vregs[i].used || vregs[i].size < size) continue;
+    uint32_t base = vregs[i].base;
+    if (vregs[i].size > size) vinsert(i + 1, (VRegion){base + size, vregs[i].size - size, 0});
+    vregs[i].size = size;
+    vregs[i].used = 1;
+    pthread_mutex_unlock(&vlock);
+    memset(g_mem + base, 0, size);   // recycled memory must look fresh, like Windows' zeroed pages
+    return base;
+  }
+  pthread_mutex_unlock(&vlock);
+  rt_log("VirtualAlloc: out of address space for %u bytes", size);
+  return 0;
+}
+static int vfree_region(uint32_t base) {
+  pthread_mutex_lock(&vlock);
+  vinit();
+  for (int i = 0; i < n_vregs; i++) {
+    if (vregs[i].base != base || !vregs[i].used) continue;
+    vregs[i].used = 0;
+    if (i + 1 < n_vregs && !vregs[i + 1].used) { vregs[i].size += vregs[i + 1].size; memmove(vregs + i + 1, vregs + i + 2, (size_t)(n_vregs - i - 2) * sizeof *vregs); n_vregs--; }
+    if (i > 0 && !vregs[i - 1].used) { vregs[i - 1].size += vregs[i].size; memmove(vregs + i, vregs + i + 1, (size_t)(n_vregs - i - 1) * sizeof *vregs); n_vregs--; }
+    pthread_mutex_unlock(&vlock);
+    return 1;
+  }
+  pthread_mutex_unlock(&vlock);
+  return 0;
+}
+SH(VirtualAlloc) {   // addr, size, type, protect
+  UNUSED;
+  uint32_t addr = a[0], size = a[1], type = a[2];
+  uint32_t r = addr;
+  if (!addr) r = valloc_pages(size);          // reserve and/or commit a fresh region
+  // committing inside an already reserved region simply returns it (guest memory is always backed)
+  DBG("vmem", "VirtualAlloc(addr=%08x size=%u type=%08x) -> %08x", addr, size, type, r);
+  if (getenv("RT_TRACE_API")) rt_log("  VirtualAlloc(%08x, %u, type=%08x) -> %08x", addr, size, type, r);
+  return r;
+}
+SH(VirtualFree) {   // addr, size, type
+  UNUSED;
+  uint32_t addr = a[0], size = a[1], type = a[2];
+  if (type & 0x8000) {                          // MEM_RELEASE
+    int ok = vfree_region(addr);
+    DBG("vmem", "VirtualFree(release %08x) -> %d", addr, ok);
+    return 1;
+  }
+  if ((type & 0x4000) && addr >= VBASE && addr < VEND) memset(g_mem + addr, 0, (size + 0xfffu) & ~0xfffu);   // MEM_DECOMMIT
+  return 1;
+}
 SH(GetEnvironmentStrings) { UNUSED; static uint32_t s; if (!s) { s = gmalloc(8); memset(GPTR(s), 0, 8); } return s; }
 SH(GetEnvironmentStringsW) { UNUSED; static uint32_t s; if (!s) { s = gmalloc(8); memset(GPTR(s), 0, 8); } return s; }
 SH(FreeEnvironmentStringsA) { UNUSED; return 1; }
@@ -276,8 +342,26 @@ SH(OpenEventA) { UNUSED; return 0; }
 SH(SetEvent) { UNUSED; if (getenv("RT_TRACE_WAIT")) rt_log("SetEvent tid=%u h=%08x", TI(c)->tid, a[0]); Obj* o = obj_get(a[0]); if (!o) return 0; pthread_mutex_lock(&objlock); o->signaled = 1; pthread_cond_broadcast(&objcv); pthread_mutex_unlock(&objlock); return 1; }
 SH(ResetEvent) { UNUSED; Obj* o = obj_get(a[0]); if (!o) return 0; pthread_mutex_lock(&objlock); o->signaled = 0; pthread_mutex_unlock(&objlock); return 1; }
 SH(PulseEvent) { UNUSED; Obj* o = obj_get(a[0]); if (!o) return 0; pthread_mutex_lock(&objlock); o->pulse_gen++; pthread_cond_broadcast(&objcv); pthread_mutex_unlock(&objlock); return 1; }
-SH(CreateMutexA) { UNUSED; uint32_t h = obj_new(H_MUTEX); return h; }
-SH(ReleaseMutex) { UNUSED; return 1; }
+SH(CreateMutexA) {  // attrs, initial owner, name
+  UNUSED;
+  uint32_t h = obj_new(H_MUTEX);
+  Obj* o = obj_get(h);
+  if (o && a[1]) { o->owner = cur_ti ? cur_ti->tid : 1; o->rec = 1; }
+  DBG("sync", "CreateMutex -> %08x initial_owner=%u name='%s'", h, a[1], a[2] ? (const char*)GPTR(a[2]) : "");
+  return h;
+}
+SH(ReleaseMutex) {
+  UNUSED;
+  Obj* o = obj_get(a[0]);
+  if (!o || o->t != H_MUTEX) return 0;
+  uint32_t me = cur_ti ? cur_ti->tid : 1;
+  pthread_mutex_lock(&objlock);
+  int ok = o->owner == me;
+  if (ok && --o->rec <= 0) { o->owner = 0; o->rec = 0; pthread_cond_broadcast(&objcv); }
+  pthread_mutex_unlock(&objlock);
+  if (!ok) { set_err(c, 288); DBG_EVERY(20, "sync", "ReleaseMutex(%08x) by non-owner tid=%u (owner=%u)", a[0], me, o->owner); }
+  return ok;
+}
 SH(CreateSemaphoreA) { UNUSED; uint32_t h = obj_new(H_SEM); Obj* o = obj_get(h); o->count = (int)a[1]; o->max = (int)a[2]; return h; }
 SH(ReleaseSemaphore) {
   UNUSED;
@@ -295,7 +379,11 @@ static int obj_ready_locked(Obj* o) {  // consume if ready
     case H_EVENT: if (o->signaled) { if (!o->manual) o->signaled = 0; return 1; } return 0;
     case H_SEM: if (o->count > 0) { o->count--; return 1; } return 0;
     case H_THREAD: return o->done;
-    case H_MUTEX: return 1;
+    case H_MUTEX: {
+      uint32_t me = cur_ti ? cur_ti->tid : 1;
+      if (o->owner == 0 || o->owner == me) { o->owner = me; o->rec++; return 1; }
+      return 0;
+    }
     default: return 1;
   }
 }

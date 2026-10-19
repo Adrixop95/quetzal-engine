@@ -1,0 +1,24 @@
+# select player, accept, pick Misja1, play mission, press Start Game on the briefing (800x600 coordinates)
+wait 6000
+click 140 239
+wait 800
+move 160 543
+wait 800
+down
+wait 400
+up
+wait 3500
+click 150 257
+wait 1200
+move 140 544
+wait 600
+down
+wait 400
+up
+wait 6000
+move 700 430
+wait 600
+down
+wait 400
+up
+wait 6000

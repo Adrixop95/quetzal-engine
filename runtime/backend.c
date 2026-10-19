@@ -505,6 +505,7 @@ static void backend_dump(FILE* f) {
 //   wait MS | move X Y | click X Y | rclick X Y | key DIK | keydown DIK | keyup DIK | shot
 extern int rt_time_scale;
 static void gdelay(unsigned ms) { SDL_Delay(ms / (unsigned)rt_time_scale + 1); }
+static int script_x, script_y;
 static void* script_thread(void* arg) {
   FILE* f = fopen((const char*)arg, "r");
   if (!f) return NULL;
@@ -518,13 +519,18 @@ static void* script_thread(void* arg) {
       g_mouse_dx -= 3000; g_mouse_dy -= 3000; gdelay(60);   // pin to the corner, then move relative
       for (int i = 0; i < 4; i++) { g_mouse_dx += x / 4; g_mouse_dy += y / 4; gdelay(30); }
       g_mouse_dx += x - 4 * (x / 4); g_mouse_dy += y - 4 * (y / 4);
-      g_mouse_x = x; g_mouse_y = y;
+      g_mouse_x = x; g_mouse_y = y; script_x = x; script_y = y;
       gdelay(120);
       if (strcmp(cmd, "move")) {
         int b = !strcmp(cmd, "rclick") ? 1 : 0;
         g_mouse_btn[b] = 1; gdelay(120); g_mouse_btn[b] = 0; gdelay(120);
       }
-    } else if (!strcmp(cmd, "down")) g_mouse_btn[0] = 1;
+    } else if (!strcmp(cmd, "dragto")) {   // relative move from the last scripted position (keeps buttons held)
+      int steps = 8;
+      for (int i = 1; i <= steps; i++) { g_mouse_dx += (x - script_x) * i / steps - (x - script_x) * (i - 1) / steps; g_mouse_dy += (y - script_y) * i / steps - (y - script_y) * (i - 1) / steps; gdelay(60); }
+      script_x = x; script_y = y; gdelay(150);
+    }
+    else if (!strcmp(cmd, "down")) g_mouse_btn[0] = 1;
     else if (!strcmp(cmd, "up")) g_mouse_btn[0] = 0;
     else if (!strcmp(cmd, "key")) { g_dik_down[x & 255] = 1; gdelay(120); g_dik_down[x & 255] = 0; gdelay(80); }
     else if (!strcmp(cmd, "keydown")) g_dik_down[x & 255] = 1;

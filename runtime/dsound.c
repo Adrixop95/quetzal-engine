@@ -20,7 +20,11 @@ typedef struct {
   int vol_mb;                    // hundredths of dB (<= 0)
   int pan;
   int freq;                      // 0 = native
+  int n_notify;                  // IDirectSoundNotify positions
+  struct { uint32_t off, ev; } notify[16];
+  uint32_t notify_obj;
 } SndBuf;
+extern void rt_signal_event(uint32_t h);
 
 #define MAX_BUFS 256
 static SndBuf* bufs[MAX_BUFS];
@@ -44,6 +48,8 @@ static void audio_cb(void* ud, uint8_t* stream, int len) {
     double step = (double)rate / mix_rate;
     uint32_t frame_bytes = (uint32_t)(s->channels * s->bits / 8);
     const uint8_t* mem = g_mem + s->data;
+    uint32_t start_pos = s->pos;
+    int was_playing = s->playing;
     for (int i = 0; i < frames && s->playing; i++) {
       uint32_t fpos = (uint32_t)s->frac;
       uint32_t off = s->pos + fpos * frame_bytes;
@@ -70,9 +76,19 @@ static void audio_cb(void* ud, uint8_t* stream, int len) {
         }
       }
     }
+    // IDirectSoundNotify: signal events whose offset the play cursor passed during this callback
+    uint32_t end_pos = s->pos;
+    for (int k = 0; k < s->n_notify; k++) {
+      uint32_t off = s->notify[k].off;
+      int hit;
+      if (off == 0xFFFFFFFFu) hit = was_playing && !s->playing;                      // DSBPN_OFFSETSTOP
+      else hit = start_pos <= end_pos ? (off >= start_pos && off < end_pos) : (off >= start_pos || off < end_pos);
+      if (hit && s->notify[k].ev) rt_signal_event(s->notify[k].ev);
+    }
   }
   if (audio_dump) fwrite(stream, 1, (size_t)len, audio_dump);
 }
+
 
 static void ensure_audio(void) {
   if (audio_dev) return;
@@ -85,6 +101,36 @@ static void ensure_audio(void) {
 }
 
 static uint32_t com_addref(CPU* c, uint32_t* a) { (void)c; (void)a; return 2; }
+static uint32_t notify_qi(CPU* c, uint32_t* a);
+static uint32_t notify_setpositions(CPU* c, uint32_t* a) {   // count, DSBPOSITIONNOTIFY*
+  (void)c;
+  SndBuf* s = com_host(a[0]);
+  uint32_t n = a[1] > 16 ? 16 : a[1];
+  if (audio_dev) SDL_LockAudioDevice(audio_dev);
+  s->n_notify = (int)n;
+  for (uint32_t i = 0; i < n; i++) { s->notify[i].off = GU32(a[2] + 8 * i); s->notify[i].ev = GU32(a[2] + 8 * i + 4); }
+  if (audio_dev) SDL_UnlockAudioDevice(audio_dev);
+  DBG("sound", "SetNotificationPositions: %u positions (first offset=%u event=%08x)", n, n ? s->notify[0].off : 0, n ? s->notify[0].ev : 0);
+  return 0;
+}
+static const ComMethod notify_methods[] = {
+  {"IDirectSoundNotify::QueryInterface", 2, notify_qi}, {"AddRef", 0, com_addref}, {"Release", 0, com_addref},
+  {"SetNotificationPositions", 2, notify_setpositions},
+};
+static uint32_t buf_qi(CPU* c, uint32_t* a) {   // IID_IDirectSoundNotify = B0210783-89CD-11D0-AF08-00A0C925CD16
+  (void)c;
+  uint32_t iid1 = GU32(a[1]);
+  SndBuf* s = com_host(a[0]);
+  DBG("sound", "IDirectSoundBuffer::QueryInterface iid=%08x", iid1);
+  if (iid1 == 0xB0210783u && s) {
+    if (!s->notify_obj) s->notify_obj = com_create(notify_methods, 4, s);
+    GU32(a[2]) = s->notify_obj;
+    return 0;
+  }
+  GU32(a[2]) = a[0];
+  return 0;
+}
+static uint32_t notify_qi(CPU* c, uint32_t* a) { return buf_qi(c, a); }
 static uint32_t com_release(CPU* c, uint32_t* a) {
   (void)c;
   SndBuf* s = com_host(a[0]);
@@ -96,7 +142,7 @@ static uint32_t com_release(CPU* c, uint32_t* a) {
   }
   return 0;
 }
-static uint32_t com_qi(CPU* c, uint32_t* a) { (void)c; GU32(a[2]) = a[0]; return DS_OK; }
+static uint32_t com_qi(CPU* c, uint32_t* a) { (void)c; DBG("sound", "QueryInterface iid=%08x-%04x-%04x", GU32(a[1]), GU16(a[1] + 4), GU16(a[1] + 6)); GU32(a[2]) = a[0]; return DS_OK; }
 static uint32_t ds_ok(CPU* c, uint32_t* a) { (void)c; (void)a; return DS_OK; }
 
 #define LOCKED(s) if (audio_dev) SDL_LockAudioDevice(audio_dev); 
@@ -105,6 +151,7 @@ static uint32_t ds_ok(CPU* c, uint32_t* a) { (void)c; (void)a; return DS_OK; }
 static uint32_t buf_getcurrentpos(CPU* c, uint32_t* a) {
   (void)c;
   SndBuf* s = com_host(a[0]);
+  DBG_EVERY(100, "sound", "GetCurrentPosition buf=%08x pos=%u/%u playing=%d looping=%d", a[0], s->pos, s->bytes, s->playing, s->looping);
   if (a[1]) GU32(a[1]) = s->pos;
   if (a[2]) GU32(a[2]) = s->bytes ? (s->pos + 2048) % s->bytes : 0;
   return DS_OK;
@@ -116,6 +163,7 @@ static uint32_t buf_getfreq(CPU* c, uint32_t* a) { (void)c; SndBuf* s = com_host
 static uint32_t buf_getstatus(CPU* c, uint32_t* a) {
   (void)c;
   SndBuf* s = com_host(a[0]);
+  DBG_EVERY(100, "sound", "GetStatus buf=%08x playing=%d looping=%d", a[0], s->playing, s->looping);
   GU32(a[1]) = (s->playing ? 1u : 0u) | (s->playing && s->looping ? 4u : 0u);
   return DS_OK;
 }
@@ -123,6 +171,7 @@ static uint32_t buf_lock(CPU* c, uint32_t* a) {  // off, bytes, p1*, b1*, p2*, b
   (void)c;
   SndBuf* s = com_host(a[0]);
   uint32_t off = a[1], bytes = a[2];
+  DBG_EVERY(20, "sound", "Lock buf=%08x off=%u bytes=%u flags=%08x (size %u, pos %u, playing %d)", a[0], off, bytes, a[7], s->bytes, s->pos, s->playing);
   if (a[7] & 2) bytes = s->bytes;       // DSBLOCK_ENTIREBUFFER
   if (a[7] & 1) off = s->pos;           // DSBLOCK_FROMWRITECURSOR
   if (off > s->bytes) off = 0;
@@ -138,20 +187,21 @@ static uint32_t buf_play(CPU* c, uint32_t* a) {  // res, prio, flags
   DBG_EVERY(20, "sound", "Play flags=%08x", a[3]);
   SndBuf* s = com_host(a[0]);
   ensure_audio();
+  DBG("sound", "Play buf=%08x flags=%08x size=%u rate=%d bits=%d ch=%d pos=%u vol=%d", a[0], a[3], s->bytes, s->rate, s->bits, s->channels, s->pos, s->vol_mb);
   LOCKED(s)
   s->playing = 1; s->looping = (a[3] & 1) != 0;
   UNLOCKED()
   return DS_OK;
 }
-static uint32_t buf_stop(CPU* c, uint32_t* a) { (void)c; SndBuf* s = com_host(a[0]); LOCKED(s) s->playing = 0; UNLOCKED() return DS_OK; }
-static uint32_t buf_setpos(CPU* c, uint32_t* a) { (void)c; SndBuf* s = com_host(a[0]); LOCKED(s) s->pos = a[1] % (s->bytes ? s->bytes : 1); s->frac = 0; UNLOCKED() return DS_OK; }
+static uint32_t buf_stop(CPU* c, uint32_t* a) { (void)c; SndBuf* s = com_host(a[0]); DBG("sound", "Stop buf=%08x pos=%u", a[0], s->pos); LOCKED(s) s->playing = 0; UNLOCKED() return DS_OK; }
+static uint32_t buf_setpos(CPU* c, uint32_t* a) { (void)c; SndBuf* s = com_host(a[0]); DBG("sound", "SetCurrentPosition buf=%08x -> %u", a[0], a[1]); LOCKED(s) s->pos = a[1] % (s->bytes ? s->bytes : 1); s->frac = 0; UNLOCKED() return DS_OK; }
 static uint32_t buf_setvol(CPU* c, uint32_t* a) { (void)c; SndBuf* s = com_host(a[0]); s->vol_mb = (int)a[1]; return DS_OK; }
 static uint32_t buf_setpan(CPU* c, uint32_t* a) { (void)c; SndBuf* s = com_host(a[0]); s->pan = (int)a[1]; return DS_OK; }
 static uint32_t buf_setfreq(CPU* c, uint32_t* a) { (void)c; SndBuf* s = com_host(a[0]); s->freq = a[1] == 0 || a[1] == 0 ? 0 : (int)a[1]; return DS_OK; }
 static uint32_t buf_getcaps(CPU* c, uint32_t* a) { (void)c; SndBuf* s = com_host(a[0]); memset(GPTR(a[1] + 4), 0, 16); GU32(a[1]) = 20; GU32(a[1] + 8) = s->bytes; return DS_OK; }
 
 static const ComMethod buf_methods[] = {
-  {"QueryInterface", 2, com_qi}, {"AddRef", 0, com_addref}, {"Release", 0, com_release}, {"GetCaps", 1, buf_getcaps},
+  {"QueryInterface", 2, buf_qi}, {"AddRef", 0, com_addref}, {"Release", 0, com_release}, {"GetCaps", 1, buf_getcaps},
   {"GetCurrentPosition", 2, buf_getcurrentpos}, {"GetFormat", 3, buf_getformat}, {"GetVolume", 1, buf_getvolume},
   {"GetPan", 1, buf_getpan}, {"GetFrequency", 1, buf_getfreq}, {"GetStatus", 1, buf_getstatus}, {"Initialize", 2, NULL},
   {"Lock", 7, buf_lock}, {"Play", 3, buf_play}, {"SetCurrentPosition", 1, buf_setpos}, {"SetFormat", 1, ds_ok},
