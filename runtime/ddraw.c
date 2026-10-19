@@ -48,7 +48,7 @@ static void pixel_format(uint32_t p, int bpp) {
 static void present(Surface* s) {
   if (!s) return;
   DBG_EVERY(300, "ddraw", "present primary %dx%d bpp=%d pitch=%d", s->w, s->h, s->bpp, s->pitch);
-  backend_present(GPTR(s->pixels), s->pitch, s->w, s->h, s->bpp, s->pal ? s->pal->argb : NULL);
+  backend_present_guest(GPTR(s->pixels), s->pitch, s->w, s->h, s->bpp, s->pal ? s->pal->argb : NULL);
   rt_pump_events();
 }
 

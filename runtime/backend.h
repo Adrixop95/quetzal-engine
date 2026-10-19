@@ -11,6 +11,10 @@ void backend_set_mode(int w, int h, int bpp);
 void backend_show_cursor(int show);
 // Present a frame. bpp: 8 (uses 256 ARGB palette), 15 (RGB555), 16 (RGB565), 32 (xRGB).
 void backend_present(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette);
+// Same for a surface that stays valid in guest memory: only its location is recorded, the render thread copies it.
+void backend_present_guest(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette);
+void backend_main_init(void);
+void backend_main_loop(void);
 int backend_vk_state(int vk);
 void backend_apply_window_mode(int mode);   // 0 windowed, 1 borderless, 2 fullscreen
 void backend_set_smooth(int smooth);

@@ -62,7 +62,15 @@ static void ensure_sdl(void) {
   }
 }
 
+typedef struct { const char* title; int w, h; } WinReq;
+static void create_window_impl(void* arg);
+static void run_on_main(void (*fn)(void*), void* arg);
 void backend_create_window(const char* title, int w, int h) {
+  WinReq r = {title, w, h};
+  run_on_main(create_window_impl, &r);
+}
+static void create_window_impl(void* arg) {
+  const char* title = ((WinReq*)arg)->title; int w = ((WinReq*)arg)->w, h = ((WinReq*)arg)->h;
   ensure_sdl();
   if (win) return;
   backend_start_script();
@@ -75,7 +83,7 @@ void backend_create_window(const char* title, int w, int h) {
   DBG("window", "create: title='%s' requested %dx%d flags=%#x (settings: res=%dx%d mode=%d smooth=%d video=%d)", title ? title : "", w, h, flags, g_settings.res_w, g_settings.res_h, g_settings.window_mode, g_settings.smooth, g_settings.video);
   win = SDL_CreateWindow(title && *title ? title : "Aztec Empire", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w, h, flags);
   if (!win) rt_fatal("SDL_CreateWindow: %s", SDL_GetError());
-  ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | (getenv("RT_VSYNC") ? SDL_RENDERER_PRESENTVSYNC : 0));
+  ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | (getenv("RT_NO_VSYNC") ? 0 : SDL_RENDERER_PRESENTVSYNC));
   if (!ren) { DBG("window", "accelerated renderer failed (%s), falling back to software", SDL_GetError()); ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE); }
   if (!ren) rt_fatal("SDL_CreateRenderer: %s", SDL_GetError());
   {
@@ -97,8 +105,7 @@ void backend_set_mode(int w, int h, int bpp) {
   ensure_sdl();
   if (!win) backend_create_window("Aztec Empire", w, h);
   mode_w = w; mode_h = h;
-  SDL_RenderSetLogicalSize(ren, w, h);  // keeps aspect ratio on any window shape
-  cur_lw = w; cur_lh = h;
+  cur_lw = w; cur_lh = h;   // the render thread applies the logical size when the next frame arrives
   DBG("render", "set_mode %dx%d bpp=%d -> logical size %dx%d", w, h, bpp, cur_lw, cur_lh);
 }
 
@@ -207,10 +214,13 @@ static void mouse_follow(void) {
 static void mouse_resync(void) { tgt_valid = 1; }   // re-send the last known position (after focus / overlay changes)
 
 static int on_main_thread(void);
+static void consume_guest_request(void);
 
 static void present_stage(void) {
+  consume_guest_request();
   pthread_mutex_lock(&stage_lock);
-  if (stage_dirty && ren && (stage || stage16)) {
+  if (ren && (stage || stage16)) {
+    int upload = stage_dirty;
     int want16 = stage_is16 && rgb565_ok != 0;
     if (!tex || tex_w != stage_w || tex_h != stage_h || tex_reset || tex_is16 != want16) {
       tex_reset = 0;
@@ -224,7 +234,7 @@ static void present_stage(void) {
       tex_is16 = want16;
       if (!tex) rt_log("SDL_CreateTexture %dx%d failed: %s", stage_w, stage_h, SDL_GetError());
       DBG("render", "texture (re)created %dx%d -> %s (smooth=%d)", stage_w, stage_h, tex ? "ok" : "FAILED", g_settings.smooth);
-      tex_w = stage_w; tex_h = stage_h;
+      tex_w = stage_w; tex_h = stage_h; upload = 1;
     }
     if (tex) {
       static int lw, lh;
@@ -236,8 +246,9 @@ static void present_stage(void) {
         lw = stage_w; lh = stage_h; cur_lw = stage_w; cur_lh = stage_h;
       }
       uint64_t t_start = SDL_GetPerformanceCounter();
-      int urc;
-      if (tex_is16) urc = SDL_UpdateTexture(tex, NULL, stage16, stage_w * 2);
+      int urc = 0;
+      if (!upload) {}
+      else if (tex_is16) urc = SDL_UpdateTexture(tex, NULL, stage16, stage_w * 2);
       else if (stage_is16) {   // RGB565 frame but ARGB texture: convert here, off the game's threads
         static uint32_t* conv; static size_t conv_n;
         size_t n = (size_t)stage_w * stage_h;
@@ -313,42 +324,18 @@ static int outside_800x600_is_black(const void* pixels, int pitch, int w, int h,
   return 1;
 }
 
-static void backend_present_now(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette);
-// Game blits the cursor to the primary surface on every mouse event and each one asks for a full present.
-// Coalesce: present at most every PRESENT_MIN_US, keep the newest request pending and flush it from the wait/pump paths.
-#define PRESENT_MIN_US 5000
-static struct { int on; const void* px; int pitch, w, h, bpp; const uint32_t* pal; } pend;
-static uint64_t last_present_us;
-static uint64_t now_us(void) { return SDL_GetPerformanceCounter() * 1000000ull / SDL_GetPerformanceFrequency(); }
+static void backend_present_copy_impl(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette);
 void backend_present(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette) {
-  if (ren && bpp == 16 && on_main_thread() && now_us() - last_present_us < PRESENT_MIN_US) {
-    pend.on = 1; pend.px = pixels; pend.pitch = pitch; pend.w = w; pend.h = h; pend.bpp = bpp; pend.pal = palette;
-    return;
-  }
-  pend.on = 0;
-  backend_present_now(pixels, pitch, w, h, bpp, palette);
-  if (on_main_thread()) last_present_us = now_us();
+  dump_frame(pixels, pitch, w, h, bpp, palette);
+  if (ren) backend_present_copy_impl(pixels, pitch, w, h, bpp, palette);
 }
-void backend_flush_pending(void) {
-  if (!pend.on || !on_main_thread() || now_us() - last_present_us < PRESENT_MIN_US) return;
-  pend.on = 0;
-  backend_present_now(pend.px, pend.pitch, pend.w, pend.h, pend.bpp, pend.pal);
-  last_present_us = now_us();
-}
-int backend_flush_due_ms(void) {   // -1: nothing pending, else ms until the pending frame may be presented
-  if (!pend.on) return -1;
-  uint64_t el = now_us() - last_present_us;
-  return el >= PRESENT_MIN_US ? 0 : (int)((PRESENT_MIN_US - el + 999) / 1000);
-}
-
-static void backend_present_now(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette) {
+static void backend_present_copy_impl(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette) {
   {
     static int last_crop = -1, last_w, last_h;
     int crop = outside_800x600_is_black(pixels, pitch, w, h, bpp);
     if (crop != last_crop || w != last_w || h != last_h) { DBG("render", "game frame %dx%d bpp=%d: menu-crop=%d (was %d)", w, h, bpp, crop, last_crop); last_crop = crop; last_w = w; last_h = h; }
     if (crop) { w = 800; h = 600; }   // pitch stays, rows are cropped
   }
-  dump_frame(pixels, pitch, w, h, bpp, palette);
   if (!ren) return;
   if (bpp == 16) {   // fast path: copy rows as they are, no per-pixel work on the game's thread
     pthread_mutex_lock(&stage_lock);
@@ -357,7 +344,6 @@ static void backend_present_now(const void* pixels, int pitch, int w, int h, int
     for (int y = 0; y < h; y++) memcpy(stage16 + (size_t)y * w, (const uint8_t*)pixels + (size_t)y * pitch, (size_t)w * 2);
     stage_dirty = 1;
     pthread_mutex_unlock(&stage_lock);
-    if (on_main_thread()) present_stage();
     return;
   }
   pthread_mutex_lock(&stage_lock);
@@ -388,7 +374,30 @@ static void backend_present_now(const void* pixels, int pitch, int w, int h, int
   }
   stage_dirty = 1;
   pthread_mutex_unlock(&stage_lock);
-  if (on_main_thread()) present_stage();
+}
+
+// DirectDraw primary surface presentation: the game draws straight into its primary surface (like it did on real
+// hardware), so we only note where it lives; the render thread copies it when it builds the next frame.
+typedef struct { const void* px; int pitch, w, h, bpp; uint32_t pal[256]; int has_pal; } GReq;
+static GReq greq;
+static volatile int greq_dirty;
+static pthread_mutex_t greq_lock = PTHREAD_MUTEX_INITIALIZER;
+void backend_present_guest(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette) {
+  dump_frame(pixels, pitch, w, h, bpp, palette);
+  pthread_mutex_lock(&greq_lock);
+  greq.px = pixels; greq.pitch = pitch; greq.w = w; greq.h = h; greq.bpp = bpp;
+  greq.has_pal = palette != NULL;
+  if (palette) memcpy(greq.pal, palette, sizeof greq.pal);
+  greq_dirty = 1;
+  pthread_mutex_unlock(&greq_lock);
+}
+static void consume_guest_request(void) {
+  if (!greq_dirty) return;
+  pthread_mutex_lock(&greq_lock);
+  GReq r = greq;
+  greq_dirty = 0;
+  pthread_mutex_unlock(&greq_lock);
+  backend_present_copy_impl(r.px, r.pitch, r.w, r.h, r.bpp, r.has_pal ? r.pal : NULL);
 }
 
 // SDL scancode -> DirectInput (DIK_*) scan code
@@ -477,11 +486,15 @@ static const char* win_event_name(int ev) {
   }
 }
 
+// Runs on the guest's thread(s): hand the latest pointer position to the game and wake DirectInput waiters.
 void rt_pump_events(void) {
   rt_dinput_poll();
-  if (!win || !on_main_thread()) return;
-  backend_flush_pending();
-  present_stage();
+  if (!overlay_is_open()) mouse_follow();
+  rt_dinput_poll();
+}
+
+// Runs on the main (SDL) thread: turns SDL events into input state.
+static void sdl_pump(void) {
   static unsigned long n_motion;
   SDL_Event e;
   while (SDL_PollEvent(&e)) {
@@ -543,8 +556,6 @@ void rt_pump_events(void) {
       default: break;
     }
   }
-  if (!overlay_is_open()) mouse_follow();
-  rt_dinput_poll();
 }
 
 static void backend_dump(FILE* f) {
@@ -651,4 +662,48 @@ void backend_apply_window_mode(int mode) {
 void backend_set_smooth(int smooth) {
   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, smooth ? "linear" : "nearest");
   tex_reset = 1;   // the hint applies to textures created afterwards
+}
+
+// ---- main (SDL) thread: the game runs on its own thread; this thread owns the window, input and presentation ----
+typedef struct RpcJob { void (*fn)(void*); void* arg; int done; struct RpcJob* next; } RpcJob;
+static pthread_mutex_t rpc_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t rpc_cv = PTHREAD_COND_INITIALIZER;
+static RpcJob* rpc_head;
+static void run_on_main(void (*fn)(void*), void* arg) {
+  if (!main_thread_set || on_main_thread()) { fn(arg); return; }
+  RpcJob j = {fn, arg, 0, NULL};
+  pthread_mutex_lock(&rpc_lock);
+  RpcJob** pp = &rpc_head;
+  while (*pp) pp = &(*pp)->next;
+  *pp = &j;
+  while (!j.done) pthread_cond_wait(&rpc_cv, &rpc_lock);
+  pthread_mutex_unlock(&rpc_lock);
+}
+static void rpc_drain(void) {
+  pthread_mutex_lock(&rpc_lock);
+  while (rpc_head) {
+    RpcJob* j = rpc_head;
+    rpc_head = j->next;
+    pthread_mutex_unlock(&rpc_lock);
+    j->fn(j->arg);
+    pthread_mutex_lock(&rpc_lock);
+    j->done = 1;
+    pthread_cond_broadcast(&rpc_cv);
+  }
+  pthread_mutex_unlock(&rpc_lock);
+}
+void backend_main_init(void) {   // call on the process main thread before starting the game thread
+  main_thread = pthread_self(); main_thread_set = 1;
+  ensure_sdl();
+}
+void backend_main_loop(void) {   // never returns: process exits through the game's ExitProcess
+  for (;;) {
+    rpc_drain();
+    if (!win || !ren) { SDL_Delay(1); continue; }
+    uint64_t t0 = SDL_GetPerformanceCounter();
+    sdl_pump();
+    present_stage();
+    double ms = (double)(SDL_GetPerformanceCounter() - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
+    if (ms < 3.0) SDL_Delay(4);   // no working vsync (minimized window, software renderer): do not spin
+  }
 }

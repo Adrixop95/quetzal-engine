@@ -463,17 +463,10 @@ SH(WaitForMultipleObjects) {
   if (getenv("RT_TRACE_WAIT")) { rt_log("WaitMulti tid=%u n=%u all=%u ms=%u", TI(c)->tid, a[0], a[2], a[3]); for (uint32_t i = 0; i < a[0]; i++) rt_log("   h=%08x", GU32(a[1] + 4 * i)); }
   return wait_objs(a[0], (uint32_t*)GPTR(a[1]), (int)a[2], a[3], 0);
 }
-extern void backend_flush_pending(void);
-extern int backend_flush_due_ms(void);
 SH(MsgWaitForMultipleObjects) {
   UNUSED;
   if (getenv("RT_TRACE_WAIT")) rt_log("MsgWait n=%u h0=%08x ms=%u mask=%08x", a[0], a[0] ? GU32(a[1]) : 0, a[3], a[4]);
-  uint32_t ms = a[3];
-  int due = backend_flush_due_ms();
-  if (due >= 0 && ms > (uint32_t)due) ms = (uint32_t)due;
-  uint32_t r = wait_objs(a[0], (uint32_t*)GPTR(a[1]), (int)a[2], ms, 1);
-  backend_flush_pending();
-  return r;
+  return wait_objs(a[0], (uint32_t*)GPTR(a[1]), (int)a[2], a[3], 1);
 }
 SH(CloseHandle) {
   UNUSED;

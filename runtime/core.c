@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <time.h>
+#include <pthread.h>
+#include "backend.h"
 
 uint8_t* g_mem;
 
@@ -416,6 +418,14 @@ static void dump_main_cpu(FILE* f) {
 }
 extern void settings_init(const char* exe_path);
 extern void overlay_set_argv0(const char* a);
+static void* game_thread_main(void* arg) {
+  struct { const char* exe; uint32_t entry; }* gs = arg;
+  rt_win32_init(main_cpu_ptr, gs->exe);
+  rt_call_guest(main_cpu_ptr, gs->entry, 0);
+  fflush(NULL);
+  exit(0);
+  return NULL;
+}
 void rt_run_main(const char* exe_path, int argc, char** argv) {
   (void)argc;
   rt_saved_argv = argv;
@@ -433,8 +443,8 @@ void rt_run_main(const char* exe_path, int argc, char** argv) {
   main_cpu_ptr = &cpu;
   dbg_register_dumper("guest main CPU", dump_main_cpu);
   DBG("init", "exe=%s guest image mapped, entry=%08x, heap base=%08x", exe_path, entry, HEAP_BASE);
-  rt_win32_init(&cpu, exe_path);
   if (getenv("RT_SELFTEST")) {
+    rt_win32_init(&cpu, exe_path);
     uint32_t str = gmalloc(64);
     strcpy((char*)GPTR(str), "Hello player\nsecond line");
     for (int k = 0; k < 8; k++) {   // misaligned starts exercise the word-at-a-time path
@@ -443,7 +453,16 @@ void rt_run_main(const char* exe_path, int argc, char** argv) {
     }
     return;
   }
-  rt_call_guest(&cpu, entry, 0);
+  // The process main thread owns the window, input and presentation (smooth pointer, vsync); the game runs on its own thread.
+  static struct { const char* exe; uint32_t entry; } gs;
+  gs.exe = exe_path; gs.entry = entry;
+  backend_main_init();
+  pthread_attr_t at;
+  pthread_attr_init(&at);
+  pthread_attr_setstacksize(&at, 512u << 20);
+  pthread_t gt;
+  if (pthread_create(&gt, &at, game_thread_main, &gs) != 0) rt_fatal("cannot start the game thread");
+  backend_main_loop();
 }
 
 #ifdef RT_TRACE_CALLS
