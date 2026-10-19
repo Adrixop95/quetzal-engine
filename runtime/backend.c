@@ -623,7 +623,7 @@ static void* script_thread(void* arg) {
       ev.type = SDL_MOUSEMOTION; ev.motion.x = x; ev.motion.y = y; SDL_PushEvent(&ev); gdelay(150);
       memset(&ev, 0, sizeof ev); ev.type = SDL_MOUSEBUTTONDOWN; ev.button.button = SDL_BUTTON_LEFT; ev.button.x = x; ev.button.y = y; SDL_PushEvent(&ev); gdelay(200);
     }
-    else if (!strcmp(cmd, "cheat")) { char nm[32] = ""; sscanf(line, "%*s %31s", nm); overlay_request(!strcmp(nm, "unlock") ? 1 : !strcmp(nm, "win") ? 2 : 0); }
+    else if (!strcmp(cmd, "cheat")) { char nm[32] = ""; sscanf(line, "%*s %31s", nm); overlay_request(!strcmp(nm, "unlock") ? 1 : !strcmp(nm, "win") ? 2 : !strcmp(nm, "gold") ? 3 : 0); }
     else if (!strcmp(cmd, "scan")) { extern void rt_debug_scan(uint32_t); rt_debug_scan((uint32_t)x); }
     else if (!strcmp(cmd, "quit")) { fflush(NULL); _exit(0); }
     else if (!strcmp(cmd, "shot")) { shot_index++; shot_pending = 1; gdelay(400); }

@@ -19,7 +19,7 @@ static uint32_t click_time;
 static char status[160];
 static uint32_t status_until;
 static int pending_action;
-enum { ACT_NONE, ACT_UNLOCK_MISSIONS, ACT_WIN_MISSION };
+enum { ACT_NONE, ACT_UNLOCK_MISSIONS, ACT_WIN_MISSION, ACT_ADD_GOLD };
 static const char* saved_argv0;
 
 static const struct { int w, h; const char* label; } res_presets[] = {
@@ -226,6 +226,8 @@ void overlay_draw(SDL_Renderer* ren, int lw, int lh) {
     if (button(ren, px + 20, y, 680, 44, "Odblokuj wszystkie misje kampanii")) { pending_action = ACT_UNLOCK_MISSIONS; }
     y += 56;
     if (button(ren, px + 20, y, 680, 44, "Natychmiastowe zwycięstwo w misji")) { pending_action = ACT_WIN_MISSION; }
+    y += 56;
+    if (button(ren, px + 20, y, 680, 44, "Dodaj 10000 złota")) { pending_action = ACT_ADD_GOLD; }
     y += 66;
     draw_text(ren, px + 20, y, "Odblokowane misje widać po ponownym wejściu w ekran Kampania.", 1, 200, 190, 170);
   }
@@ -250,6 +252,12 @@ void overlay_run_actions(CPU* c) {
     uint32_t idx = rt_call_guest(c, 0x43d200, 0);   // index of the local side
     GU32(sides + 0x140 + idx * 0x69c) = 1;          // same flag the built-in CheatWin key sets
     say("Zwycięstwo zgłoszone");
+  } else if (a == ACT_ADD_GOLD) {
+    uint32_t sides = GU32(0x4dd2f4);
+    if (!sides) { say("Brak aktywnej misji"); return; }
+    uint32_t idx = rt_call_guest(c, 0x43d200, 0);
+    GU32(sides + 0x698 + idx * 0x69c) += 10000;   // gold of the local side
+    say("Dodano 10000 złota");
   }
 }
 void overlay_request(int action) { pending_action = action; }
