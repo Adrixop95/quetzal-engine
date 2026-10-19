@@ -57,6 +57,13 @@ Rekompilowana wersja (`runtime/` + `work/gen/`) pozostaje wzorcem do testów ró
 - Wyrocznia stanu: `RT_STATE_LOG=plik` zapisuje co tik: liczbę żywych obiektów i skrót FNV po 4 pulach (wskaźniki maskowane).
   Dwa niezależne przebiegi misji 1 bez wejścia zgadzają się w 211 z 214 ticków (3 różnice przejściowe, niewyjaśnione).
 
+- Nazwy z napisów `assert` w exe: 58 plików źródłowych oryginału (`E:\SnakE\Empire\Source\*.cpp`), m.in. Marine (kind 0), Spider (1),
+  Building (2), Zeppelin (3), Truck (4), Bird (5), Headtruck (6), Defence (7), Boat (8), Cannon (9), Johnka (10), Arrow, Axe, BallExpl, FireThrow,
+  SplashDamage, Weapon, Tactic (AI), Town/TownsInfo, BuildTree, Harvest, Triggers/Conditions, MapExplorer, WaveSearch (pathfinding), Heapsort.
+  Funkcje z nazwami w napisach: `wsr_WaveSearch` 0x46c470 (pathfinder: fala po siatce z tablicami przejezdności),
+  `obj_NewUnit` 0x43d5d0, `obj_NewVoidUnit` 0x43e0b0, `wep_NewWeapon` 0x46d900, `wep_CalcKillTime(s)` 0x46fac0/0x46fbd0.
+- Dokumentacja klas: `docs/classes.md`; nagłówki układów: `src/engine/model/objects.hpp` (generowane); lista kontrolna: `docs/REBUILD_CHECKLIST.md`.
+
 ## Etapy
 1. [x] Narzędzia klas i pól, plan.
 2. [ ] Rekonstrukcja struktur: klasa bazowa obiektu, lista obiektów świata, mapa kafli, polecenia.
