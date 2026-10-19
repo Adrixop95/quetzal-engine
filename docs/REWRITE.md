@@ -64,6 +64,12 @@ Rekompilowana wersja (`runtime/` + `work/gen/`) pozostaje wzorcem do testów ró
   `obj_NewUnit` 0x43d5d0, `obj_NewVoidUnit` 0x43e0b0, `wep_NewWeapon` 0x46d900, `wep_CalcKillTime(s)` 0x46fac0/0x46fbd0.
 - Dokumentacja klas: `docs/classes.md`; nagłówki układów: `src/engine/model/objects.hpp` (generowane); lista kontrolna: `docs/REBUILD_CHECKLIST.md`.
 
+- Pole `+0x50` każdego obiektu świata = id typu (UGI, 0..89); `+0x3c` = maks. zdrowie typu (np. 6000 piechur, 5000 muszkieter, 3500 łucznik,
+  10000 rycerz, 36000 niedźwiedź); `+0x68` = wskaźnik do statycznego rekordu opisu typu (0x4c bajty, .data od 0x4ac428, wypełniany przy starcie).
+- `docs/object_types.md`: 90 typów (nazwa UGI, klasa) i 45 typów pakietów/poleceń (PCT_*), w tym polecenia klatki (MOVE, ATTACK, BUILD, ...).
+- Narzędzia testowe: `tools/make_ztest.py` + `tools/ztest_run.sh` (własna mapa testowa z jednostkami wybranych typów na stronie przeciwnika;
+  budynki muszą powstawać przez sekcję [Town], w [Team] wywołują wywołanie pustego wskaźnika w `Building.cpp`).
+
 ## Etapy
 1. [x] Narzędzia klas i pól, plan.
 2. [ ] Rekonstrukcja struktur: klasa bazowa obiektu, lista obiektów świata, mapa kafli, polecenia.

@@ -36,18 +36,18 @@ struct Class_0048f2d8 {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   uint32_t f_34;   // +0x34 const, 1 distinct values [0x1..0x1]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 const, 1 distinct values [0x0..0x0]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x59..0x59]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x47..0x47]
   uint32_t f_64;   // +0x64 const, 1 distinct values [0xffffffff..0xffffffff]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x0..0x0]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -85,18 +85,18 @@ struct Arrow {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   int32_t f_34;   // +0x34 int, 6 distinct values [0x1..0x3a]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 dword, 6 distinct values [0x0..0x1af4a6]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c fixed8, 5 distinct values [0x0..0x1db800]
-  int32_t f_50;   // +0x50 int, 6 distinct values [0x0..0xfffff2d6]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   int32_t f_54;   // +0x54 int, 6 distinct values [0x0..0xffffff62]
   int32_t f_58;   // +0x58 int, 6 distinct values [0x0..0xffffef74]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   int32_t f_60;   // +0x60 int, 6 distinct values [0x0..0xfffffa7c]
   uint32_t f_64;   // +0x64 ptr, 4 distinct values [0x0..0x504ae4a8]
-  uint32_t f_68;   // +0x68 ptr, 89 distinct values [0x50176000..0x5017ce60]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -155,18 +155,18 @@ struct Class_0048f5e0 {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   uint32_t f_34;   // +0x34 dword, 95 distinct values [0x0..0xf659fb62]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 dword, 64 distinct values [0x0..0xf498fa72]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c dword, 137 distinct values [0x0..0xf400f98c]
-  uint32_t f_50;   // +0x50 dword, 118 distinct values [0x0..0xfffffc4b]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 dword, 30 distinct values [0x0..0xffffffa5]
   uint32_t f_58;   // +0x58 dword, 9 distinct values [0x0..0xfffffcaa]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 dword, 27 distinct values [0x0..0xfffffc92]
   uint32_t f_64;   // +0x64 dword, 375 distinct values [0x0..0xffffffff]
-  uint32_t f_68;   // +0x68 dword, 301 distinct values [0x0..0xf382f275]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -204,18 +204,18 @@ struct Class_0048f6c4 {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   uint32_t f_34;   // +0x34 const, 1 distinct values [0x0..0x0]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 dword, 2 distinct values [0x48ea9..0x833fd]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x0..0x0]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x0..0x0]
   uint32_t f_64;   // +0x64 const, 1 distinct values [0x0..0x0]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x0..0x0]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -274,18 +274,18 @@ struct Axe {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   int32_t f_34;   // +0x34 int, 6 distinct values [0x5..0x1c]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 dword, 5 distinct values [0x0..0xbffcf]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c fixed8, 4 distinct values [0x0..0xbe800]
-  uint32_t f_50;   // +0x50 fixed8, 4 distinct values [0x0..0x1c4600]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   int32_t f_54;   // +0x54 int, 5 distinct values [0x0..0xfffff1c5]
   int32_t f_58;   // +0x58 int, 5 distinct values [0x0..0xffffef27]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x0..0x0]
   uint32_t f_64;   // +0x64 const, 1 distinct values [0x0..0x0]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x0..0x0]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -344,18 +344,18 @@ struct BallExpl {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   int32_t f_34;   // +0x34 int, 7 distinct values [0x2..0x32]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 ptr, 92 distinct values [0x50176040..0x5017bfe0]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x0..0x0]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x0..0x0]
   uint32_t f_64;   // +0x64 const, 1 distinct values [0x0..0x0]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x0..0x0]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -414,18 +414,18 @@ struct Bird {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   int32_t f_34;   // +0x34 int, 4 distinct values [0x2..0x6]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   int32_t f_40;   // +0x40 int, 4 distinct values [0x0..0x3]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  int32_t f_50;   // +0x50 int, 3 distinct values [0x21..0x3c]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   int32_t f_54;   // +0x54 int, 2 distinct values [0x0..0x9]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x2..0x2]
   uint32_t f_64;   // +0x64 code/data ptr, 3 distinct values [0x49b370..0x49b420]
-  uint32_t f_68;   // +0x68 dword, 203 distinct values [0xb5f0..0x1afecd]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -463,18 +463,18 @@ struct Boat {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   uint32_t f_34;   // +0x34 const, 1 distinct values [0x2..0x2]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   int32_t f_40;   // +0x40 int, 2 distinct values [0x0..0x1]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x54..0x54]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   int32_t f_60;   // +0x60 int, 2 distinct values [0x1..0x5]
   uint32_t f_64;   // +0x64 ptr, 20 distinct values [0x50176000..0x50177f60]
-  int32_t f_68;   // +0x68 int, 2 distinct values [0x0..0x1]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -512,18 +512,18 @@ struct Tactic {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   uint32_t f_34;   // +0x34 const, 1 distinct values [0x0..0x0]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 const, 1 distinct values [0x0..0x0]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x0..0x0]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 ptr, 20 distinct values [0x504aa288..0x504b0da0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x0..0x0]
   int32_t f_64;   // +0x64 int, 7 distinct values [0xf..0x15]
-  int32_t f_68;   // +0x68 int, 6 distinct values [0xc..0x11]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -581,18 +581,18 @@ struct Building {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   int32_t f_34;   // +0x34 int, 2 distinct values [0x2..0x3]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   int32_t f_40;   // +0x40 int, 5 distinct values [0x0..0x4]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  int32_t f_50;   // +0x50 int, 35 distinct values [0xa..0x4c]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x1..0x1]
   uint32_t f_64;   // +0x64 code/data ptr, 35 distinct values [0x49b538..0x4a7468]
-  int32_t f_68;   // +0x68 int, 3 distinct values [0x0..0x2]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -630,18 +630,18 @@ struct Class_0048ff84 {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   uint32_t f_34;   // +0x34 dword, 134 distinct values [0xa0022..0x5109f000]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 dword, 2 distinct values [0x10..0xfffa0043]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c dword, 3 distinct values [0x0..0xffe70058]
-  uint32_t f_50;   // +0x50 dword, 2 distinct values [0x1..0xffe1005d]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 dword, 145 distinct values [0x10ba4858..0xffdb0061]
   uint32_t f_58;   // +0x58 dword, 7 distinct values [0x0..0xffd40066]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 dword, 3 distinct values [0x1..0xffca006a]
   uint32_t f_64;   // +0x64 dword, 5 distinct values [0x0..0xffc7006b]
-  uint32_t f_68;   // +0x68 dword, 2 distinct values [0x0..0xffc6006a]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -700,18 +700,18 @@ struct Cannon {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   int32_t f_34;   // +0x34 int, 2 distinct values [0x2..0x3]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   int32_t f_40;   // +0x40 int, 2 distinct values [0x1..0x2]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x57..0x57]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   int32_t f_54;   // +0x54 int, 2 distinct values [0x0..0x9]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x1..0x1]
   int32_t f_64;   // +0x64 int, 3 distinct values [0x1..0x3]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x4a8e18..0x4a8e18]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -788,18 +788,18 @@ struct Defence {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   int32_t f_34;   // +0x34 int, 11 distinct values [0x1..0x27]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   int32_t f_40;   // +0x40 int, 5 distinct values [0x0..0x4]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   int32_t f_4c;   // +0x4c int, 6 distinct values [0x0..0x14]
-  int32_t f_50;   // +0x50 int, 8 distinct values [0x11..0x56]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   int32_t f_60;   // +0x60 int, 2 distinct values [0x0..0x1]
   int32_t f_64;   // +0x64 int, 4 distinct values [0x0..0x3]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x0..0x0]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -837,18 +837,18 @@ struct Class_00490738 {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   int32_t f_34;   // +0x34 int, 6 distinct values [0x7..0x33]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 const, 1 distinct values [0x0..0x0]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x0..0x0]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x0..0x0]
   uint32_t f_64;   // +0x64 const, 1 distinct values [0x0..0x0]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x0..0x0]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -1091,18 +1091,18 @@ struct Class_00490c10 {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   uint32_t f_34;   // +0x34 const, 1 distinct values [0x0..0x0]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 const, 1 distinct values [0x0..0x0]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x0..0x0]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x0..0x0]
   uint32_t f_64;   // +0x64 const, 1 distinct values [0x0..0x0]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x0..0x0]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -2154,18 +2154,18 @@ struct FireThrow {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   uint32_t f_34;   // +0x34 const, 1 distinct values [0x22..0x22]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 const, 1 distinct values [0x0..0x0]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x0..0x0]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x0..0x0]
   uint32_t f_64;   // +0x64 const, 1 distinct values [0x0..0x0]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x0..0x0]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -2224,18 +2224,18 @@ struct Class_00492830 {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   uint32_t f_34;   // +0x34 const, 1 distinct values [0x0..0x0]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   int32_t f_40;   // +0x40 int, 206 distinct values [0x0..0x2036]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   int32_t f_4c;   // +0x4c int, 217 distinct values [0x0..0x2078]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x0..0x0]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x0..0x0]
   uint32_t f_64;   // +0x64 const, 1 distinct values [0x0..0x0]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x0..0x0]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -2312,18 +2312,18 @@ struct Headtruck {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   int32_t f_34;   // +0x34 int, 7 distinct values [0x2..0xa]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   int32_t f_40;   // +0x40 int, 5 distinct values [0x0..0x4]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   int32_t f_4c;   // +0x4c int, 2 distinct values [0x0..0x13]
-  int32_t f_50;   // +0x50 int, 6 distinct values [0x3..0x3b]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   int32_t f_60;   // +0x60 int, 2 distinct values [0x0..0x1]
   int32_t f_64;   // +0x64 int, 3 distinct values [0x0..0x2]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x0..0x0]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -2361,18 +2361,18 @@ struct Johnka {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   uint32_t f_34;   // +0x34 const, 1 distinct values [0x2..0x2]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 const, 1 distinct values [0x2..0x2]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x58..0x58]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x0..0x0]
   uint32_t f_64;   // +0x64 ptr, 2 distinct values [0x50178fa0..0x50178fc0]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x1..0x1]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -2410,18 +2410,18 @@ struct Tactic_00492e90 {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   uint32_t f_34;   // +0x34 const, 1 distinct values [0x0..0x0]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 const, 1 distinct values [0x0..0x0]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x0..0x0]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 ptr, 2 distinct values [0x504b28f0..0x504b29a8]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x0..0x0]
   int32_t f_64;   // +0x64 int, 2 distinct values [0xf..0x16]
-  int32_t f_68;   // +0x68 int, 2 distinct values [0xd..0xe]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -2479,18 +2479,18 @@ struct Tactic_00492fdc {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   uint32_t f_34;   // +0x34 const, 1 distinct values [0x0..0x0]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 const, 1 distinct values [0x0..0x0]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x5..0x5]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x0..0x0]
   int32_t f_64;   // +0x64 int, 3 distinct values [0x11..0x14]
-  int32_t f_68;   // +0x68 int, 3 distinct values [0xc..0x10]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -2548,18 +2548,18 @@ struct Tactic_0049313c {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   uint32_t f_34;   // +0x34 const, 1 distinct values [0x0..0x0]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 const, 1 distinct values [0x0..0x0]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  int32_t f_50;   // +0x50 int, 2 distinct values [0x0..0x5]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 ptr, 53 distinct values [0x0..0x504aaec0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   int32_t f_60;   // +0x60 int, 2 distinct values [0x0..0x100]
   int32_t f_64;   // +0x64 int, 22 distinct values [0x1..0x16]
-  int32_t f_68;   // +0x68 int, 6 distinct values [0xc..0x11]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -2642,18 +2642,18 @@ struct Marine {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   int32_t f_34;   // +0x34 int, 18 distinct values [0x1..0x1a]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   int32_t f_40;   // +0x40 int, 5 distinct values [0x0..0x4]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   int32_t f_4c;   // +0x4c int, 20 distinct values [0x0..0x14]
-  int32_t f_50;   // +0x50 int, 16 distinct values [0x0..0x52]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   int32_t f_54;   // +0x54 int, 4 distinct values [0x0..0xa]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   int32_t f_60;   // +0x60 int, 2 distinct values [0x0..0x1]
   int32_t f_64;   // +0x64 int, 6 distinct values [0x0..0x5]
-  uint32_t f_68;   // +0x68 code/data ptr, 16 distinct values [0x4ac430..0x4ac8a4]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -2971,18 +2971,18 @@ struct Class_00493fe0 {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   int32_t f_34;   // +0x34 int, 4 distinct values [0x15..0x2d]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 const, 1 distinct values [0x0..0x0]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x0..0x0]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x0..0x0]
   uint32_t f_64;   // +0x64 const, 1 distinct values [0x0..0x0]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x0..0x0]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -3075,18 +3075,18 @@ struct Spider {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   int32_t f_34;   // +0x34 int, 3 distinct values [0x2..0x4]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   int32_t f_40;   // +0x40 int, 4 distinct values [0x0..0x3]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  int32_t f_50;   // +0x50 int, 2 distinct values [0x1e..0x23]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   int32_t f_54;   // +0x54 int, 2 distinct values [0x0..0x9]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   int32_t f_60;   // +0x60 int, 2 distinct values [0x0..0x1]
   int32_t f_64;   // +0x64 int, 3 distinct values [0x0..0x2]
-  int32_t f_68;   // +0x68 int, 2 distinct values [0x0..0x1]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -3124,18 +3124,18 @@ struct SplashDamage {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   int32_t f_34;   // +0x34 int, 11 distinct values [0x3..0x35]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 ptr, 144 distinct values [0x50176000..0x5017bf40]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x0..0x0]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x0..0x0]
   uint32_t f_64;   // +0x64 const, 1 distinct values [0x0..0x0]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x0..0x0]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -3194,18 +3194,18 @@ struct SplashDamage_00494430 {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   int32_t f_34;   // +0x34 int, 3 distinct values [0x13..0x36]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 const, 1 distinct values [0x0..0x0]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x0..0x0]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x0..0x0]
   uint32_t f_64;   // +0x64 const, 1 distinct values [0x0..0x0]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x0..0x0]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -3279,18 +3279,18 @@ struct Tactic_004944f0 {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   uint32_t f_34;   // +0x34 const, 1 distinct values [0x0..0x0]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   int32_t f_40;   // +0x40 int, 37 distinct values [0x0..0x58]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  int32_t f_50;   // +0x50 int, 4 distinct values [0x0..0x5]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   int32_t f_54;   // +0x54 int, 21 distinct values [0x0..0x14]
   uint32_t f_58;   // +0x58 ptr, 286 distinct values [0x0..0x504c5eb8]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   int32_t f_60;   // +0x60 int, 3 distinct values [0x0..0x100]
   uint32_t f_64;   // +0x64 dword, 23 distinct values [0x1..0x49556c]
-  uint32_t f_68;   // +0x68 dword, 7 distinct values [0xc..0x10001]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -3348,18 +3348,18 @@ struct Tactic_00494648 {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   uint32_t f_34;   // +0x34 const, 1 distinct values [0x0..0x0]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 const, 1 distinct values [0x0..0x0]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c code/data ptr, 2 distinct values [0x0..0x49556c]
-  uint32_t f_50;   // +0x50 dword, 2 distinct values [0x0..0x10001]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 ptr, 2 distinct values [0x0..0x10011e88]
   uint32_t f_58;   // +0x58 dword, 131 distinct values [0x0..0x504bcaa8]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   int32_t f_60;   // +0x60 int, 4 distinct values [0x0..0x100]
   uint32_t f_64;   // +0x64 dword, 24 distinct values [0x1..0x49556c]
-  uint32_t f_68;   // +0x68 dword, 8 distinct values [0xc..0x10001]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -3418,18 +3418,18 @@ struct Town {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   int32_t f_34;   // +0x34 int, 4 distinct values [0x0..0x3]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 const, 1 distinct values [0x0..0x0]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   int32_t f_4c;   // +0x4c int, 75 distinct values [0x0..0x39b]
-  int32_t f_50;   // +0x50 int, 10 distinct values [0x0..0x9]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   int32_t f_54;   // +0x54 int, 44 distinct values [0x1..0xffffffff]
   int32_t f_58;   // +0x58 int, 12 distinct values [0x0..0xe]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 ptr, 14 distinct values [0x0..0x50b7a1c8]
   int32_t f_64;   // +0x64 int, 10 distinct values [0x2..0x5a]
-  int32_t f_68;   // +0x68 int, 116 distinct values [0x0..0x1d68]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -3488,18 +3488,18 @@ struct Town_004947fc {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   int32_t f_34;   // +0x34 int, 2 distinct values [0x0..0x1000]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   int32_t f_40;   // +0x40 int, 6 distinct values [0x0..0x1f4]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   int32_t f_4c;   // +0x4c int, 4 distinct values [0x0..0x3]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x0..0x0]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   int32_t f_54;   // +0x54 int, 3 distinct values [0x0..0x2]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   int32_t f_60;   // +0x60 int, 2 distinct values [0x100..0x101]
   int32_t f_64;   // +0x64 int, 75 distinct values [0x0..0x39b]
-  int32_t f_68;   // +0x68 int, 10 distinct values [0x0..0x9]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -3573,18 +3573,18 @@ struct Truck {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   int32_t f_34;   // +0x34 int, 3 distinct values [0x2..0x5]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 const, 1 distinct values [0x0..0x0]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x53..0x53]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x1..0x1]
   int32_t f_64;   // +0x64 int, 2 distinct values [0x1..0x2]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x4bc738..0x4bc738]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -3622,18 +3622,18 @@ struct Class_00494f10 {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   int32_t f_34;   // +0x34 int, 2 distinct values [0x38..0x39]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 const, 1 distinct values [0x0..0x0]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x0..0x0]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x0..0x0]
   uint32_t f_64;   // +0x64 const, 1 distinct values [0x0..0x0]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x0..0x0]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -3692,18 +3692,18 @@ struct Class_00494f98 {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   uint32_t f_34;   // +0x34 const, 1 distinct values [0xb..0xb]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 const, 1 distinct values [0x0..0x0]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x0..0x0]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x0..0x0]
   uint32_t f_64;   // +0x64 const, 1 distinct values [0x0..0x0]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x0..0x0]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -3762,18 +3762,18 @@ struct Class_00495020 {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   uint32_t f_34;   // +0x34 const, 1 distinct values [0x10..0x10]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 const, 1 distinct values [0x0..0x0]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x0..0x0]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x0..0x0]
   uint32_t f_64;   // +0x64 const, 1 distinct values [0x0..0x0]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x0..0x0]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -3832,18 +3832,18 @@ struct Class_004950a8 {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   int32_t f_34;   // +0x34 int, 2 distinct values [0x8..0xd]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 const, 1 distinct values [0x0..0x0]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x0..0x0]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x0..0x0]
   uint32_t f_64;   // +0x64 const, 1 distinct values [0x0..0x0]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x0..0x0]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -3902,18 +3902,18 @@ struct Class_00495130 {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   int32_t f_34;   // +0x34 int, 9 distinct values [0x4..0x3b]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 const, 1 distinct values [0x0..0x0]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x0..0x0]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x0..0x0]
   uint32_t f_64;   // +0x64 const, 1 distinct values [0x0..0x0]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x0..0x0]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -3972,18 +3972,18 @@ struct Zeppelin {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   uint32_t f_34;   // +0x34 const, 1 distinct values [0x2..0x2]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   int32_t f_40;   // +0x40 int, 3 distinct values [0x0..0x2]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  int32_t f_50;   // +0x50 int, 2 distinct values [0x7..0x55]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   int32_t f_54;   // +0x54 int, 3 distinct values [0x0..0xa]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   int32_t f_60;   // +0x60 int, 2 distinct values [0x1..0x2]
   uint32_t f_64;   // +0x64 code/data ptr, 2 distinct values [0x4bcd00..0x4bcd44]
-  uint32_t f_68;   // +0x68 dword, 9 distinct values [0x1eb2..0x1815a1]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
@@ -4085,18 +4085,18 @@ struct Class_0049556c {
   uint32_t anim_set;   // +0x30 pointer to the animation set (guest address)
   uint32_t f_34;   // +0x34 const, 1 distinct values [0x258..0x258]
   int32_t hp;   // +0x38 current value (e.g. 0x1770), probably health
-  int32_t hp_max;   // +0x3c maximum of +0x38
+  int32_t hp_max;   // +0x3c per-type maximum health (footman 6000, rifleman 5000, archer 3500, knight 10000, bear 36000 ...)
   uint32_t f_40;   // +0x40 const, 1 distinct values [0x0..0x0]
   int32_t tile_x;   // +0x44 map tile x (tile = 48 px)
   int32_t tile_y;   // +0x48 map tile y
   uint32_t f_4c;   // +0x4c const, 1 distinct values [0x0..0x0]
-  uint32_t f_50;   // +0x50 const, 1 distinct values [0x0..0x0]
+  int32_t type_id;   // +0x50 object type = index into UGI_* (0..89)
   uint32_t f_54;   // +0x54 const, 1 distinct values [0x0..0x0]
   uint32_t f_58;   // +0x58 const, 1 distinct values [0x0..0x0]
   uint32_t flags;   // +0x5c state flags (e.g. 0x01000101)
   uint32_t f_60;   // +0x60 const, 1 distinct values [0x0..0x0]
   uint32_t f_64;   // +0x64 const, 1 distinct values [0x0..0x0]
-  uint32_t f_68;   // +0x68 const, 1 distinct values [0x0..0x0]
+  uint32_t type_desc;   // +0x68 pointer to the static per-type descriptor record (0x4c bytes, .data 0x4ac428+)
   int32_t fx_x;   // +0x6c fixed point x, pos_x * 256
   int32_t fx_y;   // +0x70 fixed point y, pos_y * 256
   int32_t target_x;   // +0x74 pixel x of the current step target
