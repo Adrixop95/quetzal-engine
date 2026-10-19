@@ -11,6 +11,8 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <ifaddrs.h>
+#include <net/if.h>
 
 #include "aztec_rt.h"
 #include "dbg.h"
@@ -26,6 +28,9 @@ static __thread int wsa_err;
 static struct { uint8_t data[1600]; uint32_t len; } lb_q[LB_MAX];
 static int lb_head, lb_tail;
 static uint8_t ipx_bound[16];
+static int ipx_fd = -1;          // real UDP socket carrying IPX packets (IPX over UDP)
+static struct in_addr local_ip;  // our IPv4 address as the game sees it (node = 00 00 + IPv4)
+#define IPX_UDP_BASE 34000
 static pthread_mutex_t lb_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static int map_errno(int e) {
@@ -126,6 +131,7 @@ SH(gethostbyname) {   // name -> struct hostent in guest memory
   hints.ai_family = AF_INET;
   if (getaddrinfo(name, NULL, &hints, &res) == 0 && res) { ia = ((struct sockaddr_in*)res->ai_addr)->sin_addr; freeaddrinfo(res); }
   else inet_aton("127.0.0.1", &ia);
+  if (getenv("RT_HOST_IP")) inet_aton(getenv("RT_HOST_IP"), &ia);   // tests: two instances on one machine
   memcpy(GPTR(addr), &ia, 4);
   GU32(addrs) = addr; GU32(addrs + 4) = 0;
   GU32(he) = guest_cstring(name); GU32(he + 4) = addrs + 4; GU16(he + 8) = 2; GU16(he + 10) = 4; GU32(he + 12) = addrs;
@@ -138,18 +144,38 @@ SH(bind) {   // s, sockaddr*, len
   if (a[0] == FAKE_IPX) {
     memset(ipx_bound, 0, sizeof ipx_bound);
     memcpy(ipx_bound, GPTR(a[1]), a[2] < 14 ? a[2] : 14);
-    DBG("net", "bind(IPX placeholder) len=%u socket=%02x%02x -> ok", a[2], ipx_bound[12], ipx_bound[13]);
+    unsigned sock = (unsigned)(ipx_bound[12] << 8 | ipx_bound[13]);
+    ipx_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (ipx_fd >= 0) {
+      int one = 1;
+      setsockopt(ipx_fd, SOL_SOCKET, SO_BROADCAST, &one, sizeof one);
+      setsockopt(ipx_fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
+      struct sockaddr_in ba = {0};
+      ba.sin_family = AF_INET;
+      ba.sin_port = htons((uint16_t)(IPX_UDP_BASE + (sock & 0x3ff)));
+      ba.sin_addr.s_addr = getenv("RT_HOST_IP") ? local_ip.s_addr : htonl(INADDR_ANY);   // tests: several instances on one host
+      if (bind(ipx_fd, (struct sockaddr*)&ba, sizeof ba) != 0) { DBG("net", "IPX-over-UDP bind failed: %s (LAN play unavailable, loopback only)", strerror(errno)); close(ipx_fd); ipx_fd = -1; }
+      else fcntl(ipx_fd, F_SETFL, O_NONBLOCK);
+    }
+    DBG("net", "bind(IPX) len=%u socket=%02x%02x -> UDP port %u fd=%d local ip %s", a[2], ipx_bound[12], ipx_bound[13], IPX_UDP_BASE + (sock & 0x3ff), ipx_fd, inet_ntoa(local_ip));
     return 0;
   }
   int rc = bind((int)a[0], (struct sockaddr*)GPTR(a[1]), a[2]);
   struct sockaddr_in* sa = (struct sockaddr_in*)GPTR(a[1]);
+  if (rc == 0 && sa->sin_family == AF_INET && sa->sin_addr.s_addr) local_ip = sa->sin_addr;
   DBG("net", "bind(s=%u port=%u addr=%s) -> %d (%s)", a[0], ntohs(sa->sin_port), inet_ntoa(sa->sin_addr), rc, rc ? strerror(errno) : "ok");
   return SOCKERR(rc);
 }
 
 SH(getsockname) {   // s, sockaddr*, int* len
   UNUSED;
-  if (a[0] == FAKE_IPX) { if (a[2]) memset(GPTR(a[1]), 0, GU32(a[2])); return 0; }
+  if (a[0] == FAKE_IPX) {
+    uint8_t me[14] = {0};
+    me[0] = 6; memcpy(me + 8, &local_ip, 4); if (!local_ip.s_addr) me[11] = 1;
+    me[12] = ipx_bound[12]; me[13] = ipx_bound[13];
+    if (a[2]) { uint32_t l = GU32(a[2]) < 14 ? GU32(a[2]) : 14; memcpy(GPTR(a[1]), me, l); GU32(a[2]) = 14; }
+    return 0;
+  }
   socklen_t len = GU32(a[2]);
   int rc = getsockname((int)a[0], (struct sockaddr*)GPTR(a[1]), &len);
   GU32(a[2]) = len;
@@ -158,17 +184,52 @@ SH(getsockname) {   // s, sockaddr*, int* len
 
 SH(sendto) {   // s, buf, len, flags, to*, tolen
   UNUSED;
-  if (a[0] == FAKE_IPX) {   // loop the packet back to ourselves
-    pthread_mutex_lock(&lb_lock);
-    int next = (lb_tail + 1) % LB_MAX;
-    if (next != lb_head) {
-      uint32_t n = a[2] > sizeof lb_q[0].data ? (uint32_t)sizeof lb_q[0].data : a[2];
-      memcpy(lb_q[lb_tail].data, GPTR(a[1]), n);
-      lb_q[lb_tail].len = n;
-      lb_tail = next;
+  if (a[0] == FAKE_IPX) {   // IPX over UDP; packets for ourselves (and broadcasts) are also looped back locally
+    const uint8_t* to = a[4] ? (const uint8_t*)GPTR(a[4]) : NULL;
+    int bcast = !to, self = 0;
+    uint16_t port = (uint16_t)(IPX_UDP_BASE + (((ipx_bound[12] << 8) | ipx_bound[13]) & 0x3ff));
+    struct in_addr dst = {0};
+    if (to) {
+      port = (uint16_t)(IPX_UDP_BASE + (((to[12] << 8) | to[13]) & 0x3ff));
+      bcast = 1;
+      for (int i = 0; i < 6; i++) if (to[6 + i] != 0xff) bcast = 0;
+      memcpy(&dst, to + 8, 4);
+      self = !bcast && dst.s_addr == local_ip.s_addr;
     }
-    pthread_mutex_unlock(&lb_lock);
-    { static unsigned cnt; if (cnt++ < 60) DBG("net", "IPX loopback send %u bytes first4=%08x", a[2], a[2] >= 4 ? GU32(a[1]) : 0); }
+    if (bcast || self) {
+      pthread_mutex_lock(&lb_lock);
+      int next = (lb_tail + 1) % LB_MAX;
+      if (next != lb_head) {
+        uint32_t n = a[2] > sizeof lb_q[0].data ? (uint32_t)sizeof lb_q[0].data : a[2];
+        memcpy(lb_q[lb_tail].data, GPTR(a[1]), n);
+        lb_q[lb_tail].len = n;
+        lb_tail = next;
+      }
+      pthread_mutex_unlock(&lb_lock);
+    }
+    if (ipx_fd >= 0 && !self) {
+      struct sockaddr_in da = {0};
+      da.sin_family = AF_INET; da.sin_port = htons(port);
+      if (!bcast) { da.sin_addr = dst; sendto(ipx_fd, GPTR(a[1]), a[2], 0, (struct sockaddr*)&da, sizeof da); }
+      else if (getenv("RT_IPX_PEERS")) {   // tests: explicit peer list instead of broadcast
+        char list[256]; snprintf(list, sizeof list, "%s", getenv("RT_IPX_PEERS"));
+        for (char* tok = strtok(list, ","); tok; tok = strtok(NULL, ","))
+          if (inet_aton(tok, &da.sin_addr) && da.sin_addr.s_addr != local_ip.s_addr) sendto(ipx_fd, GPTR(a[1]), a[2], 0, (struct sockaddr*)&da, sizeof da);
+      } else {
+        da.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+        sendto(ipx_fd, GPTR(a[1]), a[2], 0, (struct sockaddr*)&da, sizeof da);
+        struct ifaddrs *ifa, *p;
+        if (getifaddrs(&ifa) == 0) {
+          for (p = ifa; p; p = p->ifa_next)
+            if (p->ifa_broadaddr && p->ifa_broadaddr->sa_family == AF_INET && (p->ifa_flags & IFF_BROADCAST) && (p->ifa_flags & IFF_UP)) {
+              da.sin_addr = ((struct sockaddr_in*)p->ifa_broadaddr)->sin_addr;
+              sendto(ipx_fd, GPTR(a[1]), a[2], 0, (struct sockaddr*)&da, sizeof da);
+            }
+          freeifaddrs(ifa);
+        }
+      }
+    }
+    { static unsigned cnt; if (cnt++ < 60) DBG("net", "IPX send %u bytes %s (udp port %u) first4=%08x", a[2], bcast ? "broadcast" : self ? "to self" : inet_ntoa(dst), port, a[2] >= 4 ? GU32(a[1]) : 0); }
     return a[2];
   }
   ssize_t n = sendto((int)a[0], GPTR(a[1]), a[2], (int)a[3], a[4] ? (struct sockaddr*)GPTR(a[4]) : NULL, a[5]);
@@ -181,24 +242,32 @@ SH(recvfrom) {   // s, buf, len, flags, from*, fromlen*
   UNUSED;
   if (a[0] == FAKE_IPX) {
     for (int tries = 0; tries < 50; tries++) {   // blocking receive with a short timeout
+      uint8_t from[14] = {0};
+      from[0] = 6; from[12] = ipx_bound[12]; from[13] = ipx_bound[13];
+      int32_t got = -1;
       pthread_mutex_lock(&lb_lock);
       if (lb_head != lb_tail) {
         uint32_t n = lb_q[lb_head].len > a[2] ? a[2] : lb_q[lb_head].len;
         memcpy(GPTR(a[1]), lb_q[lb_head].data, n);
         lb_head = (lb_head + 1) % LB_MAX;
-        pthread_mutex_unlock(&lb_lock);
-        if (a[4] && a[5]) {   // sender: our own IPX address (family, net 0, node ...01, bound socket)
-          uint8_t from[14] = {0};
-          from[0] = 6; from[10] = 1;
-          from[12] = ipx_bound[12]; from[13] = ipx_bound[13];
-          uint32_t fl = GU32(a[5]) < 14 ? GU32(a[5]) : 14;
-          memcpy(GPTR(a[4]), from, fl);
-          GU32(a[5]) = 14;
-        }
-        { static unsigned cnt; if (cnt++ < 60) DBG("net", "IPX loopback recv %u bytes", n); }
-        return n;
+        memcpy(from + 8, &local_ip, 4);
+        if (!local_ip.s_addr) from[11] = 1;
+        got = (int32_t)n;
       }
       pthread_mutex_unlock(&lb_lock);
+      while (got < 0 && ipx_fd >= 0) {
+        struct sockaddr_in sa; socklen_t sl = sizeof sa;
+        ssize_t n = recvfrom(ipx_fd, GPTR(a[1]), a[2], 0, (struct sockaddr*)&sa, &sl);
+        if (n < 0) break;
+        if (sa.sin_addr.s_addr == local_ip.s_addr) continue;   // our own broadcast coming back: already delivered locally
+        memcpy(from + 8, &sa.sin_addr, 4);
+        got = (int32_t)n;
+      }
+      if (got >= 0) {
+        if (a[4] && a[5]) { uint32_t fl = GU32(a[5]) < 14 ? GU32(a[5]) : 14; memcpy(GPTR(a[4]), from, fl); GU32(a[5]) = 14; }
+        { static unsigned cnt; if (cnt++ < 60) DBG("net", "IPX recv %d bytes from node %d.%d.%d.%d", got, from[8], from[9], from[10], from[11]); }
+        return (uint32_t)got;
+      }
       usleep(4000);
     }
     wsa_err = 10035;   // WSAEWOULDBLOCK / timeout

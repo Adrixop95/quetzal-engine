@@ -918,6 +918,7 @@ SH(RegQueryValueExA) {  // hkey, name, reserved, *type, data, *cb
   const char* name = a[1] ? (const char*)GPTR(a[1]) : "";
   for (size_t i = 0; i < N_REG; i++) {
     if (strcasecmp(reg_defaults[i].key, path) || strcasecmp(reg_defaults[i].name, name)) continue;
+    if (!strcmp(name, "DefaultProvider") && getenv("RT_NET_PROVIDER")) { if (a[3]) GU32(a[3]) = 4; if (a[4]) GU32(a[4]) = (uint32_t)atoi(getenv("RT_NET_PROVIDER")); if (a[5]) GU32(a[5]) = 4; return 0; }
     if (!strcmp(name, "DisplayMode") && (getenv("RT_DISPLAYMODE") || g_settings.res_w > 0)) { if (a[3]) GU32(a[3]) = 4; if (a[4]) GU32(a[4]) = getenv("RT_DISPLAYMODE") ? (uint32_t)atoi(getenv("RT_DISPLAYMODE")) : (getenv("RT_RES_INDEX") ? (uint32_t)atoi(getenv("RT_RES_INDEX")) : 0u); if (a[5]) GU32(a[5]) = 4; return 0; }
     uint32_t type = reg_defaults[i].is_dword ? 4 : 1;
     uint32_t len = reg_defaults[i].is_dword ? 4 : (uint32_t)strlen(reg_defaults[i].sz) + 1;
