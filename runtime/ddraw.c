@@ -170,14 +170,23 @@ static uint32_t surf_bltfast(CPU* c, uint32_t* a) {  // x, y, src, rect, trans
   int w = sr.r - sr.l, h = sr.b - sr.t;
   int x0 = (int)a[1], y0 = (int)a[2];
   int keyed = (a[5] & 0x2) && s->has_key;  // DDBLTFAST_SRCCOLORKEY
-  for (int y = 0; y < h && y0 + y < d->h; y++) {
-    if (y0 + y < 0) continue;
-    for (int x = 0; x < w && x0 + x < d->w; x++) {
-      if (x0 + x < 0) continue;
-      uint8_t* sp = (uint8_t*)GPTR(s->pixels) + (size_t)(sr.t + y) * s->pitch + (size_t)(sr.l + x) * bp;
-      uint8_t* dp = (uint8_t*)GPTR(d->pixels) + (size_t)(y0 + y) * d->pitch + (size_t)(x0 + x) * bp;
-      if (keyed) { uint32_t v = 0; memcpy(&v, sp, bp); if (v >= s->key_lo && v <= s->key_hi) continue; }
-      memcpy(dp, sp, bp);
+  // clip to the destination once instead of testing every pixel
+  int sx = 0, sy = 0;
+  if (x0 < 0) { sx = -x0; x0 = 0; }
+  if (y0 < 0) { sy = -y0; y0 = 0; }
+  if (x0 + (w - sx) > d->w) w = d->w - x0 + sx;
+  if (y0 + (h - sy) > d->h) h = d->h - y0 + sy;
+  for (int y = sy; y < h; y++) {
+    const uint8_t* sp = (uint8_t*)GPTR(s->pixels) + (size_t)(sr.t + y) * s->pitch + (size_t)(sr.l + sx) * bp;
+    uint8_t* dp = (uint8_t*)GPTR(d->pixels) + (size_t)(y0 + y - sy) * d->pitch + (size_t)x0 * bp;
+    int n = w - sx;
+    if (n <= 0) continue;
+    if (!keyed) { memcpy(dp, sp, (size_t)n * bp); continue; }
+    if (bp == 2) {
+      const uint16_t* s16 = (const uint16_t*)sp; uint16_t* d16 = (uint16_t*)dp;
+      for (int x = 0; x < n; x++) { uint16_t v = s16[x]; if (v < s->key_lo || v > s->key_hi) d16[x] = v; }
+    } else {
+      for (int x = 0; x < n; x++) { uint32_t v = 0; memcpy(&v, sp + x * bp, bp); if (v < s->key_lo || v > s->key_hi) memcpy(dp + x * bp, sp + x * bp, bp); }
     }
   }
   if (d->primary) present(d);

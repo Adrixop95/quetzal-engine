@@ -517,7 +517,7 @@ public class LiftAll extends GhidraScript {
             case PcodeOp.BOOL_AND: b.printf("%s%s = (%s) & (%s);%n", L, out, ra, rb); return;
             case PcodeOp.BOOL_OR: b.printf("%s%s = (%s) | (%s);%n", L, out, ra, rb); return;
             case PcodeOp.BOOL_XOR: b.printf("%s%s = (%s) ^ (%s);%n", L, out, ra, rb); return;
-            case PcodeOp.POPCOUNT: b.printf("%s%s = (%s)__builtin_popcountll((uint64_t)%s);%n", L, out, T, ra); return;
+            case PcodeOp.POPCOUNT: b.printf("%s%s = (%s)rt_popcount((uint64_t)%s);%n", L, out, T, ra); return;
             case PcodeOp.LZCOUNT: b.printf("%s%s = (%s)lzcnt64((uint64_t)%s, %d);%n", L, out, T, ra, asz * 8); return;
             case PcodeOp.SUBPIECE: {
                 long sh = bb.getOffset() * 8;

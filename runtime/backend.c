@@ -24,7 +24,7 @@ static int cur_lw = 800, cur_lh = 600;   // logical size currently used for pres
 static SDL_Window* win;
 static SDL_Renderer* ren;
 static SDL_Texture* tex;
-static int tex_w, tex_h;
+static int tex_w, tex_h, tex_is16;
 static int mode_w = 640, mode_h = 480;
 static pthread_t main_thread;
 static int main_thread_set;
@@ -142,7 +142,10 @@ static void dump_frame(const void* pixels, int pitch, int w, int h, int bpp, con
 
 // The SDL renderer (OpenGL) must only be used from the thread that created it. Game threads convert the
 // frame into a staging buffer; the main thread (event pump) uploads and presents it.
-static uint32_t* stage;
+static uint32_t* stage;       // ARGB staging buffer (8/15/32 bpp sources, or the RGB565 fallback)
+static uint16_t* stage16;     // raw RGB565 frame, uploaded as-is when the renderer supports RGB565 textures
+static int stage_is16;
+static int rgb565_ok = -1;    // -1 unknown, 1 usable, 0 renderer refused RGB565
 static int stage_w, stage_h;
 static volatile int stage_dirty;
 static pthread_mutex_t stage_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -207,11 +210,18 @@ static int on_main_thread(void);
 
 static void present_stage(void) {
   pthread_mutex_lock(&stage_lock);
-  if (stage_dirty && ren && stage) {
-    if (!tex || tex_w != stage_w || tex_h != stage_h || tex_reset) {
+  if (stage_dirty && ren && (stage || stage16)) {
+    int want16 = stage_is16 && rgb565_ok != 0;
+    if (!tex || tex_w != stage_w || tex_h != stage_h || tex_reset || tex_is16 != want16) {
       tex_reset = 0;
       if (tex) SDL_DestroyTexture(tex);
-      tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, stage_w, stage_h);
+      tex = SDL_CreateTexture(ren, want16 ? SDL_PIXELFORMAT_RGB565 : SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, stage_w, stage_h);
+      if (!tex && want16) {   // renderer cannot do RGB565: remember it and convert on this (main) thread instead
+        rgb565_ok = 0; want16 = 0;
+        DBG("render", "RGB565 texture refused (%s): falling back to ARGB conversion", SDL_GetError());
+        tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, stage_w, stage_h);
+      } else if (tex && want16) rgb565_ok = 1;
+      tex_is16 = want16;
       if (!tex) rt_log("SDL_CreateTexture %dx%d failed: %s", stage_w, stage_h, SDL_GetError());
       DBG("render", "texture (re)created %dx%d -> %s (smooth=%d)", stage_w, stage_h, tex ? "ok" : "FAILED", g_settings.smooth);
       tex_w = stage_w; tex_h = stage_h;
@@ -226,7 +236,19 @@ static void present_stage(void) {
         lw = stage_w; lh = stage_h; cur_lw = stage_w; cur_lh = stage_h;
       }
       uint64_t t_start = SDL_GetPerformanceCounter();
-      if (SDL_UpdateTexture(tex, NULL, stage, stage_w * 4) != 0) DBG_EVERY(100, "render", "SDL_UpdateTexture failed: %s", SDL_GetError());
+      int urc;
+      if (tex_is16) urc = SDL_UpdateTexture(tex, NULL, stage16, stage_w * 2);
+      else if (stage_is16) {   // RGB565 frame but ARGB texture: convert here, off the game's threads
+        static uint32_t* conv; static size_t conv_n;
+        size_t n = (size_t)stage_w * stage_h;
+        if (conv_n < n) { free(conv); conv = malloc(n * 4); conv_n = n; }
+        for (size_t i = 0; i < n; i++) {
+          uint32_t v = stage16[i], r = (v >> 11) & 31, g = (v >> 5) & 63, b = v & 31;
+          conv[i] = 0xFF000000u | ((r << 3 | r >> 2) << 16) | ((g << 2 | g >> 4) << 8) | (b << 3 | b >> 2);
+        }
+        urc = SDL_UpdateTexture(tex, NULL, conv, stage_w * 4);
+      } else urc = SDL_UpdateTexture(tex, NULL, stage, stage_w * 4);
+      if (urc != 0) DBG_EVERY(100, "render", "SDL_UpdateTexture failed: %s", SDL_GetError());
       SDL_RenderClear(ren);
       if (SDL_RenderCopy(ren, tex, NULL, NULL) != 0) DBG_EVERY(100, "render", "SDL_RenderCopy failed: %s", SDL_GetError());
       overlay_draw(ren, stage_w, stage_h);
@@ -300,7 +322,18 @@ void backend_present(const void* pixels, int pitch, int w, int h, int bpp, const
   }
   dump_frame(pixels, pitch, w, h, bpp, palette);
   if (!ren) return;
+  if (bpp == 16) {   // fast path: copy rows as they are, no per-pixel work on the game's thread
+    pthread_mutex_lock(&stage_lock);
+    if (!stage16 || stage_w != w || stage_h != h || !stage_is16) { free(stage16); stage16 = malloc((size_t)w * h * 2); }
+    stage_w = w; stage_h = h; stage_is16 = 1;
+    for (int y = 0; y < h; y++) memcpy(stage16 + (size_t)y * w, (const uint8_t*)pixels + (size_t)y * pitch, (size_t)w * 2);
+    stage_dirty = 1;
+    pthread_mutex_unlock(&stage_lock);
+    if (on_main_thread()) present_stage();
+    return;
+  }
   pthread_mutex_lock(&stage_lock);
+  stage_is16 = 0;
   if (!stage || stage_w != w || stage_h != h) { free(stage); stage = malloc((size_t)w * h * 4); stage_w = w; stage_h = h; }
   for (int y = 0; y < h; y++) {
     const uint8_t* s = (const uint8_t*)pixels + (size_t)y * pitch;

@@ -74,6 +74,13 @@ void rt_run_main(const char* exe_path, int argc, char** argv);
 static inline uint64_t shl64(uint64_t v, uint64_t s, int bits) { return s >= (uint64_t)bits ? 0 : v << s; }
 static inline uint64_t shr64(uint64_t v, uint64_t s, int bits) { return s >= (uint64_t)bits ? 0 : v >> s; }
 static inline int64_t sar64(int64_t v, uint64_t s, int bits) { return s >= (uint64_t)bits ? (v < 0 ? -1 : 0) : v >> s; }
+// popcount without needing -mpopcnt (the lifter uses it for the x86 parity flag)
+static inline uint64_t rt_popcount(uint64_t v) {
+  v = v - ((v >> 1) & 0x5555555555555555ull);
+  v = (v & 0x3333333333333333ull) + ((v >> 2) & 0x3333333333333333ull);
+  v = (v + (v >> 4)) & 0x0F0F0F0F0F0F0F0Full;
+  return (v * 0x0101010101010101ull) >> 56;
+}
 static inline uint64_t lzcnt64(uint64_t v, int bits) {
   int n = 0;
   for (int i = bits - 1; i >= 0 && !((v >> i) & 1); i--) n++;
