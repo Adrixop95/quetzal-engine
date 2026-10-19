@@ -6,3 +6,4 @@ build/
 *.xbe
 debug/
 rt_missing_entries.txt
+build_trace/
