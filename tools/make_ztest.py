@@ -9,6 +9,14 @@ for e in ('map', 'dat', 'rm', 'vis', 'spr', 'scn', 'mit'):
 t = open(src + 'mission_1.mp', encoding='latin1').read()
 head = t.split('[Team0]')[0]
 head = re.sub(r'MapName=.*', 'MapName=ztest', head); head = re.sub(r'Name=Mission 1', 'Name=ZTest', head)
+import struct
+exe = open('game/Aztec.exe', 'rb').read()
+def kind_of(t): o = 0x4933f8 + 8 * t - 0x48f000 + 0x8f000; return struct.unpack_from('<I', exe, o)[0]
+BUILD = [t for t in types if kind_of(t) in (2, 7, 9) ]
+BOATS = [t for t in types if kind_of(t) == 8]
+JOHNK = [t for t in types if kind_of(t) == 10]
+MOBILE = [t for t in types if t not in BUILD and t not in BOATS and t not in JOHNK and t != 89]
+types = MOBILE
 nteams = (len(types) + 8) // 9
 head = re.sub(r'Teams=\d+', 'Teams=%d' % nteams, head); head = re.sub(r'CurrentTeam=\d+', 'CurrentTeam=0', head)
 dat = open(src + 'mission_1.dat', 'rb').read(); W = 90
@@ -20,4 +28,17 @@ for team in range(nteams):
         x, y = pos[k * 3 % len(pos)] if False else pos[k]; k += 1
         out.append('Unit%d=%3d,%3d,%3d,%5d' % (n, x, y, tp, 6000)); n += 1
     out.append('Units=%d\n' % n)
-open(src + 'ztest.mp', 'w', encoding='latin1').write('\n'.join(out))
+ntown = 1
+bp = [p for p in pos[len(types):] ]
+bi = 0
+for g in range(0, len(BUILD), 6):
+    grp = BUILD[g:g + 6]
+    x0, y0 = bp[bi * 4] if bi * 4 < len(bp) else (10, 10); bi += 1
+    out.append('[Town%d]\nScenarioID=%d\nSide=1\nX=%d\nY=%d\nType=2\nTendency=0\nBuildSpeed=1\nRace=1' % (ntown, 50 + ntown, x0, y0))
+    for j, tp in enumerate(grp):
+        x, y = bp[bi * 4 + j * 2] if bi * 4 + j * 2 < len(bp) else (12 + j, 12)
+        out.append('Unit%d=%3d,%3d,%3d, 6000' % (j, x, y, tp))
+    out.append('Units=%d\n' % len(grp)); ntown += 1
+text = '\n'.join(out)
+text = re.sub(r'Towns=\d+', 'Towns=%d' % ntown, text)
+open(src + 'ztest.mp', 'w', encoding='latin1').write(text)

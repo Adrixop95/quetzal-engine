@@ -25,7 +25,8 @@ set(AZTEC_GEN_DIR "" CACHE PATH "Directory with gen_*.c produced by LiftAll.java
 if(AZTEC_GEN_DIR)
   file(GLOB AZTEC_GEN_SRC ${AZTEC_GEN_DIR}/gen_*.c)
   add_executable(aztec_recomp runtime/main.c runtime/core.c runtime/win32.c runtime/backend.c
-                 runtime/ddraw.c runtime/dsound.c runtime/dinput.c runtime/directx.c runtime/video.c runtime/settings.c runtime/overlay.c runtime/dbg.c runtime/winsock.c runtime/kernels.c ${AZTEC_GEN_SRC})
+                 runtime/ddraw.c runtime/dsound.c runtime/dinput.c runtime/directx.c runtime/video.c runtime/settings.c runtime/overlay.c runtime/dbg.c runtime/winsock.c runtime/kernels.c runtime/oracle.c ${AZTEC_GEN_SRC})
+  set_source_files_properties(${AZTEC_GEN_DIR}/gen_069.c PROPERTIES COMPILE_DEFINITIONS "f_0043d120=f_0043d120_orig")
   if(NOT AZTEC_NO_NATIVE_KERNELS)
     set_source_files_properties(${AZTEC_GEN_DIR}/gen_135.c ${AZTEC_GEN_DIR}/gen_136.c PROPERTIES COMPILE_DEFINITIONS "f_004805e2=f_004805e2_orig;f_00480a36=f_00480a36_orig")
   endif()
