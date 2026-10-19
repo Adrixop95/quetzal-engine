@@ -75,7 +75,7 @@ void backend_create_window(const char* title, int w, int h) {
   DBG("window", "create: title='%s' requested %dx%d flags=%#x (settings: res=%dx%d mode=%d smooth=%d video=%d)", title ? title : "", w, h, flags, g_settings.res_w, g_settings.res_h, g_settings.window_mode, g_settings.smooth, g_settings.video);
   win = SDL_CreateWindow(title && *title ? title : "Aztec Empire", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w, h, flags);
   if (!win) rt_fatal("SDL_CreateWindow: %s", SDL_GetError());
-  ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+  ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | (getenv("RT_VSYNC") ? SDL_RENDERER_PRESENTVSYNC : 0));
   if (!ren) { DBG("window", "accelerated renderer failed (%s), falling back to software", SDL_GetError()); ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE); }
   if (!ren) rt_fatal("SDL_CreateRenderer: %s", SDL_GetError());
   {
@@ -313,7 +313,35 @@ static int outside_800x600_is_black(const void* pixels, int pitch, int w, int h,
   return 1;
 }
 
+static void backend_present_now(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette);
+// Game blits the cursor to the primary surface on every mouse event and each one asks for a full present.
+// Coalesce: present at most every PRESENT_MIN_US, keep the newest request pending and flush it from the wait/pump paths.
+#define PRESENT_MIN_US 5000
+static struct { int on; const void* px; int pitch, w, h, bpp; const uint32_t* pal; } pend;
+static uint64_t last_present_us;
+static uint64_t now_us(void) { return SDL_GetPerformanceCounter() * 1000000ull / SDL_GetPerformanceFrequency(); }
 void backend_present(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette) {
+  if (ren && bpp == 16 && on_main_thread() && now_us() - last_present_us < PRESENT_MIN_US) {
+    pend.on = 1; pend.px = pixels; pend.pitch = pitch; pend.w = w; pend.h = h; pend.bpp = bpp; pend.pal = palette;
+    return;
+  }
+  pend.on = 0;
+  backend_present_now(pixels, pitch, w, h, bpp, palette);
+  if (on_main_thread()) last_present_us = now_us();
+}
+void backend_flush_pending(void) {
+  if (!pend.on || !on_main_thread() || now_us() - last_present_us < PRESENT_MIN_US) return;
+  pend.on = 0;
+  backend_present_now(pend.px, pend.pitch, pend.w, pend.h, pend.bpp, pend.pal);
+  last_present_us = now_us();
+}
+int backend_flush_due_ms(void) {   // -1: nothing pending, else ms until the pending frame may be presented
+  if (!pend.on) return -1;
+  uint64_t el = now_us() - last_present_us;
+  return el >= PRESENT_MIN_US ? 0 : (int)((PRESENT_MIN_US - el + 999) / 1000);
+}
+
+static void backend_present_now(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette) {
   {
     static int last_crop = -1, last_w, last_h;
     int crop = outside_800x600_is_black(pixels, pitch, w, h, bpp);
@@ -452,6 +480,7 @@ static const char* win_event_name(int ev) {
 void rt_pump_events(void) {
   rt_dinput_poll();
   if (!win || !on_main_thread()) return;
+  backend_flush_pending();
   present_stage();
   static unsigned long n_motion;
   SDL_Event e;
