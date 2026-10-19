@@ -39,13 +39,18 @@ static void set_err(CPU* c, uint32_t e) { TI(c)->last_error = e; }
 
 // ------------------------------------------------------------ path mapping
 // Windows path -> host path: backslashes to '/', drive letters dropped, case-insensitive match.
+static char vcwd[512];   // current directory of the guest, relative to the game directory ("" = game directory)
 static int ci_resolve(const char* in, char* out, size_t outsz) {
   char tmp[1024];
   size_t n = 0;
   const char* p = in;
-  if (isalpha((unsigned char)p[0]) && p[1] == ':') p += 2;
+  int rooted = 0;
+  if (isalpha((unsigned char)p[0]) && p[1] == ':') { p += 2; rooted = 1; }
+  if (*p == '\\' || *p == '/') rooted = 1;
+  if (!rooted && vcwd[0]) { n = (size_t)snprintf(tmp, sizeof tmp, "%s/", vcwd); }
   for (; *p && n < sizeof tmp - 1; p++) tmp[n++] = *p == '\\' ? '/' : *p;
   tmp[n] = 0;
+  if (rooted && !strncasecmp(tmp, "/Aztec", 6) && (tmp[6] == '/' || !tmp[6])) memmove(tmp, tmp + 6, strlen(tmp + 6) + 1);   // fake install dir C:\Aztec
   char cur[1024];
   size_t cl = 0;
   const char* s = tmp;
@@ -59,6 +64,7 @@ static int ci_resolve(const char* in, char* out, size_t outsz) {
     comp[k] = 0;
     while (*s == '/') s++;
     if (!k || !strcmp(comp, ".")) continue;
+    if (!strcmp(comp, "..")) { char* sl = strrchr(cur, '/'); if (sl && sl != cur) *sl = 0; else strcpy(cur, "."); continue; }
     char cand[1100];
     snprintf(cand, sizeof cand, "%s/%s", cur, comp);
     struct stat st;
@@ -602,8 +608,26 @@ SH(GetFileSize) {
 SH(DeleteFileA) { UNUSED; char p[1100]; return ci_resolve((char*)GPTR(a[0]), p, sizeof p) && unlink(p) == 0; }
 SH(CreateDirectoryA) { UNUSED; char p[1100]; ci_resolve((char*)GPTR(a[0]), p, sizeof p); return mkdir(p, 0755) == 0; }
 SH(RemoveDirectoryA) { UNUSED; char p[1100]; return ci_resolve((char*)GPTR(a[0]), p, sizeof p) && rmdir(p) == 0; }
-SH(GetCurrentDirectoryA) { UNUSED; const char* s = "C:\\Aztec"; uint32_t n = (uint32_t)strlen(s); if (n + 1 > a[0]) return n + 1; strcpy((char*)GPTR(a[1]), s); return n; }
-SH(SetCurrentDirectoryA) { UNUSED; return 1; }
+SH(GetCurrentDirectoryA) {
+  UNUSED;
+  char s[600];
+  snprintf(s, sizeof s, "C:\\Aztec%s%s", vcwd[0] ? "\\" : "", vcwd);
+  for (char* q = s; *q; q++) if (*q == '/') *q = '\\';
+  uint32_t n = (uint32_t)strlen(s);
+  if (n + 1 > a[0]) return n + 1;
+  strcpy((char*)GPTR(a[1]), s);
+  return n;
+}
+SH(SetCurrentDirectoryA) {
+  UNUSED;
+  char p[1100];
+  struct stat st;
+  if (!ci_resolve((char*)GPTR(a[0]), p, sizeof p) || stat(p, &st) != 0 || !S_ISDIR(st.st_mode)) { set_err(c, 2); return 0; }
+  const char* r = p;
+  if (r[0] == '.' && r[1] == '/') r += 2; else if (r[0] == '.') r++;
+  snprintf(vcwd, sizeof vcwd, "%s", r);
+  return 1;
+}
 SH(SearchPathA) { UNUSED; set_err(c, 2); return 0; }
 SH(GetVolumeInformationA) {
   UNUSED;
@@ -805,6 +829,7 @@ SH(wsprintfA) {
   char buf[2048];
   int n = fmt_guest(buf, sizeof buf, (char*)GPTR(a[1]), a + 2);
   memcpy(GPTR(a[0]), buf, (size_t)n + 1);
+  DBG_EVERY(1, "api", "wsprintfA -> '%s'", buf);
   return (uint32_t)n;
 }
 
@@ -832,6 +857,7 @@ SH(GetPrivateProfileStringA) {
   UNUSED;
   char val[1024];
   const char* def = a[2] ? (const char*)GPTR(a[2]) : "";
+  DBG_EVERY(1, "file", "GetPrivateProfileString file='%s' section='%s' key='%s'", a[5] ? (char*)GPTR(a[5]) : "", a[0] ? (char*)GPTR(a[0]) : "", a[1] ? (char*)GPTR(a[1]) : "");
   if (!a[0] || !a[1] || !ini_lookup((char*)GPTR(a[5]), (char*)GPTR(a[0]), (char*)GPTR(a[1]), val, sizeof val))
     snprintf(val, sizeof val, "%s", def);
   uint32_t n = (uint32_t)strlen(val);
