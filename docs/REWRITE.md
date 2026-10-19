@@ -46,10 +46,21 @@ Rekompilowana wersja (`runtime/` + `work/gen/`) pozostaje wzorcem do testów ró
   W misji 1 po 3 s: ok. 700 obiektów z 176 znanych vtable (najliczniejsze 0x490ab8: 148, 0x48f5e0: 96, 0x4932cc: 60).
   Jeszcze nie przypisano klas do ról (jednostka, budynek, drzewo, pocisk).
 
+- Pule obiektów (klasa z vtable `0x4953f8`): nagłówek `+4` baza areny, `+8` koniec użytego obszaru, `+0x10` stride (8 bajtów nagłówka
+  listy + dane), `+0x14` pojemność, `+0x18` liczba żywych. Pula jednostek: `0x4cc3d0` (stride 0xb8, pojemność 10000),
+  pozostałe aktualizowane w ticku: `0x4cd698` (stride 0x30), `0x5156f8` (0x1c0), `0x4c1978` (0x40).
+- Obiekt jednostki (klasa `0x4932cc` i pochodne, dane od `pool_elem+8`): `+0x24/+0x28` pozycja w pikselach świata (środek),
+  `+0x44/+0x48` kafel (kafel = 48 px), `+0x6c/+0x70` pozycja stałoprzecinkowa (px*256), `+0x38/+0x3c` (np. 0x1770/0x1770) wartość
+  zdrowia prawdopodobnie, `+0x80` kierunek/stan animacji, `+0x88` licznik animacji, `+0x30` wskaźnik do zestawu animacji.
+- Tik logiki (`0x4577b0`): przetwarza polecenia stron (typy 0x12-0x24 z kolejek `0x43d120`), potem aktualizuje 3 pule przez metody
+  wirtualne (+0x60, +0x8, +0x138) i strony (`0x449980`).
+- Wyrocznia stanu: `RT_STATE_LOG=plik` zapisuje co tik: liczbę żywych obiektów i skrót FNV po 4 pulach (wskaźniki maskowane).
+  Dwa niezależne przebiegi misji 1 bez wejścia zgadzają się w 211 z 214 ticków (3 różnice przejściowe, niewyjaśnione).
+
 ## Etapy
 1. [x] Narzędzia klas i pól, plan.
 2. [ ] Rekonstrukcja struktur: klasa bazowa obiektu, lista obiektów świata, mapa kafli, polecenia.
-3. [ ] Wyrocznia: zapis/odtwarzanie poleceń na poziomie lockstep + skrót stanu co tik.
+3. [~] Wyrocznia: skrót stanu co tik jest (RT_STATE_LOG). Brakuje zapisu poleceń per tik (hook na 0x43d120) i migawek pul do testów modułów.
 4. [ ] Renderer GPU z interpolacją (czyta stan gry z pamięci rekompilacji, potem ze `sim`).
 5. [ ] Moduł `sim`: pathfinding + kolizje, następnie reszta, każdy z testem różnicowym.
 6. [ ] Pokrycie funkcji niewykonywanych: scenariusze (misje 10-15, edytor, skirmish, AI w trudniejszych układach),

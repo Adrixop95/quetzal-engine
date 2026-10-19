@@ -741,6 +741,37 @@ static void rpc_drain(void) {
   }
   pthread_mutex_unlock(&rpc_lock);
 }
+// RT_STATE_LOG=file: the game's own per-tick state checksums (used for lockstep desync detection) written once per tick.
+static void state_log_poll(void) {
+  static FILE* f; static int init; static uint32_t last_frame = ~0u; static uint64_t seen_at;
+  if (!init) { init = 1; const char* p = getenv("RT_STATE_LOG"); if (p) f = fopen(p, "w"); }
+  if (!f || !g_mem) return;
+  uint32_t fr = GU32(0x4c5730);
+  uint64_t now = SDL_GetTicks64();
+  if (fr != last_frame) { last_frame = fr; seen_at = now; return; }
+  if (seen_at && now - seen_at >= 35) {   // the tick thread sleeps most of each 83 ms: sample when it is idle
+    seen_at = 0;
+    fprintf(f, "%u", fr);
+    static const uint32_t pools[4] = {0x4cc3d0, 0x4cd698, 0x5156f8, 0x4c1978};   // object pools iterated by the game's tick
+    for (int pi = 0; pi < 4; pi++) {
+      uint32_t pb = pools[pi], base = GU32(pb + 4), hwm = GU32(pb + 8), stride = GU32(pb + 0x10);
+      uint64_t h = 1469598103934665603ull; unsigned live = 0;
+      if (base && hwm > base && stride >= 16 && stride <= 0x400)
+        for (uint32_t a = base; a + stride <= hwm; a += stride) {
+          uint32_t vt = GU32(a + 8);
+          if (vt < 0x480000 || vt >= 0x4c4000) continue;   // free slot
+          live++;
+          for (uint32_t k = 8; k < stride; k += 4) {
+            uint32_t v = GU32(a + k);
+            if (v >= 0x10000000u && v < 0x70000000u) v = 0xdeadbeef;   // host-layout dependent pointers are not part of the game state
+            h = (h ^ v) * 1099511628211ull;
+          }
+        }
+      fprintf(f, " %u:%016llx", live, (unsigned long long)h);
+    }
+    fputc('\n', f); fflush(f);
+  }
+}
 void backend_main_init(void) {   // call on the process main thread before starting the game thread
   main_thread = pthread_self(); main_thread_set = 1;
   ensure_sdl();
@@ -751,6 +782,7 @@ void backend_main_loop(void) {   // never returns: process exits through the gam
     if (!win || !ren) { SDL_Delay(1); continue; }
     uint64_t t0 = SDL_GetPerformanceCounter();
     sdl_pump();
+    state_log_poll();
     present_stage();
     double ms = (double)(SDL_GetPerformanceCounter() - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
     if (ms < 3.0) SDL_Delay(4);   // no working vsync (minimized window, software renderer): do not spin

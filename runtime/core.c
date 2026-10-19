@@ -513,7 +513,7 @@ void rt_objscan(const char* vtfile, const char* outfile) {
       if (mincore(g_mem + pg, 0x1000, &vec) != 0 || !(vec & 1)) continue;
       for (uint32_t a = (uint32_t)pg; a < pg + 0x1000; a += 4) {
         uint32_t x = GU32(a);
-        if (x >= 0x400000 && x < 0x800000 && (is_vt[(x - 0x400000) >> 2 >> 3] >> (((x - 0x400000) >> 2) & 7) & 1)) fprintf(o, "%08x %08x\n", a, x);
+        if (x >= 0x400000 && x < 0x800000 && (is_vt[(x - 0x400000) >> 2 >> 3] >> (((x - 0x400000) >> 2) & 7) & 1)) { fprintf(o, "%08x %08x", a, x); for (int k = 1; k < 48; k++) fprintf(o, " %08x", GU32(a + 4 * k)); fputc('\n', o); }
       }
     }
   }
