@@ -120,6 +120,7 @@ static uint32_t surf_blt(CPU* c, uint32_t* a) {
   Surface* d = com_host(a[0]);
   Surface* s = a[3] ? com_host(a[3]) : NULL;
   uint32_t flags = a[5];
+  if (getenv("RT_TRACE_BLT") && (d->w <= 100 || (s && s->w <= 100) || d->primary)) { Rect q = get_rect(a[2], d); DBG("blt", "Blt dst=%08x(%dx%d%s) rect=%d,%d,%d,%d src=%08x(%dx%d) flags=%x", a[0], d->w, d->h, d->primary ? " PRIMARY" : "", q.l, q.t, q.r, q.b, a[3], s ? s->w : 0, s ? s->h : 0, flags); }
   Rect dr = get_rect(a[2], d);
   int bp = bytespp(d->bpp);
   if (flags & 0x400) {  // DDBLT_COLORFILL
@@ -161,6 +162,44 @@ static uint32_t surf_blt(CPU* c, uint32_t* a) {
   return DD_OK;
 }
 
+// ---- software cursor capture ------------------------------------------------------------------------------
+// The game draws its cursor by itself: it keeps a 96x96 scratch surface, snapshots the screen under the cursor into it,
+// composes the sprite on top and blits the scratch surface back to the primary surface (and restores the old snapshot
+// the same way). We intercept those blits: the cursor pixels (scratch vs. screen) are handed to the backend, which draws
+// them every display frame at the freshly read mouse position; the primary surface itself never receives the cursor.
+static int cur_compose_pending;
+static int cursor_capture(Surface* d, Surface* s, Rect sr, int x0, int y0) {
+  if (d->bpp != 16 || s->bpp != 16 || !cur_compose_pending) return 0;
+  int w = sr.r - sr.l, h = sr.b - sr.t;
+  if (w <= 0 || h <= 0 || w > 96 || h > 96) return 0;
+  static uint32_t img[96 * 96];
+  int minx = 1 << 30, miny = 1 << 30, maxx = -1, maxy = -1;
+  for (int y = 0; y < h; y++) {
+    int dy = y0 + y;
+    for (int x = 0; x < w; x++) {
+      int dx = x0 + x;
+      uint32_t out = 0;
+      if (dx >= 0 && dy >= 0 && dx < d->w && dy < d->h) {
+        uint16_t sv = *(uint16_t*)GPTR(s->pixels + (uint32_t)(sr.t + y) * s->pitch + (uint32_t)(sr.l + x) * 2);
+        uint16_t dv = *(uint16_t*)GPTR(d->pixels + (uint32_t)dy * d->pitch + (uint32_t)dx * 2);
+        if (sv != dv) {
+          uint32_t r = (sv >> 11) & 31, g = (sv >> 5) & 63, b = sv & 31;
+          out = 0xFF000000u | ((r << 3 | r >> 2) << 16) | ((g << 2 | g >> 4) << 8) | (b << 3 | b >> 2);
+          if (x < minx) minx = x; if (x > maxx) maxx = x; if (y < miny) miny = y; if (y > maxy) maxy = y;
+        }
+      }
+      img[y * 96 + x] = out;
+    }
+  }
+  if (maxx < 0) return 1;   // nothing differs from the screen: no cursor change
+  int bw = maxx - minx + 1, bh = maxy - miny + 1;
+  static uint32_t crop[96 * 96];
+  for (int y = 0; y < bh; y++) memcpy(crop + y * bw, img + (miny + y) * 96 + minx, (size_t)bw * 4);
+  DBG_EVERY(1, "cursor", "capture: blit at %d,%d bbox %d,%d %dx%d game cursor (%d,%d) cur(0x4c5468)=(%d,%d)", x0, y0, minx, miny, bw, bh, (int)GU32(0x4c4f50), (int)GU32(0x4c4f54), (int)GU32(0x4c5468), (int)GU32(0x4c546c));
+  backend_cursor_set(crop, bw, bh, x0 + minx - (int)GU32(0x4c4f50), y0 + miny - (int)GU32(0x4c4f54));
+  return 1;
+}
+
 static uint32_t surf_bltfast(CPU* c, uint32_t* a) {  // x, y, src, rect, trans
   (void)c;
   Surface* d = com_host(a[0]);
@@ -169,6 +208,11 @@ static uint32_t surf_bltfast(CPU* c, uint32_t* a) {  // x, y, src, rect, trans
   int bp = bytespp(d->bpp);
   int w = sr.r - sr.l, h = sr.b - sr.t;
   int x0 = (int)a[1], y0 = (int)a[2];
+  if (!getenv("RT_NO_SWCURSOR")) {
+    if (d->w == 96 && d->h == 96) cur_compose_pending = 0;   // screen snapshot into the scratch surface
+    if (d->primary && s->w == 96 && s->h == 96) if (d->bpp == 16 && s->bpp == 16) { cursor_capture(d, s, sr, (int)a[1], (int)a[2]); cur_compose_pending = 0; return DD_OK; }
+  }
+  if (getenv("RT_TRACE_BLT") && (d->w <= 100 || s->w <= 100)) DBG("blt", "BltFast dst=%08x(%dx%d%s) at %d,%d src=%08x(%dx%d) rect=%d,%d,%d,%d trans=%x", a[0], d->w, d->h, d->primary ? " PRIMARY" : "", x0, y0, a[3], s->w, s->h, sr.l, sr.t, sr.r, sr.b, a[5]);
   int keyed = (a[5] & 0x2) && s->has_key;  // DDBLTFAST_SRCCOLORKEY
   // clip to the destination once instead of testing every pixel
   int sx = 0, sy = 0;
@@ -235,6 +279,8 @@ static uint32_t surf_lock(CPU* c, uint32_t* a) {  // rect, desc, flags, event
   Surface* s = com_host(a[0]);
   uint32_t d = a[2];
   Rect r = get_rect(a[1], s);
+  if (s->w == 96 && s->h == 96) cur_compose_pending = 1;
+  if (getenv("RT_TRACE_BLT")) DBG("blt", "Lock %08x(%dx%d%s) rect=%d,%d,%d,%d", a[0], s->w, s->h, s->primary ? " PRIMARY" : "", r.l, r.t, r.r, r.b);
   memset(GPTR(d + 4), 0, 104);
   GU32(d) = 108;
   GU32(d + 4) = 0x2 | 0x4 | 0x8 | 0x400 | 0x1000;  // HEIGHT|WIDTH|PITCH|LPSURFACE|PIXELFORMAT
@@ -266,7 +312,7 @@ static void dump_surface(Surface* s) {
     }
   fclose(f);
 }
-static uint32_t surf_unlock(CPU* c, uint32_t* a) { (void)c; Surface* s = com_host(a[0]); dump_surface(s); if (s->primary) present(s); return DD_OK; }
+static uint32_t surf_unlock(CPU* c, uint32_t* a) { (void)c; Surface* s = com_host(a[0]); if (getenv("RT_TRACE_BLT")) DBG("blt", "Unlock %08x(%dx%d%s)", a[0], s->w, s->h, s->primary ? " PRIMARY" : ""); dump_surface(s); if (s->primary) present(s); return DD_OK; }
 static uint32_t surf_restore(CPU* c, uint32_t* a) { (void)c; (void)a; return DD_OK; }
 static uint32_t surf_setcolorkey(CPU* c, uint32_t* a) {
   (void)c;

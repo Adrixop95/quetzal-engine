@@ -213,8 +213,44 @@ static void mouse_follow(void) {
 }
 static void mouse_resync(void) { tgt_valid = 1; }   // re-send the last known position (after focus / overlay changes)
 
+// ---- software cursor: drawn here every display frame from the virtual cursor position -------------------------
+static struct { uint32_t px[96 * 96]; int w, h, ox, oy, valid; unsigned ver; } cur_img;
+static pthread_mutex_t cur_lock = PTHREAD_MUTEX_INITIALIZER;
+static SDL_Texture* cur_tex;
+static unsigned cur_tex_ver;
+void backend_cursor_set(const uint32_t* argb, int w, int h, int off_x, int off_y) {
+  if (w <= 0 || h <= 0 || w > 96 || h > 96) return;
+  pthread_mutex_lock(&cur_lock);
+  if (!cur_img.valid || cur_img.w != w || cur_img.h != h || memcmp(cur_img.px, argb, (size_t)w * h * 4)) {
+    memcpy(cur_img.px, argb, (size_t)w * h * 4);
+    cur_img.w = w; cur_img.h = h; cur_img.ver++;
+  }
+  cur_img.ox = off_x; cur_img.oy = off_y; cur_img.valid = 1;
+  pthread_mutex_unlock(&cur_lock);
+}
+static void draw_game_cursor(void) {
+  if (!g_mem || overlay_is_open() || getenv("RT_NO_SWCURSOR")) return;
+  if (!GU8(0x4dd32d) || !GU8(0x4dd32e) || !GU32(0x5159c4)) return;   // the game's own "cursor active" state
+  pthread_mutex_lock(&cur_lock);
+  if (cur_img.valid) {
+    if (!cur_tex || cur_tex_ver != cur_img.ver) {
+      if (cur_tex) SDL_DestroyTexture(cur_tex);
+      cur_tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, cur_img.w, cur_img.h);
+      if (cur_tex) { SDL_UpdateTexture(cur_tex, NULL, cur_img.px, cur_img.w * 4); SDL_SetTextureBlendMode(cur_tex, SDL_BLENDMODE_BLEND); }
+      cur_tex_ver = cur_img.ver;
+    }
+    if (cur_tex) {
+      SDL_Rect dst = {(int)vcx + cur_img.ox, (int)vcy + cur_img.oy, cur_img.w, cur_img.h};
+      DBG_EVERY(120, "cursor", "sw cursor at (%d,%d) v=(%.1f,%.1f) off=(%d,%d) game=(%d,%d) logical=%dx%d", dst.x, dst.y, vcx, vcy, cur_img.ox, cur_img.oy, (int)GU32(0x4c4f50), (int)GU32(0x4c4f54), cur_lw, cur_lh);
+      SDL_RenderCopy(ren, cur_tex, NULL, &dst);
+    }
+  }
+  pthread_mutex_unlock(&cur_lock);
+}
+
 static int on_main_thread(void);
 static void consume_guest_request(void);
+static void sdl_pump(void);
 
 static void present_stage(void) {
   consume_guest_request();
@@ -262,6 +298,8 @@ static void present_stage(void) {
       if (urc != 0) DBG_EVERY(100, "render", "SDL_UpdateTexture failed: %s", SDL_GetError());
       SDL_RenderClear(ren);
       if (SDL_RenderCopy(ren, tex, NULL, NULL) != 0) DBG_EVERY(100, "render", "SDL_RenderCopy failed: %s", SDL_GetError());
+      sdl_pump();          // freshest pointer position right before the cursor is drawn (lowest latency)
+      draw_game_cursor();
       overlay_draw(ren, stage_w, stage_h);
       if (shot_pending) {   // final composed window image (game + overlay)
         shot_pending = 0;
@@ -597,6 +635,7 @@ static void* script_thread(void* arg) {
       for (int i = 0; i < 4; i++) { g_mouse_dx += x / 4; g_mouse_dy += y / 4; gdelay(30); }
       g_mouse_dx += x - 4 * (x / 4); g_mouse_dy += y - 4 * (y / 4);
       g_mouse_x = x; g_mouse_y = y; script_x = x; script_y = y;
+      backend_set_virtual_cursor(x, y);
       gdelay(120);
       if (strcmp(cmd, "move")) {
         int b = !strcmp(cmd, "rclick") ? 1 : 0;
@@ -605,7 +644,7 @@ static void* script_thread(void* arg) {
     } else if (!strcmp(cmd, "dragto")) {   // relative move from the last scripted position (keeps buttons held)
       int steps = 8;
       for (int i = 1; i <= steps; i++) { g_mouse_dx += (x - script_x) * i / steps - (x - script_x) * (i - 1) / steps; g_mouse_dy += (y - script_y) * i / steps - (y - script_y) * (i - 1) / steps; gdelay(60); }
-      script_x = x; script_y = y; gdelay(150);
+      script_x = x; script_y = y; backend_set_virtual_cursor(x, y); gdelay(150);
     }
     else if (!strcmp(cmd, "down")) g_mouse_btn[0] = 1;
     else if (!strcmp(cmd, "up")) g_mouse_btn[0] = 0;

@@ -13,6 +13,8 @@ void backend_show_cursor(int show);
 void backend_present(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette);
 // Same for a surface that stays valid in guest memory: only its location is recorded, the render thread copies it.
 void backend_present_guest(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette);
+// Cursor image (ARGB, w x h) and its offset from the game's cursor position, captured from the game's own cursor drawing.
+void backend_cursor_set(const uint32_t* argb, int w, int h, int off_x, int off_y);
 void backend_main_init(void);
 void backend_main_loop(void);
 int backend_vk_state(int vk);
