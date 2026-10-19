@@ -70,6 +70,12 @@ Rekompilowana wersja (`runtime/` + `work/gen/`) pozostaje wzorcem do testów ró
 - Narzędzia testowe: `tools/make_ztest.py` + `tools/ztest_run.sh` (własna mapa testowa z jednostkami wybranych typów na stronie przeciwnika;
   budynki muszą powstawać przez sekcję [Town], w [Team] wywołują wywołanie pustego wskaźnika w `Building.cpp`).
 
+- Struktura ticku logiki `0x4577b0` (pełniej): (1) polecenia stron, (2) aktualizacja pul w kolejności: `0x4c1978` (+0x60), `0x4cd698` (+0x8),
+  `0x5156f8` (+0x138), strony `0x449980`, `0x4d9b50` (+0x138), jednostki `0x4cc3d0` (+0x120), `0x515a98` (+0x84), broń `0x4d9bbc[]` (`0x470c10`), `0x4c1298` (+0x8),
+  (3) składanie list wyświetlania: dla obiektów z pul `0x4cc3d0`, `0x515a98`, `0x4c1978` wywołanie `0x47cb30(lista 0x4d9c10, pozycja, ..., sprite)` oraz dla warstw
+  per strona `0x47d070`/`0x47d430` (lista `0x4d9c0c`); sprite bieżącej klatki zwraca metoda wirtualna +0x70/+0x74/+0x80/+0x5c, pozycję +0x14.
+  Wniosek dla renderera: scena jest składana raz na tik; płynny ruch wymaga zapamiętania poprzedniej pozycji każdego obiektu i interpolacji przy rysowaniu.
+
 ## Etapy
 1. [x] Narzędzia klas i pól, plan.
 2. [ ] Rekonstrukcja struktur: klasa bazowa obiektu, lista obiektów świata, mapa kafli, polecenia.
