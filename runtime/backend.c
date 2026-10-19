@@ -744,7 +744,7 @@ static void rpc_drain(void) {
 // RT_STATE_LOG=file: the game's own per-tick state checksums (used for lockstep desync detection) written once per tick.
 static void state_log_poll(void) {
   static FILE* f; static int init; static uint32_t last_frame = ~0u; static uint64_t seen_at;
-  if (!init) { init = 1; const char* p = getenv("RT_STATE_LOG"); if (p) f = fopen(p, "w"); }
+  if (!init) { init = 1; const char* p = getenv("RT_STATE_LOG_UNSYNCED"); if (p) f = fopen(p, "w"); }
   if (!f || !g_mem) return;
   uint32_t fr = GU32(0x4c5730);
   uint64_t now = SDL_GetTicks64();

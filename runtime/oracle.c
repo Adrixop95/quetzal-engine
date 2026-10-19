@@ -13,10 +13,39 @@ void f_0043d120_orig(CPU* c);
 #define CMD_DWORDS 53
 typedef struct { uint32_t frame, side; uint32_t d[CMD_DWORDS]; } Rec;
 static Rec* recs; static size_t nrecs, caprecs;
-static FILE* logf_; static int mode_init, replay;
+static FILE* logf_, *statef_; static int mode_init, replay;
+
+// RT_STATE_LOG=file: per tick, at the first command fetch of the tick (same thread as the logic, so no race with updates):
+// frame number, then per object pool: live count and an FNV hash of the object bytes (host pointers masked).
+static void log_state(uint32_t frame) {
+  static uint32_t last = ~0u;
+  if (!statef_ || frame == last) return;
+  last = frame;
+  fprintf(statef_, "%u", frame);
+  static const uint32_t pools[4] = {0x4cc3d0, 0x4cd698, 0x5156f8, 0x4c1978};
+  for (int pi = 0; pi < 4; pi++) {
+    uint32_t pb = pools[pi], base = GU32(pb + 4), hwm = GU32(pb + 8), stride = GU32(pb + 0x10);
+    uint64_t h = 1469598103934665603ull; unsigned live = 0;
+    if (base && hwm > base && stride >= 16 && stride <= 0x400)
+      for (uint32_t a = base; a + stride <= hwm; a += stride) {
+        uint32_t vt = GU32(a + 8);
+        if (vt < 0x480000 || vt >= 0x4c4000) continue;
+        live++;
+        for (uint32_t k = 8; k < stride; k += 4) {
+          uint32_t v = GU32(a + k);
+          if (v >= 0x10000000u && v < 0x70000000u) v = 0xdeadbeef;
+          h = (h ^ v) * 1099511628211ull;
+        }
+      }
+    fprintf(statef_, " %u:%016llx", live, (unsigned long long)h);
+  }
+  fputc('\n', statef_); fflush(statef_);
+}
 
 static void init_mode(void) {
   mode_init = 1;
+  const char* sl = getenv("RT_STATE_LOG");
+  if (sl) statef_ = fopen(sl, "w");
   const char* l = getenv("RT_CMD_LOG");
   if (l) logf_ = fopen(l, "w");
   const char* r = getenv("RT_CMD_REPLAY");
@@ -48,6 +77,7 @@ void f_0043d120(CPU* c) {   // uint __cdecl FUN_0043d120(int side, uint32_t* out
   if (!mode_init) init_mode();
   uint32_t side = GU32(GREG(c, 0x10) + 4), out = GU32(GREG(c, 0x10) + 8);
   uint32_t frame = GU32(0x4c5730);
+  if (frame != 0 && GU8(0x4cc394)) log_state(frame);
   if (replay) {
     uint32_t ret = GU32(GREG(c, 0x10));
     const Rec* r = find_rec(frame, side);
