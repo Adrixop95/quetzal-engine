@@ -25,5 +25,33 @@ Obserwowane flagi: 1, 5, 6, 10, 14, 17, 64.
 - Element palety = numer palety (indeks od 1). Rozmiar 512 B = jedna paleta, 10240 B = 20 poziomów cieniowania po 512 B (poziom = `param*0x200`), pozostałe rozmiary to warianty.
 - Kafle terenu (Tiles0, flaga 1, 48x48) mają naturalne kolory dla palety 4 przy poziomie cieniowania 14 (w repo: src/tools/xbe.py + sprite.py). Palety 5..17 to motywy terenu.
 
+## Pliki misji (`Maps/<nazwa>.*`, zweryfikowane na 63 mapach)
+- `.map`: patrz wyżej. `.dat`: `w*h` bajtów, mapa przejezdności (komunikat gry "passability map"); wartości 0/1/2 (w misji 1: 2 = otwarty
+  ląd, 1 = pojedyncze przeszkody na lądzie, 0 = woda/obrzeża; interpretacja z obrazu, do potwierdzenia w WaveSearch).
+- `.rm`: `u16 w, u16 h`, potem `w*h` wartości `u16` ("resource map": zasoby/obiekty terenu; młodszy bajt przyjmuje m.in. 0x1a, 0x41, 0x2d).
+- `.vis`: `u16 wersja=2, u16 w, u16 h`, potem `w*h` wartości `u16` (początkowa widoczność/mgła).
+- `.spr`: pojedynczy sprite (nagłówek 0xE0AC0000, flaga 1) = podgląd mapy 2 px na kafel (180x120 dla mapy 90x60), indeksy palety.
+- `.mit`: tekst odprawy w cp1250 (kodowanie polskich liter w stylu Windows).
+- `.scn`: skrypt scenariusza (tekst, CRLF). Bloki `trigger(N)` / `conditions` / `actions` / `end`. Zbadane 63 pliki, 72 wzorce linii:
+  warunki: `always`, `localTime|globalTime == N`, `timer(N) == N`, `side(S).units|towns|enemies == N`, `side(S).unitsInRect(x1,y1,x2,y2) > N`,
+  `side(S).unitsOfID(UGI_ABDULA) < N`, `side(S).unitsOfUGIInRect(UGI_x,...)`, `side(S).tactic(N).valid|attacked|idle != N`, `side(S).defence(N).valid == N`,
+  `side(S).isEnemy|isFriendly(N) != N`; akcje: `trigger(N).enable|disable`, `printString("..")`, `printStringR("..")`, `side(S).victory|defeat`,
+  `side(S).addMoney(N)`, `takeMoney(N)`, `setFriendlyTo|setEnemyTo|setNeutralTo(N)`, `cameraActivate(N,N)`, `centerView(x,y)`,
+  `side(S).tactic(N).attackTown(N)|giftToSide(S)|setPath(N)|setCycledPath(N)|moveTo(x,y)|joinTactic(N)|kill`, `boat(N).activate`, `johnka(N).enable`,
+  `submarine(N).go`, `timer(N).set(N)|start|kill`. `S` to numer strony lub `local`.
+- `.mp`: INI (cp1250). Sekcje: `[Globals]` (Version, MapName, MapSize=w,h, Name/Name#, Note#/Noter# + Notes/Notesr (cele misji), StartTime, TileSet, Winds, MaxPlayers,
+  AVI, Music, MusicMask, Sides, Towns, Teams, Boats, Johnkas, Submarines, CurrentTeam), `[Side#]` (Name, Race 0..2 = Ruś/Aztekowie/Chiny, Color, Neutral, OnlyComp,
+  Difficulty, StartMoney, Start_X/Start_Y, DisabledID=lista typów, Defence#=x,y,r?,.., DefenceCount, Camera#, CamerasCount), `[Town#]` (Side, Race, Type, Tendency,
+  BuildSpeed, ScenarioID, X, Y, Units, Unit#), `[Team#]` (Side, ScenarioID, Units, Unit#), `[Boat#]`, `[Johnka#]`, `[Submarine#]`, `[Paths]` (Count, #=n,x,y,...), `[Sounds]`.
+  Wiersz `Unit#` = `x, y, typ, zdrowie` (typ = indeks 0..89 tabeli typów obiektów; zdrowie np. 6000 dla piechoty, 17000 dla ciężkich).
+- `Res/strbase.bds`: tekstowa baza napisów (`src/tools/strbase.py`): `*STRING { *ID 0xHEX *ORDINAL n *LANGUAGE { *ENGLISH ".." *RUSSIAN ".." } }`, 237 napisów,
+  ordinal 1..238; pole `*RUSSIAN` zawiera w rzeczywistości tekst polski (cp1250). Zawiera nazwy budynków (ordinal 169-193), jednostek (194-210) i komunikaty błędów skryptu.
+
+## Animacje (`Res/Units.xbe`, grupa 0x515)
+- Element: `char magic[4]="Anim"`, `u32 wersja=3`, potem tablica `u32` indeksów początków sekwencji (stany animacji), liczba użytych klatek; nagłówek ma 0x208 bajtów.
+- Po nagłówku tablica klatek po 32 bajty (`u32 sprite_id` (0 = brak; numeracja jak w grupach 0x44c/0x454 tego archiwum), kilka pól `u32`/`i32`
+  (opóźnienie, przesunięcie x/y, znaczniki 0/1/-1), w pozycji +0x1c wartość czasu/flagi). Sekwencje: wiele sekwencji po 8 klatek = 8 kierunków.
+- W pliku jest 416 slotów, z czego 112 niepustych. Pola klatek: sprawdzone statystycznie, znaczenie pól 1-7 do potwierdzenia przy rysowaniu jednostek.
+
 ## Do rozpoznania
-`.spr .vis .rm .dat .mp .mit .scn`, nagłówek elementu obrazu (0xE0AC0000), format animacji, `Music/music.xbe` (RIFF WAV), `strbase.bds` (tekst), `Keys.ini`.
+Znaczenie pól klatki animacji, wartości `.rm` i `.vis`, `Music/music.xbe` (RIFF WAV), `Keys.ini`, `*.plr` i `single%i.sav`.
