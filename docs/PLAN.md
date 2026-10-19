@@ -70,3 +70,13 @@ Ruch względny jest całkowany do wirtualnego kursora we współrzędnych obrazu
 przy proporcjach), z czułością z menu F9 (`mouse_speed` w aztec_settings.ini, domyślnie 100%).
 Pozycja jest wpisywana do zmiennych kursora gry (0x4c5468/0x4c546c, 0x4c4f50/0x4c4f54), nakładka F9 rysuje własną strzałkę.
 Debug: `tools/debug_run.sh` (log w debug/<czas>/debug.log, kategorie mouse/window/render/dinput/overlay/state).
+
+## Freeze w misji: przyczyny (2026-10-19)
+1. Brak Winsock: gra prowadzi blokadę kroków (lockstep) przez warstwę sieciową nawet w single player. Bez `WS2_32.dll`
+   wątek sieciowy kończył się błędem i symulacja nigdy nie startowała. Teraz runtime/winsock.c daje prawdziwe gniazda UDP
+   (przy okazji LAN) oraz gniazdo IPX z pętlą zwrotną (gra wysyła sobie pakiet próbny i czeka na jego odbiór).
+2. Błąd w `timeGetTime`: ujemna różnica nanosekund rzutowana na uint64 dawała skoki czasu o miliardy ms, a pętla ticków
+   liczyła z tego `Sleep(140462661)`. Zawsze liczyć czas w int64.
+3. Wcześniej poprawione: mutexy z właścicielem, VirtualAlloc z odzyskiem, precyzja x87 53 bity (RT_FPU53).
+Diagnostyka: log `netstate` (session/frame) w debug.log, `[sleep]` dla Sleep > 300 ms, `[wait]` BEGIN/END dla nieskończonych oczekiwań,
+`[event]` dla Create/Set/Reset/PulseEvent.

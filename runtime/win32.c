@@ -144,10 +144,14 @@ SH(GetProcAddress) {
   UNUSED;
   const char* name = (const char*)GPTR(a[1]);
   if (a[1] < 0x10000) return 0;
-  uint32_t t = rt_shim_thunk("KERNEL32.dll", name);
+  uint32_t t = rt_shim_thunk(a[0] == 0x70000000u ? "WS2_32.dll" : "KERNEL32.dll", name);
+  DBG("win32", "GetProcAddress(module=%08x, '%s') -> %08x", a[0], name, t);
   return t;
 }
-SH(LoadLibraryA) { UNUSED; DBG("win32", "LoadLibraryA('%s') -> fail", (char*)GPTR(a[0])); rt_log("LoadLibraryA(%s) -> fail", (char*)GPTR(a[0])); set_err(c, 126); return 0; }
+SH(LoadLibraryA) { UNUSED; DBG("win32", "LoadLibraryA('%s')", (char*)GPTR(a[0]));
+  /* our Winsock layer lives in winsock.c */
+  if (!strncasecmp((char*)GPTR(a[0]), "ws2_32", 6) || !strncasecmp((char*)GPTR(a[0]), "wsock32", 7)) return 0x70000000u;
+  rt_log("LoadLibraryA(%s) -> fail", (char*)GPTR(a[0])); set_err(c, 126); return 0; }
 SH(LoadLibraryExA) { UNUSED; rt_log("LoadLibraryExA(%s,%u) -> fail", (char*)GPTR(a[0]), a[2]); set_err(c, 126); return 0; }
 SH(FreeLibrary) { UNUSED; return 1; }
 SH(ExitProcess) { UNUSED; DBG("exit", "ExitProcess(%u) called by the game", a[0]); dbg_dump_context("ExitProcess"); fflush(NULL); _exit((int)a[0]); }
@@ -184,13 +188,14 @@ int rt_time_scale = 1;   // RT_TIMESCALE: run game time faster than real time (t
 static uint32_t tick_ms(void) {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
-  uint64_t ms = (uint64_t)(ts.tv_sec - t_start.tv_sec) * 1000 + (uint64_t)(ts.tv_nsec - t_start.tv_nsec) / 1000000;
-  return (uint32_t)(ms * (uint64_t)rt_time_scale) + 100000;
+  int64_t ms = (int64_t)(ts.tv_sec - t_start.tv_sec) * 1000 + (int64_t)(ts.tv_nsec - t_start.tv_nsec) / 1000000;   // signed: the nanosecond delta can be negative
+  if (ms < 0) ms = 0;
+  return (uint32_t)((uint64_t)ms * (uint64_t)rt_time_scale) + 100000;
 }
 uint32_t rt_game_ms(void) { return tick_ms(); }
 SH(GetTickCount) { UNUSED; return tick_ms(); }
 SH(timeGetTime) { UNUSED; return tick_ms(); }
-SH(Sleep) { UNUSED; rt_pump_events(); usleep(a[0] * 1000u / (uint32_t)rt_time_scale); return 0; }
+SH(Sleep) { UNUSED; if (a[0] > 300) { uint32_t now = tick_ms(); DBG("sleep", "Sleep(%u ms) tid=%u gamespeed=%u now(timeGetTime)=%u => implied frame start=%u", a[0], TI(c)->tid, GU32(0x5154dc), now, a[0] - GU32(0x5154dc) + now); } rt_pump_events(); usleep(a[0] * 1000u / (uint32_t)rt_time_scale); return 0; }
 static void fill_systemtime(uint32_t p, int local) {
   time_t t = time(NULL);
   struct tm tm;
@@ -336,12 +341,13 @@ SH(CreateEventA) {
   uint32_t h = obj_new(H_EVENT);
   Obj* o = obj_get(h);
   o->manual = a[1]; o->signaled = a[2];
+  DBG("event", "CreateEvent -> %08x manual=%u initial=%u name='%s'", h, a[1], a[2], a[3] ? (const char*)GPTR(a[3]) : "");
   return h;
 }
 SH(OpenEventA) { UNUSED; return 0; }
-SH(SetEvent) { UNUSED; if (getenv("RT_TRACE_WAIT")) rt_log("SetEvent tid=%u h=%08x", TI(c)->tid, a[0]); Obj* o = obj_get(a[0]); if (!o) return 0; pthread_mutex_lock(&objlock); o->signaled = 1; pthread_cond_broadcast(&objcv); pthread_mutex_unlock(&objlock); return 1; }
-SH(ResetEvent) { UNUSED; Obj* o = obj_get(a[0]); if (!o) return 0; pthread_mutex_lock(&objlock); o->signaled = 0; pthread_mutex_unlock(&objlock); return 1; }
-SH(PulseEvent) { UNUSED; Obj* o = obj_get(a[0]); if (!o) return 0; pthread_mutex_lock(&objlock); o->pulse_gen++; pthread_cond_broadcast(&objcv); pthread_mutex_unlock(&objlock); return 1; }
+SH(SetEvent) { UNUSED; DBG("event", "SetEvent(%08x) tid=%u", a[0], TI(c)->tid); if (getenv("RT_TRACE_WAIT")) rt_log("SetEvent tid=%u h=%08x", TI(c)->tid, a[0]); Obj* o = obj_get(a[0]); if (!o) return 0; pthread_mutex_lock(&objlock); o->signaled = 1; pthread_cond_broadcast(&objcv); pthread_mutex_unlock(&objlock); return 1; }
+SH(ResetEvent) { UNUSED; DBG("event", "ResetEvent(%08x) tid=%u", a[0], TI(c)->tid); Obj* o = obj_get(a[0]); if (!o) return 0; pthread_mutex_lock(&objlock); o->signaled = 0; pthread_mutex_unlock(&objlock); return 1; }
+SH(PulseEvent) { UNUSED; DBG("event", "PulseEvent(%08x) tid=%u", a[0], TI(c)->tid); Obj* o = obj_get(a[0]); if (!o) return 0; pthread_mutex_lock(&objlock); o->pulse_gen++; pthread_cond_broadcast(&objcv); pthread_mutex_unlock(&objlock); return 1; }
 SH(CreateMutexA) {  // attrs, initial owner, name
   UNUSED;
   uint32_t h = obj_new(H_MUTEX);
@@ -395,7 +401,19 @@ void rt_signal_event(uint32_t h) {
   pthread_cond_broadcast(&objcv);
   pthread_mutex_unlock(&objlock);
 }
+static uint32_t wait_objs_impl(uint32_t n, const uint32_t* hs, int all, uint32_t ms, int msgs);
 static uint32_t wait_objs(uint32_t n, const uint32_t* hs, int all, uint32_t ms, int msgs) {
+  int log = dbg_enabled() && !msgs && ms == 0xFFFFFFFFu;
+  if (log) {
+    char b[200] = "";
+    for (uint32_t i = 0; i < n && i < 6; i++) { Obj* o = obj_get(hs[i]); snprintf(b + strlen(b), sizeof b - strlen(b), " %08x(t%d,sig%d,own%u)", hs[i], o ? (int)o->t : -1, o ? o->signaled : -1, o ? o->owner : 0); }
+    dbg_log("wait", "BEGIN infinite wait tid=%u n=%u:%s", cur_ti ? cur_ti->tid : 0, n, b);
+  }
+  uint32_t r = wait_objs_impl(n, hs, all, ms, msgs);
+  if (log) dbg_log("wait", "END   infinite wait tid=%u -> %u", cur_ti ? cur_ti->tid : 0, r);
+  return r;
+}
+static uint32_t wait_objs_impl(uint32_t n, const uint32_t* hs, int all, uint32_t ms, int msgs) {
   if (ms != 0xFFFFFFFFu && rt_time_scale > 1) ms = ms / (uint32_t)rt_time_scale;
   struct timespec dl;
   clock_gettime(CLOCK_REALTIME, &dl);

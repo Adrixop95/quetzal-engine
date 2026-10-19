@@ -265,6 +265,10 @@ static void present_stage(void) {
             DBG("state", "window=%dx%d grab=%d focus=%d | system mouse=(%d,%d) -> logical target=(%d,%d) | game cursor cur=(%d,%d) prev=(%d,%d) game screen=%ux%u | btn=%d%d%d",
                 ww, wh, SDL_GetWindowGrab(win), SDL_GetKeyboardFocus() == win, mxp, myp, tgt_x, tgt_y, (int)GU32(0x4c4f50), (int)GU32(0x4c4f54), (int)GU32(0x4c5468), (int)GU32(0x4c546c), GU32(0x4dd368), GU32(0x4dd36c), g_mouse_btn[0], g_mouse_btn[1], g_mouse_btn[2]);
           }
+          if (g_mem)   // lockstep / network state of the game (guest globals)
+            DBG("netstate", "session=%02x frame=%u hostid=%08x flags 396..399=%02x%02x%02x%02x slot0..3 active=%02x %02x %02x %02x pause=%02x 515570=%08x",
+                GU8(0x4cc394), GU32(0x4c5730), GU32(0x4cc38c), GU8(0x4cc396), GU8(0x4cc395), GU8(0x4cc398), GU8(0x4cc399),
+                GU8(0x4cc248 ? GU32(0x4cc248) + 0x10 : 0), GU8(GU32(0x4cc248) + 0x40), GU8(GU32(0x4cc248) + 0x70), GU8(GU32(0x4cc248) + 0xa0), GU8(0x515400), GU32(0x515570));
           frames = 0; acc_ms = 0; last_report = now;
         }
       }
