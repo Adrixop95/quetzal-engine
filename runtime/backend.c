@@ -121,6 +121,7 @@ void backend_overlay_cursor(int open) {
   if (!open) mouse_resync();
 }
 
+static volatile unsigned guest_presents;
 static volatile int shot_pending;
 static volatile int shot_index;
 static void dump_frame(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette) {
@@ -328,7 +329,7 @@ static void present_stage(void) {
         frames++;
         acc_ms += (double)(SDL_GetPerformanceCounter() - t_start) * 1000.0 / (double)SDL_GetPerformanceFrequency();
         if (now - last_report >= 1000) {
-          DBG("render", "presented %u frames in last %llu ms, avg present cost %.2f ms, stage=%dx%d logical=%dx%d overlay=%d", frames, (unsigned long long)(now - last_report), frames ? acc_ms / frames : 0.0, stage_w, stage_h, cur_lw, cur_lh, overlay_is_open());
+          DBG("render", "guest present calls=%u; presented %u frames in last %llu ms, avg present cost %.2f ms, stage=%dx%d logical=%dx%d overlay=%d", guest_presents, frames, (unsigned long long)(now - last_report), frames ? acc_ms / frames : 0.0, stage_w, stage_h, cur_lw, cur_lh, overlay_is_open());
           if (g_mem) {
             int ww, wh, mxp, myp;
             SDL_GetWindowSize(win, &ww, &wh);
@@ -340,7 +341,7 @@ static void present_stage(void) {
             DBG("netstate", "session=%02x frame=%u hostid=%08x flags 396..399=%02x%02x%02x%02x slot0..3 active=%02x %02x %02x %02x pause=%02x 515570=%08x",
                 GU8(0x4cc394), GU32(0x4c5730), GU32(0x4cc38c), GU8(0x4cc396), GU8(0x4cc395), GU8(0x4cc398), GU8(0x4cc399),
                 GU8(0x4cc248 ? GU32(0x4cc248) + 0x10 : 0), GU8(GU32(0x4cc248) + 0x40), GU8(GU32(0x4cc248) + 0x70), GU8(GU32(0x4cc248) + 0xa0), GU8(0x515400), GU32(0x515570));
-          frames = 0; acc_ms = 0; last_report = now;
+          guest_presents = 0; frames = 0; acc_ms = 0; last_report = now;
         }
       }
     }
@@ -421,6 +422,7 @@ static GReq greq;
 static volatile int greq_dirty;
 static pthread_mutex_t greq_lock = PTHREAD_MUTEX_INITIALIZER;
 void backend_present_guest(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette) {
+  guest_presents++;
   dump_frame(pixels, pitch, w, h, bpp, palette);
   pthread_mutex_lock(&greq_lock);
   greq.px = pixels; greq.pitch = pitch; greq.w = w; greq.h = h; greq.bpp = bpp;
