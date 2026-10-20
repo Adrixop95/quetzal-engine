@@ -42,8 +42,11 @@ class SceneRenderer {
  private:
   void draw_terrain(const Camera& cam);
   void draw_objects(const Camera& cam, float alpha);
+  void blit(const Camera& cam, const StoredSprite& s, int frame, float wx, float wy, int& cur_page);
+  ObjectState object_state(const Object& o) const;
+  bool visible_in_fog(const Object& o, Vec2f p) const;
   void flush(int page);
-  void queue(int page, float x0, float y0, float x1, float y1, const StoredSprite& s);
+  void queue(int page, float x0, float y0, float x1, float y1, const SDL_Rect& src);
 
   Window& win_;
   const GameData& data_;

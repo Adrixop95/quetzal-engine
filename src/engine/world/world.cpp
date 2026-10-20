@@ -28,7 +28,22 @@ bool load_world(const GameData& data, const std::string& spec, World& w, std::st
     o.source = p.source;
     o.side = p.side;
     o.hp = p.hp;
+    o.facing = 6;  // south
+    o.anim_variant = o.id * 2654435761u >> 8;
     o.teleport(tile_center_fixed(p.x), tile_center_fixed(p.y));
+    w.objects.push_back(o);
+  }
+  // Each [Town#] section also places its town building ([Town#] Type 0 outpost, 1 village, 2 town, 3 fortress;
+  // building type per race: docs/formats.md).
+  static const int kTownBuilding[4][3] = {{10, 37, 63}, {11, 38, 64}, {19, 47, 71}, {24, 47, 76}};
+  for (const TownDef& t : w.mission.towns) {
+    if (t.type < 0 || t.type > 3 || t.race < 0 || t.race > 2) continue;
+    Object o;
+    o.id = next_id++;
+    o.type = kTownBuilding[t.type][t.race];
+    o.source = ObjectSource::Town;
+    o.side = t.side;
+    o.teleport(tile_center_fixed(t.x), tile_center_fixed(t.y));
     w.objects.push_back(o);
   }
   return true;

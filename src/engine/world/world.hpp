@@ -30,11 +30,13 @@ struct Object {
   Fixed cur_x = 0, cur_y = 0;    // position at the current tick
   uint8_t facing = 0;
   uint16_t anim_state = 0;
-  uint32_t anim_tick = 0;
+  uint32_t anim_tick = 0;      // ticks since anim_state started; advanced by World::begin_tick()
+  uint32_t anim_variant = 0;
 
   Vec2f interpolated(float alpha) const {
     return {(prev_x + (cur_x - prev_x) * alpha) / 256.f, (prev_y + (cur_y - prev_y) * alpha) / 256.f};
   }
+  void set_anim(uint16_t state) { if (state != anim_state) { anim_state = state; anim_tick = 0; } }
   void teleport(Fixed x, Fixed y) { prev_x = cur_x = x; prev_y = cur_y = y; }
 };
 
@@ -57,7 +59,7 @@ struct World {
   }
   // Called by the driver right before each simulation tick: prev := cur for everything.
   void begin_tick() {
-    for (auto& o : objects) { o.prev_x = o.cur_x; o.prev_y = o.cur_y; }
+    for (auto& o : objects) { o.prev_x = o.cur_x; o.prev_y = o.cur_y; o.anim_tick++; }
   }
 };
 

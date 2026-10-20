@@ -16,7 +16,8 @@ bool Minimap::init(SDL_Renderer* r, const GameData& data, const World& world, in
   world_ = &world;
   Palette pal{};
   const Archive& pals = data.archive(ArchiveId::Pal);
-  if (!load_palette(pals, uint32_t(palette), uint32_t(shade), pal)) return false;
+  (void)palette;
+  if (world.preview.w > 0 && !load_palette(pals, uint32_t(world.preview.palette), uint32_t(shade), pal)) return false;
   std::vector<uint32_t> px;
   int w, h;
   if (world.preview.w > 0 && world.preview.h > 0) {
@@ -39,8 +40,9 @@ bool Minimap::init(SDL_Renderer* r, const GameData& data, const World& world, in
         if (it == avg.end()) {
           uint32_t c = 0xFF000000u;
           Sprite s;
-          if (decode_sprite(tiles.get(0x44c, t), s)) {
-            std::vector<uint32_t> a = to_argb(s, pal);
+          Palette tp{};
+          if (decode_sprite(tiles.get(0x44c, t), s) && load_palette(pals, uint32_t(s.palette), uint32_t(shade), tp)) {
+            std::vector<uint32_t> a = to_argb(s, tp);
             uint64_t rr = 0, gg = 0, bb = 0, n = 0;
             for (uint32_t v : a) if (v >> 24) { rr += (v >> 16) & 255; gg += (v >> 8) & 255; bb += v & 255; n++; }
             if (n) c = 0xFF000000u | uint32_t(rr / n) << 16 | uint32_t(gg / n) << 8 | uint32_t(bb / n);

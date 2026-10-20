@@ -11,6 +11,9 @@ namespace aztec::engine {
 struct StoredSprite {
   AtlasRegion region;     // invalid if the sprite is absent or undecodable
   int ox = 0, oy = 0;     // hotspot offset stored in the sprite header
+  int frames = 1;         // stacked images (terrain animation, tree variants): rows of cell_h
+  int cw = 0, ch = 0;     // size of one image (== region size when frames == 1)
+  SDL_Rect frame_rect(int f) const { f = frames > 0 ? ((f % frames) + frames) % frames : 0; return {region.x, region.y + f * ch, cw, ch}; }
   bool ok() const { return region.valid(); }
 };
 

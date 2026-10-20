@@ -20,6 +20,8 @@ enum SpriteFlags : uint8_t {
 struct Sprite {
   int w = 0, h = 0, ox = 0, oy = 0;
   uint8_t flags = 0;
+  int cell_w = 0, cell_h = 0;      // header +0x10/+0x12: size of one image when the sprite stacks several (0 = single)
+  int palette = 0;                 // header +0xC: Pal.xbe id (< 4: team palette, see docs/sprites_mapping.md)
   std::vector<uint8_t> opaque;     // w*h, 1 = drawn
   std::vector<uint8_t> index;      // w*h (8-bit sprites)
   std::vector<uint16_t> color;     // w*h (16-bit sprites)

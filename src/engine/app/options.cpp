@@ -16,6 +16,7 @@ const char* usage_text() {
          "  --zoom Z           initial zoom (0.5 .. 4); default automatic\n"
          "  --cam X,Y          initial camera centre in tiles\n"
          "  --wander           demo simulation: units walk randomly (shows 12 Hz tick interpolation)\n"
+         "  --no-sprites       draw placeholder markers instead of sprites\n"
          "  --no-edge-scroll   disable edge scrolling;  --no-hud  hide the info overlay;  --help-overlay  show key help\n"
          "  --palette N --shade N   terrain palette/shade override\n"
          "  --screenshot FILE.png  render --frames N frames (default 5), save PNG and exit\n"
@@ -54,6 +55,7 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     else if (a == "--wander") o.wander = true;
     else if (a == "--no-edge-scroll") o.edge_scroll = false;
     else if (a == "--no-hud") o.hud = false;
+    else if (a == "--no-sprites") o.sprites = false;
     else if (a == "--help-overlay") o.help = true;
     else if (a == "--palette") { if (!next(v)) return false; o.terrain_palette = std::atoi(v); }
     else if (a == "--shade") { if (!next(v)) return false; o.terrain_shade = std::atoi(v); }

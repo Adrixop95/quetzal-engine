@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <filesystem>
 
+#include "engine/assets/anim_provider.hpp"
 #include "engine/platform/clock.hpp"
 #include "engine/platform/input.hpp"
 #include "engine/platform/window.hpp"
@@ -59,6 +60,12 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
     SceneRenderer scene(win, data, world);
     scene.opts.terrain_palette = o.terrain_palette;
     scene.opts.terrain_shade = o.terrain_shade;
+    if (!provider && o.sprites) {
+      auto ap = std::make_shared<AnimSpriteProvider>();
+      std::string up = find_file_ci(o.game_dir + "/Res", "Units.xbe");
+      if (!up.empty() && ap->open(up)) provider = ap;
+      else std::fprintf(stderr, "warning: cannot load Units.xbe, using placeholders\n");
+    }
     scene.set_sprite_provider(provider);
     Minimap minimap;
     if (!minimap.init(win.renderer(), data, world, scene.default_palette(), o.terrain_shade))

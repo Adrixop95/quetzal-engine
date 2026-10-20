@@ -14,6 +14,7 @@ struct Options {
   bool wander = false;             // demo simulation: units random-walk (tests interpolation)
   bool edge_scroll = true;
   bool hud = true;
+  bool sprites = true;             // --no-sprites: placeholder markers only
   bool help = false;
   int terrain_palette = -1, terrain_shade = 14;
   std::string screenshot;          // write PNG after `frames` frames, then exit

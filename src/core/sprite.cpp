@@ -13,6 +13,9 @@ bool decode_sprite(Item item, Sprite& s) {
   s.w = rd16(d + 4);
   s.h = rd16(d + 6);
   s.flags = d[8];
+  s.palette = rd16(d + 12);
+  s.cell_w = rd16(d + 0x10);
+  s.cell_h = rd16(d + 0x12);
   s.ox = int16_t(rd16(d + 0x14));
   s.oy = int16_t(rd16(d + 0x16));
   size_t n = size_t(s.w) * s.h;

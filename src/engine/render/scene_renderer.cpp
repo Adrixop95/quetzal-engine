@@ -13,15 +13,13 @@ SceneRenderer::SceneRenderer(Window& win, const GameData& data, const World& wor
   font_ok_ = font_.init(win.renderer());
 }
 
-int SceneRenderer::default_palette() const {
-  if (opts.terrain_palette >= 0) return opts.terrain_palette;
-  return world_.mission.tileset == 1 ? 4 : 4;  // palette 4 gives natural colours for Tiles0; see README for Tiles1
-}
+// 0 = per-sprite palette from the tile header (Tiles0 uses Pal 4/5/6, Tiles1 uses 8/9/10).
+int SceneRenderer::default_palette() const { return opts.terrain_palette > 0 ? opts.terrain_palette : 0; }
 
-void SceneRenderer::queue(int page, float x0, float y0, float x1, float y1, const StoredSprite& s) {
+void SceneRenderer::queue(int page, float x0, float y0, float x1, float y1, const SDL_Rect& src) {
   if (page >= int(batches_.size())) batches_.resize(page + 1);
   int ps = store_.atlas().page_size();
-  batches_[page].add(x0, y0, x1, y1, SDL_Rect{s.region.x, s.region.y, s.region.w, s.region.h}, ps, ps);
+  batches_[page].add(x0, y0, x1, y1, src, ps, ps);
 }
 
 void SceneRenderer::flush(int page) {
@@ -37,10 +35,6 @@ void SceneRenderer::draw_terrain(const Camera& cam) {
   const TerrainMap& t = world_.terrain;
   ArchiveId arch = world_.mission.tileset == 1 ? ArchiveId::Tiles1 : ArchiveId::Tiles0;
   uint8_t pal = uint8_t(default_palette()), shade = uint8_t(opts.terrain_shade);
-  int margin = opts.overlays ? 3 : 0;
-  int x0 = std::max(0, int(std::floor(cam.x / kTilePx)) - margin), y0 = std::max(0, int(std::floor(cam.y / kTilePx)) - margin);
-  int x1 = std::min(t.w, int(std::ceil((cam.x + cam.visible_w()) / kTilePx)) + margin);
-  int y1 = std::min(t.h, int(std::ceil((cam.y + cam.visible_h()) / kTilePx)) + margin);
 
   // Base tiles: only the exactly visible range.
   int bx0 = std::max(0, int(std::floor(cam.x / kTilePx))), by0 = std::max(0, int(std::floor(cam.y / kTilePx)));
@@ -50,27 +44,13 @@ void SceneRenderer::draw_terrain(const Camera& cam) {
     for (int x = bx0; x < bx1; x++) {
       const StoredSprite& s = store_.get({arch, 0x44c, t.base(x, y), pal, shade});
       if (!s.ok()) continue;
+      int frame = s.frames > 1 ? int((world_.tick / 2) % uint64_t(s.frames)) : 0;  // water/shore animation
       stats.tiles++;
       float sx0 = snap(cam.to_screen_x(float(x * kTilePx))), sy0 = snap(cam.to_screen_y(float(y * kTilePx)));
       float sx1 = snap(cam.to_screen_x(float((x + 1) * kTilePx))), sy1 = snap(cam.to_screen_y(float((y + 1) * kTilePx)));
-      queue(s.region.page, sx0, sy0, sx1, sy1, s);
+      queue(s.region.page, sx0, sy0, sx1, sy1, {s.region.x, s.region.y + frame * kTilePx, kTilePx, kTilePx});
     }
   for (int p = 0; p < int(batches_.size()); p++) flush(p);
-
-  if (opts.overlays) {
-    for (int y = y0; y < y1; y++)
-      for (int x = x0; x < x1; x++) {
-        uint16_t ov = t.overlay(x, y);
-        if (!ov) continue;
-        const StoredSprite& s = store_.get({arch, 0x454, ov, pal, shade});
-        if (!s.ok()) continue;
-        stats.overlays++;
-        float wx = float(x * kTilePx + s.ox), wy = float(y * kTilePx + s.oy);
-        queue(s.region.page, snap(cam.to_screen_x(wx)), snap(cam.to_screen_y(wy)),
-              snap(cam.to_screen_x(wx + s.region.w)), snap(cam.to_screen_y(wy + s.region.h)), s);
-      }
-    for (int p = 0; p < int(batches_.size()); p++) flush(p);
-  }
 
   if (opts.passability && world_.passability.w) {
     for (int y = by0; y < by1; y++)
@@ -96,33 +76,69 @@ void SceneRenderer::draw_terrain(const Camera& cam) {
   }
 }
 
+// Draws one image of a stored sprite with its hotspot at world position (wx, wy).
+void SceneRenderer::blit(const Camera& cam, const StoredSprite& s, int frame, float wx, float wy, int& cur_page) {
+  if (s.region.page != cur_page) { flush(cur_page); cur_page = s.region.page; }
+  float x0 = wx - s.ox, y0 = wy - s.oy;
+  queue(s.region.page, snap(cam.to_screen_x(x0)), snap(cam.to_screen_y(y0)), snap(cam.to_screen_x(x0 + s.cw)),
+        snap(cam.to_screen_y(y0 + s.ch)), s.frame_rect(frame));
+}
+
 void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
   SDL_Renderer* r = win_.renderer();
-  struct Item { float wx, wy; const Object* o; };
+  ArchiveId arch = world_.mission.tileset == 1 ? ArchiveId::Tiles1 : ArchiveId::Tiles0;
+  uint8_t pal = uint8_t(default_palette()), shade = uint8_t(opts.terrain_shade);
+  struct Item { float wx, wy; const Object* o; int tx, ty; uint16_t tree; };  // tree != 0: terrain overlay sprite
   std::vector<Item> items;
-  items.reserve(world_.objects.size());
-  float pad = 64;
+  items.reserve(world_.objects.size() + 256);
+  float pad = 96;
   for (const Object& o : world_.objects) {
     Vec2f p = o.interpolated(alpha);
     if (p.x < cam.x - pad || p.y < cam.y - pad || p.x > cam.x + cam.visible_w() + pad || p.y > cam.y + cam.visible_h() + pad) continue;
-    items.push_back({p.x, p.y, &o});
+    if (!visible_in_fog(o, p)) continue;
+    items.push_back({p.x, p.y, &o, 0, 0, 0});
+  }
+  if (opts.overlays) {  // terrain overlay layer = trees/rocks: body in 0x44c, shadow in 0x454, same id
+    const TerrainMap& t = world_.terrain;
+    int x0 = std::max(0, int(std::floor((cam.x - 96) / kTilePx))), y0 = std::max(0, int(std::floor((cam.y - 96) / kTilePx)));
+    int x1 = std::min(t.w, int(std::ceil((cam.x + cam.visible_w() + 96) / kTilePx)));
+    int y1 = std::min(t.h, int(std::ceil((cam.y + cam.visible_h() + 224) / kTilePx)));
+    for (int y = y0; y < y1; y++)
+      for (int x = x0; x < x1; x++)
+        if (uint16_t ov = t.overlay(x, y))
+          items.push_back({float(x * kTilePx + kTilePx / 2), float(y * kTilePx + kTilePx / 2), nullptr, x, y, ov});
   }
   std::stable_sort(items.begin(), items.end(), [](const Item& a, const Item& b) { return a.wy < b.wy; });
 
   int cur_page = -1;
+  // Pass 1: shadows (translucent, under every body).
+  for (const Item& it : items) {
+    SpriteDraw sd;
+    if (it.tree) {
+      const StoredSprite& s = store_.get({arch, 0x454, it.tree, pal, shade, 0, 0, true});
+      if (s.ok()) { stats.overlays++; blit(cam, s, int(it.tx * 7 + it.ty * 13), it.wx, it.wy, cur_page); }
+    } else if (provider_ && provider_->pick_shadow(object_state(*it.o), sd)) {
+      const StoredSprite& s = store_.get(sd.key);
+      if (s.ok()) blit(cam, s, sd.key.frame, it.wx + sd.dx, it.wy + sd.dy, cur_page);
+    }
+  }
+  flush(cur_page);
+  cur_page = -1;
+  // Pass 2: bodies and placeholders, back to front.
   int scale = std::max(1, int(std::lround(cam.zoom)));
   for (const Item& it : items) {
+    if (it.tree) {
+      const StoredSprite& s = store_.get({arch, 0x44c, it.tree, pal, shade});
+      if (s.ok()) { stats.overlays++; blit(cam, s, int(it.tx * 7 + it.ty * 13), it.wx, it.wy, cur_page); }
+      continue;
+    }
     const Object& o = *it.o;
     SpriteDraw sd;
-    ObjectState st{o.type, o.side, world_.side_color(o.side), o.facing, o.anim_state, o.anim_tick};
-    if (provider_ && o.type >= 0 && provider_->pick(st, sd)) {
+    if (provider_ && o.type >= 0 && provider_->pick(object_state(o), sd)) {
       const StoredSprite& s = store_.get(sd.key);
       if (s.ok()) {
         stats.sprites++;
-        if (s.region.page != cur_page) { flush(cur_page); cur_page = s.region.page; }
-        float wx = it.wx + s.ox + sd.dx, wy = it.wy + s.oy + sd.dy;
-        queue(s.region.page, snap(cam.to_screen_x(wx)), snap(cam.to_screen_y(wy)),
-              snap(cam.to_screen_x(wx + s.region.w)), snap(cam.to_screen_y(wy + s.region.h)), s);
+        blit(cam, s, sd.key.frame, it.wx + sd.dx, it.wy + sd.dy, cur_page);
         continue;
       }
     }
@@ -140,7 +156,6 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
     SDL_FRect b{f.x - 1, f.y - 1, f.w + 2, f.h + 2};
     SDL_RenderFillRectF(r, &b);
     if (o.type < 0) {
-      // boats/johnkas/submarines: hollow marker so they differ from typed units
       SDL_SetRenderDrawColor(r, c.r, c.g, c.b, 255);
       SDL_RenderDrawRectF(r, &f);
     } else {
@@ -150,13 +165,26 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
     if (opts.labels && font_ok_) {
       std::string label = o.type >= 0 ? std::to_string(o.type) : (o.source == ObjectSource::Boat ? "BT" : o.source == ObjectSource::Johnka ? "JK" : "SUB");
       int w = font_.width(label, scale), h = font_.height(scale);
-      int tx = int(sx) - w / 2, ty = int(sy) - h / 2;
       bool dark = (c.r + c.g + c.b) > 450;
-      font_.draw(r, tx, ty, label, scale, dark ? SDL_Color{10, 10, 10, 255} : SDL_Color{255, 255, 255, 255}, false);
+      font_.draw(r, int(sx) - w / 2, int(sy) - h / 2, label, scale, dark ? SDL_Color{10, 10, 10, 255} : SDL_Color{255, 255, 255, 255}, false);
     }
   }
   flush(cur_page);
 }
+
+ObjectState SceneRenderer::object_state(const Object& o) const {
+  ObjectState st;
+  st.type_id = o.type;
+  st.side = o.side;
+  st.side_color = world_.side_color(o.side);
+  st.facing = o.facing;
+  st.anim_state = o.anim_state;
+  st.anim_tick = o.anim_tick;
+  st.anim_variant = o.anim_variant;
+  return st;
+}
+
+bool SceneRenderer::visible_in_fog(const Object&, Vec2f) const { return true; }
 
 void SceneRenderer::draw(const Camera& cam, float alpha) {
   stats = {};
