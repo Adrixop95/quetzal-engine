@@ -64,6 +64,10 @@ Obserwowane flagi: 1, 5, 6, 10, 14, 17, 64.
 Znaczenie pól klatki animacji, wartości `.rm` i `.vis`, `Music/music.xbe` (RIFF WAV), `Keys.ini`, `*.plr` i `single%i.sav`.
 
 
+Dowód `.vis` w grze (misja 4, zrzut RT_DUMP_DIR `shot` vs dekoder): minimapa gry (1 px = 1 kafel, region 638,70 120x90) pokrywa się z warstwą strony 0 w 96,3% pikseli
+(ciemne = 152, jasne = 0; plamy w lewym górnym i prawym dolnym rogu o tych samych kształtach). Dowód `.dat`: na renderze kafli misji 4 czarne kafle skał pokrywają się z wartością 0, kępy
+drzew z wartością 1 (render `src/tools/render_map.py` + nakładka `.dat`). `.spr` ma 120x90 (1 px/kafel, nie 2) i nagłówek palety 15, ale obraz z palety 15 wyszedł czarny (niewyjaśnione).
+
 ## Skrypt scenariusza `.scn` (parser: `src/core/script.*`, 49/49 plików parsuje się)
 Wielkość liter bez znaczenia (`localtime`, `jointactic`, `Timer`), białe znaki dowolne, koniec pliku może mieć znak 0x1A. Napisy błędów: `strbase.bds` 72-104 (np. 75 "Bad comparison operation").
 ```
@@ -107,7 +111,10 @@ directcontrol 26, lastcaller 27, toggleinterface 28, scrollleft/right/up/down 38
 **`Saves/singleN.sav` / `multiN.sav`** (zapis `FUN_004450e0`, odczyt `FUN_004455f0`): `+0 u32`, `+4 u32` (oba 0), `+8 char[256]` ścieżka .mp misji, `+0x108 char[64]` opis wpisany przez gracza,
 `+0x148` SYSTEMTIME (8 x u16), od `+0x158` surowy strumień stanu: pozycja widoku (2 x u32), 5 x u32 globalnych (`0x4cc38c/0x4cc240/0x4cc244/0x4cc23c/0x4c5730`), potem sekcje w kolejności:
 pula `0x4c1978`, pula `0x5156f8`, liczba stron i obiekty Side (0x69c każdy, metoda wirtualna +4), pula `0x4d9b50`, jednostki `0x4cc3d0`, `0x515a98`, `0x4c1298`, `0x4c4ce0`, `0x4cd698`, `0x4d9b88`;
-każdy obiekt serializuje własna metoda wirtualna. Zdekodowano tylko nagłówek (`parse_save_header`); układ pól obiektów NIE jest rozpoznany (brak zapisów z różnych stanów do porównania).
+każdy obiekt serializuje własna metoda wirtualna. Zdekodowano tylko nagłówek (`parse_save_header`). Dwa zapisy misji 4 zrobione w odstępie ok. 25 s (skrypt RT_SCRIPT: Menu (626,10) -> "Zapisz grę" (250,190) -> wybór slotu
+(y = 138+20*slot) -> Zapisz (184,359); slot 1 = `single1.sav`): rozmiar 149924 vs 152428 B (przybywają obiekty), ścieżka w nagłówku `D:\Maps\mission_4.mp`, a pierwsze `u32` strumienia to:
+widok x,y (298,336 / 298,324), potem `0,0,1,4`, potem licznik ticków gry (55 -> 363, różnica 308 = 25 s przy 12 Hz). Reszta (ok. 54 tys. różniących się bajtów) to stan obiektów
+(wskaźniki vtable i pól, część to surowe wskaźniki/śmieci), układ pól NIE rozpoznany. Wpisanie nazwy przez `key DIK` po kliknięciu slotu nie zadziałało w moim przebiegu (opis pusty).
 
 ## Dźwięk (`src/core/audio.*`)
 - `Res/Snd.xbe`: grupa `0x460` elementy 1..2013 = pliki WAV (`id dźwięku`); tylko 367 jest niepustych (puste = ten sam offset co następny); formaty mieszane: 44100/22050 Hz, 8/16 bit, mono/stereo.
