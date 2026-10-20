@@ -26,12 +26,15 @@ Obserwowane flagi: 1, 5, 6, 10, 14, 17, 64.
 - Kafle terenu (Tiles0, flaga 1, 48x48) mają naturalne kolory dla palety 4 przy poziomie cieniowania 14 (w repo: src/tools/xbe.py + sprite.py). Palety 5..17 to motywy terenu.
 
 ## Pliki misji (`Maps/<nazwa>.*`, zweryfikowane na 63 mapach)
-- `.map`: patrz wyżej. `.dat`: `w*h` bajtów, mapa przejezdności (komunikat gry "passability map"); wartości 0/1/2 (w misji 1: 2 = otwarty
-  ląd, 1 = pojedyncze przeszkody na lądzie, 0 = woda/obrzeża; interpretacja z obrazu, do potwierdzenia w WaveSearch).
-- `.rm`: `u16 w, u16 h`, potem `w*h` wartości `u16` ("resource map": zasoby/obiekty terenu; młodszy bajt przyjmuje m.in. 0x1a, 0x41, 0x2d).
-- `.vis`: `u16 wersja=2, u16 w, u16 h`, potem `w*h` wartości `u16` (początkowa widoczność/mgła).
+- `.map`: patrz wyżej. `.dat`: `w*h` bajtów, mapa przejezdności. Zweryfikowane w `FUN_0046bdb0` (WaveSearch): 0 = zablokowane (woda/obrzeża; obie klasy ruchu 0),
+  1 = przejezdne tylko dla pierwszej klasy ruchu (w misji 4 pokrywa się z nakładkami drzew 4909-4913), 2 = przejezdne dla obu klas. Trzecia tablica (lot) = zawsze przejezdna.
+- `.rm`: `u16 w, u16 h`, potem `w*h` komórek `u16` = dwa bajty: kanał zasobu A (młodszy), kanał B (starszy). Wartość zależy od typu kafla bazowego
+  (1000-1099: 65/0, 1100-1199: 0/65, 1200-1299: 26/26, 0 = brak). Odczyt: `FUN_0042acd0` (średnia ważona kanałów po masce 7x7, wagi z rekordu typu +0xf0/+0xf4)
+  i `FUN_0042ad90` (sumy w kole r=4 dla AI). Nazwa zasobu kanałów A/B niepotwierdzona.
+- `.vis`: POPRAWKA (zweryfikowano w `FUN_00430ae0`, 49 plików): `u16 liczba_stron`, potem dla każdej strony `u16 w, u16 h, w*h bajtów`. Bajt = poziom
+  zaciemnienia/mgły danej strony (0 = jasno, mniejszy = jaśniej; 152 = całkiem ciemno/nieodkryte, 96 = poziom nocy). Loader: `src/core/visfile.*`.
 - `.spr`: pojedynczy sprite (nagłówek 0xE0AC0000, flaga 1) = podgląd mapy 2 px na kafel (180x120 dla mapy 90x60), indeksy palety.
-- `.mit`: tekst odprawy w cp1250 (kodowanie polskich liter w stylu Windows).
+- `.mit`: tekst odprawy w cp1250: sekcje `~Pamiętnik`, `~Rozkaz`, `~Cele` zakończone linią `~~` (loader: `visfile.hpp` parse_briefing; w kodzie exe nazwa pliku `.mit` nie została znaleziona, wczytanie niepotwierdzone).
 - `.scn`: skrypt scenariusza (tekst, CRLF). Bloki `trigger(N)` / `conditions` / `actions` / `end`. Zbadane 63 pliki, 72 wzorce linii:
   warunki: `always`, `localTime|globalTime == N`, `timer(N) == N`, `side(S).units|towns|enemies == N`, `side(S).unitsInRect(x1,y1,x2,y2) > N`,
   `side(S).unitsOfID(UGI_ABDULA) < N`, `side(S).unitsOfUGIInRect(UGI_x,...)`, `side(S).tactic(N).valid|attacked|idle != N`, `side(S).defence(N).valid == N`,
@@ -55,3 +58,31 @@ Obserwowane flagi: 1, 5, 6, 10, 14, 17, 64.
 
 ## Do rozpoznania
 Znaczenie pól klatki animacji, wartości `.rm` i `.vis`, `Music/music.xbe` (RIFF WAV), `Keys.ini`, `*.plr` i `single%i.sav`.
+
+
+## Skrypt scenariusza `.scn` (parser: `src/core/script.*`, 49/49 plików parsuje się)
+Wielkość liter bez znaczenia (`localtime`, `jointactic`, `Timer`), białe znaki dowolne, koniec pliku może mieć znak 0x1A. Napisy błędów: `strbase.bds` 72-104 (np. 75 "Bad comparison operation").
+```
+trigger(N)  conditions <warunek>*  actions <akcja>*  end
+warunek: always | localTime|globalTime CMP N | timer(N) CMP N
+  | side(S).enemies|units|towns|tactics|money CMP N | side(S).unitsInRect(x1,y1,x2,y2) CMP N
+  | side(S).unitsOfUGIInRect(UGI_x,x1,y1,x2,y2) CMP N | side(S).unitsOfId(UGI_x) CMP N
+  | side(S).tactic(N).valid|attacked|idle|locked CMP N | side(S).defence(N).valid CMP N
+  | side(S).isFriendly|isNeutral|isEnemy(S) CMP N          CMP: == != < <= > >=   S: liczba lub `local`
+akcja: trigger(N).enable|disable | boat(N).activate | johnka(N).enable|disable | submarine(N).go
+  | timer(N).set(V)|start|stop|kill | centerView(x,y) | printString("EN") | printStringR("RU, cp1251")
+  | side(S).victory|defeat|buildCommand(UGI,..)|moveCommand(x,y)|cameraActivate(i,v)|cameraDeactivate(i)
+    |setFriendlyTo|setNeutralTo|setEnemyTo(S)|addMoney(N)|takeMoney(N)
+  | side(S).tactic(N).attackTown(id)|moveTo(x,y)|joinTactic(N)|setPath|setInvertedPath|setCycledPath|setCycledInvertedPath(N)|lock|unlock|kill|giftToSide(S)
+```
+`printString` = tekst angielski, `printStringR` = rosyjski (cp1251). Napis nie może zawierać `"`. Nazwy UGI: `src/core/ugi.*` (90 typów). Semantyka wykonania (początkowy stan włączenia
+triggerów, jednostki czasu) NIE zweryfikowana. Wyniki `(S)` w sscanf: `%[loca]s` = `local`.
+
+## `.mp` - uzupełnienia (z odczytu `LoadGame.cpp`: `FUN_0042ffb0`, `00430770`, `00430880`, `0042fc90`, `0042f560`...)
+Klucze nieczytane przez grę (edytor): `Version, Remark, Notes/Note#/Noter#, Tendency, BuildSpeed, Difficulty, OnlyComp, CurrentTeam, EditorX/Y, EndPosition, [Sounds]`.
+Czytane: Globals `Sides, Towns, Teams, Boats, Johnkas, Submarines, Winds` (liczba wiatrów, max 20), `TileSet` (0/1: wybór tablicy światła dnia), `StartTime` (0..7199, tik doby;
+tablica kluczy czasu 9 pól: czas, 3x RGB double, poziom ciemności 6..12, współczynnik 1..3; tablice 0x4a8f68 / 0x4a9338), `Music` (jeśli !=0 numer utworu, inaczej `MusicMask` bitmaska), `AVI`, `MaxPlayers` (lobby).
+`[Side#]`: `Race, Color, Neutral, StartMoney(def 100), Start_X/Y, Name, DisabledID (lista typów UGI), Defence# = scenarioId,x,y,typ (lub x,y,typ), DefenceCount, Camera# = x,y,z, CamerasCount`.
+`[Town#]`: `Side, X, Y, Race, Type` (0 forpost,1 wieś,2 miasto,3 twierdza; typ budynku z tablicy 0x4bc390[Type*3+Race], -1 dla Azteków/Type 3 = fallback kolumny 1), `ScenarioId, Unit#=x,y,typ,hp, Units`.
+`[Team#]`: `Side, ScenarioId, Unit#, Units`. `[Boat#]`: `Side,X,Y,Up,ScenarioId` (typ 84). `[Johnka#]`: jak łódź + `Enabled` (typ 88). `[Submarine#]`: `Side,X,Y,ScenarioId`.
+`[Paths]`: `Count`, `i = id, x,y, x,y, ...` (id używane w `setPath`). Klucze `.mp` są niewrażliwe na wielkość liter (`ScenarioID` = `ScenarioId`).

@@ -6,6 +6,10 @@
 #include "core/map.hpp"
 #include "core/palette.hpp"
 #include "core/sprite.hpp"
+#include "core/script.hpp"
+#include "core/ugi.hpp"
+#include "core/visfile.hpp"
+#include <dirent.h>
 
 using namespace aztec;
 static int failures = 0;
@@ -51,6 +55,35 @@ int main(int argc, char** argv) {
     CHECK(m.w == 120 && m.h == 90);
   } else {
     std::printf("skip: Maps/Mission_4.* not in game dir\n");
+  }
+  // .vis / .scn / .mit over every map in the game dir
+  {
+    CHECK(ugi_from_name("ugi_abdula") >= 0);
+    int nvis = 0, nscn = 0, nmit = 0;
+    if (DIR* d = opendir(maps.c_str())) {
+      while (dirent* e = readdir(d)) {
+        std::string n = e->d_name;
+        if (n.size() < 5) continue;
+        std::string ext = n.substr(n.size() - 4), base = maps + n.substr(0, n.size() - 4);
+        if (ext == ".vis") {
+          VisFile v;
+          bool ok = load_vis(base + ".vis", v);
+          if (!ok) std::printf("vis fail %s\n", n.c_str());
+          CHECK(ok); nvis += ok;
+        } else if (ext == ".scn") {
+          script::Script s;
+          bool ok = script::load_script(base + ".scn", s);
+          if (!ok) std::printf("scn fail %s %s\n", n.c_str(), s.error.c_str());
+          CHECK(ok); nscn += ok;
+        } else if (ext == ".mit") {
+          std::vector<BriefingSection> b;
+          bool ok = load_briefing(base + ".mit", b);
+          CHECK(ok); nmit += ok;
+        }
+      }
+      closedir(d);
+    }
+    std::printf("vis=%d scn=%d mit=%d\n", nvis, nscn, nmit);
   }
   std::printf(failures ? "FAILED\n" : "OK\n");
   return failures ? 1 : 0;

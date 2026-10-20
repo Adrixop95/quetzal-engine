@@ -1,4 +1,4 @@
-// Minimal INI reader for Maps/*.mp (sections, key=value, CRLF, no comments).
+// Minimal INI reader for Maps/*.mp (sections, key=value, CRLF, no comments; names are case-insensitive).
 #pragma once
 #include <map>
 #include <string>
@@ -11,7 +11,8 @@ class Ini {
   bool parse(const std::string& text);
   std::string get(const std::string& section, const std::string& key, const std::string& def = "") const;
   int get_int(const std::string& section, const std::string& key, int def = 0) const;
-  bool has_section(const std::string& section) const { return data_.count(section) != 0; }
+  bool has_section(const std::string& section) const;
+  bool has_key(const std::string& section, const std::string& key) const;
 
  private:
   std::map<std::string, std::map<std::string, std::string>> data_;
