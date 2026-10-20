@@ -14,6 +14,9 @@ struct Options {
   bool wander = false;             // demo simulation: units random-walk (tests interpolation)
   bool edge_scroll = true;
   bool hud = true;
+  bool fog = true;
+  int cursor_x = -1, cursor_y = -1; // --cursor X,Y: draw the cursor there in screenshot mode
+  bool panel = true;               // original right-hand panel
   bool sprites = true;             // --no-sprites: placeholder markers only
   bool help = false;
   int terrain_palette = -1, terrain_shade = 14;
@@ -21,6 +24,7 @@ struct Options {
   int frames = 0;                  // 0 = run until quit (screenshot default: 5)
   int pre_ticks = 0;               // simulation ticks to run before the first frame
   int fps_cap = 0;
+  std::string sheet_spec, sheet_out;  // --sprite-sheet SPEC OUT.png
   bool list = false;               // --list: print campaign/custom mission names and exit
 };
 

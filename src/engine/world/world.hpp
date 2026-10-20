@@ -49,6 +49,8 @@ struct World {
   Sprite preview;                // .spr minimap preview; w == 0 if absent
   std::vector<Object> objects;
   uint64_t tick = 0;
+  int local_side = 0;            // side whose fog layer is shown / whose objects are always visible
+  uint32_t fog_version = 1;      // bump when the local side's .vis layer changes
 
   int width_px() const { return terrain.w * kTilePx; }
   int height_px() const { return terrain.h * kTilePx; }

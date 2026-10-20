@@ -9,7 +9,9 @@ const Palette* SpriteStore::palette(uint8_t id, uint8_t shade) {
   auto it = pals_.find(key);
   if (it != pals_.end()) return &it->second;
   Palette p{};
-  if (!load_palette(data_.archive(ArchiveId::Pal), id, shade, p)) return nullptr;
+  if (!load_palette(data_.archive(ArchiveId::Pal), id, shade, p) &&
+      !load_palette(data_.archive(ArchiveId::Pal), id, 0, p))  // single-palette items have no shade levels
+    return nullptr;
   return &pals_.emplace(key, p).first->second;
 }
 
@@ -27,10 +29,20 @@ const StoredSprite& SpriteStore::get(const SpriteKey& k) {
         if (s.opaque[i]) px[i] = 0x70000000u;
     } else {
       int pid = k.palette;
-      if (!pid) pid = s.palette < 4 ? s.palette + 0x10 + k.team * 4 : s.palette;
-      const Palette* pal = s.is16() ? nullptr : palette(uint8_t(pid), k.shade);
+      // Header palette ids < 4 in Units.xbe are team palettes; elsewhere they name a fixed Pal.xbe item.
+      if (!pid) pid = (s.palette < 4 && k.archive == ArchiveId::Units) ? s.palette + 0x10 + k.team * 4 : s.palette;
+      // RLE16 sprites with a header palette other than 14 hold (palette index, extra byte) per pixel
+      // (cursors, fonts); palette 14 marks true RGB565 colour.
+      bool indexed16 = s.is16() && s.palette != 14;
+      const Palette* pal = (!s.is16() || indexed16) ? palette(uint8_t(pid), k.shade) : nullptr;
       static const Palette kGrey = [] { Palette g{}; for (int i = 0; i < 256; i++) g[i] = 0xFF000000u | i * 0x010101u; return g; }();
-      px = to_argb(s, pal ? *pal : kGrey);
+      if (indexed16) {
+        px.assign(size_t(s.w) * s.h, 0);
+        for (size_t i = 0; i < px.size(); i++)
+          if (s.opaque[i]) px[i] = (pal ? *pal : kGrey)[s.color[i] & 255];
+      } else {
+        px = to_argb(s, pal ? *pal : kGrey);
+      }
     }
     out.region = atlas_.add(s.w, s.h, px.data());
     out.ox = s.ox;

@@ -27,9 +27,9 @@ add_library(aztec_engine_lib
   src/engine/world/world.cpp src/engine/world/camera.cpp src/engine/world/type_info.cpp
   src/engine/sim/simulation.cpp
   src/engine/render/atlas.cpp src/engine/render/sprite_store.cpp src/engine/render/font.cpp
-  src/engine/render/png.cpp src/engine/render/scene_renderer.cpp
-  src/engine/ui/cursor.cpp src/engine/ui/minimap.cpp src/engine/ui/hud.cpp
-  src/engine/app/options.cpp src/engine/app/engine.cpp)
+  src/engine/render/png.cpp src/engine/render/fog.cpp src/engine/render/scene_renderer.cpp
+  src/engine/ui/cursor.cpp src/engine/ui/panel.cpp src/engine/ui/minimap.cpp src/engine/ui/hud.cpp
+  src/engine/app/options.cpp src/engine/app/sheet.cpp src/engine/app/engine.cpp)
 target_compile_features(aztec_engine_lib PUBLIC cxx_std_20)
 target_include_directories(aztec_engine_lib PUBLIC src)
 target_compile_options(aztec_engine_lib PRIVATE -Wall -Wextra)

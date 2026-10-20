@@ -68,20 +68,30 @@ void Minimap::layout(int out_w, int out_h, int ui_scale) {
   rect_ = {margin, out_h - margin - h, w, h};
 }
 
+void Minimap::layout_in(const SDL_Rect& a) {
+  if (!world_) return;
+  float aspect = float(world_->terrain.w) / world_->terrain.h;
+  int w = a.w, h = int(a.w / aspect);
+  if (h > a.h) { h = a.h; w = int(a.h * aspect); }
+  rect_ = {a.x + (a.w - w) / 2, a.y + (a.h - h) / 2, w, h};
+}
+
 void Minimap::to_world(int sx, int sy, float& wx, float& wy) const {
   wx = float(sx - rect_.x) / rect_.w * world_->width_px();
   wy = float(sy - rect_.y) / rect_.h * world_->height_px();
 }
 
-void Minimap::draw(SDL_Renderer* r, const Camera& cam, float alpha) const {
+void Minimap::draw(SDL_Renderer* r, const Camera& cam, float alpha, const Fog* fog) const {
   if (!tex_ || !world_) return;
   SDL_Rect b{rect_.x - 2, rect_.y - 2, rect_.w + 4, rect_.h + 4};
   SDL_SetRenderDrawColor(r, 0, 0, 0, 220);
   SDL_RenderFillRect(r, &b);
   SDL_RenderCopy(r, tex_, nullptr, &rect_);
+  if (fog) fog->draw_minimap(r, rect_);
   float sx = float(rect_.w) / world_->width_px(), sy = float(rect_.h) / world_->height_px();
   for (const Object& o : world_->objects) {
     Vec2f p = o.interpolated(alpha);
+    if (fog && fog->enabled() && o.side != world_->local_side && fog->darkness(*world_, int(p.x / kTilePx), int(p.y / kTilePx)) >= 120) continue;
     SDL_Color c = side_color_rgb(world_->side_color(o.side));
     SDL_SetRenderDrawColor(r, c.r, c.g, c.b, 255);
     SDL_Rect d{rect_.x + int(p.x * sx) - 1, rect_.y + int(p.y * sy) - 1, 2, 2};

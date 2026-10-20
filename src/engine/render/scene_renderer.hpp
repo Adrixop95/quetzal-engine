@@ -6,6 +6,7 @@
 #include "engine/platform/window.hpp"
 #include "engine/render/batch.hpp"
 #include "engine/render/font.hpp"
+#include "engine/render/fog.hpp"
 #include "engine/render/sprite_store.hpp"
 #include "engine/world/camera.hpp"
 #include "engine/world/world.hpp"
@@ -36,6 +37,7 @@ class SceneRenderer {
   SceneOptions opts;
   RenderStats stats;
   const Font& font() const { return font_; }
+  Fog& fog() { return fog_; }
   SpriteStore& store() { return store_; }
   int default_palette() const;
 
@@ -53,6 +55,7 @@ class SceneRenderer {
   const World& world_;
   SpriteStore store_;
   Font font_;
+  Fog fog_;
   bool font_ok_ = false;
   std::shared_ptr<const SpriteProvider> provider_;
   std::vector<QuadBatch> batches_;  // per atlas page

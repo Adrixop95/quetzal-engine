@@ -9,10 +9,12 @@
 #include "engine/platform/clock.hpp"
 #include "engine/platform/input.hpp"
 #include "engine/platform/window.hpp"
+#include "engine/app/sheet.hpp"
 #include "engine/render/png.hpp"
 #include "engine/render/scene_renderer.hpp"
 #include "engine/ui/cursor.hpp"
 #include "engine/ui/hud.hpp"
+#include "engine/ui/panel.hpp"
 #include "engine/ui/minimap.hpp"
 #include "engine/world/camera.hpp"
 #include "engine/world/world.hpp"
@@ -42,6 +44,11 @@ static int list_missions(const std::string& dir) {
 
 int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider, std::unique_ptr<Simulation> sim) {
   if (o.list) return list_missions(o.game_dir);
+  if (!o.sheet_spec.empty()) {
+    std::string e;
+    if (!write_sprite_sheet(o.game_dir, o.sheet_spec, o.sheet_out, e)) { std::fprintf(stderr, "%s\n", e.c_str()); return 1; }
+    return 0;
+  }
 
   GameData data;
   std::string err;
@@ -59,6 +66,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
 
     SceneRenderer scene(win, data, world);
     scene.opts.terrain_palette = o.terrain_palette;
+    scene.fog().set_enabled(o.fog);
     scene.opts.terrain_shade = o.terrain_shade;
     if (!provider && o.sprites) {
       auto ap = std::make_shared<AnimSpriteProvider>();
@@ -71,7 +79,9 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
     if (!minimap.init(win.renderer(), data, world, scene.default_palette(), o.terrain_shade))
       std::fprintf(stderr, "warning: minimap unavailable\n");
     Cursor cursor;
-    cursor.init(win.renderer());
+    cursor.init(win.renderer(), scene.store());
+    Panel panel;
+    bool show_panel = o.panel && panel.init(scene.store());
 
     if (!sim) sim = o.wander ? std::unique_ptr<Simulation>(new WanderSimulation) : std::unique_ptr<Simulation>(new NullSimulation);
     sim->init(world);
@@ -81,7 +91,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
     cam.set_world(float(world.width_px()), float(world.height_px()));
     int ow, oh;
     win.output_size(ow, oh);
-    cam.set_view(float(ow), float(oh));
+    cam.set_view(float(ow), float(oh));  // adjusted for the panel every frame
     cam.zoom = o.zoom > 0 ? o.zoom : (oh >= 1800 ? 2.f : 1.f);
     if (o.has_cam) {
       cam.center_on((o.cam_tx + 0.5f) * kTilePx, (o.cam_ty + 0.5f) * kTilePx);
@@ -114,10 +124,18 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       SDL_Event e;
       while (SDL_PollEvent(&e)) in.handle(e, sx, sy);
       win.output_size(ow, oh);
-      cam.set_view(float(ow), float(oh));
       int ui = std::max(2, int(std::lround(oh / 360.0)));
       int cur_scale = std::max(1, int(std::lround(oh / 600.0)));
-      minimap.layout(ow, oh, ui);
+      int pscale = std::max(1, int(std::lround(oh / 600.0)));
+      int view_w = ow;
+      if (show_panel) {
+        panel.layout(ow, oh, pscale);
+        view_w = ow - panel.width();
+        minimap.layout_in(panel.minimap_rect());
+      } else {
+        minimap.layout(ow, oh, ui);
+      }
+      cam.set_view(float(view_w), float(oh));
 
       if (in.hit(SDL_SCANCODE_ESCAPE)) in.quit = true;
       if (in.hit(SDL_SCANCODE_F11)) win.cycle_borderless();
@@ -129,6 +147,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       if (in.hit(SDL_SCANCODE_F5)) scene.opts.markers = !scene.opts.markers;
       if (in.hit(SDL_SCANCODE_F6)) edge = !edge;
       if (in.hit(SDL_SCANCODE_F7)) scene.opts.overlays = !scene.opts.overlays;
+      if (in.hit(SDL_SCANCODE_F8)) scene.fog().set_enabled(!scene.fog().enabled());
       if (in.hit(SDL_SCANCODE_F10)) show_hud = !show_hud;
       if (in.hit(SDL_SCANCODE_SPACE)) paused = !paused;
       if (in.hit(SDL_SCANCODE_F12)) {
@@ -153,15 +172,19 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       if (in.hit(SDL_SCANCODE_KP_PLUS)) ci.zoom_steps += 1;
       if (in.hit(SDL_SCANCODE_MINUS) || in.hit(SDL_SCANCODE_KP_MINUS)) ci.zoom_steps -= 1;
       bool on_mm = minimap.contains(in.mx, in.my);
-      if (!on_mm && in.wheel != 0) { ci.zoom_steps += in.wheel > 0 ? 1 : -1; }
-      ci.zoom_pivot_x = on_mm || ci.zoom_steps == 0 || in.wheel == 0 ? ow / 2.f : float(in.mx);
+      bool on_panel = show_panel && in.mx >= ow - panel.width();
+      if (!on_mm && !on_panel && in.wheel != 0) { ci.zoom_steps += in.wheel > 0 ? 1 : -1; }
+      ci.zoom_pivot_x = on_mm || ci.zoom_steps == 0 || in.wheel == 0 ? view_w / 2.f : float(in.mx);
       ci.zoom_pivot_y = on_mm || ci.zoom_steps == 0 || in.wheel == 0 ? oh / 2.f : float(in.my);
+      int edge_dx = 0, edge_dy = 0;
       if (edge && o.screenshot.empty() && in.focused && in.mouse_inside && !drag_minimap) {
         int z = std::max(2, ui);
-        if (in.mx < z) ci.move_x -= 1;
-        if (in.mx >= ow - z) ci.move_x += 1;
-        if (in.my < z) ci.move_y -= 1;
-        if (in.my >= oh - z) ci.move_y += 1;
+        if (in.mx < z) edge_dx = -1;
+        if (in.mx >= ow - z) edge_dx = 1;
+        if (in.my < z) edge_dy = -1;
+        if (in.my >= oh - z) edge_dy = 1;
+        ci.move_x += edge_dx;
+        ci.move_y += edge_dy;
       }
       ci.move_x = std::clamp(ci.move_x, -1.f, 1.f);
       ci.move_y = std::clamp(ci.move_y, -1.f, 1.f);
@@ -183,17 +206,31 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
 
       // Render.
       scene.draw(cam, alpha);
-      minimap.draw(win.renderer(), cam, alpha);
+      if (!show_panel) minimap.draw(win.renderer(), cam, alpha, &scene.fog());
       hud.mouse_x = in.mx; hud.mouse_y = in.my; hud.alpha = alpha;
       hud.sprites = scene.stats.sprites; hud.placeholders = scene.stats.placeholders; hud.geometry_calls = scene.stats.geometry_calls;
+      if (show_panel) {
+        int gold = 0;
+        for (const SideDef& sd : world.mission.sides) if (sd.index == world.local_side) gold = sd.money;
+        panel.draw(win.renderer(), scene.store(), scene.font(), gold);
+        minimap.draw(win.renderer(), cam, alpha, &scene.fog());
+      }
       if (show_hud) draw_hud(win.renderer(), scene.font(), world, cam, hud, ui);
       // Cursor last, at the freshest mouse position.
       int cx, cy;
       SDL_GetMouseState(&cx, &cy);
       cx = int(cx * sx); cy = int(cy * sy);
+      bool forced = !o.screenshot.empty() && o.cursor_x >= 0;
+      if (forced) { cx = o.cursor_x; cy = o.cursor_y; }
       bool visible = in.mouse_inside || o.screenshot.empty();
-      CursorKind ck = pan ? CursorKind::Pan : CursorKind::Arrow;
-      if (visible && o.screenshot.empty()) cursor.draw(win.renderer(), cx, cy, ck, cur_scale);
+      CursorKind ck = CursorKind::Arrow;
+      if (pan) ck = CursorKind::Pan;
+      else if (edge_dx || edge_dy) ck = Cursor::scroll_kind(edge_dx, edge_dy);
+      else if (!on_mm && !(show_panel && cx >= ow - panel.width())) {
+        const Object* h = pick_object(world, cam.to_world_x(float(cx)), cam.to_world_y(float(cy)), alpha, 24.f / cam.zoom + 8);
+        if (h && h->side != world.local_side) ck = CursorKind::Attack;
+      }
+      if (visible && (o.screenshot.empty() || forced)) cursor.draw(win.renderer(), scene.store(), cx, cy, ck, cur_scale, SDL_GetTicks());
 
       frame++;
       if (!o.screenshot.empty() && frame >= o.frames) {

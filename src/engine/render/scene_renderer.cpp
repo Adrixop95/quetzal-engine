@@ -184,7 +184,10 @@ ObjectState SceneRenderer::object_state(const Object& o) const {
   return st;
 }
 
-bool SceneRenderer::visible_in_fog(const Object&, Vec2f) const { return true; }
+bool SceneRenderer::visible_in_fog(const Object& o, Vec2f p) const {
+  if (!fog_.enabled() || o.side == world_.local_side) return true;
+  return fog_.darkness(world_, int(p.x / kTilePx), int(p.y / kTilePx)) < 120;  // hide other sides' objects in the dark
+}
 
 void SceneRenderer::draw(const Camera& cam, float alpha) {
   stats = {};
@@ -205,6 +208,8 @@ void SceneRenderer::draw(const Camera& cam, float alpha) {
     }
   }
   draw_objects(cam, alpha);
+  fog_.update(r, world_);
+  fog_.draw(r, cam, world_);
 }
 
 }  // namespace aztec::engine

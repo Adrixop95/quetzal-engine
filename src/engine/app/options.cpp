@@ -17,10 +17,13 @@ const char* usage_text() {
          "  --cam X,Y          initial camera centre in tiles\n"
          "  --wander           demo simulation: units walk randomly (shows 12 Hz tick interpolation)\n"
          "  --no-sprites       draw placeholder markers instead of sprites\n"
+         "  --no-fog           disable fog of war from .vis (F8 toggles)\n"
+         "  --no-panel         no original right-hand panel\n"
          "  --no-edge-scroll   disable edge scrolling;  --no-hud  hide the info overlay;  --help-overlay  show key help\n"
          "  --palette N --shade N   terrain palette/shade override\n"
          "  --screenshot FILE.png  render --frames N frames (default 5), save PNG and exit\n"
          "  --ticks N          run N simulation ticks before the first frame\n"
+         "  --sprite-sheet ARCH:FIRST-LAST OUT.png   dump sprites (units|tiles0|tiles1|common) into a contact sheet\n"
          "  --list             list available missions\n";
 }
 
@@ -55,6 +58,9 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     else if (a == "--wander") o.wander = true;
     else if (a == "--no-edge-scroll") o.edge_scroll = false;
     else if (a == "--no-hud") o.hud = false;
+    else if (a == "--no-fog") o.fog = false;
+    else if (a == "--cursor") { if (!next(v)) return false; if (std::sscanf(v, "%d,%d", &o.cursor_x, &o.cursor_y) != 2) { err = "bad --cursor"; return false; } }
+    else if (a == "--no-panel") o.panel = false;
     else if (a == "--no-sprites") o.sprites = false;
     else if (a == "--help-overlay") o.help = true;
     else if (a == "--palette") { if (!next(v)) return false; o.terrain_palette = std::atoi(v); }
@@ -63,6 +69,7 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     else if (a == "--frames") { if (!next(v)) return false; o.frames = std::atoi(v); }
     else if (a == "--ticks") { if (!next(v)) return false; o.pre_ticks = std::atoi(v); }
     else if (a == "--list") o.list = true;
+    else if (a == "--sprite-sheet") { if (!next(v)) return false; o.sheet_spec = v; if (!next(v)) return false; o.sheet_out = v; }
     else if (!a.empty() && a[0] == '-') { err = "unknown option " + a; return false; }
     else o.mission = a;
   }

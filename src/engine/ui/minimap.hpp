@@ -4,6 +4,7 @@
 #include <SDL2/SDL.h>
 #include "engine/assets/game_data.hpp"
 #include "engine/platform/input.hpp"
+#include "engine/render/fog.hpp"
 #include "engine/world/camera.hpp"
 #include "engine/world/world.hpp"
 
@@ -15,12 +16,14 @@ class Minimap {
   bool init(SDL_Renderer* r, const GameData& data, const World& world, int palette, int shade);
   // Places the minimap in the bottom-left corner, at most `max_frac` of the window's smaller side.
   void layout(int out_w, int out_h, int ui_scale);
+  // Fits the minimap (map aspect ratio) into `area`, centred.
+  void layout_in(const SDL_Rect& area);
   SDL_Rect rect() const { return rect_; }
   bool contains(int x, int y) const { return x >= rect_.x && y >= rect_.y && x < rect_.x + rect_.w && y < rect_.y + rect_.h; }
   bool from_preview() const { return from_preview_; }
   // Maps a screen point inside the minimap to world pixels.
   void to_world(int sx, int sy, float& wx, float& wy) const;
-  void draw(SDL_Renderer* r, const Camera& cam, float alpha) const;
+  void draw(SDL_Renderer* r, const Camera& cam, float alpha, const Fog* fog = nullptr) const;
 
  private:
   const World* world_ = nullptr;
