@@ -147,9 +147,8 @@ widok x,y (298,336 / 298,324), potem `0,0,1,4`, potem licznik ticków gry (55 ->
 ## Wideo (`Video/*.avi`)
 - Wszystkie 11 plików: Indeo Video 4 (`IV41`), 576x420, 12 kl./s, dźwięk PCM 22050 Hz (mono; `win.avi`/`lose.avi` stereo). Runtime odtwarza je przez zewnętrzny proces `ffmpeg`
   (`runtime/video.c`: osobne potoki wideo `-f rawvideo -pix_fmt bgra` i audio `s16le 22050 mono`, tempo z `us_per_frame`, Esc/Spacja/Enter/mysz przerywa).
-- Kiedy: `intro.avi` przy starcie gry (`FUN_004????`: katalog z rejestru `Video` + `intro.avi`, `FUN_00418e90`); klucz `AVI=` w `[Globals]` mapy kampanii odtwarzany przy wczytaniu misji
-  (katalog wideo + nazwa): mission_1 -> `mission1.avi`, Mission_4 -> `Mission4.avi`, mission_5 -> `mission5.avi`, Mission_10 -> `mission9.avi`, Mission_12 -> `Mission11.avi`,
-  Mission_13 -> `Mission12.avi`, Mission_14 -> `Mission13.avi`, pozostałe puste (mapy wieloosobowe i samouczki też puste); po misji `win.avi` (zwycięstwo) lub `lose.avi`;
+- Kiedy: `intro.avi` przy starcie gry (`FUN_0042d300`: katalog z rejestru `Video` + `intro.avi`, odtwarzanie `FUN_00418e90`); klucz `AVI=` w `[Globals]` mapy kampanii odtwarzany przy wczytaniu misji (`FUN_00419110`: katalog wideo + nazwa): mission_1 -> `mission1.avi`, Mission_4 -> `Mission4.avi`, mission_5 -> `mission5.avi`, Mission_10 -> `mission9.avi`, Mission_12 -> `Mission11.avi`,
+  Mission_13 -> `Mission12.avi`, Mission_14 -> `Mission13.avi`, pozostałe puste (mapy wieloosobowe i samouczki też puste); po misji `win.avi` (zwycięstwo) lub `lose.avi` (`FUN_00458e40`);
   po 16. misji kampanii (licznik >= 0x10) `final.avi`. Funkcja `0x4191e0`+okolice na starcie otwiera wszystkie pliki Video (kontrola obecności płyty, XOR 0x55), to nie jest wybór filmu.
   (Wskazanie funkcji intro: wywołanie w 17333 pliku all.c.)
 
