@@ -38,16 +38,15 @@ struct MissionDef {
   std::string map_name;
   int w = 0, h = 0;
   int tileset = 0;
+  int start_time = 0;     // daylight clock 0..7199
   std::vector<SideDef> sides;
   std::vector<TownDef> towns;
   std::vector<PlacedObject> objects;  // Town/Team unit lines, boats, johnkas, submarines
   std::vector<std::string> notes;     // English objective text, UTF-8
 };
 
-// Pure parser (unit-testable); `base_name` is stored in file_name.
+// Thin adapter over core/mp.* (the full .mp loader). Pure and unit-testable; `base_name` is stored in file_name.
 bool parse_mission(const Ini& ini, const std::string& base_name, MissionDef& out);
-// "x, y, type, hp" -> 4 ints; false if fewer than 3 numbers.
-bool parse_unit_line(const std::string& s, int& x, int& y, int& type, int& hp);
 
 // Resolves `spec` ("3", "mission_3", "Pentagram", or a path to a .mp) inside `maps_dir` and loads it.
 // Returns the resolved .mp path or "" on failure.

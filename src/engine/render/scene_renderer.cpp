@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "core/palette.hpp"
 #include "engine/render/colors.hpp"
 #include "engine/world/type_info.hpp"
 
@@ -19,7 +20,25 @@ int SceneRenderer::default_palette() const { return opts.terrain_palette > 0 ? o
 void SceneRenderer::queue(int page, float x0, float y0, float x1, float y1, const SDL_Rect& src) {
   if (page >= int(batches_.size())) batches_.resize(page + 1);
   int ps = store_.atlas().page_size();
-  batches_[page].add(x0, y0, x1, y1, src, ps, ps);
+  batches_[page].add(x0, y0, x1, y1, src, ps, ps, mod_);
+}
+
+void SceneRenderer::set_light(const Light& l) {
+  if (!gain_init_) {  // brightness of palette level k relative to level 14 (natural), measured on terrain palette 4
+    gain_init_ = true;
+    double sum[20] = {};
+    for (int k = 0; k < 20; k++) {
+      Palette p{};
+      if (load_palette(data_.archive(ArchiveId::Pal), 4, uint32_t(k), p))
+        for (uint32_t c : p) sum[k] += ((c >> 16) & 255) * 0.3 + ((c >> 8) & 255) * 0.59 + (c & 255) * 0.11;
+    }
+    for (int k = 0; k < 20; k++) gain_[k] = sum[14] > 0 ? float(sum[k] / sum[14]) : 1.f;
+  }
+  float lv = std::clamp(l.level, 0.f, 19.f);
+  int k0 = int(lv), k1 = std::min(19, k0 + 1);
+  float g = gain_[k0] + (gain_[k1] - gain_[k0]) * (lv - k0);
+  auto ch = [&](float t) { return Uint8(std::clamp(t * g, 0.f, 1.f) * 255.f + 0.5f); };
+  mod_ = {ch(l.rgb[0]), ch(l.rgb[1]), ch(l.rgb[2]), 255};
 }
 
 void SceneRenderer::flush(int page) {
@@ -112,6 +131,8 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
 
   int cur_page = -1;
   // Pass 1: shadows (translucent, under every body).
+  SDL_Color body_mod = mod_;
+  mod_ = {255, 255, 255, 255};
   for (const Item& it : items) {
     SpriteDraw sd;
     if (it.tree) {
@@ -124,6 +145,7 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
   }
   flush(cur_page);
   cur_page = -1;
+  mod_ = body_mod;
   // Pass 2: bodies and placeholders, back to front.
   int scale = std::max(1, int(std::lround(cam.zoom)));
   for (const Item& it : items) {

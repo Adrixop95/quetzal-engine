@@ -15,6 +15,8 @@ struct Options {
   bool edge_scroll = true;
   bool hud = true;
   bool fog = true;
+  bool light = true;               // time-of-day tint (needs Aztec.exe next to Res/)
+  double time = -1;                // --time T: fixed day clock 0..7199
   int cursor_x = -1, cursor_y = -1; // --cursor X,Y: draw the cursor there in screenshot mode
   bool panel = true;               // original right-hand panel
   bool sprites = true;             // --no-sprites: placeholder markers only

@@ -23,10 +23,6 @@ static void test_pure() {
   CHECK(cp1250_to_utf8("abc") == "abc");
   CHECK(cp1250_to_utf8("\xb9\xe6") == "\xc4\x85\xc4\x87");  // a-ogonek, c-acute
 
-  int x, y, t, hp;
-  CHECK(parse_unit_line(" 35, 41,  0, 6000", x, y, t, hp) && x == 35 && y == 41 && t == 0 && hp == 6000);
-  CHECK(parse_unit_line("11,10,4,12000", x, y, t, hp) && t == 4 && hp == 12000);
-  CHECK(!parse_unit_line("garbage", x, y, t, hp));
 
   Ini ini;
   ini.parse("[Globals]\r\nName=Test\r\nMapSize=10,8\r\nTileSet=1\r\nSides=1\r\nTowns=1\r\nTeams=1\r\n"

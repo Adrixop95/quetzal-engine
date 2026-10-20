@@ -3,6 +3,7 @@
 #pragma once
 #include <memory>
 #include <vector>
+#include "engine/assets/daylight.hpp"
 #include "engine/platform/window.hpp"
 #include "engine/render/batch.hpp"
 #include "engine/render/font.hpp"
@@ -33,6 +34,8 @@ class SceneRenderer {
   bool ok() const { return font_ok_; }
   void set_sprite_provider(std::shared_ptr<const SpriteProvider> p) { provider_ = std::move(p); }
   void draw(const Camera& cam, float alpha);
+  // Time-of-day light: tint + ambient shade (sprites are baked at shade 14 and modulated).
+  void set_light(const Light& l);
 
   SceneOptions opts;
   RenderStats stats;
@@ -58,6 +61,9 @@ class SceneRenderer {
   Fog fog_;
   bool font_ok_ = false;
   std::shared_ptr<const SpriteProvider> provider_;
+  SDL_Color mod_{255, 255, 255, 255};  // vertex colour for terrain/trees/objects
+  float gain_[20];
+  bool gain_init_ = false;
   std::vector<QuadBatch> batches_;  // per atlas page
 };
 

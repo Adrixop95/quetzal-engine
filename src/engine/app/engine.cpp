@@ -6,6 +6,7 @@
 #include <filesystem>
 
 #include "engine/assets/anim_provider.hpp"
+#include "engine/assets/daylight.hpp"
 #include "engine/platform/clock.hpp"
 #include "engine/platform/input.hpp"
 #include "engine/platform/window.hpp"
@@ -87,6 +88,9 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
     sim->init(world);
     for (int i = 0; i < o.pre_ticks; i++) { world.begin_tick(); sim->tick(world); }
 
+    Daylight daylight;
+    bool use_light = o.light && daylight.load_from_exe(find_file_ci(o.game_dir, "Aztec.exe"));
+    if (o.light && !use_light) std::fprintf(stderr, "note: no daylight tables (Aztec.exe not found), neutral light\n");
     Camera cam;
     cam.set_world(float(world.width_px()), float(world.height_px()));
     int ow, oh;
@@ -204,7 +208,11 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
         cam.center_on(wx, wy);
       }
 
-      // Render.
+      // Render. Day clock: mission StartTime + simulation ticks (+ interpolation).
+      if (use_light) {
+        double t = (o.time >= 0 ? o.time : world.mission.start_time) + (o.time >= 0 ? 0 : double(world.tick) + alpha);
+        scene.set_light(daylight.sample(world.mission.tileset, t));
+      }
       scene.draw(cam, alpha);
       if (!show_panel) minimap.draw(win.renderer(), cam, alpha, &scene.fog());
       hud.mouse_x = in.mx; hud.mouse_y = in.my; hud.alpha = alpha;

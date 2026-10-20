@@ -68,7 +68,8 @@ bool NavGrid::push_out(Vec2& p, i32 r, MoveClass c) const {
 }
 
 bool NavGrid::nearest_free(int x, int y, MoveClass c, int& ox, int& oy) const {
-  if (x < 0) x = 0; if (y < 0) y = 0; if (x >= w_) x = w_ - 1; if (y >= h_) y = h_ - 1;
+  x = x < 0 ? 0 : x >= w_ ? w_ - 1 : x;
+  y = y < 0 ? 0 : y >= h_ ? h_ - 1 : y;
   int maxr = w_ > h_ ? w_ : h_;
   for (int r = 0; r <= maxr; ++r) {
     i64 best = -1; int bx = 0, by = 0;

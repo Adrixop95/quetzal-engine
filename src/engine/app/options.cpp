@@ -19,6 +19,7 @@ const char* usage_text() {
          "  --no-sprites       draw placeholder markers instead of sprites\n"
          "  --no-fog           disable fog of war from .vis (F8 toggles)\n"
          "  --no-panel         no original right-hand panel\n"
+         "  --no-light         no time-of-day tint;  --time T  fixed day clock (0..7199)\n"
          "  --no-edge-scroll   disable edge scrolling;  --no-hud  hide the info overlay;  --help-overlay  show key help\n"
          "  --palette N --shade N   terrain palette/shade override\n"
          "  --screenshot FILE.png  render --frames N frames (default 5), save PNG and exit\n"
@@ -59,6 +60,8 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     else if (a == "--no-edge-scroll") o.edge_scroll = false;
     else if (a == "--no-hud") o.hud = false;
     else if (a == "--no-fog") o.fog = false;
+    else if (a == "--no-light") o.light = false;
+    else if (a == "--time") { if (!next(v)) return false; o.time = std::atof(v); }
     else if (a == "--cursor") { if (!next(v)) return false; if (std::sscanf(v, "%d,%d", &o.cursor_x, &o.cursor_y) != 2) { err = "bad --cursor"; return false; } }
     else if (a == "--no-panel") o.panel = false;
     else if (a == "--no-sprites") o.sprites = false;

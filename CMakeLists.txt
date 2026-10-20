@@ -22,7 +22,7 @@ add_test(NAME formats COMMAND test_formats ${CMAKE_SOURCE_DIR}/game)
 
 # ---- clean C++20 engine (src/engine): loads the original data files, no recompiled code
 add_library(aztec_engine_lib
-  src/engine/assets/game_data.cpp src/engine/assets/mission.cpp src/engine/assets/anim_provider.cpp
+  src/engine/assets/game_data.cpp src/engine/assets/mission.cpp src/engine/assets/anim_provider.cpp src/engine/assets/daylight.cpp
   src/engine/platform/input.cpp src/engine/platform/window.cpp
   src/engine/world/world.cpp src/engine/world/camera.cpp src/engine/world/type_info.cpp
   src/engine/sim/simulation.cpp
