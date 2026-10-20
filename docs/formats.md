@@ -66,7 +66,7 @@ Znaczenie pól klatki animacji, wartości `.rm` i `.vis`, `Music/music.xbe` (RIF
 
 Dowód `.vis` w grze (misja 4, zrzut RT_DUMP_DIR `shot` vs dekoder): minimapa gry (1 px = 1 kafel, region 638,70 120x90) pokrywa się z warstwą strony 0 w 96,3% pikseli
 (ciemne = 152, jasne = 0; plamy w lewym górnym i prawym dolnym rogu o tych samych kształtach). Dowód `.dat`: na renderze kafli misji 4 czarne kafle skał pokrywają się z wartością 0, kępy
-drzew z wartością 1 (render `src/tools/render_map.py` + nakładka `.dat`). `.spr` ma 120x90 (1 px/kafel, nie 2) i nagłówek palety 15, ale obraz z palety 15 wyszedł czarny (niewyjaśnione).
+drzew z wartością 1 (render `src/tools/render_map.py` + nakładka `.dat`). `.spr` ma 120x90 (1 px/kafel, nie 2) i nagłówek palety 15, obraz wymaga poziomu cieniowania > 0 (poziom 0 palety = czerń; poziom 10 daje poprawne kolory).
 
 ## Skrypt scenariusza `.scn` (parser: `src/core/script.*`, 49/49 plików parsuje się)
 Wielkość liter bez znaczenia (`localtime`, `jointactic`, `Timer`), białe znaki dowolne, koniec pliku może mieć znak 0x1A. Napisy błędów: `strbase.bds` 72-104 (np. 75 "Bad comparison operation").
@@ -130,7 +130,7 @@ widok x,y (298,336 / 298,324), potem `0,0,1,4`, potem licznik ticków gry (55 ->
 ## Interfejs, czcionki, światło, palety
 - `Res/light.xbe` grupa `0x455` (1..71): maski światła `u16 w=20, u16 h=20, 400 bajtów` ciemności (0 = jasno, max 152 = pełna ciemność). Elementy 1..16 mają rosnącą moc (max 10..152),
   17..63 puste, 64..71 maksimum 152. `FUN_0047d070` nakłada maskę na warstwę mgły strony operacją min (z pozycji w kafelkach). Wartość 152 = 19*8, więc poziom cieniowania palety
-  to prawdopodobnie `bajt_mgły >> 3` (0..19 = 20 poziomów Pal.xbe); nie potwierdzone zrzutem.
+  to funkcja `bajt_mgły >> 3` (0..19 = 20 poziomów Pal.xbe), ale kierunek jest odwrócony: poziom 0 palety = czerń, wyższy = jaśniej (kafle naturalne ok. 14), więc jasność ~ `19 - (bajt>>3)`; niepotwierdzone zrzutem.
 - `Res/fnts.xbe`: 5 czcionek co 300 id (`FUN_00463...`, `FUN_0047d7f0`): baza 0 (w kodzie 1), 300 (tylko cyfry 48-57), 600, 900, 1200; glif znaku `c` (bajt cp1250) = `baza + c`.
   Wszystkie używają palety 53. Czcionki 600/900 (flaga 5, surowe 8-bit, indeks 0 = tło) i 1200 (flaga 0x40) potwierdzone obrazem (polskie znaki). Baza 0 (flaga 0x40, małe glify 4..16 px)
   daje inne znaki dla kodów cp1250 (inna kolejność, niewyjaśnione).
