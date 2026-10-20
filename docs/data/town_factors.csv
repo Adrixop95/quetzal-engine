@@ -1,0 +1,6 @@
+name,value
+Ktime[0..2],2 1 0.666667
+Kprice[0..2],0.666667 1 2
+KWarehouse[0..1],1 1.33333
+KAdvPostTime,1.5
+KAdvPostPrice,1
