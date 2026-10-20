@@ -1,0 +1,210 @@
+#include "engine/app/engine.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <filesystem>
+
+#include "engine/platform/clock.hpp"
+#include "engine/platform/input.hpp"
+#include "engine/platform/window.hpp"
+#include "engine/render/png.hpp"
+#include "engine/render/scene_renderer.hpp"
+#include "engine/ui/cursor.hpp"
+#include "engine/ui/hud.hpp"
+#include "engine/ui/minimap.hpp"
+#include "engine/world/camera.hpp"
+#include "engine/world/world.hpp"
+
+namespace fs = std::filesystem;
+
+namespace aztec::engine {
+
+static bool save_screenshot(SDL_Renderer* r, const std::string& path) {
+  int w, h;
+  SDL_GetRendererOutputSize(r, &w, &h);
+  std::vector<uint8_t> px(size_t(w) * h * 4);
+  if (SDL_RenderReadPixels(r, nullptr, SDL_PIXELFORMAT_ABGR8888, px.data(), w * 4) != 0) return false;  // bytes R,G,B,A
+  for (size_t i = 3; i < px.size(); i += 4) px[i] = 255;
+  return write_png(path, w, h, px);
+}
+
+static int list_missions(const std::string& dir) {
+  std::vector<std::string> names;
+  std::error_code ec;
+  for (const auto& e : fs::directory_iterator(dir + "/Maps", ec))
+    if (e.path().extension() == ".mp" || e.path().extension() == ".MP") names.push_back(e.path().stem().string());
+  std::sort(names.begin(), names.end());
+  for (auto& n : names) std::printf("%s\n", n.c_str());
+  return names.empty() ? 1 : 0;
+}
+
+int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider, std::unique_ptr<Simulation> sim) {
+  if (o.list) return list_missions(o.game_dir);
+
+  GameData data;
+  std::string err;
+  if (!data.open(o.game_dir, err)) { std::fprintf(stderr, "%s\n", err.c_str()); return 1; }
+  World world;
+  if (!load_world(data, o.mission, world, err)) { std::fprintf(stderr, "%s\n", err.c_str()); return 1; }
+
+  if (SDL_Init(SDL_INIT_VIDEO) != 0) { std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
+  int rc = 0;
+  {
+    Window win;
+    WindowOptions wo = o.window;
+    wo.title = "Aztec Empire - " + (world.mission.title.empty() ? world.mission.file_name : world.mission.title);
+    if (!win.create(wo)) { SDL_Quit(); return 1; }
+
+    SceneRenderer scene(win, data, world);
+    scene.opts.terrain_palette = o.terrain_palette;
+    scene.opts.terrain_shade = o.terrain_shade;
+    scene.set_sprite_provider(provider);
+    Minimap minimap;
+    if (!minimap.init(win.renderer(), data, world, scene.default_palette(), o.terrain_shade))
+      std::fprintf(stderr, "warning: minimap unavailable\n");
+    Cursor cursor;
+    cursor.init(win.renderer());
+
+    if (!sim) sim = o.wander ? std::unique_ptr<Simulation>(new WanderSimulation) : std::unique_ptr<Simulation>(new NullSimulation);
+    sim->init(world);
+    for (int i = 0; i < o.pre_ticks; i++) { world.begin_tick(); sim->tick(world); }
+
+    Camera cam;
+    cam.set_world(float(world.width_px()), float(world.height_px()));
+    int ow, oh;
+    win.output_size(ow, oh);
+    cam.set_view(float(ow), float(oh));
+    cam.zoom = o.zoom > 0 ? o.zoom : (oh >= 1800 ? 2.f : 1.f);
+    if (o.has_cam) {
+      cam.center_on((o.cam_tx + 0.5f) * kTilePx, (o.cam_ty + 0.5f) * kTilePx);
+    } else if (!world.mission.sides.empty()) {
+      const SideDef& s = world.mission.sides[0];
+      cam.center_on((s.start_x + 0.5f) * kTilePx, (s.start_y + 0.5f) * kTilePx);
+    }
+
+    Input in;
+    FixedStepper stepper;
+    HudInfo hud;
+    hud.show_help = o.help;
+    bool edge = o.edge_scroll, paused = false, show_hud = o.hud;
+    bool drag_minimap = false;
+    uint64_t freq = SDL_GetPerformanceFrequency(), last = SDL_GetPerformanceCounter();
+    double fps_acc = 0; int fps_n = 0;
+    int frame = 0, shot_no = 0;
+
+    while (!in.quit) {
+      uint64_t now = SDL_GetPerformanceCounter();
+      double dt = double(now - last) / double(freq);
+      last = now;
+      fps_acc += dt;
+      fps_n++;
+      if (fps_acc >= 0.5) { hud.fps = fps_n / fps_acc; fps_acc = 0; fps_n = 0; }
+
+      in.begin_frame();
+      float sx, sy;
+      win.mouse_scale(sx, sy);
+      SDL_Event e;
+      while (SDL_PollEvent(&e)) in.handle(e, sx, sy);
+      win.output_size(ow, oh);
+      cam.set_view(float(ow), float(oh));
+      int ui = std::max(2, int(std::lround(oh / 360.0)));
+      int cur_scale = std::max(1, int(std::lround(oh / 600.0)));
+      minimap.layout(ow, oh, ui);
+
+      if (in.hit(SDL_SCANCODE_ESCAPE)) in.quit = true;
+      if (in.hit(SDL_SCANCODE_F11)) win.cycle_borderless();
+      if (in.hit(SDL_SCANCODE_RETURN) && in.alt) win.toggle_fullscreen();
+      if (in.hit(SDL_SCANCODE_F1)) hud.show_help = !hud.show_help;
+      if (in.hit(SDL_SCANCODE_F2)) scene.opts.grid = !scene.opts.grid;
+      if (in.hit(SDL_SCANCODE_F3)) scene.opts.passability = !scene.opts.passability;
+      if (in.hit(SDL_SCANCODE_F4)) scene.opts.labels = !scene.opts.labels;
+      if (in.hit(SDL_SCANCODE_F5)) scene.opts.markers = !scene.opts.markers;
+      if (in.hit(SDL_SCANCODE_F6)) edge = !edge;
+      if (in.hit(SDL_SCANCODE_F7)) scene.opts.overlays = !scene.opts.overlays;
+      if (in.hit(SDL_SCANCODE_F10)) show_hud = !show_hud;
+      if (in.hit(SDL_SCANCODE_SPACE)) paused = !paused;
+      if (in.hit(SDL_SCANCODE_F12)) {
+        std::string p = "aztec_shot_" + std::to_string(++shot_no) + ".png";
+        std::printf(save_screenshot(win.renderer(), p) ? "saved %s\n" : "screenshot failed %s\n", p.c_str());
+      }
+
+      // Fixed 12 Hz simulation, independent of frame rate.
+      if (!paused) {
+        int n = stepper.advance(dt);
+        for (int i = 0; i < n; i++) { world.begin_tick(); sim->tick(world); }
+      }
+      float alpha = paused ? 1.f : float(stepper.alpha());
+
+      // Camera input.
+      CameraInput ci;
+      if (in.down(SDL_SCANCODE_LEFT) || in.down(SDL_SCANCODE_A)) ci.move_x -= 1;
+      if (in.down(SDL_SCANCODE_RIGHT) || in.down(SDL_SCANCODE_D)) ci.move_x += 1;
+      if (in.down(SDL_SCANCODE_UP) || in.down(SDL_SCANCODE_W)) ci.move_y -= 1;
+      if (in.down(SDL_SCANCODE_DOWN) || in.down(SDL_SCANCODE_S)) ci.move_y += 1;
+      if (in.hit(SDL_SCANCODE_EQUALS)) ci.zoom_steps += 1;
+      if (in.hit(SDL_SCANCODE_KP_PLUS)) ci.zoom_steps += 1;
+      if (in.hit(SDL_SCANCODE_MINUS) || in.hit(SDL_SCANCODE_KP_MINUS)) ci.zoom_steps -= 1;
+      bool on_mm = minimap.contains(in.mx, in.my);
+      if (!on_mm && in.wheel != 0) { ci.zoom_steps += in.wheel > 0 ? 1 : -1; }
+      ci.zoom_pivot_x = on_mm || ci.zoom_steps == 0 || in.wheel == 0 ? ow / 2.f : float(in.mx);
+      ci.zoom_pivot_y = on_mm || ci.zoom_steps == 0 || in.wheel == 0 ? oh / 2.f : float(in.my);
+      if (edge && o.screenshot.empty() && in.focused && in.mouse_inside && !drag_minimap) {
+        int z = std::max(2, ui);
+        if (in.mx < z) ci.move_x -= 1;
+        if (in.mx >= ow - z) ci.move_x += 1;
+        if (in.my < z) ci.move_y -= 1;
+        if (in.my >= oh - z) ci.move_y += 1;
+      }
+      ci.move_x = std::clamp(ci.move_x, -1.f, 1.f);
+      ci.move_y = std::clamp(ci.move_y, -1.f, 1.f);
+      bool pan = in.buttons[SDL_BUTTON_MIDDLE] || in.buttons[SDL_BUTTON_RIGHT];
+      ci.dragging = pan;
+      ci.drag_dx = float(in.dx);
+      ci.drag_dy = float(in.dy);
+
+      if (in.pressed[SDL_BUTTON_LEFT] && on_mm) drag_minimap = true;
+      if (!in.buttons[SDL_BUTTON_LEFT]) drag_minimap = false;
+      cam.update(ci, float(std::min(dt, 0.1)));
+      if (drag_minimap) {
+        int mx = std::clamp(in.mx, minimap.rect().x, minimap.rect().x + minimap.rect().w - 1);
+        int my = std::clamp(in.my, minimap.rect().y, minimap.rect().y + minimap.rect().h - 1);
+        float wx, wy;
+        minimap.to_world(mx, my, wx, wy);
+        cam.center_on(wx, wy);
+      }
+
+      // Render.
+      scene.draw(cam, alpha);
+      minimap.draw(win.renderer(), cam, alpha);
+      hud.mouse_x = in.mx; hud.mouse_y = in.my; hud.alpha = alpha;
+      hud.sprites = scene.stats.sprites; hud.placeholders = scene.stats.placeholders; hud.geometry_calls = scene.stats.geometry_calls;
+      if (show_hud) draw_hud(win.renderer(), scene.font(), world, cam, hud, ui);
+      // Cursor last, at the freshest mouse position.
+      int cx, cy;
+      SDL_GetMouseState(&cx, &cy);
+      cx = int(cx * sx); cy = int(cy * sy);
+      bool visible = in.mouse_inside || o.screenshot.empty();
+      CursorKind ck = pan ? CursorKind::Pan : CursorKind::Arrow;
+      if (visible && o.screenshot.empty()) cursor.draw(win.renderer(), cx, cy, ck, cur_scale);
+
+      frame++;
+      if (!o.screenshot.empty() && frame >= o.frames) {
+        if (!save_screenshot(win.renderer(), o.screenshot)) { std::fprintf(stderr, "screenshot failed\n"); rc = 1; }
+        else std::printf("saved %s (%dx%d)\n", o.screenshot.c_str(), ow, oh);
+        break;
+      }
+      SDL_RenderPresent(win.renderer());
+      int cap = o.fps_cap > 0 ? o.fps_cap : (win.vsync() ? 0 : 240);
+      if (cap > 0) {
+        double spent = double(SDL_GetPerformanceCounter() - now) / double(freq);
+        double want = 1.0 / cap;
+        if (spent < want) SDL_Delay(Uint32((want - spent) * 1000));
+      }
+    }
+  }
+  SDL_Quit();
+  return rc;
+}
+
+}  // namespace aztec::engine

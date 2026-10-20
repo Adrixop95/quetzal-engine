@@ -7,7 +7,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 add_library(aztec_core
   src/core/archive.cpp src/core/sprite.cpp src/core/palette.cpp src/core/map.cpp src/core/ini.cpp
-  src/core/ugi.cpp src/core/script.cpp src/core/visfile.cpp)
+  src/core/ugi.cpp src/core/script.cpp src/core/visfile.cpp src/core/mapfiles.cpp src/core/text.cpp)
 target_include_directories(aztec_core PUBLIC src)
 target_compile_options(aztec_core PRIVATE -Wall -Wextra)
 
@@ -19,6 +19,26 @@ enable_testing()
 add_executable(test_formats tests/test_formats.cpp)
 target_link_libraries(test_formats aztec_core)
 add_test(NAME formats COMMAND test_formats ${CMAKE_SOURCE_DIR}/game)
+
+# ---- clean C++20 engine (src/engine): loads the original data files, no recompiled code
+add_library(aztec_engine_lib
+  src/engine/assets/game_data.cpp src/engine/assets/mission.cpp
+  src/engine/platform/input.cpp src/engine/platform/window.cpp
+  src/engine/world/world.cpp src/engine/world/camera.cpp src/engine/world/type_info.cpp
+  src/engine/sim/simulation.cpp
+  src/engine/render/atlas.cpp src/engine/render/sprite_store.cpp src/engine/render/font.cpp
+  src/engine/render/png.cpp src/engine/render/scene_renderer.cpp
+  src/engine/ui/cursor.cpp src/engine/ui/minimap.cpp src/engine/ui/hud.cpp
+  src/engine/app/options.cpp src/engine/app/engine.cpp)
+target_compile_features(aztec_engine_lib PUBLIC cxx_std_20)
+target_include_directories(aztec_engine_lib PUBLIC src)
+target_compile_options(aztec_engine_lib PRIVATE -Wall -Wextra)
+target_link_libraries(aztec_engine_lib PUBLIC aztec_core SDL2::SDL2)
+add_executable(aztec_engine src/engine/app/main.cpp)
+target_link_libraries(aztec_engine aztec_engine_lib)
+add_executable(test_engine tests/test_engine.cpp)
+target_link_libraries(test_engine aztec_engine_lib)
+add_test(NAME engine COMMAND test_engine ${CMAKE_SOURCE_DIR}/game)
 
 # ---- static recompilation runtime: needs generated C from tools/ghidra_scripts/LiftAll.java
 # cmake -DAZTEC_GEN_DIR=work/gen ..   (generated code is derived from the user's own Aztec.exe; never commit it)
