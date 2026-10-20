@@ -125,7 +125,8 @@ widok x,y (298,336 / 298,324), potem `0,0,1,4`, potem licznik ticków gry (55 ->
   gdy komórka mgły ma wartość >= 0x21 (widoczna dla gracza). Typ 4 = potwierdzenia ("Acknowledgement" w opcjach), typ 0 = globalne UI.
 - `Music/music.xbe` i `Music_cd2.xbe`: jedna grupa `0x460` (WAV 44100 Hz stereo 16 bit, 20-32 MB); numery 1..12; elementy o zerowej długości leżą na drugiej płycie.
   Maska ścieżek: bit (n-1) = ścieżka n (`FUN_0043a160` sprawdza, które istnieją). `Music=N` w .mp (N != 0) wybiera dokładnie ścieżkę N; inaczej `MusicMask & dostępne`
-  (62463 = ścieżki 1-10 i 13-16). Wybór kolejnej ścieżki z maski: niezbadany.
+  (62463 = ścieżki 1-10 i 13-16). Wybór kolejnej ścieżki (`FUN_0043a2xx`, zweryfikowane w kodzie): kursor `0..31` (start 0); gdy żadna ścieżka nie gra i maska != 0, bierze pierwszy ustawiony bit
+  od kursora (cyklicznie), gra ścieżkę `kursor+1` (`FUN_00475010`) i zwiększa kursor. Czyli ścieżki z maski grają po kolei w pętli, bez losowania.
 
 ## Interfejs, czcionki, światło, palety
 - `Res/light.xbe` grupa `0x455` (1..71): maski światła `u16 w=20, u16 h=20, 400 bajtów` ciemności (0 = jasno, max 152 = pełna ciemność). Elementy 1..16 mają rosnącą moc (max 10..152),
@@ -133,7 +134,7 @@ widok x,y (298,336 / 298,324), potem `0,0,1,4`, potem licznik ticków gry (55 ->
   to funkcja `bajt_mgły >> 3` (0..19 = 20 poziomów Pal.xbe), ale kierunek jest odwrócony: poziom 0 palety = czerń, wyższy = jaśniej (kafle naturalne ok. 14), więc jasność ~ `19 - (bajt>>3)`; niepotwierdzone zrzutem.
 - `Res/fnts.xbe`: 5 czcionek co 300 id (`FUN_00463...`, `FUN_0047d7f0`): baza 0 (w kodzie 1), 300 (tylko cyfry 48-57), 600, 900, 1200; glif znaku `c` (bajt cp1250) = `baza + c`.
   Wszystkie używają palety 53. Czcionki 600/900 (flaga 5, surowe 8-bit, indeks 0 = tło) i 1200 (flaga 0x40) potwierdzone obrazem (polskie znaki). Baza 0 (flaga 0x40, małe glify 4..16 px)
-  daje inne znaki dla kodów cp1250 (inna kolejność, niewyjaśnione).
+  to też poprawna czcionka cp1250 (zweryfikowane siatką wszystkich glifów 33..255: 138=Š, 140=Ś, 163=Ł, 165=Ą...); wcześniejsze "krzaczki" wynikały z błędu mojego testu, nie z formatu.
 - `Res/common.xbe` grupa `0x44c`: kursory 0 (miecz, 12 klatek 48x48), 2 (bomba, 12 kl.), 3 (czerwone/białe, 9 kl.), 4 (buława 36x36), 5 (młoty, 12 kl. 40x40), 6-13 (strzałki przewijania
   zablokowane, czerwony X; hotspot z ox/oy, kolejność N,NW,W,SW,S,SE,E,NE), 14-20 (strzałki przewijania). Interfejs: 256 "Start Game", 257 przyciski (stos klatek),
   258-263 łuki zdrowia (zielony/żółty/czerwony, 6 rozmiarów), 264/270/285/290 tła dziennika (800x600), 266 monety, 267 belki góra/dół, 273 mapa, 277-279 ikony (poczta, brak złota, pauza),
@@ -141,3 +142,34 @@ widok x,y (298,336 / 298,324), potem `0,0,1,4`, potem licznik ticków gry (55 ->
   318 znacznik, 319/322-324 paski, 1000-1002 plansze pergaminu, 1536-1538 paski. Palety: kursory 1, tła 55, napisy 48-50, 56-57. Grupa `0x454` ids 128..135: 8 sprite'ów 48x576 (wersje kolorów drużyn).
 - Paleta sprite'a = pole +0xC nagłówka. Kafle: Tiles0 (TileSet=0) paleta 4-7 i 13, Tiles1 (TileSet=1) paleta 8-11 i 13. Jednostki: id<4 = paleta drużyny
   (`id + 0x10 + kolor*4`, docs/sprites_mapping.md), 14, 51, 52, 54. Pal.xbe: ids 1..57, grupy 0x44f/0x450/0x479 (palety), 0x452/0x453 (tablice mieszania).
+
+
+## Wideo (`Video/*.avi`)
+- Wszystkie 11 plików: Indeo Video 4 (`IV41`), 576x420, 12 kl./s, dźwięk PCM 22050 Hz (mono; `win.avi`/`lose.avi` stereo). Runtime odtwarza je przez zewnętrzny proces `ffmpeg`
+  (`runtime/video.c`: osobne potoki wideo `-f rawvideo -pix_fmt bgra` i audio `s16le 22050 mono`, tempo z `us_per_frame`, Esc/Spacja/Enter/mysz przerywa).
+- Kiedy: `intro.avi` przy starcie gry (`FUN_004????`: katalog z rejestru `Video` + `intro.avi`, `FUN_00418e90`); klucz `AVI=` w `[Globals]` mapy kampanii odtwarzany przy wczytaniu misji
+  (katalog wideo + nazwa): mission_1 -> `mission1.avi`, Mission_4 -> `Mission4.avi`, mission_5 -> `mission5.avi`, Mission_10 -> `mission9.avi`, Mission_12 -> `Mission11.avi`,
+  Mission_13 -> `Mission12.avi`, Mission_14 -> `Mission13.avi`, pozostałe puste (mapy wieloosobowe i samouczki też puste); po misji `win.avi` (zwycięstwo) lub `lose.avi`;
+  po 16. misji kampanii (licznik >= 0x10) `final.avi`. Funkcja `0x4191e0`+okolice na starcie otwiera wszystkie pliki Video (kontrola obecności płyty, XOR 0x55), to nie jest wybór filmu.
+  (Wskazanie funkcji intro: wywołanie w 17333 pliku all.c.)
+
+## Kursory i interfejs (wybór sprite'ów z `common.xbe`)
+- Wybór kursora: `FUN_00464290` -> id sprite'a z `common.xbe` 0x44c: poza grą 4 (buława), przy oknie modalnym 1 (pióro); przy przewijaniu krawędzią (`DAT_005159e0` = kierunek) tablica `0x4bc904`
+  (4,4,4,4,16,20,4,4,14,4,18,4,15,21,17,19) -> 14 N, 15 NW, 16 W, 17 SW, 18 S, 19 SE, 20 E (21 dla NE nie istnieje w pliku); gdy przewijanie zablokowane warianty 6..13. Nad widokiem
+  `FUN_00447c30` zwraca klasę 0..4 (0 wróg, 3 nic/własny, 1/2/4 tryby budynku), a tablica `0x4bc944` (0,2,3,4,5,...) zamienia ją na id kursora (0 miecz, 2 bomba, 3, 4 buława, 5 młoty).
+  Wartości 128..135 w tej tablicy = animowane kursory z grupy 0x454 (48x576, 12 klatek); przypisanie do trybów nie sprawdzone.
+- Tablica rozmiarów obiektów `0x4bc890` (wiersze po 3 `i32`): {elipsa zaznaczenia 308..317, łuk zdrowia 263..258, próg szerokości obiektu 55,67,83,102,125,154,189,231,999}.
+- Układ ekranu 800x600 (zrzut misji 4): pasek `Menu` (sprite 282) u góry po prawej od x=598, licznik złota obok; minimapa w ramce kamiennej (292/293), obraz minimapy w prostokącie
+  x=638..758, y=70..160 (1 px = 1 kafel); kolumna portretów jednostek x~722..780, y~218..390; panel poleceń na dole (294-297, 254x208/288) od x=546, y=392; okna (zapis gry, odprawy)
+  na pergaminie (`1000..1002`, 283). Podpowiedzi (tooltips) nie badane.
+
+## Zapisy: przebieg skryptowy i struktura strumienia
+- Zapis przez menu (rekompilowana gra, 800x600): `click 626 10` (Menu), `click 250 190` ("Zapisz grę"), `click 200 <138+20*slot>` (slot 1..9), `click 184 359` ("Zapisz" -> okno "Wpisz nazwę"),
+  `key <DIK>`... (np. 30=A), `key 28` (Enter) zapisuje `Saves/single<slot>.sav` (slot 0 to pierwszy wiersz). Wpisywanie działa dopiero PO kliknięciu "Zapisz" (sprawdzone zrzutem: pole pokazuje wpisany tekst).
+- Symulacja jest deterministyczna: dwa niezależne przebiegi misji 4 dają zapis o identycznym rozmiarze (149924 B) i tym samym liczniku ticków (55) w tym samym punkcie skryptu.
+  Zapisy w tik 55 i 81 (26 ticków później): 149924 vs 150664 B, licznik ticków w `u32` nr 6 strumienia (od `+0x158`), widok x,y = pierwsze dwa `u32`.
+- Kolejność sekcji wg `FUN_004455f0` (wczytywanie), każda poprzedzona `u32` liczbą elementów: (1) obiekty puli `0x4c1978` (`u32` znacznik, bit 31 = wariant; ctor ze strumienia `FUN_00418800`),
+  (2) pula z `FUN_004597d0` (`u32` znacznik z bitem 31), (3) `u32` liczba stron, potem po kolei obiekty Side (0x69c) z własnym deserializerem (vtable[0]), (4) `u32` liczba, każdy: `u32` id, `u32` rodzaj 0..5
+  (0 = `FUN_0044eb40`, 2 = `FUN_00408a70`, 3 = `FUN_0044eb40` + `u32`, 4 = `FUN_0042df90`, 5 = `FUN_0044eb40`) - obiekty puli `0x4d9b50`, (5) `u32` liczba, każdy `u32` id, `u32` rozmiar, `FUN_0043db90` (jednostki),
+  (6) opcjonalny blok `FUN_0046f3d0`, (7) pula `0x4c1298`: 7 x `u32` + `double` na element, (8) pula `0x4c4ce0` (`FUN_0042a3b0`), (9) pula `0x4cd698` z rodzajami 0..n (`FUN_00446770` + `u32`...).
+  Pola poszczególnych klas NIE są rozpisane (każda klasa ma własny deserializer, ~20 funkcji, np. `0x449e70` dla klasy z vtable `0x4940ec`, `0x44eb40` baza obiektu z 85 odczytami).

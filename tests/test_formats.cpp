@@ -161,6 +161,8 @@ int main(int argc, char** argv) {
       CHECK(bad == 0 && ok > 0);
     }
   }
+  CHECK(blend_channel5(31, 0, 128) == 15 && blend_channel5(16, 0, 100) == 9 && blend_channel5(31, 0, 1) == 30);
+  CHECK(blend_channel5(31, 5, 0) == 31 && blend_channel5(20, 3, 255) == 3);
   // audio
   {
     SoundBank sb;

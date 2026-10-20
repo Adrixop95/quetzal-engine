@@ -46,10 +46,33 @@ bool decode_alpha_sprite(Item item, AlphaSprite& s) {
   return true;
 }
 
+int blend_channel5(int dest5, int src5, int a) {
+  int v = src5 + dest5 * (255 - a) / 255;
+  return v > 31 ? 31 : v;
+}
+
+uint32_t blend_over_rgb(uint32_t dst, uint32_t pal, int a) {
+  uint32_t out = 0;
+  for (int sh = 16; sh >= 0; sh -= 8) {
+    int v = blend_channel5(int((dst >> sh) & 255) >> 3, int((pal >> sh) & 255) >> 3, a);
+    out |= uint32_t((v << 3) | (v >> 2)) << sh;
+  }
+  return out;
+}
+
 std::vector<uint32_t> alpha_to_argb(const AlphaSprite& s, const Palette& pal) {
   std::vector<uint32_t> out(size_t(s.w) * s.h, 0);
-  for (size_t i = 0; i < out.size(); i++)
-    if (s.opaque[i]) out[i] = (pal[s.index[i]] & 0x00FFFFFFu) | uint32_t(s.alpha[i]) << 24;
+  for (size_t i = 0; i < out.size(); i++) {
+    if (!s.opaque[i]) continue;
+    uint32_t c = pal[s.index[i]], a = s.alpha[i];
+    uint32_t px = a << 24;
+    for (int sh = 16; sh >= 0; sh -= 8) {
+      uint32_t v = (c >> sh) & 255;
+      if (a && a < 255) { v = v * 255 / a; if (v > 255) v = 255; }
+      px |= v << sh;
+    }
+    out[i] = px;
+  }
   return out;
 }
 
