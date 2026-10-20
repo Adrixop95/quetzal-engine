@@ -7,7 +7,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 add_library(aztec_core
   src/core/archive.cpp src/core/sprite.cpp src/core/palette.cpp src/core/map.cpp src/core/ini.cpp
-  src/core/ugi.cpp src/core/script.cpp src/core/visfile.cpp src/core/mapfiles.cpp src/core/text.cpp)
+  src/core/ugi.cpp src/core/script.cpp src/core/visfile.cpp src/core/userfiles.cpp src/core/audio.cpp src/core/sprite_alpha.cpp src/core/mapfiles.cpp src/core/text.cpp)
 target_include_directories(aztec_core PUBLIC src)
 target_compile_options(aztec_core PRIVATE -Wall -Wextra)
 

@@ -19,6 +19,10 @@ Flagi (`Sprite::Draw`, FUN_0047a990):
 - `0x40` RLE z pikselami 16-bit (RGB 565/555): bajt kontrolny `<0x80` skip n, `0x80-0xBF` skip (n&0x3F), `>=0xC0` draw (n&0x3F) pikseli 16-bit.
 - Strumień kontrolny może przekroczyć szerokość o 1 (spotkane przy w=288): przycinać do w.
 Obserwowane flagi: 1, 5, 6, 10, 14, 17, 64.
+- UWAGA, poprawka dla flagi `0x40` (zweryfikowana w blitterach `FUN_0047f0a0`/`FUN_0047f270` i obrazem: cursory, napis "Loading", czcionki): to NIE jest kolor 16-bit.
+  Bajt kontrolny `<0x80` pomiń n pikseli; `0x80-0xBF` rysuj (n&0x3f) pikseli po 1 bajcie (indeks palety, pełna krycie); `>=0xC0` rysuj (n&0x3f) pikseli po 2 bajty
+  (indeks palety, bajt mieszania/alfa). Paleta = pole nagłówka +0xC (id w Pal.xbe). Dekoder: `src/core/sprite_alpha.*` (`decode_alpha_sprite`). `src/core/sprite.cpp`
+  dekoduje te sprite'y błędnie (jako kolor 565), co daje "kontury" zamiast obrazu. Poprawny wynik: 42/448/743 sprite'ów z common/fnts/Units.
 
 ## Pal.xbe (palety)
 - Grupa 0x44f = tablice RGB555 (256 x u16), 0x450 = RGB565, 0x479 = 32-bit, 0x452/0x453 = tablice 256x256 (mieszanie/półprzezroczystość).
@@ -86,3 +90,47 @@ tablica kluczy czasu 9 pól: czas, 3x RGB double, poziom ciemności 6..12, wspó
 `[Town#]`: `Side, X, Y, Race, Type` (0 forpost,1 wieś,2 miasto,3 twierdza; typ budynku z tablicy 0x4bc390[Type*3+Race], -1 dla Azteków/Type 3 = fallback kolumny 1), `ScenarioId, Unit#=x,y,typ,hp, Units`.
 `[Team#]`: `Side, ScenarioId, Unit#, Units`. `[Boat#]`: `Side,X,Y,Up,ScenarioId` (typ 84). `[Johnka#]`: jak łódź + `Enabled` (typ 88). `[Submarine#]`: `Side,X,Y,ScenarioId`.
 `[Paths]`: `Count`, `i = id, x,y, x,y, ...` (id używane w `setPath`). Klucze `.mp` są niewrażliwe na wielkość liter (`ScenarioID` = `ScenarioId`).
+
+
+## Pliki użytkownika
+**`*.plr`** (profil gracza, 300 B, `FUN_0043e...`/`FUN_0043f...`; loader/writer: `src/core/userfiles.*`): `+0x00 u8 flaga`, `+0x01` nazwa gracza (NUL, reszta bajtów to śmieci ze stosu),
+`+0x44 u32 = 1`, `+0x48 u32 = 0`, od `+0x4c` blok 224 B kopiowany z globalnych ustawień (`0x515430`), które oryginał trzyma w rejestrze
+(`HKLM\Software\New Media Generation\The Aztec\...`). Pola bloku (offset względem bloku): `+0x08` Acknowledgement, `+0x0c` tryb (0..3, znaczenie niepewne), `+0x94` SFXVolume,
+`+0x98` MusicVolume, `+0x9c` SpeechVolume, `+0xa0` Frequency (0x2b11=11025, 0x5622=22050, inna=44100), `+0xa4` DisplayMode (0..2), `+0xa8` ScrollSpeed, `+0xac` GameSpeed,
+`+0xb0` Gamma (double), `+0xb8` ViewAll (bajt), `+0xb9`=1, `+0xba` DefaultProvider. Profil to katalog `Saves/<nazwa>/` plus plik `<timeGetTime>.plr` w katalogu gry
+(zapis: `CreateFileA("%i.plr")`, wyszukiwanie `*.plr`). Plik `109555.plr` ma pole `+0x44`=15 (starsza wersja/śmieci).
+**`Keys.ini`**: linie `Akcja klawisz` (spacje/tabulatory), wielkość liter bez znaczenia, ta sama akcja może mieć kilka klawiszy. Akcje (id): add 2, inv 3, filtertype 4, filtercondition 5,
+fastscroll 6, viewall 7, temporary 8, center 9, putontop 12, garrison 13, send 14, friend 15, autorepair 20, repair 21, destroy 22, aggressive 23, defencive 24, normal 25,
+directcontrol 26, lastcaller 27, toggleinterface 28, scrollleft/right/up/down 38-41, printscreen 45, cheatwin 52. Klawisze: nazwy DirectInput (`a`-`z`, `f1`-`f12`, `lshift`, `rshift`,
+`lcontrol`, `rcontrol`, `lalt`, `ralt`, `space`, `tab`, `enter`, `caps`, `pad0`-`pad9`, `gray+`, `home`, `left`... pełna tabela w `userfiles.cpp`, kody DIK). Gdy pliku brak, gra używa tablicy domyślnej.
+**`aztec_settings.ini`**: NIE jest plikiem oryginału, czyta go tylko zrekompilowany runtime (`runtime/settings.c`): `resolution=WxH`, `window_mode`, `smooth`, `video`, `mouse_speed`.
+**`Saves/singleN.sav` / `multiN.sav`** (zapis `FUN_004450e0`, odczyt `FUN_004455f0`): `+0 u32`, `+4 u32` (oba 0), `+8 char[256]` ścieżka .mp misji, `+0x108 char[64]` opis wpisany przez gracza,
+`+0x148` SYSTEMTIME (8 x u16), od `+0x158` surowy strumień stanu: pozycja widoku (2 x u32), 5 x u32 globalnych (`0x4cc38c/0x4cc240/0x4cc244/0x4cc23c/0x4c5730`), potem sekcje w kolejności:
+pula `0x4c1978`, pula `0x5156f8`, liczba stron i obiekty Side (0x69c każdy, metoda wirtualna +4), pula `0x4d9b50`, jednostki `0x4cc3d0`, `0x515a98`, `0x4c1298`, `0x4c4ce0`, `0x4cd698`, `0x4d9b88`;
+każdy obiekt serializuje własna metoda wirtualna. Zdekodowano tylko nagłówek (`parse_save_header`); układ pól obiektów NIE jest rozpoznany (brak zapisów z różnych stanów do porównania).
+
+## Dźwięk (`src/core/audio.*`)
+- `Res/Snd.xbe`: grupa `0x460` elementy 1..2013 = pliki WAV (`id dźwięku`); tylko 367 jest niepustych (puste = ten sam offset co następny); formaty mieszane: 44100/22050 Hz, 8/16 bit, mono/stereo.
+  Grupa `0x3e8` elementy 1..432 = zestawy dźwięków: tablica `u32` id WAV (275 wpisów, wszystkie wskazują istniejące WAV); gra losuje (`rand`) jeden z zestawu (`FUN_00401480`,
+  `FUN_00401250`: liczba = rozmiar/4). Id zestawu to pole [2] klatki animacji (docs/sprites_mapping.md: dźwięk odtwarzany w pierwszym ticku klatki) i inne wywołania.
+  Grupa `0x6` elementy 1202..1731 = teksty (cp1250, NUL) napisów do dźwięków mowy; wyświetlane, gdy dźwięk nie może być odtworzony (`FUN_004016b0`).
+- Pozycjonowanie: pan = (x - środek widoku) przycięte do +-4000; tłumienie od odległości od środka widoku: <500 px brak, 500..800 liniowo do -4000, dalej wyciszone; dźwięk pozycyjny gra tylko
+  gdy komórka mgły ma wartość >= 0x21 (widoczna dla gracza). Typ 4 = potwierdzenia ("Acknowledgement" w opcjach), typ 0 = globalne UI.
+- `Music/music.xbe` i `Music_cd2.xbe`: jedna grupa `0x460` (WAV 44100 Hz stereo 16 bit, 20-32 MB); numery 1..12; elementy o zerowej długości leżą na drugiej płycie.
+  Maska ścieżek: bit (n-1) = ścieżka n (`FUN_0043a160` sprawdza, które istnieją). `Music=N` w .mp (N != 0) wybiera dokładnie ścieżkę N; inaczej `MusicMask & dostępne`
+  (62463 = ścieżki 1-10 i 13-16). Wybór kolejnej ścieżki z maski: niezbadany.
+
+## Interfejs, czcionki, światło, palety
+- `Res/light.xbe` grupa `0x455` (1..71): maski światła `u16 w=20, u16 h=20, 400 bajtów` ciemności (0 = jasno, max 152 = pełna ciemność). Elementy 1..16 mają rosnącą moc (max 10..152),
+  17..63 puste, 64..71 maksimum 152. `FUN_0047d070` nakłada maskę na warstwę mgły strony operacją min (z pozycji w kafelkach). Wartość 152 = 19*8, więc poziom cieniowania palety
+  to prawdopodobnie `bajt_mgły >> 3` (0..19 = 20 poziomów Pal.xbe); nie potwierdzone zrzutem.
+- `Res/fnts.xbe`: 5 czcionek co 300 id (`FUN_00463...`, `FUN_0047d7f0`): baza 0 (w kodzie 1), 300 (tylko cyfry 48-57), 600, 900, 1200; glif znaku `c` (bajt cp1250) = `baza + c`.
+  Wszystkie używają palety 53. Czcionki 600/900 (flaga 5, surowe 8-bit, indeks 0 = tło) i 1200 (flaga 0x40) potwierdzone obrazem (polskie znaki). Baza 0 (flaga 0x40, małe glify 4..16 px)
+  daje inne znaki dla kodów cp1250 (inna kolejność, niewyjaśnione).
+- `Res/common.xbe` grupa `0x44c`: kursory 0 (miecz, 12 klatek 48x48), 2 (bomba, 12 kl.), 3 (czerwone/białe, 9 kl.), 4 (buława 36x36), 5 (młoty, 12 kl. 40x40), 6-13 (strzałki przewijania
+  zablokowane, czerwony X; hotspot z ox/oy, kolejność N,NW,W,SW,S,SE,E,NE), 14-20 (strzałki przewijania). Interfejs: 256 "Start Game", 257 przyciski (stos klatek),
+  258-263 łuki zdrowia (zielony/żółty/czerwony, 6 rozmiarów), 264/270/285/290 tła dziennika (800x600), 266 monety, 267 belki góra/dół, 273 mapa, 277-279 ikony (poczta, brak złota, pauza),
+  280/284 ekrany tła, 281 napis "Loading...", 282 przycisk Menu, 283 listwy, 289/291 zwoje, 292-298 panele kamienne, 299 ptaszek, 300 stos lampek, 308-317 elipsy zaznaczenia (10 rozmiarów x 4 klatki),
+  318 znacznik, 319/322-324 paski, 1000-1002 plansze pergaminu, 1536-1538 paski. Palety: kursory 1, tła 55, napisy 48-50, 56-57. Grupa `0x454` ids 128..135: 8 sprite'ów 48x576 (wersje kolorów drużyn).
+- Paleta sprite'a = pole +0xC nagłówka. Kafle: Tiles0 (TileSet=0) paleta 4-7 i 13, Tiles1 (TileSet=1) paleta 8-11 i 13. Jednostki: id<4 = paleta drużyny
+  (`id + 0x10 + kolor*4`, docs/sprites_mapping.md), 14, 51, 52, 54. Pal.xbe: ids 1..57, grupy 0x44f/0x450/0x479 (palety), 0x452/0x453 (tablice mieszania).

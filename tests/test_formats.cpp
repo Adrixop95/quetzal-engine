@@ -10,6 +10,9 @@
 #include "core/ugi.hpp"
 #include "core/visfile.hpp"
 #include <dirent.h>
+#include "core/audio.hpp"
+#include "core/sprite_alpha.hpp"
+#include "core/userfiles.hpp"
 
 using namespace aztec;
 static int failures = 0;
@@ -63,7 +66,7 @@ int main(int argc, char** argv) {
     if (DIR* d = opendir(maps.c_str())) {
       while (dirent* e = readdir(d)) {
         std::string n = e->d_name;
-        if (n.size() < 5) continue;
+        if (n.size() < 5 || n[0] == 'z') continue;  // z*: scratch maps of test tools
         std::string ext = n.substr(n.size() - 4), base = maps + n.substr(0, n.size() - 4);
         if (ext == ".vis") {
           VisFile v;
@@ -84,6 +87,84 @@ int main(int argc, char** argv) {
       closedir(d);
     }
     std::printf("vis=%d scn=%d mit=%d\n", nvis, nscn, nmit);
+  }
+  // user files
+  {
+    PlayerFile pf;
+    if (load_player_file(g + "/111414.plr", pf)) {
+      CHECK(pf.name == "ab");
+      CHECK(pf.options.frequency == 22050 && pf.options.scroll_speed == 48 && pf.options.game_speed == 83);
+      CHECK(pf.options.gamma == 1.0);
+      CHECK(serialize_player_file(pf) == pf.raw);  // round trip
+      pf.name = "xyz"; pf.options.sfx_volume = 77;
+      PlayerFile pf2;
+      CHECK(parse_player_file(serialize_player_file(pf), pf2) && pf2.name == "xyz" && pf2.options.sfx_volume == 77);
+    } else std::printf("skip: 111414.plr\n");
+    SaveHeader sh;
+    if (load_save_header(g + "/Saves/single0.sav", sh)) {
+      CHECK(sh.description == "test");
+      CHECK(sh.map_path.size() > 4 && sh.time[0] >= 1999);
+    }
+    std::vector<KeyBinding> kb;
+    CHECK(key_action_id("Cheatwin") == 52 && dik_from_name("LSHIFT") == 42 && dik_from_name("space") == 57);
+    if (load_keys_ini(g + "/Keys.ini", kb)) {
+      CHECK(kb.size() >= 20);
+      CHECK(kb[0].action == key_action_id("add") && kb[0].dik == dik_from_name("lshift"));
+    }
+    RuntimeSettings rs;
+    CHECK(parse_runtime_settings("resolution=800x600\nwindow_mode=2\n", rs) && rs.res_w == 800 && rs.window_mode == 2);
+  }
+  // flag 0x40 sprites (indexed + alpha) in common/fnts/Units
+  {
+    for (const char* name : {"common", "fnts", "Units"}) {
+      Archive a;
+      if (!a.open(g + "/Res/" + name + ".xbe")) continue;
+      size_t ok = 0, bad = 0;
+      for (const auto& grp : a.groups()) {
+        if (grp.id != 0x44c && grp.id != 0x454) continue;
+        for (uint32_t i = grp.lo; i < grp.hi; i++) {
+          Item it = a.get(grp.id, i);
+          if (!it || it.size < 0x18 || !(it.data[8] & 0x40)) continue;
+          AlphaSprite s;
+          (decode_alpha_sprite(it, s) ? ok : bad)++;
+        }
+      }
+      std::printf("alpha sprites %s ok=%zu bad=%zu\n", name, ok, bad);
+      CHECK(bad == 0 && ok > 0);
+    }
+  }
+  // audio
+  {
+    SoundBank sb;
+    if (sb.open(g + "/Res/Snd.xbe")) {
+      int ok = 0, bad = 0;
+      for (uint32_t id = 1; id < 2014; id++) {
+        WavInfo w;
+        Item it = sb.wav(id);
+        if (!it) continue;  // zero-length items = unused ids
+        if (parse_wav(it.data, it.size, w) && w.pcm_bytes > 0 && (w.bits == 8 || w.bits == 16)) ok++; else bad++;
+      }
+      std::printf("wav ok=%d bad=%d\n", ok, bad);
+      CHECK(ok == 367 && bad <= 1);  // id 2013 (table end sentinel) is not a sound
+      auto set = sb.sound_set(1);
+      CHECK(!set.empty() && set[0] == 1000);
+      int inrange = 0, total = 0;
+      for (uint32_t k = 1; k < 433; k++) for (uint32_t id : sb.sound_set(k)) { total++; inrange += sb.wav(id) ? 1 : 0; }
+      std::printf("sound set entries %d resolvable %d\n", total, inrange);
+      CHECK(inrange * 100 > total * 95);
+      CHECK(sb.subtitle(1202).size() > 3);
+    }
+    std::vector<MusicTrack> mt;
+    if (read_music_table(g + "/Music/music.xbe", mt)) {
+      CHECK(mt.size() >= 6);
+      std::vector<uint8_t> hdr;
+      MusicTrack head = mt[0]; 
+      WavInfo w;
+      head.size = 44;
+      CHECK(read_music_track(g + "/Music/music.xbe", head, hdr) && parse_wav(hdr.data(), hdr.size(), w) && w.rate == 44100 && w.channels == 2);
+    }
+    CHECK(music_allowed_mask(0, 0xF3FF, 0xFFF) == 0x3FF);
+    CHECK(music_allowed_mask(3, 0xF3FF, 0xFFF) == 4);
   }
   std::printf(failures ? "FAILED\n" : "OK\n");
   return failures ? 1 : 0;
