@@ -4,6 +4,7 @@
 #include <string>
 #include "core/mapfiles.hpp"
 #include "core/text.hpp"
+#include "engine/assets/anim_provider.hpp"
 #include "engine/assets/game_data.hpp"
 #include "engine/assets/mission.hpp"
 #include "engine/assets/sprite_provider.hpp"
@@ -117,6 +118,25 @@ static void test_data(const std::string& dir) {
   World w2;
   CHECK(load_world(data, "Mission_4", w2, err) && w2.terrain.w == 120);  // mixed-case file names
   CHECK(!load_world(data, "no_such_map", w2, err));
+  CHECK(w.mission.towns.size() == 1);
+
+  // animated sprite provider: footman idle/move, shadow in group 0x454, finished town building
+  AnimSpriteProvider ap;
+  std::string up = find_file_ci(dir + "/Res", "Units.xbe");
+  CHECK(!up.empty() && ap.open(up));
+  ObjectState st;
+  st.type_id = 0;
+  SpriteDraw d, sh;
+  CHECK(ap.pick(st, d) && d.key.group == 0x44c && d.key.index > 0);
+  CHECK(ap.pick_shadow(st, sh) && sh.key.group == 0x454 && sh.key.shadow && sh.key.index == d.key.index);
+  st.anim_state = 1;
+  SpriteDraw m0, m1;
+  st.anim_tick = 0; CHECK(ap.pick(st, m0));
+  st.anim_tick = 3; CHECK(ap.pick(st, m1));
+  CHECK(m0.key.index != m1.key.index);  // walk cycle advances with the tick
+  st.type_id = 19; st.anim_state = 0;
+  CHECK(ap.pick(st, d));  // RUS_TOWN
+  CHECK(!ap.pick_shadow(ObjectState{.type_id = 200}, sh));
 }
 
 int main(int argc, char** argv) {

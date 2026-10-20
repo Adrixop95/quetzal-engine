@@ -1,6 +1,7 @@
 #include "engine/render/sprite_store.hpp"
 
 #include "core/sprite.hpp"
+#include "core/sprite_alpha.hpp"
 
 namespace aztec::engine {
 
@@ -21,6 +22,29 @@ const StoredSprite& SpriteStore::get(const SpriteKey& k) {
   StoredSprite out;
   Sprite s;
   Item item = data_.archive(k.archive).get(k.group, k.index);
+  static const Palette kGrey = [] { Palette g{}; for (int i = 0; i < 256; i++) g[i] = 0xFF000000u | i * 0x010101u; return g; }();
+  if (item && item.size > 8 && (item.data[8] & kRle16)) {
+    // Flag 0x40: palette indexed RLE with optional per-pixel blend byte (core/sprite_alpha.hpp).
+    AlphaSprite as;
+    if (decode_alpha_sprite(item, as)) {
+      int pid = k.palette ? k.palette : as.palette;
+      const Palette* pal = palette(uint8_t(pid), k.shade);
+      std::vector<uint32_t> px;
+      if (k.shadow) {
+        px.assign(size_t(as.w) * as.h, 0);
+        for (size_t i = 0; i < px.size(); i++)
+          if (as.opaque[i]) px[i] = 0x70000000u;
+      } else {
+        px = alpha_to_argb(as, pal ? *pal : kGrey);
+      }
+      out.region = atlas_.add(as.w, as.h, px.data());
+      out.ox = as.ox; out.oy = as.oy; out.cw = as.w; out.ch = as.h;
+      // stacked cells (cursors): cell size from the header
+      int cw = item.data[0x10] | item.data[0x11] << 8, ch = item.data[0x12] | item.data[0x13] << 8;
+      if (cw == as.w && ch > 0 && as.h > ch && as.h % ch == 0) { out.frames = as.h / ch; out.ch = ch; }
+    }
+    return cache_.emplace(k, out).first->second;
+  }
   if (decode_sprite(item, s)) {
     std::vector<uint32_t> px;
     if (k.shadow) {
@@ -31,18 +55,8 @@ const StoredSprite& SpriteStore::get(const SpriteKey& k) {
       int pid = k.palette;
       // Header palette ids < 4 in Units.xbe are team palettes; elsewhere they name a fixed Pal.xbe item.
       if (!pid) pid = (s.palette < 4 && k.archive == ArchiveId::Units) ? s.palette + 0x10 + k.team * 4 : s.palette;
-      // RLE16 sprites with a header palette other than 14 hold (palette index, extra byte) per pixel
-      // (cursors, fonts); palette 14 marks true RGB565 colour.
-      bool indexed16 = s.is16() && s.palette != 14;
-      const Palette* pal = (!s.is16() || indexed16) ? palette(uint8_t(pid), k.shade) : nullptr;
-      static const Palette kGrey = [] { Palette g{}; for (int i = 0; i < 256; i++) g[i] = 0xFF000000u | i * 0x010101u; return g; }();
-      if (indexed16) {
-        px.assign(size_t(s.w) * s.h, 0);
-        for (size_t i = 0; i < px.size(); i++)
-          if (s.opaque[i]) px[i] = (pal ? *pal : kGrey)[s.color[i] & 255];
-      } else {
-        px = to_argb(s, pal ? *pal : kGrey);
-      }
+      const Palette* pal = palette(uint8_t(pid), k.shade);
+      px = to_argb(s, pal ? *pal : kGrey);
     }
     out.region = atlas_.add(s.w, s.h, px.data());
     out.ox = s.ox;

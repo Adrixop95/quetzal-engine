@@ -7,6 +7,7 @@
 
 #include "core/palette.hpp"
 #include "core/sprite.hpp"
+#include "core/sprite_alpha.hpp"
 #include "engine/assets/game_data.hpp"
 #include "engine/render/png.hpp"
 
@@ -25,7 +26,28 @@ bool write_sprite_sheet(const std::string& game_dir, const std::string& spec, co
   std::vector<Img> imgs;
   for (int i = a; i <= b; i++) {
     Sprite s;
-    if (!decode_sprite(data.archive(id).get(uint32_t(group), uint32_t(i)), s)) continue;
+    Item item = data.archive(id).get(uint32_t(group), uint32_t(i));
+    if (item && item.size > 8 && (item.data[8] & kRle16)) {  // indexed + alpha RLE
+      AlphaSprite as;
+      if (!decode_alpha_sprite(item, as)) continue;
+      Palette pal{};
+      if (!load_palette(data.archive(ArchiveId::Pal), uint32_t(as.palette), 14, pal) && !load_palette(data.archive(ArchiveId::Pal), uint32_t(as.palette), 0, pal))
+        for (int k = 0; k < 256; k++) pal[k] = 0xFF000000u | k * 0x010101u;
+      Img im{as.w, as.h, alpha_to_argb(as, pal)};
+      int cw = item.data[0x10] | item.data[0x11] << 8, ch = item.data[0x12] | item.data[0x13] << 8;
+      if (cw == as.w && ch > 0 && as.h > ch && as.h % ch == 0 && as.h / ch <= 16) {
+        int cells = as.h / ch;
+        Img w2{as.w * cells, ch, std::vector<uint32_t>(size_t(as.w) * cells * ch)};
+        for (int c = 0; c < cells; c++)
+          for (int y = 0; y < ch; y++)
+            for (int x = 0; x < as.w; x++) w2.px[size_t(y) * w2.w + c * as.w + x] = im.px[size_t(c * ch + y) * as.w + x];
+        im = std::move(w2);
+      }
+      std::printf("%d: %dx%d alpha-rle pal=%d hot=%d,%d\n", i, as.w, as.h, as.palette, as.ox, as.oy);
+      imgs.push_back(std::move(im));
+      continue;
+    }
+    if (!decode_sprite(item, s)) continue;
     int pid = s.palette < 4 && id == ArchiveId::Units ? s.palette + 0x10 : s.palette;
     Palette pal{};
     if (!s.is16() || s.palette != 14) {

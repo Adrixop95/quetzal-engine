@@ -26,16 +26,33 @@ F4 etykiety, F5 znaczniki, F6 edge scroll, F7 nakładki terenu, F10 HUD, Spacja 
 - `ui/`: `Cursor` (programowy, rysowany na końcu każdej klatki z aktualnej pozycji myszy), `Minimap`, HUD.
 - `app/`: opcje wiersza poleceń, główna pętla (render co vsync, symulacja w stałym kroku).
 
-## Podpięcie sprite'ów
-Zaimplementuj `SpriteProvider::pick(ObjectState, SpriteDraw&)` (lub wypełnij `TableSpriteProvider`) i przekaż do
-`run_engine(opts, provider)`. `SpriteKey` = archiwum + grupa (0x44c/0x454) + indeks + paleta + shade. Pozycja rysowania =
-pozycja obiektu (środek kafla) + `(ox, oy)` z nagłówka sprite'a + `(dx, dy)` z `SpriteDraw`. Obiekty bez sprite'a dostają
-znacznik w kolorze strony z numerem typu. Dane mapowania: `src/engine/data/`, dokument `docs/sprites_mapping.md`.
+## Sprite'y i dane (stan po drugiej rundzie)
+- `AnimSpriteProvider` (`assets/anim_provider.*`) oparty na `data/sprites.hpp`: typ + stan (idle/move/attack/die/fidget) + kierunek 0..7 + tik animacji
+  -> sprite z `Units.xbe` (ciało 0x44c, cień 0x454 rysowany pod spodem jako półprzezroczysta sylwetka). Animacja liczy `Object::anim_tick`
+  (rośnie w `World::begin_tick()`, czyli w stałym kroku 12 Hz); pozycja nadal jest interpolowana między tikami.
+- Hotspot sprite'a: lewy górny róg = pozycja - (ox, oy) (+ `yoff` klatki). Zgadza się ze zrzutem oryginału (położenie budynku względem jednostek).
+- Paleta sprite'a z nagłówka (+0xC): Tiles0 używa Pal 4/5/6 (trawa/piasek, woda, brzeg), Tiles1 8/9/10, Units: id < 4 = paleta drużyny
+  `id + 0x10 + kolor*4`. Sprite'y z flagą 0x40 to indeksowane RLE z alfą (`core/sprite_alpha.*`), nie 16-bit kolor.
+- Kafle z `h > cell_h` to paski animacji (np. woda 8 klatek po 48 px): klatka = `(tick/2) % n`. Warstwa nakładek `.map` (górne 16 bitów) to drzewa/skały:
+  ciało w 0x44c, cień w 0x454 pod tym samym id, komórka 192x192 x 4 warianty, sortowane po y razem z obiektami.
+- Budynki z `[Town#]` dodawane są do świata (typ z `Type` i `Race`); budynek gotowy = slot 1 animacji (slot 0 = etapy budowy).
+- Mgła wojny: `.vis` warstwa strony lokalnej (`World::local_side`), tekstura 1 texel/kafel z filtrem liniowym; obiekty innych stron w ciemności ukryte;
+  F8 przełącza, `World::fog_version` do odświeżania przez przyszłą symulację. Minimapa też ma mgłę.
+- Kursory z `common.xbe`: pióro (id 1, domyślny), miecz (0, atak, wskazanie wroga), buty 6..13 = strzałki przewijania krawędzią (hotspot na krawędzi),
+  maczuga 2 i włócznia 5 (Move/Pan, przypisanie niepewne), młotki 3 (nieużyte), czerwone X 14..21 (nieużyte); animacje 80 ms/klatka jak w oryginale.
+- Panel prawy: `common.xbe` id 292 (204x493, paleta 48), pasek dolny powtarzany przy wyższych oknach; minimapa wpisana w okno panelu, kamera ma szerokość okna
+  minus panel. Przyciski/lista budowy/portrety nie są zrobione (tło panelu tylko).
+- Narzędzie: `aztec_engine --game game --sprite-sheet common:0-21 out.png` wypisuje arkusz obrazków z archiwum (units|tiles0|tiles1|common).
+
+## Podpięcie własnych sprite'ów
+Zaimplementuj `SpriteProvider::pick/pick_shadow` (lub wypełnij `TableSpriteProvider`) i przekaż do `run_engine(opts, provider)`;
+domyślnie używany jest `AnimSpriteProvider`, `--no-sprites` wymusza znaczniki zastępcze.
 
 ## Znane braki
-- Kafle terenu o indeksach ok. 1337-1383 (przejścia/dither) wyglądają na prążkowane: prawdopodobnie wymagają innego sposobu
-  rysowania (mieszanie/cieniowanie), nie zbadane.
-- Paleta podglądu minimapy (.spr) niepotwierdzona (używana paleta terenu 4/14); kolory stron (`Color` 0..7) to wartości zastępcze.
-- Brak mgły wojny, cieni, animacji, dźwięku, sieci, logiki gry (tylko interfejs `Simulation`); kursory oryginalne niewczytane.
-- Paleta Tiles1 (TileSet=1) niesprawdzona (domyślnie jak Tiles0; opcja `--palette`).
-- Hotspot sprite'a (`ox,oy`) interpretowany jako przesunięcie lewego górnego rogu względem pozycji obiektu; do potwierdzenia.
+- Oświetlenie dnia/nocy: oryginał tonuje scenę (zrzut referencyjny jest różowawy, `StartTime`/`TileSet` wybierają tablicę światła z exe, 9 kluczy czasu z kolorami RGB
+  i poziomem ciemności); silnik rysuje kafle ze stałym poziomem cieniowania 14 bez tonowania i bez mapy światła per kafel.
+- Kierunek początkowy jednostek (silnik: południe), stany attack/die/fidget i sloty 32-kierunkowe (ciężarówki, ptaki) nieobsłużone poza idle/move.
+- Uszkodzenia i budowa budynków, pociski, efekty, drugi sprite (wieżyczka/broń) nie są rysowane.
+- Mapa `.rm` wczytana, nie używana. Fonty oryginalne (fnts.xbe) nie podpięte, HUD używa wbudowanego fontu 3x5.
+- Brak dźwięku, sieci, logiki gry (tylko interfejs `Simulation`); kolory stron (`Color` 0..7) dla znaczników zastępczych są arbitralne.
+- Zrzut referencyjny rekompilacji (800x600, misja 1) porównany ręcznie: układ kamery/obiektów zgodny, różnice = oświetlenie i panel (przyciski).
