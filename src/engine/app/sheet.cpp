@@ -21,7 +21,7 @@ bool write_sprite_sheet(const std::string& game_dir, const std::string& spec, co
   if (std::sscanf(spec.c_str(), "%31[a-zA-Z0-9]:%d-%d:%i", name, &a, &b, &group) < 3) { err = "bad spec"; return false; }
   std::string n = name;
   for (auto& c : n) c = char(std::tolower(c));
-  ArchiveId id = n == "units" ? ArchiveId::Units : n == "tiles0" ? ArchiveId::Tiles0 : n == "tiles1" ? ArchiveId::Tiles1 : ArchiveId::Common;
+  ArchiveId id = n == "fnts" ? ArchiveId::Fnts : n == "units" ? ArchiveId::Units : n == "tiles0" ? ArchiveId::Tiles0 : n == "tiles1" ? ArchiveId::Tiles1 : ArchiveId::Common;
   struct Img { int w, h; std::vector<uint32_t> px; };
   std::vector<Img> imgs;
   for (int i = a; i <= b; i++) {

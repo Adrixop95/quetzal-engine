@@ -11,7 +11,7 @@ namespace aztec::engine {
 
 SceneRenderer::SceneRenderer(Window& win, const GameData& data, const World& world)
     : win_(win), data_(data), world_(world), store_(win.renderer(), data) {
-  font_ok_ = font_.init(win.renderer());
+  font_ok_ = font_.init(win.renderer(), &store_);
 }
 
 // 0 = per-sprite palette from the tile header (Tiles0 uses Pal 4/5/6, Tiles1 uses 8/9/10).

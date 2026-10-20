@@ -63,7 +63,9 @@ static const Glyph kGlyphs[] = {
 };
 
 // Texture layout: 96 cells of 4x5 px, char code c at column c - 32.
-bool Font::init(SDL_Renderer* r) {
+bool Font::init(SDL_Renderer* r, SpriteStore* store) {
+  store_ = store;
+  original_ = store && store->get(SpriteKey{ArchiveId::Fnts, 0x44c, 1200 + 'A', 0, 14}).ok();
   const int cells = 96;
   std::vector<uint32_t> px(size_t(cells) * 4 * 5, 0);
   for (const Glyph& g : kGlyphs) {
@@ -80,7 +82,43 @@ bool Font::init(SDL_Renderer* r) {
 
 Font::~Font() { if (tex_) SDL_DestroyTexture(tex_); }
 
+const StoredSprite* Font::glyph(unsigned char cp) const {
+  if (cp == ' ') return nullptr;
+  const StoredSprite& g = store_->get(SpriteKey{ArchiveId::Fnts, 0x44c, uint32_t(1200 + cp), 0, 14});
+  return g.ok() ? &g : nullptr;
+}
+
+int Font::width(const std::string& s, int scale) const {
+  if (!original_) return int(s.size()) * 4 * scale - scale;
+  int w = 0, e = eff(scale);
+  for (unsigned char ch : s) {
+    const StoredSprite* g = glyph(ch);
+    w += g ? glyph_advance(*g, e) : 4 * e;
+  }
+  return w;
+}
+
 void Font::draw(SDL_Renderer* r, int x, int y, const std::string& s, int scale, SDL_Color c, bool shadow) const {
+  if (original_) {
+    int e = eff(scale);
+    for (int pass = shadow ? 0 : 1; pass < 2; pass++) {
+      SDL_Color col = pass == 0 ? SDL_Color{0, 0, 0, 220} : c;
+      int cx = x + (pass == 0 ? e : 0), cy = y + (pass == 0 ? e : 0);
+      for (unsigned char ch : s) {
+        const StoredSprite* g = glyph(ch);
+        if (!g) { cx += 4 * e; continue; }
+        SDL_Texture* t = store_->atlas().page(g->region.page);
+        SDL_SetTextureColorMod(t, col.r, col.g, col.b);
+        SDL_SetTextureAlphaMod(t, col.a);
+        SDL_Rect src = g->frame_rect(0), dst{cx - g->ox * e, cy - g->oy * e, g->cw * e, g->ch * e};
+        SDL_RenderCopy(r, t, &src, &dst);
+        SDL_SetTextureColorMod(t, 255, 255, 255);
+        SDL_SetTextureAlphaMod(t, 255);
+        cx += glyph_advance(*g, e);
+      }
+    }
+    return;
+  }
   if (!tex_) return;
   for (int pass = shadow ? 0 : 1; pass < 2; pass++) {
     SDL_Color col = pass == 0 ? SDL_Color{0, 0, 0, 200} : c;

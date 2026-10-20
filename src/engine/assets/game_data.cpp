@@ -26,7 +26,7 @@ std::string find_file_ci(const std::string& dir, const std::string& file) {
 bool GameData::open(const std::string& game_dir, std::string& err) {
   root_ = game_dir;
   struct { Archive* a; const char* f; } list[] = {{&pal_, "Pal"}, {&units_, "Units"}, {&tiles0_, "Tiles0"},
-                                                  {&tiles1_, "Tiles1"}, {&common_, "common"}};
+                                                  {&tiles1_, "Tiles1"}, {&common_, "common"}, {&fnts_, "fnts"}, {&light_, "light"}};
   for (auto& e : list) {
     std::string p = find_file_ci(root_ + "/Res", std::string(e.f) + ".xbe");
     if (p.empty() || !e.a->open(p)) { err = std::string("cannot open Res/") + e.f + ".xbe in " + root_; return false; }
@@ -40,6 +40,8 @@ const Archive& GameData::archive(ArchiveId id) const {
     case ArchiveId::Tiles0: return tiles0_;
     case ArchiveId::Tiles1: return tiles1_;
     case ArchiveId::Common: return common_;
+    case ArchiveId::Fnts: return fnts_;
+    case ArchiveId::Light: return light_;
     case ArchiveId::Pal: break;
   }
   return pal_;

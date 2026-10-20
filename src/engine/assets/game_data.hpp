@@ -5,7 +5,7 @@
 
 namespace aztec::engine {
 
-enum class ArchiveId : uint8_t { Units, Tiles0, Tiles1, Common, Pal };
+enum class ArchiveId : uint8_t { Units, Tiles0, Tiles1, Common, Pal, Fnts, Light };
 
 class GameData {
  public:
@@ -20,7 +20,7 @@ class GameData {
 
  private:
   std::string root_;
-  Archive pal_, units_, tiles0_, tiles1_, common_;
+  Archive pal_, units_, tiles0_, tiles1_, common_, fnts_, light_;
 };
 
 // Case-insensitive lookup of `file` inside `dir`; returns the full path or "".
