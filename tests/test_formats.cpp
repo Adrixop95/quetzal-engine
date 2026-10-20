@@ -11,6 +11,7 @@
 #include "core/visfile.hpp"
 #include <dirent.h>
 #include "core/audio.hpp"
+#include "core/mp.hpp"
 #include "core/sprite_alpha.hpp"
 #include "core/userfiles.hpp"
 
@@ -113,6 +114,33 @@ int main(int argc, char** argv) {
     }
     RuntimeSettings rs;
     CHECK(parse_runtime_settings("resolution=800x600\nwindow_mode=2\n", rs) && rs.res_w == 800 && rs.window_mode == 2);
+  }
+  // every .mp: full schema vs the files' own counts
+  {
+    int n = 0;
+    if (DIR* d = opendir(maps.c_str())) {
+      while (dirent* e = readdir(d)) {
+        std::string nm = e->d_name;
+        if (nm.size() < 4 || nm[0] == 'z' || nm.substr(nm.size() - 3) != ".mp") continue;
+        MpFile mp;
+        bool ok = load_mp(maps + nm, mp);
+        CHECK(ok);
+        if (!ok) continue;
+        Ini ini; ini.load(maps + nm);
+        CHECK(int(mp.sides.size()) == ini.get_int("Globals", "Sides"));
+        CHECK(int(mp.towns.size()) == ini.get_int("Globals", "Towns"));
+        CHECK(int(mp.teams.size()) == ini.get_int("Globals", "Teams"));
+        for (const auto& t : mp.towns) CHECK(int(t.units.size()) == ini.get_int("Town" + std::to_string(t.index), "Units"));
+        for (const auto& t : mp.teams) CHECK(int(t.units.size()) == ini.get_int("Team" + std::to_string(t.index), "Units"));
+        CHECK(mp.map_w > 0 && mp.map_h > 0);
+        n++;
+      }
+      closedir(d);
+    }
+    std::printf("mp=%d\n", n);
+    CHECK(n >= 30);
+    MpUnit u;
+    CHECK(parse_unit_line(" 99, 14, 30,28000", u) && u.x == 99 && u.hp == 28000);
   }
   // flag 0x40 sprites (indexed + alpha) in common/fnts/Units
   {

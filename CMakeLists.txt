@@ -7,7 +7,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 add_library(aztec_core
   src/core/archive.cpp src/core/sprite.cpp src/core/palette.cpp src/core/map.cpp src/core/ini.cpp
-  src/core/ugi.cpp src/core/script.cpp src/core/visfile.cpp src/core/userfiles.cpp src/core/audio.cpp src/core/sprite_alpha.cpp src/core/mapfiles.cpp src/core/text.cpp)
+  src/core/ugi.cpp src/core/script.cpp src/core/visfile.cpp src/core/userfiles.cpp src/core/audio.cpp src/core/mp.cpp src/core/sprite_alpha.cpp src/core/mapfiles.cpp src/core/text.cpp)
 target_include_directories(aztec_core PUBLIC src)
 target_compile_options(aztec_core PRIVATE -Wall -Wextra)
 
@@ -22,7 +22,7 @@ add_test(NAME formats COMMAND test_formats ${CMAKE_SOURCE_DIR}/game)
 
 # ---- clean C++20 engine (src/engine): loads the original data files, no recompiled code
 add_library(aztec_engine_lib
-  src/engine/assets/game_data.cpp src/engine/assets/mission.cpp
+  src/engine/assets/game_data.cpp src/engine/assets/mission.cpp src/engine/assets/anim_provider.cpp
   src/engine/platform/input.cpp src/engine/platform/window.cpp
   src/engine/world/world.cpp src/engine/world/camera.cpp src/engine/world/type_info.cpp
   src/engine/sim/simulation.cpp
