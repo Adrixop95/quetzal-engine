@@ -9,16 +9,37 @@
 #include <string.h>
 
 void f_0043d120_orig(CPU* c);
+void pathlog_tick(uint32_t frame);
 
 #define CMD_DWORDS 53
 typedef struct { uint32_t frame, side; uint32_t d[CMD_DWORDS]; } Rec;
 static Rec* recs; static size_t nrecs, caprecs;
-static FILE* logf_, *statef_; static int mode_init, replay;
+static FILE* logf_, *statef_, *unitf_; static int mode_init, replay;
 
 // RT_STATE_LOG=file: per tick, at the first command fetch of the tick (same thread as the logic, so no race with updates):
 // frame number, then per object pool: live count and an FNV hash of the object bytes (host pointers masked).
+// RT_UNIT_LOG=file (RT_UNIT_EVERY=n ticks): per tick lines "U frame addr type side x y hp maxhp state" for pool 0x4cc3d0 objects and "S frame side money spent earned".
+static void log_units(uint32_t frame) {
+  static uint32_t lastu = ~0u; static int every = 0;
+  if (!unitf_ || frame == lastu) return;
+  if (!every) { const char* e = getenv("RT_UNIT_EVERY"); every = e ? atoi(e) : 1; if (every < 1) every = 1; }
+  if (frame % every) return;
+  lastu = frame;
+  uint32_t pb = 0x4cc3d0, base = GU32(pb + 4), hwm = GU32(pb + 8), stride = GU32(pb + 0x10), sb = GU32(0x4dd2f4);
+  for (uint32_t a = base; base && hwm > base && stride >= 16 && a + stride <= hwm; a += stride) {
+    uint32_t vt = GU32(a + 8);
+    if (vt < 0x480000 || vt >= 0x4c4000) continue;
+    uint32_t o = a + 8, sp = GU32(o + 0x30);
+    int side = (sb && sp >= sb && sp < sb + 16 * 0x69c) ? (int)((sp - sb) / 0x69c) : -1;
+    fprintf(unitf_, "U %u %x %d %d %d %d %d %d %d\n", frame, a, (int)GU32(o + 0x50), side, (int)GU32(o + 0x24), (int)GU32(o + 0x28), (int)GU32(o + 0x38), (int)GU32(o + 0x3c), (int)GU32(o + 0x64));
+  }
+  for (int i = 0; i < 4 && sb; i++) fprintf(unitf_, "S %u %d %d %d %d\n", frame, i, (int)GU32(sb + i * 0x69c + 0x698), (int)GU32(sb + i * 0x69c + 0x640), (int)GU32(sb + i * 0x69c + 0x63c));
+  fflush(unitf_);
+}
+
 static void log_state(uint32_t frame) {
   static uint32_t last = ~0u;
+  log_units(frame);
   if (!statef_ || frame == last) return;
   last = frame;
   fprintf(statef_, "%u", frame);
@@ -46,6 +67,8 @@ static void init_mode(void) {
   mode_init = 1;
   const char* sl = getenv("RT_STATE_LOG");
   if (sl) statef_ = fopen(sl, "w");
+  const char* ul = getenv("RT_UNIT_LOG");
+  if (ul) unitf_ = fopen(ul, "w");
   const char* l = getenv("RT_CMD_LOG");
   if (l) logf_ = fopen(l, "w");
   const char* r = getenv("RT_CMD_REPLAY");
@@ -77,7 +100,7 @@ void f_0043d120(CPU* c) {   // uint __cdecl FUN_0043d120(int side, uint32_t* out
   if (!mode_init) init_mode();
   uint32_t side = GU32(GREG(c, 0x10) + 4), out = GU32(GREG(c, 0x10) + 8);
   uint32_t frame = GU32(0x4c5730);
-  if (frame != 0 && GU8(0x4cc394)) log_state(frame);
+  if (frame != 0 && GU8(0x4cc394)) { log_state(frame); pathlog_tick(frame); }
   if (replay) {
     uint32_t ret = GU32(GREG(c, 0x10));
     const Rec* r = find_rec(frame, side);
