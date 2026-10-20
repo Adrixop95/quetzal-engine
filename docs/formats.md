@@ -125,7 +125,7 @@ widok x,y (298,336 / 298,324), potem `0,0,1,4`, potem licznik ticków gry (55 ->
   gdy komórka mgły ma wartość >= 0x21 (widoczna dla gracza). Typ 4 = potwierdzenia ("Acknowledgement" w opcjach), typ 0 = globalne UI.
 - `Music/music.xbe` i `Music_cd2.xbe`: jedna grupa `0x460` (WAV 44100 Hz stereo 16 bit, 20-32 MB); numery 1..12; elementy o zerowej długości leżą na drugiej płycie.
   Maska ścieżek: bit (n-1) = ścieżka n (`FUN_0043a160` sprawdza, które istnieją). `Music=N` w .mp (N != 0) wybiera dokładnie ścieżkę N; inaczej `MusicMask & dostępne`
-  (62463 = ścieżki 1-10 i 13-16). Wybór kolejnej ścieżki (`FUN_0043a2xx`, zweryfikowane w kodzie): kursor `0..31` (start 0); gdy żadna ścieżka nie gra i maska != 0, bierze pierwszy ustawiony bit
+  (62463 = ścieżki 1-10 i 13-16). Wybór kolejnej ścieżki (`FUN_0043a280`, zweryfikowane w kodzie): kursor `0..31` (start 0); gdy żadna ścieżka nie gra i maska != 0, bierze pierwszy ustawiony bit
   od kursora (cyklicznie), gra ścieżkę `kursor+1` (`FUN_00475010`) i zwiększa kursor. Czyli ścieżki z maski grają po kolei w pętli, bez losowania.
 
 ## Interfejs, czcionki, światło, palety
