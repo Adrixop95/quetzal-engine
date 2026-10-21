@@ -234,9 +234,48 @@ static void test_sim(const std::string& dir) {
   }
 }
 
+static void test_script(const std::string& dir) {
+  GameData data;
+  std::string err;
+  if (!data.open(dir, err)) return;
+  auto rules = std::make_shared<RulesData>();
+  if (!rules->load_dir(dir + "/../docs/data")) return;
+  World w;
+  if (!load_world(data, "1", w, err)) return;
+  GameSim sim(rules);
+  CHECK(sim.attach_script(data.map_file("mission_1", "scn")));
+  sim.init(w);
+  // trigger 0 (localTime == 1400): side 1 tactic 7 attacks town 0
+  bool ordered = false;
+  for (int t = 0; t < 1500; t++) {
+    w.begin_tick();
+    sim.tick(w);
+    if (t == 1390)
+      for (const Object& o : w.objects) if (o.side == 1 && o.tactic == 7 && o.order != uint8_t(Order::Idle)) ordered = true;
+  }
+  CHECK(!ordered);
+  bool now = false;
+  for (const Object& o : w.objects) if (o.side == 1 && o.tactic == 7 && o.alive && o.order != uint8_t(Order::Idle)) now = true;
+  CHECK(now);
+  CHECK(w.outcome == kRunning);
+  // killing every enemy triggers side(local).enemies == 0 -> victory
+  for (const Object& o : w.objects) if (o.side == 1) sim.script_kill(w, o.id);
+  w.begin_tick();
+  sim.tick(w);
+  CHECK(w.outcome == kVictory);
+  // determinism with scripts
+  World a, b;
+  CHECK(load_world(data, "1", a, err) && load_world(data, "1", b, err));
+  GameSim sa(rules), sb(rules);
+  sa.attach_script(data.map_file("mission_1", "scn")); sb.attach_script(data.map_file("mission_1", "scn"));
+  sa.init(a); sb.init(b);
+  for (int t = 0; t < 1600; t++) { a.begin_tick(); sa.tick(a); b.begin_tick(); sb.tick(b); }
+  CHECK(sa.state_hash(a) == sb.state_hash(b));
+}
+
 int main(int argc, char** argv) {
   test_pure();
-  if (argc > 1) { test_data(argv[1]); test_sim(argv[1]); }
+  if (argc > 1) { test_data(argv[1]); test_sim(argv[1]); test_script(argv[1]); }
   std::printf(failures ? "FAILED\n" : "OK\n");
   return failures ? 1 : 0;
 }

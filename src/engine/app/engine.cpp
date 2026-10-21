@@ -101,6 +101,10 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       else sim = std::make_unique<NullSimulation>();
     }
     CommandsUi cmdui(game);
+    if (game) {
+      std::string scn = data.map_file(world.mission.file_name, "scn");
+      if (!scn.empty() && !game->attach_script(scn)) std::fprintf(stderr, "warning: cannot parse %s\n", scn.c_str());
+    }
     sim->init(world);
 
     StrBase strings;
@@ -129,6 +133,8 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
     hud.show_help = o.help;
     bool edge = o.edge_scroll, paused = false, show_hud = o.hud;
     bool drag_minimap = false;
+    uint32_t seen_center = 0;
+    bool end_shown = false;
     uint64_t freq = SDL_GetPerformanceFrequency(), last = SDL_GetPerformanceCounter();
     double fps_acc = 0; int fps_n = 0;
     int frame = 0, shot_no = 0;
@@ -200,6 +206,9 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       }
       float alpha = paused ? 1.f : float(stepper.alpha());
 
+      // Script requests: centerView / cameraActivate, mission end.
+      if (world.center_serial != seen_center) { seen_center = world.center_serial; cam.center_on(float(world.center_x), float(world.center_y)); }
+      if (world.outcome != kRunning && !end_shown) { end_shown = true; paused = true; }
       // Camera input.
       CameraInput ci;
       if (in.down(SDL_SCANCODE_LEFT) || in.down(SDL_SCANCODE_A)) ci.move_x -= 1;
@@ -258,6 +267,21 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       hud.mouse_x = in.mx; hud.mouse_y = in.my; hud.alpha = alpha;
       hud.sprites = scene.stats.sprites; hud.placeholders = scene.stats.placeholders; hud.geometry_calls = scene.stats.geometry_calls;
       selui.draw_box(win.renderer());
+      {  // script messages (printString) and end-of-mission banner
+        int ty = 40 * ui;
+        for (const Message& m : world.messages) {
+          int tw = scene.font().width(m.text, ui);
+          scene.font().draw(win.renderer(), (ow - panel.width() - tw) / 2, ty, m.text, ui, {255, 255, 200, 255});
+          ty += 8 * ui;
+        }
+        if (world.outcome != kRunning) {
+          std::string t = world.outcome == kVictory ? "MISSION COMPLETE" : "MISSION FAILED";
+          int sc2 = ui * 2, tw = scene.font().width(t, sc2);
+          scene.font().draw(win.renderer(), (ow - panel.width() - tw) / 2, oh / 3, t, sc2, world.outcome == kVictory ? SDL_Color{120, 255, 120, 255} : SDL_Color{255, 110, 110, 255});
+          std::string t2 = "PRESS ESC TO LEAVE";
+          scene.font().draw(win.renderer(), (ow - panel.width() - scene.font().width(t2, ui)) / 2, oh / 3 + 18 * ui, t2, ui, {230, 230, 230, 255});
+        }
+      }
       {
         int gx, gy;
         SDL_GetMouseState(&gx, &gy);

@@ -7,6 +7,7 @@
 #include "engine/sim/commands.hpp"
 #include "engine/sim/path/mover.hpp"
 #include "engine/sim/rules.hpp"
+#include "engine/sim/script_runner.hpp"
 #include "engine/sim/simulation.hpp"
 
 namespace aztec::engine {
@@ -44,6 +45,12 @@ class GameSim : public Simulation {
   // Footprint rectangle (tiles) of a structure type centred on tile (tx, ty).
   static void footprint(const TypeRules& r, int tx, int ty, int& x0, int& y0, int& x1, int& y1);
 
+  // Mission script (.scn). Triggers run once per tick before orders.
+  bool attach_script(const std::string& scn_path) { return script_.load(scn_path); }
+  const ScriptRunner& script() const { return script_; }
+  // Used by the script runner (tactic orders).
+  void script_order(World& w, const std::vector<uint32_t>& ids, int px, int py, bool attack_move);
+  void script_kill(World& w, uint32_t id);
   // Debug/editor helper (not a lockstep command): moves an object and its movement agent instantly.
   void teleport(World& w, uint32_t id, int px, int py);
 
@@ -68,6 +75,7 @@ class GameSim : public Simulation {
   std::shared_ptr<const RulesData> rules_;
   path::NavGrid nav_;
   std::unique_ptr<path::MoveSystem> mover_;
+  ScriptRunner script_;
   std::vector<Command> pending_;
   std::vector<LoggedCommand> log_;
   bool paused_ = false;

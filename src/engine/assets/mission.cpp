@@ -1,5 +1,6 @@
 #include "engine/assets/mission.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -31,31 +32,42 @@ bool parse_mission(const Ini& ini, const std::string& base_name, MissionDef& m) 
     d.neutral = s.neutral; d.only_comp = s.only_comp;
     d.name = cp1250_to_utf8(s.name);
     d.disabled = s.disabled_ids;
+    for (const MpCamera& c : s.cameras) d.cameras.push_back({c.x, c.y, c.z});
+    for (const MpDefence& df : s.defences) {
+      PlacedObject o;
+      o.x = df.x; o.y = df.y; o.type = df.type; o.side = s.index; o.source = ObjectSource::Town; o.scenario_id = df.scenario_id; o.defence = true;
+      m.objects.push_back(o);
+    }
     m.sides.push_back(d);
   }
-  auto add_units = [&](const std::vector<MpUnit>& units, int side, ObjectSource src, int group) {
+  auto add_units = [&](const std::vector<MpUnit>& units, int side, ObjectSource src, int group, int scenario) {
     for (const MpUnit& u : units) {
       PlacedObject o;
       o.x = u.x; o.y = u.y; o.type = u.type; o.hp = u.hp;
-      o.side = side; o.source = src; o.group = group;
+      o.side = side; o.source = src; o.group = group; o.scenario_id = scenario;
       m.objects.push_back(o);
     }
   };
   for (const MpTown& t : mp.towns) {
-    m.towns.push_back({t.index, t.side, t.x, t.y, t.type, t.race});
-    add_units(t.units, t.side, ObjectSource::Town, t.index);
+    m.towns.push_back({t.index, t.side, t.x, t.y, t.type, t.race, t.scenario_id});
+    add_units(t.units, t.side, ObjectSource::Town, t.index, -1);
   }
-  for (const MpTeam& t : mp.teams) add_units(t.units, t.side, ObjectSource::Team, t.index);
+  for (const MpTeam& t : mp.teams) add_units(t.units, t.side, ObjectSource::Team, t.index, t.scenario_id);
   auto add_vessels = [&](const std::vector<MpVessel>& v, ObjectSource src) {
     for (const MpVessel& b : v) {
       PlacedObject o;
-      o.x = b.x; o.y = b.y; o.side = b.side; o.source = src; o.group = b.index;
+      o.x = b.x; o.y = b.y; o.side = b.side; o.source = src; o.group = b.index; o.scenario_id = b.scenario_id;
+      o.type = src == ObjectSource::Boat ? 84 : src == ObjectSource::Johnka ? 88 : -1;
       m.objects.push_back(o);
     }
   };
   add_vessels(mp.boats, ObjectSource::Boat);
   add_vessels(mp.johnkas, ObjectSource::Johnka);
   add_vessels(mp.submarines, ObjectSource::Submarine);
+  int maxid = -1;
+  for (const MpPath& p : mp.paths) maxid = std::max(maxid, p.id);
+  m.paths.assign(size_t(maxid + 1), {});
+  for (const MpPath& p : mp.paths) if (p.id >= 0) m.paths[size_t(p.id)] = p.points;
   return true;
 }
 

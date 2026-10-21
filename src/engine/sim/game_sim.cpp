@@ -128,10 +128,7 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o, int radius
   const Object* best = nullptr;
   int64_t bd = int64_t(radius_px) * radius_px;
   for (const Object& t : w.objects) {
-    if (t.removed || !t.alive || t.type < 0 || t.side == o.side || t.progress < 1000) continue;
-    bool neutral = false;
-    for (const SideDef& s : w.mission.sides) if (s.index == t.side && s.neutral) neutral = true;
-    if (neutral) continue;
+    if (t.removed || !t.alive || t.type < 0 || !w.hostile(o.side, t.side) || t.progress < 1000) continue;
     int64_t d = d2(o, t);
     if (d < bd || (d == bd && best && t.id < best->id)) { bd = d; best = &t; }
   }
@@ -388,6 +385,7 @@ void GameSim::run_orders(World& w) {
         o.cooldown = std::max(1, rel);
         o.anim_state = kAnimAttack; o.anim_tick = 0;
         t->hp -= dmg;
+        t->last_hit_by = o.id;
         if (t->hp <= 0) kill(w, *t);
       }
     } else if (ag && ((tick_ + o.id) % 6 == 0 || !moving)) {
@@ -448,11 +446,35 @@ void GameSim::tick(World& w) {
   }
   pending_.clear();
   if (paused_) return;
+  if (script_.loaded()) {
+    if (tick_ == 1) script_.init(w);
+    script_.tick(*this, w);
+  }
   economy(w);
   run_orders(w);
   mover_->tick();
   sync_movement(w);
   if (tick_ % 4 == 0) update_fog(w);
+}
+
+void GameSim::script_order(World& w, const std::vector<uint32_t>& ids, int pxx, int pyy, bool attack_move) {
+  // Script orders bypass the side check of player commands: apply per owning side directly (not logged: scripts are deterministic).
+  std::vector<uint32_t> agents;
+  for (uint32_t id : ids) {
+    Object* o = w.find_mut(id);
+    if (!o || o->removed || !o->alive) continue;
+    const TypeRules& r = rules_->type(o->type);
+    if (!(r.mobile || r.flier)) continue;
+    o->order = uint8_t(attack_move ? Order::AttackMove : Order::Move);
+    o->dest_x = pxx; o->dest_y = pyy; o->target = 0; o->resume = 0;
+    if (o->mover >= 0) agents.push_back(uint32_t(o->mover));
+  }
+  if (!agents.empty()) mover_->order_move(agents.data(), int(agents.size()), {to_fixed(pxx), to_fixed(pyy)});
+}
+
+void GameSim::script_kill(World& w, uint32_t id) {
+  Object* o = w.find_mut(id);
+  if (o && o->alive) kill(w, *o);
 }
 
 void GameSim::teleport(World& w, uint32_t id, int pxx, int pyy) {
@@ -480,6 +502,9 @@ uint64_t GameSim::state_hash(const World& w) const {
     for (const auto& g : s.groups) { mix(g.size()); for (uint32_t id : g) mix(id); }
   }
   for (const VisFile::Layer& l : w.visibility.sides) { uint64_t sum = 0; for (uint8_t v : l.v) sum = sum * 31 + v; mix(sum); }
+  mix(script_.state_hash());
+  for (int a = 0; a < 8; a++) for (int b = 0; b < 8; b++) mix(w.relation[a][b]);
+  mix(w.outcome);
   if (mover_) mix(mover_->state_hash());
   return h;
 }

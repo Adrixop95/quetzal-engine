@@ -1,6 +1,8 @@
 // Mission description parsed from Maps/<name>.mp (INI, cp1250). See docs/formats.md.
 #pragma once
+#include <array>
 #include <cstdint>
+#include <utility>
 #include <string>
 #include <vector>
 #include "core/ini.hpp"
@@ -16,6 +18,7 @@ struct SideDef {
   bool neutral = false, only_comp = false;
   std::string name;
   std::vector<int> disabled;  // UGI types this side may not build
+  std::vector<std::array<int, 3>> cameras;  // [SideN] Camera# = x,y,z
 };
 
 enum class ObjectSource : uint8_t { Town, Team, Boat, Johnka, Submarine, Start };
@@ -27,10 +30,12 @@ struct PlacedObject {
   int side = 0;
   ObjectSource source = ObjectSource::Team;
   int group = 0;          // Town#/Team#/Boat# index
+  int scenario_id = -1;   // Team ScenarioID (= tactic number), Defence id, Boat/Johnka/Submarine id; -1 otherwise
+  bool defence = false;   // placed from [SideN] Defence# (tower), not a unit line
 };
 
 struct TownDef {
-  int index = 0, side = 0, x = 0, y = 0, type = 0, race = 0;
+  int index = 0, side = 0, x = 0, y = 0, type = 0, race = 0, scenario_id = -1;
 };
 
 struct MissionDef {
@@ -43,6 +48,7 @@ struct MissionDef {
   std::vector<SideDef> sides;
   std::vector<TownDef> towns;
   std::vector<PlacedObject> objects;  // Town/Team unit lines, boats, johnkas, submarines
+  std::vector<std::vector<std::pair<int, int>>> paths;  // [Paths]: id -> tile points (index = path id, empty if unused)
   std::vector<std::string> notes;     // English objective text, UTF-8
 };
 

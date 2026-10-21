@@ -30,6 +30,8 @@ bool load_world(const GameData& data, const std::string& spec, World& w, std::st
     o.hp = p.hp;
     o.facing = 6;  // south
     o.hp_max = p.hp;
+    if (p.source == ObjectSource::Team) o.tactic = p.scenario_id;
+    o.scenario = p.scenario_id;
     o.anim_variant = o.id * 2654435761u >> 8;
     o.teleport(tile_center_fixed(p.x), tile_center_fixed(p.y));
     w.objects.push_back(o);
@@ -44,10 +46,16 @@ bool load_world(const GameData& data, const std::string& spec, World& w, std::st
     o.type = kTownBuilding[t.type][t.race];
     o.source = ObjectSource::Town;
     o.side = t.side;
+    o.scenario = t.scenario_id;
     o.teleport(tile_center_fixed(t.x), tile_center_fixed(t.y));
     w.objects.push_back(o);
   }
   w.side_state.assign(8, SideState{});
+  for (int a = 0; a < 8; a++)
+    for (int b = 0; b < 8; b++) w.relation[a][b] = a == b ? kFriend : kEnemy;
+  for (const SideDef& sd : w.mission.sides)
+    if (sd.neutral && sd.index >= 0 && sd.index < 8)
+      for (int b = 0; b < 8; b++) if (b != sd.index) w.relation[sd.index][b] = w.relation[b][sd.index] = kNeutral;
   for (const SideDef& sd : w.mission.sides)
     if (sd.index >= 0 && sd.index < int(w.side_state.size())) w.side_state[sd.index].money = sd.money;
   return true;

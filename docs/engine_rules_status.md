@@ -35,3 +35,19 @@ Legenda: **V** = zweryfikowane w oryginale (kod lub zrzut), **M** = zmierzone na
 | Początkowa gotówka = `StartMoney` strony | V | `.mp` |
 | Garnizon, naprawa, tryby ataku, populacja, poziomy trudności, AI (Tactic/Defence/Triggers) | nie zrobione | wrogowie tylko bronią się/atakują w zasięgu wzroku |
 | Skrypty `.scn` (cele misji, zwycięstwo) | nie zrobione | |
+
+## Skrypty misji (`.scn`, `sim/script_runner.*`)
+| Reguła | Stan | Uwagi |
+|---|---|---|
+| Wszystkie wyzwalacze sprawdzane co tik, akcje gdy wszystkie warunki prawdziwe; `trigger(N).disable` wyłącza | P | wniosek z użycia (`attacked != -1` + samowyłączenie) |
+| Wyzwalacze włączane przez inny wyzwalacz startują wyłączone | P | stan początkowy nieudokumentowany |
+| `localTime`/`globalTime` = tiki od startu misji | P | |
+| Liczniki: od 0, rosną co tik; `set(V)` ustawia i uruchamia, `stop`, `kill`; `timer(0)` istnieje od startu | P | |
+| `side(S).units` = żywe nie-budynki; `towns` = żywe ratusze (typy forpost/wieś/miasto/forteca); `enemies` = jednostki i ratusze wrogich stron | P | |
+| `tactic(N)` = żywe obiekty strony z `[Team#] ScenarioID = N`; `valid` 0/1; `idle` = wszyscy bezczynni; `attacked` = id ostatniego napastnika lub -1 | P | |
+| `attackTown(id)`, `moveTo(x,y)` = AttackMove całej grupy (kafle -> piksele) | P | |
+| `joinTactic`, `giftToSide`, `kill`, `lock/unlock`, `setPath/setCycledPath/...` (kolejne punkty z `[Paths]`) | P | |
+| `setFriendlyTo/NeutralTo/EnemyTo` zmienia relację jednostronnie (macierz 8x8) | P | |
+| `addMoney/takeMoney`, `printString`, `centerView`, `cameraActivate(i,v)` (skok do `Camera#`), `victory/defeat` | P | koniec misji tylko dla strony lokalnej |
+| `boat(N).activate`, `johnka(N).enable`, `submarine(N).go`, `buildCommand`, `moveCommand`, `cameraDeactivate` | nie zrobione | liczone jako `unsupported` |
+| Obrony z `[SideN] Defence#` pojawiają się jako obiekty (wieże), `defence(N).valid` = żyje | P | |
