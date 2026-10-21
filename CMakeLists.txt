@@ -26,7 +26,6 @@ add_library(aztec_engine_lib
   src/engine/platform/input.cpp src/engine/platform/window.cpp
   src/engine/world/world.cpp src/engine/world/camera.cpp src/engine/world/type_info.cpp
   src/engine/sim/simulation.cpp src/engine/sim/commands.cpp src/engine/sim/rules.cpp src/engine/sim/game_sim.cpp src/engine/sim/script_runner.cpp src/engine/sim/ai.cpp
-  src/engine/sim/path/astar.cpp src/engine/sim/path/flowfield.cpp src/engine/sim/path/mover.cpp src/engine/sim/path/navgrid.cpp
   src/engine/render/atlas.cpp src/engine/render/sprite_store.cpp src/engine/render/font.cpp
   src/engine/render/png.cpp src/engine/render/fog.cpp src/engine/render/scene_renderer.cpp
   src/engine/ui/cursor.cpp src/engine/ui/panel.cpp src/engine/ui/names.cpp src/engine/ui/selection_ui.cpp src/engine/ui/commands_ui.cpp src/engine/ui/minimap.cpp src/engine/ui/hud.cpp
@@ -34,7 +33,7 @@ add_library(aztec_engine_lib
 target_compile_features(aztec_engine_lib PUBLIC cxx_std_20)
 target_include_directories(aztec_engine_lib PUBLIC src)
 target_compile_options(aztec_engine_lib PRIVATE -Wall -Wextra)
-target_link_libraries(aztec_engine_lib PUBLIC aztec_core SDL2::SDL2)
+target_link_libraries(aztec_engine_lib PUBLIC aztec_core aztec_path SDL2::SDL2)
 add_executable(aztec_engine src/engine/app/main.cpp)
 target_link_libraries(aztec_engine aztec_engine_lib)
 add_executable(test_engine tests/test_engine.cpp)
@@ -67,7 +66,7 @@ if(AZTEC_GEN_DIR AND AZTEC_TRACE_CALLS)
 endif()
 
 # ---- deterministic pathfinding / movement module (src/engine/sim/path): no dependencies
-add_library(aztec_path src/engine/sim/path/navgrid.cpp src/engine/sim/path/flowfield.cpp src/engine/sim/path/astar.cpp
+add_library(aztec_path src/engine/sim/path/navgrid.cpp src/engine/sim/path/flowfield.cpp src/engine/sim/path/astar.cpp src/engine/sim/path/courses.cpp
   src/engine/sim/path/mover.cpp src/engine/sim/path/courses.cpp)
 target_include_directories(aztec_path PUBLIC src)
 target_compile_features(aztec_path PUBLIC cxx_std_20)
