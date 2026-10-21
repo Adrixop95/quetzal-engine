@@ -11,8 +11,8 @@ Eyeball sheets: `tools/sprmap.py sheet GAME OUTDIR [type...]` (rows = slots, col
   The frame before a sequence start is a header frame; its field [2] is a looping sound while the state is active.
 - Frame fields: `[0]` sprite id, `[1]` light id (light.xbe 0x455, muzzle glow; virtual +0x70), `[2]` sound id on first tick of the frame, `[3]` fire-weapon flag,
   `[4],[5]` dx, dy added to the unit position per tick (lunges, death slides), `[6]` y offset (virtual +0x18, added to draw position), `[7]` duration in ticks (12/s; 0 = hold).
-- Sprite id in a frame indexes Res/Units.xbe group 0x44c (body, flags 6/1/64) and the same id in 0x454 (shadow, flags 14, translucent). Both are drawn by the view:
-  shadow first, then body. Top-left draw position = object position + (sprite.ox, sprite.oy + frame[6]) minus view origin (header +0x14/+0x16).
+- Sprite id in a frame indexes Res/Units.xbe group 0x44c (body, flags 6/1/64; flag 0x40 = palette-indexed RLE with alpha, NOT 16-bit colour, see src/core/sprite_alpha.hpp) and the same id in 0x454 (shadow, flags 14, translucent). Both are drawn by the view:
+  shadow first, then body. Top-left draw position = object position - (sprite.ox, sprite.oy) (hotspot, header +0x14/+0x16) minus view origin (the +ox form in the first commit was wrong; verified against screenshots: 7 of 8 Marine-kind idle units matched pixel-wise with this and the right frame). Whether frame[6] adds to y is untested for ground units (always 0 there).
 - Sprite header: +4 w, +6 h, +8 flags, +0xc u16 palette id, +0x10/+0x12 cell size, +0x14/+0x16 ox/oy. Palette id < 4 means team palette: Pal.xbe number = id + 0x10 + teamcolor*4
   (from View code at 0x465a50; team colour = side object +8). Palette ids >= 4 are fixed palettes. Shade level comes from a per-tile light map (not decoded).
 - Type -> anim id from descriptor tables (valid after init): Marine 0x4ac430 stride 0x4c; Spider 0x4ae378/0x4c (anims rec[0], rec[2]); Building 0x49b538/0x508 (rec[0], 200..216, 300..316, 400..416);
@@ -32,3 +32,11 @@ Eyeball sheets: `tools/sprmap.py sheet GAME OUTDIR [type...]` (rows = slots, col
 ## Not done
 - Projectiles, effects, trees, decorations, corpses outside Anim, tiles from common.xbe/Tiles*.xbe; light map shading; per-class state tables for kinds 1,3-10 verified by code; screenshot comparison.
 - Team colour index assumed `teamcolor*4 + 0x10` (read from code, not compared with a screenshot).
+
+## Update 2: verified on screenshots (tools/zspr_run.sh + zspr_verify.py / zspr_scan.py)
+- Screen origin of the view for a map whose side-0 Start is (sx,sy): world px minus (sx*48-298, sy*48-300) (unclamped case). Units idle shade ~10 matched best (lightmap based, not exact).
+- Marine kind idle: sprite = anim slot 0 frame[dir], dir = object field +0x80 (verified on 8 types; match 0.5-0.9 given shading).
+- Catapult (kind 4, anim 10): object +0x74 = angle (0..255); idle frame = slot 0 frame ((angle+4)>>3)&31 (32 directions, verified).
+- Headtruck (kind 6, e.g. types 3,4,8,9,58,59,61,62): body anim (rec[0], anims 14/17) uses slot ((bodyAngle+4)>>3 & 31) + 1, bodyAngle = object +0x78; the weapon anim (rec[2], 50..54) idle uses slot 1 frame ((turretAngle+4)>>3 & 31),
+  turretAngle = object +0x7c; firing uses weapon slot dir32+2; back to slot 0 frame dir32 afterwards. Both verified pixel-exact (score 1.00) for 9 types. Pos fixed-point at +0x70/+0x74 (px<<8), px also at +0x24/+0x28.
+- Initial facing: Marine kind random (_rand&7); Headtruck and Truck random angle (&0xff).
