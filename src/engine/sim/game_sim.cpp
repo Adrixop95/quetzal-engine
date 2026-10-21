@@ -451,6 +451,7 @@ void GameSim::tick(World& w) {
     script_.tick(*this, w);
   }
   economy(w);
+  run_ai(w);
   run_orders(w);
   mover_->tick();
   sync_movement(w);

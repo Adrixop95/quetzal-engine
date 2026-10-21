@@ -51,3 +51,14 @@ Legenda: **V** = zweryfikowane w oryginale (kod lub zrzut), **M** = zmierzone na
 | `addMoney/takeMoney`, `printString`, `centerView`, `cameraActivate(i,v)` (skok do `Camera#`), `victory/defeat` | P | koniec misji tylko dla strony lokalnej |
 | `boat(N).activate`, `johnka(N).enable`, `submarine(N).go`, `buildCommand`, `moveCommand`, `cameraDeactivate` | nie zrobione | liczone jako `unsupported` |
 | Obrony z `[SideN] Defence#` pojawiają się jako obiekty (wieże), `defence(N).valid` = żyje | P | |
+
+## Komputer (AI, `sim/ai.cpp`) - szkielet
+| Reguła | Stan | Uwagi |
+|---|---|---|
+| Strony `OnlyComp=1` (nie lokalne, nie neutralne) sterowane przez AI | P | |
+| Dochód pasywny +60 co 300 tików | M | `docs/rules_types.md` (obserwacja na `zeco1`) |
+| Zakup jednostki co 56 tików, gdy kolejka pusta, losowa pozycja ze stać (deterministyczny RNG) | M (okres) / P (wybór) | oryginał: 161 za piechura (niewyjaśnione) |
+| Limit jednostek AI 80 | P | |
+| Obrona: trafiony budynek -> bezczynne jednostki w promieniu 10 kafli idą (AttackMove) do napastnika | P | |
+| Ataki fal | skrypt `.scn` (`attackTown`, `moveTo`, ścieżki) | AI sama nie planuje ataków |
+| `Tendency`, `BuildSpeed`, `Difficulty` z `.mp` | brak wpływu | gra ich nie czyta / wpływ niezmierzony |

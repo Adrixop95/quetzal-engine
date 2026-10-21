@@ -64,6 +64,7 @@ class GameSim : public Simulation {
   void run_orders(World& w);
   void sync_movement(World& w);
   void update_fog(World& w);
+  void run_ai(World& w);   // sim/ai.cpp
   void kill(World& w, Object& o);
   uint32_t spawn(World& w, int type, int side, int px, int py, int hp, bool constructing);
   void attach_agent(Object& o);
