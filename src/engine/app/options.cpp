@@ -21,6 +21,7 @@ const char* usage_text() {
          "  --no-panel         no original right-hand panel\n"
          "  --no-light         no time-of-day tint;  --time T  fixed day clock (0..7199)\n"
          "  --rules-dir DIR    docs/data CSVs for the game rules;  --no-sim  no game logic\n"
+         "  --script FILE      playtest script: synthetic clicks/keys, screenshots, expectations (virtual time)\n"
          "  --no-edge-scroll   disable edge scrolling;  --no-hud  hide the info overlay;  --help-overlay  show key help\n"
          "  --palette N --shade N   terrain palette/shade override\n"
          "  --screenshot FILE.png  render --frames N frames (default 5), save PNG and exit\n"
@@ -63,6 +64,7 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     else if (a == "--no-fog") o.fog = false;
     else if (a == "--rules-dir") { if (!next(v)) return false; o.rules_dir = v; }
     else if (a == "--no-sim") o.sim = false;
+    else if (a == "--script") { if (!next(v)) return false; o.script = v; }
     else if (a == "--cmd-move" || a == "--cmd-attack-move") { if (!next(v)) return false; if (std::sscanf(v, "%d,%d", &o.cmd_x, &o.cmd_y) != 2) { err = "bad " + a; return false; } o.cmd_attack_move = a != "--cmd-move"; }
     else if (a == "--select") { if (!next(v)) return false; if (std::sscanf(v, "%d,%d,%d,%d", &o.select_x0, &o.select_y0, &o.select_x1, &o.select_y1) != 4) { err = "bad --select"; return false; } }
     else if (a == "--no-light") o.light = false;

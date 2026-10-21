@@ -1,0 +1,17 @@
+# Basic gameplay smoke test: aztec_engine --game game 1 --size 1000x700 --script tests/playtest/basic.txt
+# (needs a display; exit status 3 when an expectation fails). Coordinates assume the 1000x700 window, scale-1 panel.
+expect money == 1500
+wait 3
+drag 150 150 560 450          # box-select the units on screen
+expect selection >= 2
+rclick 100 300                # right click = move there
+wait 3
+run 150
+shot /tmp/aztec_play_move.png
+click 850 262                 # first menu row: train a swordsman
+wait 3
+run 1200
+expect units 0 >= 11
+expect money == 1400
+print
+quit

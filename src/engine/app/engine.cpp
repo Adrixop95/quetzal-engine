@@ -10,6 +10,7 @@
 #include "engine/platform/clock.hpp"
 #include "engine/platform/input.hpp"
 #include "engine/platform/window.hpp"
+#include "engine/app/playtest.hpp"
 #include "engine/app/sheet.hpp"
 #include "engine/render/png.hpp"
 #include "engine/render/scene_renderer.hpp"
@@ -64,6 +65,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
 
   if (SDL_Init(SDL_INIT_VIDEO) != 0) { std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
   int rc = 0;
+  bool playtest_failed = false;
   {
     Window win;
     WindowOptions wo = o.window;
@@ -128,6 +130,14 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
     }
 
     Input in;
+    PlaytestScript playtest;
+    bool pt = false;
+    if (!o.script.empty()) {
+      if (!playtest.load(o.script, err)) { std::fprintf(stderr, "%s\n", err.c_str()); SDL_Quit(); return 1; }
+      pt = true;
+    }
+    auto GetMouse = [&](int* x, int* y) { if (pt) { *x = in.mx; *y = in.my; } else SDL_GetMouseState(x, y); };
+    std::string pending_shot;
     FixedStepper stepper;
     HudInfo hud;
     hud.show_help = o.help;
@@ -156,7 +166,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
     for (int i = 0; i < o.pre_ticks; i++) { world.begin_tick(); sim->tick(world); }
     while (!in.quit) {
       uint64_t now = SDL_GetPerformanceCounter();
-      double dt = double(now - last) / double(freq);
+      double dt = pt ? 1.0 / 12 : double(now - last) / double(freq);
       last = now;
       fps_acc += dt;
       fps_n++;
@@ -166,7 +176,17 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       float sx, sy;
       win.mouse_scale(sx, sy);
       SDL_Event e;
-      while (SDL_PollEvent(&e)) in.handle(e, sx, sy);
+      if (pt) {
+        sx = sy = 1;
+        in.focused = true; in.mouse_inside = false;   // no edge scrolling from the synthetic mouse
+        PlaytestRequest req;
+        bool more = playtest.step(in, world, game, req);
+        for (int i = 0; i < req.run_ticks; i++) { world.begin_tick(); sim->tick(world); }
+        if (!req.shot.empty()) pending_shot = req.shot;
+        if (!more || req.quit) in.quit = true;
+      } else {
+        while (SDL_PollEvent(&e)) in.handle(e, sx, sy);
+      }
       win.output_size(ow, oh);
       int ui = std::max(2, int(std::lround(oh / 360.0)));
       int cur_scale = std::max(1, int(std::lround(oh / 600.0)));
@@ -284,7 +304,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       }
       {
         int gx, gy;
-        SDL_GetMouseState(&gx, &gy);
+        GetMouse(&gx, &gy);
         cmdui.draw_ghost(win.renderer(), world, cam, int(gx * sx), int(gy * sy));
       }
       if (show_panel) {
@@ -301,7 +321,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
         std::string tip;
         {
           int mx2, my2;
-          SDL_GetMouseState(&mx2, &my2);
+          GetMouse(&mx2, &my2);
           mx2 = int(mx2 * sx); my2 = int(my2 * sy);
           if (mx2 < ow - panel.width()) {
             const Object* h = pick_object(world, cam.to_world_x(float(mx2)), cam.to_world_y(float(my2)), alpha, 24.f / cam.zoom + 8);
@@ -317,7 +337,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
         panel.draw(win.renderer(), scene.store(), scene.font(), gold, info, "");
         {
           int mx3, my3;
-          SDL_GetMouseState(&mx3, &my3);
+          GetMouse(&mx3, &my3);
           std::string mt = cmdui.draw_menu(win.renderer(), scene.font(), strings, world, panel.rect(), pscale, int(mx3 * sx), int(my3 * sy));
           if (!mt.empty()) tip = mt;
         }
@@ -327,7 +347,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       if (show_hud) draw_hud(win.renderer(), scene.font(), world, cam, hud, ui);
       // Cursor last, at the freshest mouse position.
       int cx, cy;
-      SDL_GetMouseState(&cx, &cy);
+      GetMouse(&cx, &cy);
       cx = int(cx * sx); cy = int(cy * sy);
       bool forced = !o.screenshot.empty() && o.cursor_x >= 0;
       if (forced) { cx = o.cursor_x; cy = o.cursor_y; }
@@ -342,6 +362,10 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       }
       if (visible && (o.screenshot.empty() || forced)) cursor.draw(win.renderer(), scene.store(), cx, cy, ck, cur_scale, SDL_GetTicks());
 
+      if (!pending_shot.empty()) {
+        std::printf(save_screenshot(win.renderer(), pending_shot) ? "saved %s\n" : "screenshot failed %s\n", pending_shot.c_str());
+        pending_shot.clear();
+      }
       frame++;
       if (!o.screenshot.empty() && frame >= o.frames) {
         if (!save_screenshot(win.renderer(), o.screenshot)) { std::fprintf(stderr, "screenshot failed\n"); rc = 1; }
@@ -356,8 +380,10 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
         if (spent < want) SDL_Delay(Uint32((want - spent) * 1000));
       }
     }
+    if (pt && playtest.failures() > 0) playtest_failed = true;
   }
   SDL_Quit();
+  if (playtest_failed) rc = 3;
   return rc;
 }
 
