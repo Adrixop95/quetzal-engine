@@ -49,7 +49,7 @@ for nm, base, st, n in D:
 # weapons: id -> (class, param), class data tables (static .rdata)
 rows = [[i] + list(rx(0x494d30 + 8 * i, 2, 'i')) for i in range(60)]
 w('weapons_ids.csv', ['weapon_id', 'class', 'param'], rows)
-WT = {'ball0': (0x48f868, 20, 5, 13), 'arrow1': (0x48f408, 64, 16, 8), 'axe3': (0x48f750, 24, 6, 4), 'w7': (0x494218, 36, 9, 8), 'w9': (0x493f60, 32, 8, 4),
-      'w12': (0x4906f0, 12, 3, 8), 'w2_13': (0x494a90, 56, 14, 12), 'w8': (0x4ae448, 16, 4, 4)}
+WT = {'ball0': (0x48f868, 20, 5, 7), 'arrow1': (0x48f408, 56, 14, 6), 'axe3': (0x48f750, 24, 6, 6), 'w7': (0x494218, 36, 9, 11), 'w9': (0x493f60, 32, 8, 4),
+      'w12': (0x4906f0, 12, 3, 6), 'w2_13': (0x494a90, 56, 14, 12), 'w8': (0x4ae448, 16, 4, 3)}
 for nm, (b, st, nw, n) in WT.items():
     w('weapon_class_%s.csv' % nm, ['param'] + ['d%d' % i for i in range(nw)], [[k] + list(rx(b + k * st, nw, 'i')) for k in range(n)])
