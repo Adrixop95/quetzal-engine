@@ -76,6 +76,22 @@ def cmd_json(game, heap, out):
               open(out, 'w'), separators=(',', ':'))
     print('types', len(types), 'anims', len(anims), 'sprites', len(spr))
 
+def decode40(b):
+    """Flag 0x40: palette-indexed RLE with optional alpha (c<0x80 skip, 0x80-0xBF solid 1 byte/px, >=0xC0 blended 2 bytes/px: index, alpha).
+    Rows hold (index, alpha) tuples or None."""
+    m, w, h, fl = struct.unpack_from('<IHHB', b, 0); ox, oy = struct.unpack_from('<hh', b, 0x14); rows = []
+    for r in range(h):
+        ao, bo = struct.unpack_from('<II', b, 0x18 + 8 * r); row = []; p = bo; i = ao
+        while len(row) < w:
+            c = b[i]; i += 1; n = c & 0x3f
+            if c < 0x80: row.extend([None] * c)
+            elif c < 0xc0:
+                for _ in range(n): row.append((b[p], 255)); p += 1
+            else:
+                for _ in range(n): row.append((b[p], b[p + 1])); p += 2
+        rows.append(row[:w])
+    return w, h, ox, oy, fl, rows
+
 def pal_for(game, pid, shade=14):
     d, g = xbe.load(os.path.join(game, 'Res/Pal.xbe'))
     p = {i: c for a, i, c in xbe.items(d, g) if a == 0x450 and c}[pid]
@@ -92,7 +108,9 @@ def cmd_sheet(game, outdir, heap, types):
     def img(sid):
         b = its.get((0x44c, sid))
         if not b or len(b) < 0x18: return None
-        w, h, ox, oy, fl, rows = sprite.decode(b); pid = struct.unpack_from('<H', b, 0xc)[0]
+        if b[8] & 0x40: w, h, ox, oy, fl, rows = decode40(b)
+        else: w, h, ox, oy, fl, rows = sprite.decode(b)
+        pid = struct.unpack_from('<H', b, 0xc)[0]
         if pid < 4: pid += 0x10 + 1 * 4   # team 1 palette block (assumed)
         if pid not in pals:
             try: pals[pid] = pal_for(game, pid)
@@ -101,7 +119,7 @@ def cmd_sheet(game, outdir, heap, types):
         for y, r in enumerate(rows):
             for x, v in enumerate(r):
                 if v is None: continue
-                im.putpixel((x, y), (pal[v] + (255,)) if fl & 0x40 == 0 else (((v >> 11) & 31) * 255 // 31, ((v >> 5) & 63) * 255 // 63, (v & 31) * 255 // 31, 255))
+                im.putpixel((x, y), (pal[v] + (255,)) if not (fl & 0x40) else (pal[v[0]] + (v[1],)))
         return im, ox, oy
     for e in T:
         if types and e['type'] not in types: continue
@@ -116,7 +134,7 @@ def cmd_sheet(game, outdir, heap, types):
                     r = img(sid)
                     if r:
                         im, ox, oy = r
-                        sheet.alpha_composite(im, (cx * CW + CW // 2 + ox, ry * CW + CW * 2 // 3 + oy)) if True else None
+                        sheet.alpha_composite(im, (cx * CW + CW // 2 - ox, ry * CW + CW * 2 // 3 - oy)) if True else None
             sheet.save(os.path.join(outdir, 't%02d_%s_a%d.png' % (e['type'], e['name'][4:], aid)))
 
 def cmd_hpp(game, heap, out):
