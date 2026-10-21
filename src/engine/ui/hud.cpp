@@ -11,6 +11,7 @@ const Object* pick_object(const World& w, float wx, float wy, float alpha, float
   const Object* best = nullptr;
   float bd = radius * radius;
   for (const Object& o : w.objects) {
+    if (o.removed || !o.alive) continue;
     Vec2f p = o.interpolated(alpha);
     float d = (p.x - wx) * (p.x - wx) + (p.y - wy) * (p.y - wy);
     if (d <= bd) { bd = d; best = &o; }

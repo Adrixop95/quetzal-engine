@@ -17,7 +17,8 @@
 #include "engine/ui/hud.hpp"
 #include "engine/ui/names.hpp"
 #include "engine/ui/panel.hpp"
-#include "engine/ui/rules_table.hpp"
+#include "engine/sim/game_sim.hpp"
+#include "engine/ui/commands_ui.hpp"
 #include "engine/ui/selection_ui.hpp"
 #include "core/strbase.hpp"
 #include "engine/ui/minimap.hpp"
@@ -88,16 +89,23 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
     Panel panel;
     bool show_panel = o.panel && panel.init(scene.store());
 
-    if (!sim) sim = o.wander ? std::unique_ptr<Simulation>(new WanderSimulation) : std::unique_ptr<Simulation>(new NullSimulation);
+    auto rules = std::make_shared<RulesData>();
+    bool rules_ok = false;
+    for (const std::string& rp : {o.rules_dir, o.game_dir + "/../docs/data", std::string("docs/data")})
+      if (!rp.empty() && (rules_ok = rules->load_dir(rp))) break;
+    if (!rules_ok) { rules->init_defaults(); std::fprintf(stderr, "note: docs/data not found, using placeholder rules\n"); }
+    GameSim* game = nullptr;
+    if (!sim) {
+      if (o.wander) sim = std::make_unique<WanderSimulation>();
+      else if (o.sim) { auto gs = std::make_unique<GameSim>(rules); game = gs.get(); sim = std::move(gs); }
+      else sim = std::make_unique<NullSimulation>();
+    }
+    CommandsUi cmdui(game);
     sim->init(world);
-    for (int i = 0; i < o.pre_ticks; i++) { world.begin_tick(); sim->tick(world); }
 
     StrBase strings;
     std::string sb = find_file_ci(o.game_dir + "/Res", "strbase.bds");
     if (sb.empty() || !strings.load(sb)) std::fprintf(stderr, "note: strbase.bds not loaded, using UGI names\n");
-    RulesTable rules;
-    for (const std::string& rp : {o.rules, o.game_dir + "/../docs/data/types.csv", std::string("docs/data/types.csv")})
-      if (!rp.empty() && rules.load(rp)) break;
     SelectionUi selui;
     Daylight daylight;
     bool use_light = o.light && daylight.load_from_exe(find_file_ci(o.game_dir, "Aztec.exe"));
@@ -132,6 +140,14 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
         if (ob.side == world.local_side && sx2 >= o.select_x0 && sx2 <= o.select_x1 && sy2 >= o.select_y0 && sy2 <= o.select_y1) world.selection.ids.push_back(ob.id);
       }
     }
+    if (game && o.cmd_x >= 0) {  // --cmd-move / --cmd-attack-move: order the selection (screenshot / smoke tests)
+      Command c;
+      c.type = o.cmd_attack_move ? Pct::AttackMove : Pct::Move;
+      c.side = uint8_t(world.local_side); c.a = o.cmd_x * kTilePx + kTilePx / 2; c.b = o.cmd_y * kTilePx + kTilePx / 2;
+      c.ids = world.selection.ids;
+      game->submit(c);
+    }
+    for (int i = 0; i < o.pre_ticks; i++) { world.begin_tick(); sim->tick(world); }
     while (!in.quit) {
       uint64_t now = SDL_GetPerformanceCounter();
       double dt = double(now - last) / double(freq);
@@ -210,7 +226,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       }
       ci.move_x = std::clamp(ci.move_x, -1.f, 1.f);
       ci.move_y = std::clamp(ci.move_y, -1.f, 1.f);
-      bool pan = in.buttons[SDL_BUTTON_MIDDLE] || in.buttons[SDL_BUTTON_RIGHT];
+      bool pan = in.buttons[SDL_BUTTON_MIDDLE] || cmdui.right_dragging();
       ci.dragging = pan;
       ci.drag_dx = float(in.dx);
       ci.drag_dy = float(in.dy);
@@ -220,7 +236,8 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       // Selection (left button in the world view).
       {
         bool in_world = !on_mm && !on_panel && !drag_minimap && !pan;
-        selui.update(in, world, cam, alpha, in_world);
+        cmdui.update(in, world, cam, alpha, minimap, in_world, show_panel ? panel.rect() : SDL_Rect{ow, 0, 0, oh});
+        selui.update(in, world, cam, alpha, in_world && !cmdui.wants_left_click());
       }
       cam.update(ci, float(std::min(dt, 0.1)));
       if (drag_minimap) {
@@ -241,6 +258,11 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       hud.mouse_x = in.mx; hud.mouse_y = in.my; hud.alpha = alpha;
       hud.sprites = scene.stats.sprites; hud.placeholders = scene.stats.placeholders; hud.geometry_calls = scene.stats.geometry_calls;
       selui.draw_box(win.renderer());
+      {
+        int gx, gy;
+        SDL_GetMouseState(&gx, &gy);
+        cmdui.draw_ghost(win.renderer(), world, cam, int(gx * sx), int(gy * sy));
+      }
       if (show_panel) {
         int gold = 0;
         for (const SideDef& sd : world.mission.sides) if (sd.index == world.local_side) gold = sd.money;
@@ -261,12 +283,21 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
             const Object* h = pick_object(world, cam.to_world_x(float(mx2)), cam.to_world_y(float(my2)), alpha, 24.f / cam.zoom + 8);
             if (h && h->type >= 0) {
               tip = type_display_name(strings, h->type);
-              TypeCost c = rules.cost(h->type);
-              if (c.price >= 0 && strings.entry(217)) tip = format_game_string(strings.get(217), tip, std::to_string(c.price), std::to_string(c.time));
+              const TypeRules& tr = rules->type(h->type);
+              if (tr.price > 0 && strings.entry(217)) tip = format_game_string(strings.get(217), tip, std::to_string(tr.price), std::to_string(tr.time));
             }
           }
         }
-        panel.draw(win.renderer(), scene.store(), scene.font(), gold, info, tip);
+        const SideState* mss = world.local_side < int(world.side_state.size()) ? &world.side_state[world.local_side] : nullptr;
+        if (mss) gold = mss->money;
+        panel.draw(win.renderer(), scene.store(), scene.font(), gold, info, "");
+        {
+          int mx3, my3;
+          SDL_GetMouseState(&mx3, &my3);
+          std::string mt = cmdui.draw_menu(win.renderer(), scene.font(), strings, world, panel.rect(), pscale, int(mx3 * sx), int(my3 * sy));
+          if (!mt.empty()) tip = mt;
+        }
+        if (!tip.empty()) panel.draw_tooltip(win.renderer(), scene.font(), tip);
         minimap.draw(win.renderer(), cam, alpha, &scene.fog());
       }
       if (show_hud) draw_hud(win.renderer(), scene.font(), world, cam, hud, ui);
@@ -280,6 +311,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       CursorKind ck = CursorKind::Arrow;
       if (pan) ck = CursorKind::Pan;
       else if (edge_dx || edge_dy) ck = Cursor::scroll_kind(edge_dx, edge_dy);
+      else if (cmdui.attack_move()) ck = CursorKind::Attack;
       else if (!on_mm && !(show_panel && cx >= ow - panel.width())) {
         const Object* h = pick_object(world, cam.to_world_x(float(cx)), cam.to_world_y(float(cy)), alpha, 24.f / cam.zoom + 8);
         if (h && h->side != world.local_side) ck = CursorKind::Attack;

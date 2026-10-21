@@ -29,6 +29,7 @@ bool load_world(const GameData& data, const std::string& spec, World& w, std::st
     o.side = p.side;
     o.hp = p.hp;
     o.facing = 6;  // south
+    o.hp_max = p.hp;
     o.anim_variant = o.id * 2654435761u >> 8;
     o.teleport(tile_center_fixed(p.x), tile_center_fixed(p.y));
     w.objects.push_back(o);
@@ -46,6 +47,9 @@ bool load_world(const GameData& data, const std::string& spec, World& w, std::st
     o.teleport(tile_center_fixed(t.x), tile_center_fixed(t.y));
     w.objects.push_back(o);
   }
+  w.side_state.assign(8, SideState{});
+  for (const SideDef& sd : w.mission.sides)
+    if (sd.index >= 0 && sd.index < int(w.side_state.size())) w.side_state[sd.index].money = sd.money;
   return true;
 }
 

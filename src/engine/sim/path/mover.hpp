@@ -35,6 +35,7 @@ struct Agent {
   // diagnostics / stuck handling
   Vec2 win_start; int win_ticks = 0; int stuck_level = 0; int squeeze_ticks = 0; int ghost_ticks = 0;
   u32 moved_ticks = 0;
+  Vec2 target; u64 target_until = 0; int backoff_ticks = 0;   // cached steering target (recomputed every few ticks)
 };
 
 class MoveSystem {

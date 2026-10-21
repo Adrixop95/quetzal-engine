@@ -1,0 +1,500 @@
+#include "engine/sim/game_sim.hpp"
+
+#include <algorithm>
+#include <cstdlib>
+
+#include "engine/world/type_info.hpp"
+
+namespace aztec::engine {
+
+namespace {
+constexpr int kAnimIdle = 0, kAnimMove = 1, kAnimAttack = 2, kAnimDie = 3;
+inline int px(Fixed f) { return f >> 8; }
+inline int64_t d2(const Object& a, const Object& b) {
+  int64_t dx = px(a.cur_x) - px(b.cur_x), dy = px(a.cur_y) - px(b.cur_y);
+  return dx * dx + dy * dy;
+}
+// 8-direction facing from a vector: 0 = east, counter-clockwise (2 = north), as used by the animation tables.
+int facing_from(int dx, int dy) {
+  if (dx == 0 && dy == 0) return -1;
+  int a = path::angle_of(dx, dy);          // 256-step, 0 = +x, clockwise on screen (64 = down)
+  return ((256 - a + 16) >> 5) & 7;
+}
+}  // namespace
+
+GameSim::GameSim(std::shared_ptr<const RulesData> rules) : rules_(std::move(rules)) {}
+
+void GameSim::footprint(const TypeRules& r, int tx, int ty, int& x0, int& y0, int& x1, int& y1) {
+  x0 = tx - (r.foot_w - 1) / 2; x1 = x0 + r.foot_w - 1;
+  y0 = ty - (r.foot_h - 1) / 2; y1 = y0 + r.foot_h - 1;
+}
+
+void GameSim::attach_agent(Object& o) {
+  const TypeRules& r = rules_->type(o.type);
+  if (!r.mobile || r.flier || !mover_) { o.mover = -1; return; }
+  o.mover = int32_t(mover_->add_agent({o.cur_x, o.cur_y}, r.radius_px * 256, std::max(256, r.speed),
+                                      r.large ? path::MoveClass::Large : path::MoveClass::Small));
+}
+
+void GameSim::init(World& w) {
+  tick_ = 0;
+  nav_ = path::NavGrid();
+  if (w.passability.w == w.terrain.w && w.passability.h == w.terrain.h && !w.passability.v.empty())
+    nav_.load_dat(w.passability.w, w.passability.h, w.passability.v.data());
+  else
+    nav_.reset(w.terrain.w, w.terrain.h);
+  mover_ = std::make_unique<path::MoveSystem>(nav_);
+  if (w.side_state.size() < 8) w.side_state.resize(8);
+  // largest mission hp per type = fallback maximum
+  std::vector<int> seen(kNumTypes, 0);
+  for (const Object& o : w.objects)
+    if (o.type >= 0 && o.type < kNumTypes) seen[o.type] = std::max(seen[o.type], o.hp);
+  for (Object& o : w.objects) {
+    if (o.type < 0) { o.alive = true; continue; }
+    const TypeRules& r = rules_->type(o.type);
+    o.hp_max = r.hp_src == Src::Verified ? r.hp_max : std::max(seen[o.type], r.structure ? r.hp_max : 1);
+    if (o.hp <= 0) o.hp = o.hp_max;
+    o.progress = 1000;
+    attach_agent(o);
+    if (r.structure) {
+      int x0, y0, x1, y1;
+      footprint(r, px(o.cur_x) / kTilePx, px(o.cur_y) / kTilePx, x0, y0, x1, y1);
+      nav_.add_block(x0, y0, x1 - x0 + 1, y1 - y0 + 1, +1);
+    }
+  }
+}
+
+int GameSim::town_index(const World& w, int side) const {
+  for (size_t i = 0; i < w.mission.towns.size(); i++)
+    if (w.mission.towns[i].side == side) return int(i);
+  return -1;
+}
+
+uint32_t GameSim::spawn(World& w, int type, int side, int pxx, int pyy, int hp, bool constructing) {
+  Object o;
+  o.id = uint32_t(w.objects.size() + 1);
+  o.type = type;
+  o.side = side;
+  o.source = ObjectSource::Team;
+  o.facing = 6;
+  const TypeRules& r = rules_->type(type);
+  o.hp_max = r.hp_max > 0 ? r.hp_max : std::max(hp, 1);
+  o.hp = hp > 0 ? hp : o.hp_max;
+  o.anim_variant = next_rand();
+  o.teleport(to_fixed(pxx), to_fixed(pyy));
+  if (constructing) {
+    o.progress = 0; o.build_elapsed = 0; o.build_total = std::max(1, r.time);
+    o.hp = 1;
+    o.anim_state = kAnimConstruct;
+  }
+  w.objects.push_back(o);
+  Object& ref = w.objects.back();
+  attach_agent(ref);
+  if (r.structure) {
+    int x0, y0, x1, y1;
+    footprint(r, pxx / kTilePx, pyy / kTilePx, x0, y0, x1, y1);
+    nav_.add_block(x0, y0, x1 - x0 + 1, y1 - y0 + 1, +1);
+  }
+  return ref.id;
+}
+
+void GameSim::kill(World& w, Object& o) {
+  (void)w;
+  if (!o.alive) return;
+  o.alive = false;
+  o.hp = 0;
+  o.order = uint8_t(Order::Idle);
+  o.target = 0;
+  o.corpse_ticks = 0;
+  const TypeRules& r = rules_->type(o.type);
+  if (r.structure) {
+    int x0, y0, x1, y1;
+    footprint(r, px(o.cur_x) / kTilePx, px(o.cur_y) / kTilePx, x0, y0, x1, y1);
+    nav_.add_block(x0, y0, x1 - x0 + 1, y1 - y0 + 1, -1);
+    o.removed = true;  // no destruction animation yet
+    return;
+  }
+  o.anim_state = kAnimDie;
+  o.anim_tick = 0;
+  if (o.mover >= 0) {
+    mover_->stop(uint32_t(o.mover));
+    path::Agent& a = mover_->agents_mut()[size_t(o.mover)];
+    a.radius = 0;   // corpses do not block
+    a.hold = true;
+  }
+}
+
+const Object* GameSim::nearest_enemy(const World& w, const Object& o, int radius_px) const {
+  const Object* best = nullptr;
+  int64_t bd = int64_t(radius_px) * radius_px;
+  for (const Object& t : w.objects) {
+    if (t.removed || !t.alive || t.type < 0 || t.side == o.side || t.progress < 1000) continue;
+    bool neutral = false;
+    for (const SideDef& s : w.mission.sides) if (s.index == t.side && s.neutral) neutral = true;
+    if (neutral) continue;
+    int64_t d = d2(o, t);
+    if (d < bd || (d == bd && best && t.id < best->id)) { bd = d; best = &t; }
+  }
+  return best;
+}
+
+// ---- commands ----------------------------------------------------------------------------------------------------
+
+void GameSim::apply(World& w, const Command& c) {
+  auto own_ids = [&](bool need_mobile) {
+    std::vector<Object*> v;
+    for (uint32_t id : c.ids) {
+      Object* o = w.find_mut(id);
+      if (!o || o->removed || !o->alive || o->side != c.side || o->type < 0) continue;
+      const TypeRules& r = rules_->type(o->type);
+      if (need_mobile && !(r.mobile || r.flier)) continue;
+      v.push_back(o);
+    }
+    return v;
+  };
+  SideState* ss = c.side < w.side_state.size() ? &w.side_state[c.side] : nullptr;
+  switch (c.type) {
+    case Pct::PauseOn: paused_ = true; break;
+    case Pct::PauseOff: paused_ = false; break;
+    case Pct::Move:
+    case Pct::AttackMove: {
+      std::vector<Object*> v = own_ids(true);
+      std::vector<uint32_t> agents;
+      for (Object* o : v) {
+        o->order = uint8_t(c.type == Pct::Move ? Order::Move : Order::AttackMove);
+        o->dest_x = c.a; o->dest_y = c.b; o->target = 0; o->resume = 0;
+        if (o->mover >= 0) agents.push_back(uint32_t(o->mover));
+      }
+      if (!agents.empty()) mover_->order_move(agents.data(), int(agents.size()), {to_fixed(c.a), to_fixed(c.b)});
+      break;
+    }
+    case Pct::Attack: {
+      const Object* t = w.find(uint32_t(c.a));
+      if (!t || t->removed || !t->alive) break;
+      for (Object* o : own_ids(true)) {
+        if (o->id == t->id || !rules_->type(o->type).armed) continue;
+        o->order = uint8_t(Order::Attack); o->target = t->id; o->resume = 0;
+      }
+      break;
+    }
+    case Pct::Stop:
+      for (Object* o : own_ids(true)) {
+        o->order = uint8_t(Order::Idle); o->target = 0; o->resume = 0;
+        if (o->mover >= 0) mover_->stop(uint32_t(o->mover));
+      }
+      break;
+    case Pct::DestroyHere:
+      for (Object* o : own_ids(false)) kill(w, *o);
+      break;
+    case Pct::CreateGroup:
+    case Pct::AddToGroup:
+      if (ss && c.a >= 0 && c.a < 10) {
+        std::vector<uint32_t>& g = ss->groups[c.a];
+        if (c.type == Pct::CreateGroup) g.clear();
+        for (Object* o : own_ids(false))
+          if (std::find(g.begin(), g.end(), o->id) == g.end()) g.push_back(o->id);
+      }
+      break;
+    case Pct::PauseBuild: if (ss) ss->build_paused = c.a != 0; break;
+    case Pct::QueueKill:
+      if (ss && c.a >= 0 && c.a < int(ss->queue.size())) {
+        ss->money += rules_->type(ss->queue[size_t(c.a)].type).price;  // refund (placeholder: full)
+        ss->queue.erase(ss->queue.begin() + c.a);
+      }
+      break;
+    case Pct::Build: {
+      if (!ss) break;
+      const char* why = "";
+      const std::vector<MenuItem> items = menu(w, c.side);
+      const MenuItem* mi = nullptr;
+      for (const MenuItem& m : items) if (m.type == c.a) mi = &m;
+      if (!mi || !mi->enabled) break;
+      if (mi->construct) {
+        if (!can_place(w, c.side, c.a, c.b, c.c, &why)) break;
+        ss->money -= mi->price;
+        spawn(w, c.a, c.side, c.b * kTilePx + kTilePx / 2, c.c * kTilePx + kTilePx / 2, 0, true);
+      } else if (ss->queue.size() < 8) {
+        ss->money -= mi->price;
+        ss->queue.push_back({c.a, std::max(1, mi->time), std::max(1, mi->time)});
+      }
+      break;
+    }
+    default: break;  // Garrison, RepairMode, AttackMode, BuildMode, SelectGroup, ...: recorded but not implemented
+  }
+}
+
+// ---- economy -----------------------------------------------------------------------------------------------------
+
+bool GameSim::menu_ok(const World& w, int side, const BuildItem& it, const char** why) const {
+  const SideDef* sd = nullptr;
+  for (const SideDef& s : w.mission.sides) if (s.index == side) sd = &s;
+  if (sd && std::find(sd->disabled.begin(), sd->disabled.end(), it.type) != sd->disabled.end()) { *why = "disabled"; return false; }
+  for (int need : it.prereq) {
+    bool have = false;
+    for (const Object& o : w.objects)
+      if (!o.removed && o.alive && o.side == side && o.type == need && o.progress >= 1000) { have = true; break; }
+    if (!have) { *why = "needs building"; return false; }
+  }
+  const TypeRules& r = rules_->type(it.type);
+  if (side < 0 || side >= int(w.side_state.size()) || w.side_state[side].money < r.price) { *why = "no gold"; return false; }
+  return true;
+}
+
+std::vector<MenuItem> GameSim::menu(const World& w, int side) const {
+  std::vector<MenuItem> out;
+  int ti = town_index(w, side);
+  if (ti < 0) return out;
+  const TownDef& t = w.mission.towns[size_t(ti)];
+  for (const BuildItem& it : rules_->build_list(t.race, t.type)) {
+    const TypeRules& r = rules_->type(it.type);
+    if (r.structure && !it.construct) continue;    // town upgrades: not implemented
+    MenuItem m;
+    m.type = it.type; m.construct = it.construct; m.price = r.price; m.time = r.time;
+    const char* why = "";
+    m.enabled = menu_ok(w, side, it, &why);
+    m.why_not = why;
+    out.push_back(m);
+  }
+  return out;
+}
+
+bool GameSim::can_place(const World& w, int side, int type, int tx, int ty, const char** why) const {
+  (void)side;
+  const TypeRules& r = rules_->type(type);
+  int x0, y0, x1, y1;
+  footprint(r, tx, ty, x0, y0, x1, y1);
+  for (int y = y0; y <= y1; y++)
+    for (int x = x0; x <= x1; x++)
+      if (!nav_.in_bounds(x, y) || nav_.blocked(x, y, path::MoveClass::Large)) {
+        if (why) *why = "blocked";
+        return false;
+      }
+  (void)w;
+  return true;
+}
+
+void GameSim::economy(World& w) {
+  for (size_t s = 0; s < w.side_state.size(); s++) {
+    SideState& ss = w.side_state[s];
+    if (!ss.queue.empty() && !ss.build_paused) {
+      QueueItem& q = ss.queue.front();
+      if (--q.remaining <= 0) {
+        int type = q.type;
+        ss.queue.erase(ss.queue.begin());
+        int ti = town_index(w, int(s));
+        int bx = 0, by = 0, fh = 2;
+        bool found = false;
+        if (ti >= 0) {
+          const TownDef& t = w.mission.towns[size_t(ti)];
+          int tb = rules_->town_building(t.type, t.race);
+          for (const Object& o : w.objects)
+            if (!o.removed && o.alive && o.side == int(s) && o.type == tb) { bx = px(o.cur_x); by = px(o.cur_y); fh = rules_->type(tb).foot_h; found = true; break; }
+        }
+        if (!found) { for (const SideDef& sd : w.mission.sides) if (sd.index == int(s)) { bx = sd.start_x * kTilePx + 24; by = sd.start_y * kTilePx + 24; } }
+        int slot = int(spawn_counter_++ % 5);
+        spawn(w, type, int(s), bx + (slot - 2) * 26, by + fh * 24 + 40, 0, false);
+      }
+    }
+  }
+  // construction progress and placeholder income
+  for (Object& o : w.objects) {
+    if (o.removed || !o.alive || o.type < 0) continue;
+    const TypeRules& r = rules_->type(o.type);
+    if (!r.structure) continue;
+    if (o.progress < 1000) {
+      o.build_elapsed++;
+      o.progress = std::min(1000, o.build_elapsed * 1000 / std::max(1, o.build_total));
+      o.hp = std::max(1, int(int64_t(o.hp_max) * o.progress / 1000));
+      if (o.progress >= 1000) { o.anim_state = kAnimIdle; o.anim_tick = 0; }
+    } else if (o.side >= 0 && o.side < int(w.side_state.size()) && tick_ % kIncomeEvery == 0) {
+      const char* n = type_info(o.type) ? type_info(o.type)->name : "";
+      int gain = 0;
+      if (std::string(n).find("_MINE") != std::string::npos) gain = 4;       // PLACEHOLDER (Harvest.cpp not decoded)
+      else if (std::string(n).find("_FARM") != std::string::npos) gain = 1;  // PLACEHOLDER
+      w.side_state[o.side].money += gain;
+    }
+  }
+}
+
+// ---- orders, combat ----------------------------------------------------------------------------------------------
+
+void GameSim::run_orders(World& w) {
+  for (size_t i = 0; i < w.objects.size(); i++) {
+    Object& o = w.objects[i];
+    if (o.removed || o.type < 0) continue;
+    if (!o.alive) {
+      if (++o.corpse_ticks > kCorpseTicks) { o.removed = true; }
+      continue;
+    }
+    const TypeRules& r = rules_->type(o.type);
+    if (o.cooldown > 0) o.cooldown--;
+    if (o.progress < 1000) continue;
+    path::Agent* ag = o.mover >= 0 ? &mover_->agents_mut()[size_t(o.mover)] : nullptr;
+    bool moving = ag && ag->state == path::AgentState::Moving;
+
+    if (o.order == uint8_t(Order::Move) && !moving) {
+      if (r.flier) {
+        int dx = o.dest_x - px(o.cur_x), dy = o.dest_y - px(o.cur_y);
+        int64_t dist2 = int64_t(dx) * dx + int64_t(dy) * dy;
+        int step = std::max(1, r.speed >> 8);
+        if (dist2 <= int64_t(step) * step) { o.cur_x = to_fixed(o.dest_x); o.cur_y = to_fixed(o.dest_y); o.order = uint8_t(Order::Idle); }
+        else {
+          path::Vec2 v = path::with_length({dx * 256, dy * 256}, r.speed);
+          o.cur_x += v.x; o.cur_y += v.y;
+          int f = facing_from(dx, dy); if (f >= 0) o.facing = uint8_t(f);
+          o.set_anim(kAnimMove);
+        }
+      } else {
+        o.order = uint8_t(Order::Idle);
+      }
+    }
+    if (o.order == uint8_t(Order::AttackMove) && ag && !moving) o.order = uint8_t(Order::Idle);
+
+    if (!r.armed) continue;
+    // acquire targets: idle units and attack-moving units react to enemies in sight
+    if (o.order == uint8_t(Order::Idle) || o.order == uint8_t(Order::AttackMove)) {
+      if ((tick_ + o.id) % 4 == 0) {
+        if (const Object* e = nearest_enemy(w, o, r.sight_px)) {
+          o.resume = o.order == uint8_t(Order::AttackMove) ? 1 : 0;
+          o.order = uint8_t(Order::Attack);
+          o.target = e->id;
+        }
+      }
+    }
+    if (o.order != uint8_t(Order::Attack)) continue;
+    Object* t = w.find_mut(o.target);
+    if (!t || t->removed || !t->alive) {
+      o.target = 0;
+      if (o.resume && ag) {
+        o.order = uint8_t(Order::AttackMove); o.resume = 0;
+        uint32_t aid = uint32_t(o.mover);
+        mover_->order_move(&aid, 1, {to_fixed(o.dest_x), to_fixed(o.dest_y)});
+      } else {
+        o.order = uint8_t(Order::Idle);
+      }
+      continue;
+    }
+    const TypeRules& tr = rules_->type(t->type);
+    int treach = tr.structure ? std::max(tr.foot_w, tr.foot_h) * 24 : tr.radius_px;
+    int64_t reach = int64_t(r.range_px) + treach;
+    if (d2(o, *t) <= reach * reach) {
+      if (ag && moving) mover_->stop(uint32_t(o.mover));
+      int f = facing_from(px(t->cur_x) - px(o.cur_x), px(t->cur_y) - px(o.cur_y));
+      if (f >= 0) o.facing = uint8_t(f);
+      if (o.cooldown == 0) {
+        DuelEntry de;
+        int dmg = r.dmg, rel = r.reload;
+        if (rules_->has_duel(o.type, t->type, de)) { dmg = de.dmg; rel = de.interval; }
+        o.cooldown = std::max(1, rel);
+        o.anim_state = kAnimAttack; o.anim_tick = 0;
+        t->hp -= dmg;
+        if (t->hp <= 0) kill(w, *t);
+      }
+    } else if (ag && ((tick_ + o.id) % 6 == 0 || !moving)) {
+      uint32_t aid = uint32_t(o.mover);
+      mover_->order_move(&aid, 1, {t->cur_x, t->cur_y});
+    }
+  }
+}
+
+void GameSim::sync_movement(World& w) {
+  for (Object& o : w.objects) {
+    if (o.removed || o.mover < 0) continue;
+    const path::Agent& a = mover_->agents()[size_t(o.mover)];
+    if (!o.alive) { continue; }
+    o.cur_x = a.pos.x; o.cur_y = a.pos.y;
+    bool mv = a.state == path::AgentState::Moving;
+    if (mv) {
+      int f = facing_from(a.vel.x, a.vel.y);
+      if (f >= 0) o.facing = uint8_t(f);
+    }
+    bool shooting = o.anim_state == kAnimAttack && o.anim_tick < 8;
+    if (!shooting) o.set_anim(mv ? kAnimMove : kAnimIdle);
+  }
+}
+
+// Per-side fog layers (.vis): tiles within sight of a living own object become lit (0); tiles that were lit and are no
+// longer seen stay "explored" (96). Unexplored = 152. Sight radius is a placeholder (docs/engine_rules_status.md).
+void GameSim::update_fog(World& w) {
+  int mw = w.terrain.w, mh = w.terrain.h;
+  bool changed = false;
+  for (size_t side = 0; side < w.visibility.sides.size(); side++) {
+    VisFile::Layer& l = w.visibility.sides[side];
+    if (l.w != mw || l.h != mh || l.v.size() < size_t(mw) * mh) continue;
+    std::vector<uint8_t> seen(size_t(mw) * mh, 0);
+    for (const Object& o : w.objects) {
+      if (o.removed || !o.alive || o.type < 0 || o.side != int(side) || o.progress < 1000) continue;
+      int rad = (rules_->type(o.type).structure ? 8 * kTilePx : rules_->type(o.type).sight_px) / kTilePx;
+      int cx = px(o.cur_x) / kTilePx, cy = px(o.cur_y) / kTilePx;
+      for (int y = std::max(0, cy - rad); y <= std::min(mh - 1, cy + rad); y++)
+        for (int x = std::max(0, cx - rad); x <= std::min(mw - 1, cx + rad); x++)
+          if ((x - cx) * (x - cx) + (y - cy) * (y - cy) <= rad * rad) seen[size_t(y) * mw + x] = 1;
+    }
+    for (size_t i = 0; i < seen.size(); i++) {
+      uint8_t nv = seen[i] ? 0 : (l.v[i] == 0 ? 96 : l.v[i]);
+      if (nv != l.v[i]) { l.v[i] = nv; changed = true; }
+    }
+  }
+  if (changed) w.fog_version++;
+}
+
+void GameSim::tick(World& w) {
+  w.tick++;
+  tick_++;
+  std::stable_sort(pending_.begin(), pending_.end(), [](const Command& a, const Command& b) { return a.side < b.side; });
+  for (Command& c : pending_) {
+    log_.push_back({tick_, c});
+    apply(w, c);
+  }
+  pending_.clear();
+  if (paused_) return;
+  economy(w);
+  run_orders(w);
+  mover_->tick();
+  sync_movement(w);
+  if (tick_ % 4 == 0) update_fog(w);
+}
+
+void GameSim::teleport(World& w, uint32_t id, int pxx, int pyy) {
+  Object* o = w.find_mut(id);
+  if (!o) return;
+  o->teleport(to_fixed(pxx), to_fixed(pyy));
+  if (o->mover >= 0) {
+    path::Agent& a = mover_->agents_mut()[size_t(o->mover)];
+    a.pos = a.prev_pos = a.win_start = {to_fixed(pxx), to_fixed(pyy)};
+  }
+}
+
+uint64_t GameSim::state_hash(const World& w) const {
+  uint64_t h = 1469598103934665603ull;
+  auto mix = [&](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
+  mix(tick_); mix(rng_); mix(paused_);
+  for (const Object& o : w.objects) {
+    mix(o.id); mix(uint32_t(o.type)); mix(uint32_t(o.side)); mix(uint32_t(o.hp)); mix(uint32_t(o.cur_x)); mix(uint32_t(o.cur_y));
+    mix(o.order); mix(o.target); mix(uint32_t(o.cooldown)); mix(o.alive); mix(o.removed); mix(uint32_t(o.progress));
+    mix(o.facing); mix(o.anim_state); mix(uint32_t(o.corpse_ticks));
+  }
+  for (const SideState& s : w.side_state) {
+    mix(uint32_t(s.money));
+    for (const QueueItem& q : s.queue) { mix(uint32_t(q.type)); mix(uint32_t(q.remaining)); }
+    for (const auto& g : s.groups) { mix(g.size()); for (uint32_t id : g) mix(id); }
+  }
+  for (const VisFile::Layer& l : w.visibility.sides) { uint64_t sum = 0; for (uint8_t v : l.v) sum = sum * 31 + v; mix(sum); }
+  if (mover_) mix(mover_->state_hash());
+  return h;
+}
+
+std::unique_ptr<GameSim> GameSim::replay(World& fresh, std::shared_ptr<const RulesData> rules, const std::vector<LoggedCommand>& log,
+                                         uint64_t until_tick) {
+  auto sim = std::make_unique<GameSim>(std::move(rules));
+  sim->init(fresh);
+  size_t i = 0;
+  for (uint64_t t = 1; t <= until_tick; t++) {
+    while (i < log.size() && log[i].tick == t) sim->submit(log[i++].cmd);
+    fresh.begin_tick();
+    sim->tick(fresh);
+  }
+  return sim;
+}
+
+}  // namespace aztec::engine

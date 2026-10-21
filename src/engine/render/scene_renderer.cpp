@@ -112,6 +112,7 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
   items.reserve(world_.objects.size() + 256);
   float pad = 96;
   for (const Object& o : world_.objects) {
+    if (o.removed) continue;
     Vec2f p = o.interpolated(alpha);
     if (p.x < cam.x - pad || p.y < cam.y - pad || p.x > cam.x + cam.visible_w() + pad || p.y > cam.y + cam.visible_h() + pad) continue;
     if (!visible_in_fog(o, p)) continue;
@@ -245,6 +246,7 @@ ObjectState SceneRenderer::object_state(const Object& o) const {
   st.anim_state = o.anim_state;
   st.anim_tick = o.anim_tick;
   st.anim_variant = o.anim_variant;
+  st.progress = o.progress;
   return st;
 }
 

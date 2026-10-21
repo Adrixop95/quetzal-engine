@@ -9,7 +9,7 @@ void rect(Course& c, int x0, int y0, int x1, int y1, u8 v = 0) {
 }  // namespace
 
 const std::vector<std::string>& course_names() {
-  static const std::vector<std::string> n = {"open", "gap1", "gap2", "gap4", "corr1", "corr2", "maze", "utrap", "wall", "rooms", "swap", "diag", "park", "mixed"};
+  static const std::vector<std::string> n = {"open", "gap1", "gap2", "gap4", "corr1", "corr2", "maze", "utrap", "wall", "rooms", "swap", "swap1", "diag", "park", "mixed"};
   return n;
 }
 
@@ -36,7 +36,7 @@ bool make_course(const std::string& name, int n, Course& c) {
   else if (name == "utrap") { rect(c, 50, 14, 52, 46); rect(c, 40, 14, 52, 16); rect(c, 40, 44, 52, 46); c.goal = {62, 30}; }
   else if (name == "wall") rect(c, 44, 6, 46, H - 7);
   else if (name == "rooms") { rect(c, 44, 2, 46, H - 3); rect(c, 44, 14, 46, 15, 2); rect(c, 44, 44, 46, 45, 2); rect(c, 20, 20, 30, 40); }
-  else if (name == "swap") { rect(c, 44, 2, 46, H - 3); rect(c, 44, 29, 46, 31, 2); swap = true; }
+  else if (name.rfind("swap", 0) == 0) { int w = name.size() > 4 ? std::stoi(name.substr(4)) : 3; rect(c, 44, 2, 46, H - 3); rect(c, 44, 30 - w / 2, 46, 30 - w / 2 + w - 1, 2); swap = true; }
   else if (name == "park") { rect(c, 40, 2, 60, H - 3); rect(c, 40, 29, 60, 30, 2); park = true; }
   else if (name == "mixed") mixed = true;
   else if (name == "diag") { for (int i = 0; i < 44; ++i) rect(c, 20 + i, 8 + i, 21 + i, 9 + i); rect(c, 62, 50, 64, 52, 2); }

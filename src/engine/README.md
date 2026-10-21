@@ -60,10 +60,20 @@ domyślnie używany jest `AnimSpriteProvider`, `--no-sprites` wymusza znaczniki 
   Brak przycisków poleceń, listy budowy i portretów (nie ma jeszcze symulacji poleceń). `--select X0,Y0,X1,Y1` zaznacza w trybie zrzutu.
 - `.mp` czytane przez `core/mp.*`; `assets/mission.*` to cienki adapter.
 
+## Symulacja (czwarta runda)
+- `sim/game_sim.*`: deterministyczna symulacja 12 Hz (liczby całkowite), polecenia z `sim/commands.hpp` (numery = PCT_FRAME_*), hash stanu (`state_hash`), log poleceń
+  (`serialize_log`) i odtwarzanie (`GameSim::replay`) = migawka/przywracanie stanu. Testy (`test_engine game`): ten sam ciąg poleceń daje ten sam hash, inny - inny,
+  replay daje identyczny hash, walka, trening jednostki.
+- Reguły i dane: `sim/rules.*` czyta `docs/data/*.csv` w czasie uruchomienia (`--rules-dir`); tabela, co jest zweryfikowane a co zastępcze: `docs/engine_rules_status.md`.
+- Ruch: `sim/path/` (agent ruchu od agenta pathfindingu), `GameSim` używa tylko `MoveSystem`.
+- Sterowanie (`ui/commands_ui.*`): PPM = ruch/atak (przeciągnięcie PPM = przesuwanie mapy), `A` + LPM = atak w marszu, `H` = stój, Ctrl+0-9 / 0-9 = grupy,
+  `P` = pauza symulacji, PPM na minimapie = ruch. Panel: menu produkcji z drzewa budowy (jednostki treningowe i budynki `[B]` stawiane kliknięciem na mapie), kolejka, tooltip.
+- Opcje testowe: `--cmd-move X,Y` / `--cmd-attack-move X,Y` (dla `--select`), `--no-sim`, `--wander`.
+
 ## Znane braki
 - Brak mapy światła per kafel (źródła światła, maski light.xbe), maski nie są nakładane.
 - Kierunek początkowy jednostek (silnik: południe), stany attack/die/fidget i sloty 32-kierunkowe (ciężarówki, ptaki) nieobsłużone poza idle/move.
 - Uszkodzenia i budowa budynków, pociski, efekty, drugi sprite (wieżyczka/broń) nie są rysowane.
 - Mapa `.rm` wczytana, nie używana.
-- Brak dźwięku, sieci, logiki gry (tylko interfejs `Simulation`); kolory stron (`Color` 0..7) dla znaczników zastępczych są arbitralne.
+- Brak AI wroga, skryptów `.scn`, garnizonu/naprawy, dźwięku i sieci; reszta reguł wg `docs/engine_rules_status.md`; kolory stron (`Color` 0..7) dla znaczników zastępczych są arbitralne.
 - Zrzut referencyjny rekompilacji (800x600, misja 1) porównany ręcznie: układ kamery/obiektów zgodny, różnice = oświetlenie i panel (przyciski).

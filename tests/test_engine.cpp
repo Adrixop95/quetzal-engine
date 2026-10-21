@@ -11,6 +11,7 @@
 #include "engine/assets/mission.hpp"
 #include "engine/assets/sprite_provider.hpp"
 #include "engine/platform/clock.hpp"
+#include "engine/sim/game_sim.hpp"
 #include "engine/sim/simulation.hpp"
 #include "engine/world/camera.hpp"
 #include "engine/world/type_info.hpp"
@@ -145,9 +146,97 @@ static void test_data(const std::string& dir) {
   CHECK(!ap.pick_shadow(ObjectState{.type_id = 200}, sh));
 }
 
+static std::vector<uint32_t> side_units(const World& w, int side, bool mobile_only) {
+  std::vector<uint32_t> v;
+  for (const Object& o : w.objects) {
+    const TypeInfo* ti = type_info(o.type);
+    if (o.side == side && o.type >= 0 && ti && (!mobile_only || !ti->is_structure())) v.push_back(o.id);
+  }
+  return v;
+}
+
+static void run_scenario(World& w, GameSim& sim, int ticks, bool commands) {
+  std::vector<uint32_t> mine = side_units(w, 0, true);
+  for (int t = 0; t < ticks; t++) {
+    if (commands && t == 3) { Command c; c.type = Pct::Move; c.side = 0; c.a = 36 * 48; c.b = 41 * 48; c.ids = mine; sim.submit(c); }
+    if (commands && t == 40) { Command c; c.type = Pct::AttackMove; c.side = 0; c.a = 70 * 48; c.b = 40 * 48; c.ids = mine; sim.submit(c); }
+    w.begin_tick();
+    sim.tick(w);
+  }
+}
+
+static void test_sim(const std::string& dir) {
+  GameData data;
+  std::string err;
+  if (!data.open(dir, err)) return;
+  auto rules = std::make_shared<RulesData>();
+  if (!rules->load_dir(dir + "/../docs/data")) { std::printf("skip sim tests: no docs/data\n"); return; }
+  CHECK(rules->type(0).hp_max == 6000 && rules->type(0).hp_src == Src::Verified);
+  CHECK(rules->type(0).price == 100);
+
+  World a, b, c;
+  CHECK(load_world(data, "1", a, err) && load_world(data, "1", b, err) && load_world(data, "1", c, err));
+  GameSim sa(rules), sb(rules), sc(rules);
+  sa.init(a); sb.init(b); sc.init(c);
+  uint64_t h0 = sa.state_hash(a);
+  run_scenario(a, sa, 200, true);
+  run_scenario(b, sb, 200, true);
+  CHECK(sa.state_hash(a) == sb.state_hash(b));      // same commands => same hash
+  CHECK(sa.state_hash(a) != h0);
+  run_scenario(c, sc, 200, false);
+  CHECK(sc.state_hash(c) != sa.state_hash(a));      // different commands => different state
+  // the move order really moved the units toward the target
+  std::vector<uint32_t> mine = side_units(a, 0, true);
+  const Object* u = a.find(mine[0]);
+  CHECK(u && std::abs(u->cur_x / 256 - 36 * 48) + std::abs(u->cur_y / 256 - 41 * 48) > 0);
+
+  // replay of the command log reproduces the exact state (snapshot restore)
+  World r;
+  CHECK(load_world(data, "1", r, err));
+  auto rs = GameSim::replay(r, rules, sa.log(), 200);
+  CHECK(rs->state_hash(r) == sa.state_hash(a));
+  std::vector<LoggedCommand> back;
+  CHECK(deserialize_log(serialize_log(sa.log()), back) && back.size() == sa.log().size());
+
+  // combat: a footman next to an enemy footman kills it with the measured duel (600 dmg per 10 ticks)
+  World f;
+  CHECK(load_world(data, "1", f, err));
+  GameSim fs(rules);
+  fs.init(f);
+  Object* mine0 = nullptr; Object* enemy = nullptr;
+  for (Object& o : f.objects) { if (o.type == 0 && o.side == 0 && !mine0) mine0 = &o; if (o.side == 1 && o.type == 27 && !enemy) enemy = &o; }
+  CHECK(mine0 && enemy);
+  if (mine0 && enemy) {
+    fs.teleport(f, enemy->id, mine0->cur_x / 256 + 40, mine0->cur_y / 256);
+    Command at; at.type = Pct::Attack; at.side = 0; at.a = int32_t(enemy->id); at.ids = {mine0->id};
+    fs.submit(at);
+    for (int t = 0; t < 400 && enemy->alive; t++) { f.begin_tick(); fs.tick(f); }
+    CHECK(!enemy->alive);
+  }
+
+  // economy: training spends money and spawns a unit after the build time
+  World e;
+  CHECK(load_world(data, "1", e, err));
+  GameSim es(rules);
+  es.init(e);
+  e.side_state[0].money = 5000;
+  size_t n0 = e.objects.size();
+  std::vector<MenuItem> m = es.menu(e, 0);
+  CHECK(!m.empty());
+  int unit_type = -1;
+  for (const MenuItem& it : m) if (it.enabled && !it.construct) { unit_type = it.type; break; }
+  if (unit_type >= 0) {
+    Command bc; bc.type = Pct::Build; bc.side = 0; bc.a = unit_type;
+    es.submit(bc);
+    for (int t = 0; t < 600 && e.objects.size() == n0; t++) { e.begin_tick(); es.tick(e); }
+    CHECK(e.objects.size() == n0 + 1);
+    CHECK(e.side_state[0].money <= 5000 - rules->type(unit_type).price + 100);
+  }
+}
+
 int main(int argc, char** argv) {
   test_pure();
-  if (argc > 1) test_data(argv[1]);
+  if (argc > 1) { test_data(argv[1]); test_sim(argv[1]); }
   std::printf(failures ? "FAILED\n" : "OK\n");
   return failures ? 1 : 0;
 }

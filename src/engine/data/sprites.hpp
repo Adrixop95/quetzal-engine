@@ -58,6 +58,20 @@ class AnimSet {
 // (0 = +x, 0x40 = up, 0x80 = -x, 0xC0 = down).
 inline int direction_from_angle(int angle) { return ((angle + 0x10) >> 5) & 7; }
 
+// 32-direction facing used by Truck/Headtruck/Bird/Zeppelin/Spider turrets: frame index = ((angle + 4) >> 3) & 31 (verified on screenshots).
+inline int direction32_from_angle(int angle) { return ((angle + 4) >> 3) & 31; }
+
+// Sprite top-left on screen = object position (world px) - (sprite.ox, sprite.oy) - view origin (verified). Flying objects (Zeppelin kind 3,
+// Bird kind 5): also subtract the altitude field (object +0x7c) from y. SpriteRef::yoff (frame[6]) is added to y by the original (always 0 on ground units).
+// Kind-specific idle/move frames (all verified against screenshots unless noted):
+//  Marine kind 0   : idle slot 0 frame dir8; move slot 1+dir8 (loop); attack 9+dir8; die 17+rand%3; fidget 20+rand%3 (code, attack/die not screenshot-checked)
+//  Truck kind 4    : idle slot 0 frame dir32 (angle at obj+0x74); moving only when the angle is on an 8-direction centre: slot 1+dir8 (code)
+//  Headtruck kind 6: body anim (rec[0]) slot 1+dir32(bodyAngle obj+0x78); weapon anim (rec[2]) slot 1 frame dir32(turretAngle obj+0x7c); firing: weapon slot dir32+2
+//  Zeppelin kind 3 : slot 0 frame dir32 (angle obj+0x70), y -= obj+0x7c
+//  Bird kind 5     : idle slot 0 frame dir32 (angle obj+0x70); flying slot 1+dir8, 29 frames (code, not pixel-verified)
+//  Spider kind 1   : body anim slot 0 frame 0 idle, legs slot 1+dir8 moving (code); weapon anim (rec[2]) slot 1 frame dir32(turret angle byte obj+0x92)
+//  Defence kind 7  : base anim slot 1 frame 0 (built); turret anim (rec[2]) slot 1 frame dir32 (angle obj+0x84) where present
+//  Building kind 2 : built = slot 1 frame 0; construction = slot 0 seek tick ((T+1)*hp/maxhp)-1; slot 6 overlay while state 1; slot 5 destruction (guess)
 // Sequence slot for a state (mobile units, kinds 0,1,4,5,6,9,10 follow the Marine convention; see docs).
 inline int slot_for(AnimState s, int dir, int variant = 0) {
   switch (s) {

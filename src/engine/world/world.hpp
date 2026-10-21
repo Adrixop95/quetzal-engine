@@ -32,12 +32,35 @@ struct Object {
   uint16_t anim_state = 0;
   uint32_t anim_tick = 0;      // ticks since anim_state started; advanced by World::begin_tick()
   uint32_t anim_variant = 0;
+  // --- simulation state (written only by the Simulation) ---
+  int32_t hp_max = 0;
+  uint8_t order = 0;           // sim::Order
+  uint32_t target = 0;         // object id for attack orders (0 = none)
+  int32_t dest_x = 0, dest_y = 0;  // order destination, world px
+  int32_t cooldown = 0;        // ticks until the next shot
+  int32_t corpse_ticks = 0;    // ticks since death
+  uint8_t resume = 0;          // attack order interrupted an attack-move: resume it afterwards
+  int32_t build_elapsed = 0, build_total = 0;  // construction timer (ticks)
+  int32_t progress = 1000;     // construction 0..1000 (1000 = finished); buildings only
+  int32_t mover = -1;          // agent index in the movement system, -1 = does not walk
+  bool alive = true;
+  bool removed = false;        // gone (not drawn, not simulated); ids stay stable
 
   Vec2f interpolated(float alpha) const {
     return {(prev_x + (cur_x - prev_x) * alpha) / 256.f, (prev_y + (cur_y - prev_y) * alpha) / 256.f};
   }
   void set_anim(uint16_t state) { if (state != anim_state) { anim_state = state; anim_tick = 0; } }
   void teleport(Fixed x, Fixed y) { prev_x = cur_x = x; prev_y = cur_y = y; }
+};
+
+struct QueueItem { int type = 0; int remaining = 0; int total = 0; };
+
+// Per-side economy and command state.
+struct SideState {
+  int money = 0;
+  bool build_paused = false;
+  std::vector<QueueItem> queue;         // training / construction queue (production time in ticks)
+  std::vector<uint32_t> groups[10];     // control groups 0..9
 };
 
 struct Selection {
@@ -54,6 +77,7 @@ struct World {
   VisFile visibility;            // .vis per-side light layers, may be empty
   Sprite preview;                // .spr minimap preview; w == 0 if absent
   std::vector<Object> objects;
+  std::vector<SideState> side_state;   // indexed by side number
   Selection selection;           // local player's selected objects (UI state, not simulation state)
   uint64_t tick = 0;
   int local_side = 0;            // side whose fog layer is shown / whose objects are always visible
@@ -66,7 +90,9 @@ struct World {
       if (s.index == side) return s.color;
     return side;
   }
-  const Object* find(uint32_t id) const { for (const Object& o : objects) if (o.id == id) return &o; return nullptr; }
+  // Ids are 1-based indices into `objects` (objects are never erased, only marked `removed`).
+  const Object* find(uint32_t id) const { return id >= 1 && id <= objects.size() ? &objects[id - 1] : nullptr; }
+  Object* find_mut(uint32_t id) { return id >= 1 && id <= objects.size() ? &objects[id - 1] : nullptr; }
   // Called by the driver right before each simulation tick: prev := cur for everything.
   void begin_tick() {
     for (auto& o : objects) { o.prev_x = o.cur_x; o.prev_y = o.cur_y; o.anim_tick++; }

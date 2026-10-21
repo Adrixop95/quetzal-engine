@@ -130,6 +130,7 @@ void MoveSystem::neighbours(const Agent& a, std::vector<u32>& out, i32 reach) co
 Vec2 MoveSystem::preferred_velocity(Agent& a, const Order& o) {
   Vec2 to = a.slot - a.pos; i32 dist = length(to);
   if (dist <= a.speed) return to;                                   // lands exactly on the slot
+  if (tick_ < a.target_until && length(a.target - a.pos) > 2 * kTileFix) { Vec2 d0 = a.target - a.pos; return with_length(d0, a.speed); }
   const FlowField& ff = o.ff[(int)a.cls];
   Vec2 target = a.slot;
   bool direct = dist < 16 * kTileFix && grid_.segment_clear(a.pos, a.slot, a.radius * 9 / 10, a.cls);
@@ -148,6 +149,7 @@ Vec2 MoveSystem::preferred_velocity(Agent& a, const Order& o) {
       if (tail_goal && grid_.segment_clear(a.pos, a.slot, a.radius * 9 / 10, a.cls)) target = a.slot;
     }
   }
+  a.target = target; a.target_until = tick_ + 3 + (a.id & 3);
   Vec2 d = target - a.pos; if (d.x == 0 && d.y == 0) return {0, 0};
   return with_length(d, a.speed);
 }
@@ -229,7 +231,8 @@ void MoveSystem::tick() {
       Order& o = *orders_[a.order];
       ensure_field(o, a.cls);
       pref = preferred_velocity(a, o);
-      if (a.stuck_level >= 3) pref = rotate(pref, ((a.id & 1) ? 1 : -1) * (24 + (int)((a.id * 7 + tick_) % 24)));
+      if (a.backoff_ticks > 0) { --a.backoff_ticks; pref = {-pref.x / 2, -pref.y / 2}; }   // deadlock breaker: lower priority agent retreats
+      else if (a.stuck_level >= 3) pref = rotate(pref, ((a.id & 1) ? 1 : -1) * (24 + (int)((a.id * 7 + tick_) % 24)));
     }
     neighbours(a, nb, a.radius + 24 * kFix + 2 * (a.speed + 12 * kFix) * cfg_.avoid_horizon / 2);
     nv[a.id] = choose_velocity(a, pref, nb);
@@ -252,6 +255,7 @@ void MoveSystem::tick() {
         ++a.stuck_level; ++stats.stuck_events;
         a.ghost_ticks = cfg_.stuck_window;
         if (a.stuck_level >= 5) a.squeeze_ticks = cfg_.stuck_window * 2;
+        if (a.stuck_level >= 4 && ((a.id + (u32)(tick_ / cfg_.stuck_window)) & 1)) { a.backoff_ticks = cfg_.stuck_window / 2; a.stuck_level = 2; }
         // close to the slot and others already settled: take the spot you are in
         if (dist < 3 * kTileFix && a.stuck_level >= 2) {
           neighbours(a, nb, a.radius * 2 + 8 * kFix);

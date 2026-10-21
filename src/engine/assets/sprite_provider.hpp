@@ -41,6 +41,7 @@ struct ObjectState {
   int anim_state = 0;     // data::AnimState (0 idle, 1 move, 2 attack, 3 die, 4 fidget, 5 icon)
   uint32_t anim_tick = 0; // simulation ticks since the animation started
   uint32_t anim_variant = 0;  // stable per-object random value (death/fidget sequence choice)
+  int progress = 1000;        // construction 0..1000 (anim_state 6 = under construction)
 };
 
 struct SpriteDraw {

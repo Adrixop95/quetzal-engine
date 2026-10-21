@@ -15,7 +15,9 @@ struct Options {
   bool edge_scroll = true;
   bool hud = true;
   bool fog = true;
-  std::string rules;               // --rules types.csv (prices for tooltips)
+  int cmd_x = -1, cmd_y = -1; bool cmd_attack_move = false;  // --cmd-move / --cmd-attack-move X,Y (tiles) for the --select group
+  std::string rules_dir;           // --rules-dir DIR with the docs/data CSVs (default: ../docs/data next to the game dir)
+  bool sim = true;                 // --no-sim: static world (no game logic)
   int select_x0 = -1, select_y0 = 0, select_x1 = 0, select_y1 = 0;  // --select X0,Y0,X1,Y1 (screenshot mode)
   bool light = true;               // time-of-day tint (needs Aztec.exe next to Res/)
   double time = -1;                // --time T: fixed day clock 0..7199

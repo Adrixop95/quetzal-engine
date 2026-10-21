@@ -15,6 +15,7 @@ struct SideDef {
   int money = 0;
   bool neutral = false, only_comp = false;
   std::string name;
+  std::vector<int> disabled;  // UGI types this side may not build
 };
 
 enum class ObjectSource : uint8_t { Town, Team, Boat, Johnka, Submarine, Start };

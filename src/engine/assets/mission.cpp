@@ -30,6 +30,7 @@ bool parse_mission(const Ini& ini, const std::string& base_name, MissionDef& m) 
     d.start_x = s.start_x; d.start_y = s.start_y; d.money = s.start_money;
     d.neutral = s.neutral; d.only_comp = s.only_comp;
     d.name = cp1250_to_utf8(s.name);
+    d.disabled = s.disabled_ids;
     m.sides.push_back(d);
   }
   auto add_units = [&](const std::vector<MpUnit>& units, int side, ObjectSource src, int group) {
