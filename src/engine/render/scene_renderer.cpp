@@ -145,6 +145,24 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
   }
   flush(cur_page);
   cur_page = -1;
+  // Selection rings go on the ground, under bodies.
+  mod_ = {255, 255, 255, 255};
+  for (const Item& it : items) {
+    if (it.tree || !world_.selection.contains(it.o->id)) continue;
+    const TypeInfo* ti = type_info(it.o->type);
+    SpriteKey k;
+    k.archive = ArchiveId::Common; k.group = 0x44c; k.shade = 0;
+    k.index = ti && ti->is_structure() ? 314 : 309;
+    const StoredSprite& s = store_.get(k);
+    if (!s.ok()) continue;
+    int f = int((world_.tick / 2) % uint64_t(std::max(1, s.frames)));
+    if (s.region.page != cur_page) { flush(cur_page); cur_page = s.region.page; }
+    float x0 = it.wx - s.cw / 2.f, y0 = it.wy - s.ch / 2.f;
+    queue(s.region.page, snap(cam.to_screen_x(x0)), snap(cam.to_screen_y(y0)), snap(cam.to_screen_x(x0 + s.cw)),
+          snap(cam.to_screen_y(y0 + s.ch)), s.frame_rect(f));
+  }
+  flush(cur_page);
+  cur_page = -1;
   mod_ = body_mod;
   // Pass 2: bodies and placeholders, back to front.
   int scale = std::max(1, int(std::lround(cam.zoom)));
@@ -192,6 +210,30 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
     }
   }
   flush(cur_page);
+  // Health bars of selected objects.
+  for (const Item& it : items) {
+    if (it.tree || !world_.selection.contains(it.o->id) || it.o->type < 0) continue;
+    const TypeInfo* ti = type_info(it.o->type);
+    bool structure = ti && ti->is_structure();
+    int hpmax = hp_max(it.o->type);
+    float frac = hpmax > 0 ? std::clamp(float(it.o->hp) / hpmax, 0.f, 1.f) : 1.f;
+    float w = (structure ? 70.f : 26.f) * cam.zoom, h = std::max(3.f, 4.f * cam.zoom);
+    float x = cam.to_screen_x(it.wx) - w / 2, y = cam.to_screen_y(it.wy - (structure ? 110.f : 46.f));
+    SDL_FRect bg{x - 1, y - 1, w + 2, h + 2}, fg{x, y, w * frac, h};
+    SDL_SetRenderDrawColor(r, 0, 0, 0, 200);
+    SDL_RenderFillRectF(r, &bg);
+    SDL_SetRenderDrawColor(r, frac > 0.6f ? 60 : 230, frac > 0.3f ? 210 : 50, frac > 0.6f ? 60 : 40, 255);
+    SDL_RenderFillRectF(r, &fg);
+  }
+}
+
+int SceneRenderer::hp_max(int type) const {
+  auto it = hp_max_.find(type);
+  if (it != hp_max_.end()) return it->second;
+  int m = 0;
+  for (const Object& o : world_.objects)
+    if (o.type == type) m = std::max(m, o.hp);
+  return hp_max_[type] = m;
 }
 
 ObjectState SceneRenderer::object_state(const Object& o) const {

@@ -7,15 +7,18 @@
 
 namespace aztec::path {
 
-struct CourseUnit { int x, y, group; };
+struct CourseUnit { int x, y, group, type; };
+struct CourseGroup { Cell goal; int order_tick; };    // order_tick relative to the first order
+struct UnitSpec { int speed_px; bool small; };          // original per-type values (Marine descriptor dword 5 / byte +0x2c)
+UnitSpec unit_spec(int type);
 struct Course {
   std::string name;
   int w = 90, h = 60;
   std::vector<u8> dat;               // w*h terrain bytes
   Cell start{6, 30}, goal{80, 30};
   std::vector<CourseUnit> units;
-  bool swap = false;                 // group 1 (right side) walks back to `start`
-  Cell goal_of(int group) const { return group == 0 ? goal : start; }
+  std::vector<CourseGroup> groups;   // one order per group
+  Cell goal_of(int group) const { return groups[group].goal; }
 };
 
 bool make_course(const std::string& name, int nunits, Course& out);   // false for unknown names

@@ -48,11 +48,22 @@ F4 etykiety, F5 znaczniki, F6 edge scroll, F7 nakładki terenu, F10 HUD, Spacja 
 Zaimplementuj `SpriteProvider::pick/pick_shadow` (lub wypełnij `TableSpriteProvider`) i przekaż do `run_engine(opts, provider)`;
 domyślnie używany jest `AnimSpriteProvider`, `--no-sprites` wymusza znaczniki zastępcze.
 
+## Oświetlenie, czcionki, UI (trzecia runda)
+- Oświetlenie dnia: tablice kluczy (czas, RGB, poziom ambient) są czytane w czasie uruchomienia z `game/Aztec.exe` (`assets/daylight.*`; w repo nic z exe nie leży).
+  Zegar = `StartTime` + tiki symulacji (doba 7200 tików), klucze interpolowane liniowo (oryginał: skokowo). Sprite'y są pieczone na poziomie 14 i modulowane kolorem
+  (tint * jasność poziomu ambient+1 względem 14); zgodność ze zrzutem oryginału: piasek ok. (178,128,111) vs (201,124,112), trawa ok. 1.3x jaśniej. Poziom +1 i brak
+  mapy światła per kafel to przybliżenie. `--no-light`, `--time T`.
+- Czcionki: `fnts.xbe` baza 1200 (małe, antyaliasowane, paleta 53), glif = baza + bajt cp1250; wbudowany 3x5 zostaje jako zapas i do etykiet zastępczych.
+- `core/strbase.*`: parser `strbase.bds` (UTF-8, test na prawdziwym pliku). `ui/names.*`: nazwy typów (ordinal 166-210 po nazwie).
+- Zaznaczanie: klik lub ramka LPM (tylko własne jednostki; shift dodaje), pierścień zaznaczenia (common 309/314, animowany), pasek zdrowia (maks = najwyższe hp tego typu
+  w misji), podsumowanie w panelu, tooltip przy najechaniu ("Nazwa\nPrice: %i Time: %i" jeśli jest `docs/data/types.csv` lub `--rules`).
+  Brak przycisków poleceń, listy budowy i portretów (nie ma jeszcze symulacji poleceń). `--select X0,Y0,X1,Y1` zaznacza w trybie zrzutu.
+- `.mp` czytane przez `core/mp.*`; `assets/mission.*` to cienki adapter.
+
 ## Znane braki
-- Oświetlenie dnia/nocy: oryginał tonuje scenę (zrzut referencyjny jest różowawy, `StartTime`/`TileSet` wybierają tablicę światła z exe, 9 kluczy czasu z kolorami RGB
-  i poziomem ciemności); silnik rysuje kafle ze stałym poziomem cieniowania 14 bez tonowania i bez mapy światła per kafel.
+- Brak mapy światła per kafel (źródła światła, maski light.xbe), maski nie są nakładane.
 - Kierunek początkowy jednostek (silnik: południe), stany attack/die/fidget i sloty 32-kierunkowe (ciężarówki, ptaki) nieobsłużone poza idle/move.
 - Uszkodzenia i budowa budynków, pociski, efekty, drugi sprite (wieżyczka/broń) nie są rysowane.
-- Mapa `.rm` wczytana, nie używana. Fonty oryginalne (fnts.xbe) nie podpięte, HUD używa wbudowanego fontu 3x5.
+- Mapa `.rm` wczytana, nie używana.
 - Brak dźwięku, sieci, logiki gry (tylko interfejs `Simulation`); kolory stron (`Color` 0..7) dla znaczników zastępczych są arbitralne.
 - Zrzut referencyjny rekompilacji (800x600, misja 1) porównany ręcznie: układ kamery/obiektów zgodny, różnice = oświetlenie i panel (przyciski).

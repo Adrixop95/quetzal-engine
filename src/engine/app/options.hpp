@@ -15,6 +15,8 @@ struct Options {
   bool edge_scroll = true;
   bool hud = true;
   bool fog = true;
+  std::string rules;               // --rules types.csv (prices for tooltips)
+  int select_x0 = -1, select_y0 = 0, select_x1 = 0, select_y1 = 0;  // --select X0,Y0,X1,Y1 (screenshot mode)
   bool light = true;               // time-of-day tint (needs Aztec.exe next to Res/)
   double time = -1;                // --time T: fixed day clock 0..7199
   int cursor_x = -1, cursor_y = -1; // --cursor X,Y: draw the cursor there in screenshot mode

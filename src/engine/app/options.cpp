@@ -60,6 +60,8 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     else if (a == "--no-edge-scroll") o.edge_scroll = false;
     else if (a == "--no-hud") o.hud = false;
     else if (a == "--no-fog") o.fog = false;
+    else if (a == "--rules") { if (!next(v)) return false; o.rules = v; }
+    else if (a == "--select") { if (!next(v)) return false; if (std::sscanf(v, "%d,%d,%d,%d", &o.select_x0, &o.select_y0, &o.select_x1, &o.select_y1) != 4) { err = "bad --select"; return false; } }
     else if (a == "--no-light") o.light = false;
     else if (a == "--time") { if (!next(v)) return false; o.time = std::atof(v); }
     else if (a == "--cursor") { if (!next(v)) return false; if (std::sscanf(v, "%d,%d", &o.cursor_x, &o.cursor_y) != 2) { err = "bad --cursor"; return false; } }

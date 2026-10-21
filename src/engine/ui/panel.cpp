@@ -30,7 +30,8 @@ void Panel::layout(int out_w, int out_h, int scale) {
   mini_ = {rect_.x + 12 * scale_, 28 * scale_, 180 * scale_, 176 * scale_};
 }
 
-void Panel::draw(SDL_Renderer* r, SpriteStore& store, const Font& font, int gold) const {
+void Panel::draw(SDL_Renderer* r, SpriteStore& store, const Font& font, int gold, const std::vector<std::string>& info,
+                 const std::string& tooltip) const {
   if (!ok_) return;
   const StoredSprite& s = store.get(key());
   SDL_Texture* tex = store.atlas().page(s.region.page);
@@ -53,6 +54,19 @@ void Panel::draw(SDL_Renderer* r, SpriteStore& store, const Font& font, int gold
   font.draw(r, rect_.x + 14 * sc, (kBar - 5 * ts) / 2 * sc, "MENU", ts, {235, 220, 170, 255});
   std::string g = std::to_string(gold);
   font.draw(r, rect_.x + (kPanelW - 24) * sc - font.width(g, ts), (kBar - 5 * ts) / 2 * sc, g, ts, {250, 220, 90, 255});
+  int lh = std::max(12, font.height(ts * 2)) + 2 * sc;
+  int y0 = 214 * sc + 8 * sc;
+  for (size_t i = 0; i < info.size(); i++)
+    font.draw(r, rect_.x + 24 * sc, y0 + int(i) * lh, info[i], ts * 2, i == 0 ? SDL_Color{255, 240, 190, 255} : SDL_Color{230, 230, 230, 255});
+  if (!tooltip.empty()) {
+    int tw = font.width(tooltip, ts * 2) + 8 * sc, th = lh + 4 * sc;
+    SDL_Rect b{rect_.x - tw - 4 * sc, rect_.h - th - 8 * sc, tw, th};
+    SDL_SetRenderDrawColor(r, 20, 16, 10, 230);
+    SDL_RenderFillRect(r, &b);
+    SDL_SetRenderDrawColor(r, 200, 170, 100, 255);
+    SDL_RenderDrawRect(r, &b);
+    font.draw(r, b.x + 4 * sc, b.y + 2 * sc, tooltip, ts * 2, {255, 240, 190, 255});
+  }
 }
 
 }  // namespace aztec::engine

@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <string>
 #include "core/mapfiles.hpp"
+#include "core/strbase.hpp"
+#include "engine/ui/names.hpp"
 #include "core/text.hpp"
 #include "engine/assets/anim_provider.hpp"
 #include "engine/assets/game_data.hpp"
@@ -37,6 +39,11 @@ static void test_pure() {
 
   Grid<uint16_t> g;
   std::vector<uint8_t> rm{2, 0, 1, 0, 7, 0, 8, 0};
+  StrBase strb;
+  CHECK(strb.parse("*STRING { *ID 0x1 *ORDINAL 217 *LANGUAGE { *ENGLISH \"%s\\nPrice: %i Time: %i\" *RUSSIAN \"Cena \xb9\" } }"));
+  CHECK(format_game_string(strb.get(217), "Bow", "5", "9") == "Bow\nPrice: 5 Time: 9");
+  CHECK(strb.get(217, true).find("\xc4\x85") != std::string::npos);
+  CHECK(type_name_ordinal(0) == 198 && type_name_ordinal(19) == 170 && type_name_ordinal(47) == 170);
   CHECK(parse_resource_map(rm, g) && g.w == 2 && g.h == 1 && g.at(1, 0) == 8);
   CHECK(!parse_resource_map({2, 0, 2, 0, 1, 0}, g));
 
@@ -115,6 +122,9 @@ static void test_data(const std::string& dir) {
   CHECK(load_world(data, "Mission_4", w2, err) && w2.terrain.w == 120);  // mixed-case file names
   CHECK(!load_world(data, "no_such_map", w2, err));
   CHECK(w.mission.towns.size() == 1);
+  StrBase real;
+  std::string sbp = find_file_ci(dir + "/Res", "strbase.bds");
+  CHECK(!sbp.empty() && real.load(sbp) && real.size() > 200 && real.get(198) == "Swordsman");
 
   // animated sprite provider: footman idle/move, shadow in group 0x454, finished town building
   AnimSpriteProvider ap;

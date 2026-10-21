@@ -15,7 +15,11 @@
 #include "engine/render/scene_renderer.hpp"
 #include "engine/ui/cursor.hpp"
 #include "engine/ui/hud.hpp"
+#include "engine/ui/names.hpp"
 #include "engine/ui/panel.hpp"
+#include "engine/ui/rules_table.hpp"
+#include "engine/ui/selection_ui.hpp"
+#include "core/strbase.hpp"
 #include "engine/ui/minimap.hpp"
 #include "engine/world/camera.hpp"
 #include "engine/world/world.hpp"
@@ -88,6 +92,13 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
     sim->init(world);
     for (int i = 0; i < o.pre_ticks; i++) { world.begin_tick(); sim->tick(world); }
 
+    StrBase strings;
+    std::string sb = find_file_ci(o.game_dir + "/Res", "strbase.bds");
+    if (sb.empty() || !strings.load(sb)) std::fprintf(stderr, "note: strbase.bds not loaded, using UGI names\n");
+    RulesTable rules;
+    for (const std::string& rp : {o.rules, o.game_dir + "/../docs/data/types.csv", std::string("docs/data/types.csv")})
+      if (!rp.empty() && rules.load(rp)) break;
+    SelectionUi selui;
     Daylight daylight;
     bool use_light = o.light && daylight.load_from_exe(find_file_ci(o.game_dir, "Aztec.exe"));
     if (o.light && !use_light) std::fprintf(stderr, "note: no daylight tables (Aztec.exe not found), neutral light\n");
@@ -114,6 +125,13 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
     double fps_acc = 0; int fps_n = 0;
     int frame = 0, shot_no = 0;
 
+    if (o.select_x0 >= 0) {  // --select: select own units inside a screen rectangle before the first frame
+      for (const Object& ob : world.objects) {
+        Vec2f p = ob.interpolated(1.f);
+        float sx2 = cam.to_screen_x(p.x), sy2 = cam.to_screen_y(p.y);
+        if (ob.side == world.local_side && sx2 >= o.select_x0 && sx2 <= o.select_x1 && sy2 >= o.select_y0 && sy2 <= o.select_y1) world.selection.ids.push_back(ob.id);
+      }
+    }
     while (!in.quit) {
       uint64_t now = SDL_GetPerformanceCounter();
       double dt = double(now - last) / double(freq);
@@ -199,6 +217,11 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
 
       if (in.pressed[SDL_BUTTON_LEFT] && on_mm) drag_minimap = true;
       if (!in.buttons[SDL_BUTTON_LEFT]) drag_minimap = false;
+      // Selection (left button in the world view).
+      {
+        bool in_world = !on_mm && !on_panel && !drag_minimap && !pan;
+        selui.update(in, world, cam, alpha, in_world);
+      }
       cam.update(ci, float(std::min(dt, 0.1)));
       if (drag_minimap) {
         int mx = std::clamp(in.mx, minimap.rect().x, minimap.rect().x + minimap.rect().w - 1);
@@ -217,10 +240,33 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       if (!show_panel) minimap.draw(win.renderer(), cam, alpha, &scene.fog());
       hud.mouse_x = in.mx; hud.mouse_y = in.my; hud.alpha = alpha;
       hud.sprites = scene.stats.sprites; hud.placeholders = scene.stats.placeholders; hud.geometry_calls = scene.stats.geometry_calls;
+      selui.draw_box(win.renderer());
       if (show_panel) {
         int gold = 0;
         for (const SideDef& sd : world.mission.sides) if (sd.index == world.local_side) gold = sd.money;
-        panel.draw(win.renderer(), scene.store(), scene.font(), gold);
+        std::vector<std::string> info;
+        if (!world.selection.ids.empty()) {
+          const Object* first = world.find(world.selection.ids[0]);
+          if (first) {
+            info.push_back(type_display_name(strings, first->type) + (world.selection.ids.size() > 1 ? " x" + std::to_string(world.selection.ids.size()) : ""));
+            info.push_back("HP " + std::to_string(first->hp));
+          }
+        }
+        std::string tip;
+        {
+          int mx2, my2;
+          SDL_GetMouseState(&mx2, &my2);
+          mx2 = int(mx2 * sx); my2 = int(my2 * sy);
+          if (mx2 < ow - panel.width()) {
+            const Object* h = pick_object(world, cam.to_world_x(float(mx2)), cam.to_world_y(float(my2)), alpha, 24.f / cam.zoom + 8);
+            if (h && h->type >= 0) {
+              tip = type_display_name(strings, h->type);
+              TypeCost c = rules.cost(h->type);
+              if (c.price >= 0 && strings.entry(217)) tip = format_game_string(strings.get(217), tip, std::to_string(c.price), std::to_string(c.time));
+            }
+          }
+        }
+        panel.draw(win.renderer(), scene.store(), scene.font(), gold, info, tip);
         minimap.draw(win.renderer(), cam, alpha, &scene.fog());
       }
       if (show_hud) draw_hud(win.renderer(), scene.font(), world, cam, hud, ui);

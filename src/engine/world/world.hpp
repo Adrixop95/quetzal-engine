@@ -40,6 +40,12 @@ struct Object {
   void teleport(Fixed x, Fixed y) { prev_x = cur_x = x; prev_y = cur_y = y; }
 };
 
+struct Selection {
+  std::vector<uint32_t> ids;
+  bool contains(uint32_t id) const { for (uint32_t i : ids) if (i == id) return true; return false; }
+  void clear() { ids.clear(); }
+};
+
 struct World {
   MissionDef mission;
   TerrainMap terrain;
@@ -48,6 +54,7 @@ struct World {
   VisFile visibility;            // .vis per-side light layers, may be empty
   Sprite preview;                // .spr minimap preview; w == 0 if absent
   std::vector<Object> objects;
+  Selection selection;           // local player's selected objects (UI state, not simulation state)
   uint64_t tick = 0;
   int local_side = 0;            // side whose fog layer is shown / whose objects are always visible
   uint32_t fog_version = 1;      // bump when the local side's .vis layer changes
@@ -59,6 +66,7 @@ struct World {
       if (s.index == side) return s.color;
     return side;
   }
+  const Object* find(uint32_t id) const { for (const Object& o : objects) if (o.id == id) return &o; return nullptr; }
   // Called by the driver right before each simulation tick: prev := cur for everything.
   void begin_tick() {
     for (auto& o : objects) { o.prev_x = o.cur_x; o.prev_y = o.cur_y; o.anim_tick++; }
