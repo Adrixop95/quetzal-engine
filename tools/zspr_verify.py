@@ -16,7 +16,8 @@ for l in open(os.path.join(run, 'objs.txt')):
     f = lambda o: int(t[3 + o // 4], 16)
     objs.append(dict(type=f(0x50), state=f(0x64), dir=f(0x80), x=f(0x24), y=f(0x28), side=f(0x44) if False else None))
 pals = {}
-SHADE = int(os.environ.get('SHADE', '14'))
+TEAM = int(os.environ.get('TEAM', '0'))
+SHADE = int(os.environ.get('SHADE', '10'))
 def render(sid, team):
     b = its.get((0x44c, sid))
     if not b or len(b) < 0x18: return None
@@ -50,39 +51,22 @@ def score(pred, ox, oy, scr, thr=48):
                 if abs(s[0] - r) < thr and abs(s[1] - g) < thr and abs(s[2] - b) < thr: ok += 1
     return ok / n if n else 0, n
 idle = [o for o in objs if o['state'] == 1 and o['type'] != 0 or (o['state'] == 1 and o['x'] < 3000 and o['y'] < 600)]
-# estimate view origin by brute-force over the first unit with the object's own direction
-cands = [o for o in objs if o['state'] == 1][:3]
-best = None
-o0 = cands[0]; r = render(slot0(o0['type'], o0['dir']), 0); im, sx, sy = r
-for ox in range(0, 1200, 1):
-    pass
-# origin search: world->screen = world - origin; origin x in [0,4000], y [0,3000] is large; use coarse hint: the unit group is centered near the screen
-xs = [o['x'] for o in objs if o['y'] < 700]; ys = [o['y'] for o in objs if o['y'] < 700]
-cx, cy = (min(xs) + max(xs)) // 2, (min(ys) + max(ys)) // 2
-best = (-1, 0, 0)
-for oxx in range(cx - 330, cx - 270, 2):
-    for oyy in range(cy - 330, cy - 270, 2):
-        tot = 0
-        for o in objs:
-            if o['state'] != 1 or o['y'] > 700: continue
-            im, sx, sy = render(slot0(o['type'], o['dir']), 0)
-            s, n = score(im, o['x'] - sx - oxx, o['y'] - sy - oyy, scr)
-            tot += s
-        if tot > best[0]: best = (tot, oxx, oyy)
-print('origin', best)
-_, ORX, ORY = best
-out = Image.new('RGB', (len([o for o in objs if o['y'] < 700]) * 70, 200))
+cx, cy = [int(x) for l in open(os.path.join(run, 'placed.txt')) if l.startswith('# start') for x in l.split()[2:4]]
+ORX, ORY = cx * 48 - 298, cy * 48 - 300   # view origin (unclamped), verified
+objs = [o for o in objs if 0 <= o['x'] - ORX < 600 and 0 <= o['y'] - ORY < 600]
+
+out = Image.new('RGB', (len([o for o in objs if True]) * 70, 200))
 k = 0
 for o in objs:
-    if o['y'] > 700 or o['state'] != 1: continue
+    if o['state'] != 1: continue
     res = []
     for d in range(8):
-        sid = slot0(o['type'], d); im, sx, sy = render(sid, 0)
+        sid = slot0(o['type'], d); im, sx, sy = render(sid, TEAM)
         s, n = score(im, o['x'] - sx - ORX, o['y'] - sy - ORY, scr); res.append(s)
     bd = max(range(8), key=lambda d: res[d])
     print('type %2d %-24s field-dir %d best-dir %d scores %s' % (o['type'], T[o['type']]['name'], o['dir'], bd, ' '.join('%.2f' % x for x in res)))
     cx0, cy0 = o['x'] - ORX, o['y'] - ORY
     out.paste(scr.crop((cx0 - 35, cy0 - 60, cx0 + 35, cy0 + 40)), (k * 70, 0))
-    im, sx, sy = render(slot0(o['type'], o['dir']), 0)
+    im, sx, sy = render(slot0(o['type'], o['dir']), TEAM)
     tmp = Image.new('RGB', (70, 100), (0, 0, 0)); tmp.paste(im, (35 - sx, 60 - sy), im); out.paste(tmp, (k * 70, 100)); k += 1
 out.resize((out.width * 2, out.height * 2)).save(os.path.join(run, 'verify.png'))

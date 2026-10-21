@@ -52,9 +52,11 @@ for l in open(os.path.join(run, 'objs.txt')):
     if ty not in tl or ty >= 90 or t[1] == '0048f5e0': continue
     X, Y = f(0x24) - OX, f(0x28) - OY
     if not (0 <= X < 600 and 0 <= Y < 600): continue
+    if t[1] in ('004951b8', '0048f97c'): Y -= f(0x7c)   # altitude
     print('== type %d %s vt %s pos %d,%d screen %d,%d' % (ty, T[ty]['name'], t[1], f(0x24), f(0x28), X, Y))
     print('   words', ' '.join('%x:%x' % (o, f(o)) for o in range(0x58, 0xb0, 4) if f(o)))
     for ai, aid in enumerate(T[ty]['anims']):
+        if not aid or (0x515, aid) not in its: continue
         if aid not in anims: anims[aid] = sprmap.parse_anim(its[(0x515, aid)])
         res = []
         for s, sq in anims[aid].items():

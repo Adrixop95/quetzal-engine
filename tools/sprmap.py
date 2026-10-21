@@ -147,8 +147,18 @@ def cmd_hpp(game, heap, out):
     L += ['};', '}  // namespace aztec::data', '']
     open(out, 'w').write('\n'.join(L))
 
+def cmd_animsheet(game, outdir, ids):
+    """Sheets for raw anim ids (effects, decorations): tools/sprmap.py animsheet GAME OUTDIR id..."""
+    global type_table
+    import types as _t
+    real = type_table
+    type_table = lambda h, e: [{'type': i, 'name': 'UGI_A%d' % i, 'anims': [i]} for i in ids]
+    try: cmd_sheet(game, outdir, None, set(ids))
+    finally: type_table = real
+
 if __name__ == '__main__':
     c = sys.argv[1]
     if c == 'json': cmd_json(*sys.argv[2:5])
     elif c == 'hpp': cmd_hpp(*sys.argv[2:5])
+    elif c == 'animsheet': cmd_animsheet(sys.argv[2], sys.argv[3], [int(x) for x in sys.argv[4:]])
     elif c == 'sheet': cmd_sheet(sys.argv[2], sys.argv[3], os.environ.get('HEAP', 'work/zt_all/heap.bin'), {int(x) for x in sys.argv[4:]})

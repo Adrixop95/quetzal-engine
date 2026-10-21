@@ -23,6 +23,7 @@ if len(sys.argv) > 4: cx, cy = 34 + ox, 39 + oy
 else:   # open 13x13 block far from the player's town
     cand = [(open_score(x, y), x, y) for y in range(8, 52) for x in range(8, 82) if (x - 34) ** 2 + (y - 39) ** 2 > 22 ** 2]
     top = max(c[0] for c in cand); cx, cy = min(((x, y) for sc, x, y in cand if sc >= top - 12), key=lambda q: (q[0] - 50) ** 2 + (q[1] - 30) ** 2)
+head = re.sub(r'(\[Side0\][^\[]*?)Color=\d+', lambda m: m.group(1) + 'Color=' + os.environ.get('COLOR', '0'), head, count=1, flags=re.S)
 head = re.sub(r'Start_X=34', 'Start_X=%d' % cx, head); head = re.sub(r'Start_Y=39', 'Start_Y=%d' % cy, head)
 cells = [(cx + (i % 4) * 3 - 4, cy + (i // 4) * 3 - 4) for i in range(40)]   # 4 columns, 3-tile spacing
 placed = []
@@ -38,12 +39,12 @@ for team in range(nteams):
 if SIDE == 0:   # keep the victory banner away: one passive enemy far from the objects
     out.append('[Team%d]\nScenarioID=%d\nSide=1\nUnit0=%3d,%3d,0, 6000\nUnits=1\n' % (nteams, nteams + 1, 80 if cx < 45 else 10, 50)); nteams += 1
 ntown = 1
-for g in range(0, len(BUILD), 3):
-    grp = BUILD[g:g + 3]
-    x0, y0 = cells[k]; k += 1
+for g in range(0, len(BUILD), 6):
+    grp = BUILD[g:g + 6]
+    x0, y0 = cells[0][0] - 3, cells[0][1] - 3
     out.append('[Town%d]\nScenarioID=%d\nSide=%d\nX=%d\nY=%d\nType=2\nTendency=0\nBuildSpeed=1\nRace=1' % (ntown, 50 + ntown, SIDE, x0, y0))
     for j, tp in enumerate(grp):
-        x, y = cells[k + 2]; k += 4
+        x, y = cells[k]; k += 1
         out.append('Unit%d=%3d,%3d,%3d, 6000' % (j, x, y, tp)); placed.append((x, y, tp))
     out.append('Units=%d\n' % len(grp)); ntown += 1
 text = '\n'.join(out)
