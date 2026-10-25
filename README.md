@@ -22,8 +22,5 @@ Requires SDL2 and a C++20 compiler. `/path/to/game` is the installed game direct
 This project is not affiliated with or endorsed by the original developers or publishers. You must own a legal copy of the game.
 Game assets are never distributed here.
 
----
-
-# PL
-Otwarta reimplementacja silnika gry **The Aztec / Imperium Azteków (Aztec Empire)** (New Media Generation, 1999). Projekt czyta pliki z Twojej własnej kopii gry;
-repozytorium nie zawiera zasobów, pliku wykonywalnego ani kodu wygenerowanego z pliku wykonywalnego. Etap: wczesny. Szczegóły w `docs/` i `src/engine/README.md`.
+## License
+GPL-3.0-or-later (see `LICENSE`). Third-party libraries keep their own licenses (SDL2: zlib).
