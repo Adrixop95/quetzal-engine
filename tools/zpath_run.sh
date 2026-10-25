@@ -10,10 +10,10 @@ cp "$ROOT/game/Aztec.exe" "$ROOT/game/aztec_settings.ini" "$ROOT/game/Keys.ini" 
 for d in Res Video Music Campaign; do ln -s "$ROOT/game/$d" "$G/$d"; done
 for f in "$ROOT"/game/Maps/*; do case "$f" in */ztest.*|*/zpath*) ;; *) ln -s "$f" "$G/Maps/";; esac; done
 mv "$O"/Maps/zpath1.* "$G/Maps/"; rmdir "$O/Maps"
-{ echo "wait 6000"; echo "click 140 239"; echo "wait 800"; echo "click 160 543"; echo "wait 5000"; echo "click 650 58"; echo "wait 2500"
-  for i in $(seq 1 $PAGES); do echo "click 645 421"; echo "wait 800"; done
+{ echo "wait 9000"; echo "click 140 239"; echo "wait 1500"; echo "click 160 543"; echo "wait 7000"; echo "click 650 58"; echo "wait 3500"
+  for i in $(seq 1 $PAGES); do echo "click 645 421"; echo "wait 1200"; done
   [ -n "$SHOTLIST" ] && echo shot
-  echo "click 150 $ROW"; echo "wait 800"; echo "click 160 543"; echo "wait 7000"
+  echo "click 150 $ROW"; echo "wait 1500"; echo "click 160 543"; echo "wait 9000"
   echo "wait $((SECS*1000))"; echo shot; echo quit; } > "$O/s.txt"
 ( cd "$G" && RT_CMD_REPLAY="$O/cmd.txt" RT_POS_LOG="$O/pos.txt" RT_PATH_LOG="$O/path.txt" RT_DUMP_DIR="$O" RT_RESOLUTION=800x600 RT_NO_GRAB=1 RT_NO_VIDEO=1 RT_SCRIPT="$O/s.txt" \
   timeout -s KILL $((SECS+120)) unshare -rn sh -c "ip link set lo up; ip addr add 192.168.1.125/24 dev lo; exec $BIN $G/Aztec.exe" >"$O/out.txt" 2>&1 )
