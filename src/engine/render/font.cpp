@@ -1,6 +1,7 @@
 #include "engine/render/font.hpp"
 
 #include <cctype>
+#include "core/text.hpp"
 #include <vector>
 
 namespace aztec::engine {
@@ -88,8 +89,9 @@ const StoredSprite* Font::glyph(unsigned char cp) const {
   return g.ok() ? &g : nullptr;
 }
 
-int Font::width(const std::string& s, int scale) const {
-  if (!original_) return int(s.size()) * 4 * scale - scale;
+int Font::width(const std::string& s0, int scale) const {
+  if (!original_) return int(s0.size()) * 4 * scale - scale;
+  std::string s = utf8_to_cp1250(s0);
   int w = 0, e = eff(scale);
   for (unsigned char ch : s) {
     const StoredSprite* g = glyph(ch);
@@ -98,8 +100,9 @@ int Font::width(const std::string& s, int scale) const {
   return w;
 }
 
-void Font::draw(SDL_Renderer* r, int x, int y, const std::string& s, int scale, SDL_Color c, bool shadow) const {
+void Font::draw(SDL_Renderer* r, int x, int y, const std::string& s0, int scale, SDL_Color c, bool shadow) const {
   if (original_) {
+    std::string s = utf8_to_cp1250(s0);
     int e = eff(scale);
     for (int pass = shadow ? 0 : 1; pass < 2; pass++) {
       SDL_Color col = pass == 0 ? SDL_Color{0, 0, 0, 220} : c;
@@ -120,6 +123,7 @@ void Font::draw(SDL_Renderer* r, int x, int y, const std::string& s, int scale, 
     return;
   }
   if (!tex_) return;
+  const std::string& s = s0;
   for (int pass = shadow ? 0 : 1; pass < 2; pass++) {
     SDL_Color col = pass == 0 ? SDL_Color{0, 0, 0, 200} : c;
     SDL_SetTextureColorMod(tex_, col.r, col.g, col.b);

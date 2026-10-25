@@ -28,7 +28,7 @@ add_library(aztec_engine_lib
   src/engine/sim/simulation.cpp src/engine/sim/commands.cpp src/engine/sim/rules.cpp src/engine/sim/game_sim.cpp src/engine/sim/script_runner.cpp src/engine/sim/ai.cpp
   src/engine/render/atlas.cpp src/engine/render/sprite_store.cpp src/engine/render/font.cpp
   src/engine/render/png.cpp src/engine/render/fog.cpp src/engine/render/scene_renderer.cpp
-  src/engine/ui/cursor.cpp src/engine/ui/panel.cpp src/engine/ui/names.cpp src/engine/ui/selection_ui.cpp src/engine/ui/commands_ui.cpp src/engine/ui/minimap.cpp src/engine/ui/hud.cpp
+  src/engine/ui/cursor.cpp src/engine/ui/panel.cpp src/engine/ui/names.cpp src/engine/ui/selection_ui.cpp src/engine/ui/commands_ui.cpp src/engine/ui/frontend.cpp src/engine/ui/minimap.cpp src/engine/ui/hud.cpp
   src/engine/app/options.cpp src/engine/app/playtest.cpp src/engine/app/sheet.cpp src/engine/app/engine.cpp)
 target_compile_features(aztec_engine_lib PUBLIC cxx_std_20)
 target_include_directories(aztec_engine_lib PUBLIC src)

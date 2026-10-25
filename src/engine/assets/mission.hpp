@@ -44,6 +44,7 @@ struct MissionDef {
   std::string map_name;
   int w = 0, h = 0;
   int tileset = 0;
+  std::string avi;        // Globals AVI= (intro video file name)
   int start_time = 0;     // daylight clock 0..7199
   std::vector<SideDef> sides;
   std::vector<TownDef> towns;

@@ -15,6 +15,7 @@
 #include "engine/render/png.hpp"
 #include "engine/render/scene_renderer.hpp"
 #include "engine/ui/cursor.hpp"
+#include "engine/ui/frontend.hpp"
 #include "engine/ui/hud.hpp"
 #include "engine/ui/names.hpp"
 #include "engine/ui/panel.hpp"
@@ -49,29 +50,16 @@ static int list_missions(const std::string& dir) {
   return names.empty() ? 1 : 0;
 }
 
-int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider, std::unique_ptr<Simulation> sim) {
-  if (o.list) return list_missions(o.game_dir);
-  if (!o.sheet_spec.empty()) {
-    std::string e;
-    if (!write_sprite_sheet(o.game_dir, o.sheet_spec, o.sheet_out, e)) { std::fprintf(stderr, "%s\n", e.c_str()); return 1; }
-    return 0;
-  }
+enum class PlayExit { Quit, ToMenu, Restart, Next };
 
-  GameData data;
+static PlayExit play_mission(Window& win, GameData& data, const Options& o, std::shared_ptr<const SpriteProvider> provider,
+                             std::unique_ptr<Simulation> sim, const std::string& spec, bool& playtest_failed, int& rc) {
   std::string err;
-  if (!data.open(o.game_dir, err)) { std::fprintf(stderr, "%s\n", err.c_str()); return 1; }
   World world;
-  if (!load_world(data, o.mission, world, err)) { std::fprintf(stderr, "%s\n", err.c_str()); return 1; }
-
-  if (SDL_Init(SDL_INIT_VIDEO) != 0) { std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
-  int rc = 0;
-  bool playtest_failed = false;
+  if (!load_world(data, spec, world, err)) { std::fprintf(stderr, "%s\n", err.c_str()); rc = 1; return PlayExit::Quit; }
+  win.set_title("Aztec Empire - " + (world.mission.title.empty() ? world.mission.file_name : world.mission.title));
+  PlayExit exit_reason = PlayExit::Quit;
   {
-    Window win;
-    WindowOptions wo = o.window;
-    wo.title = "Aztec Empire - " + (world.mission.title.empty() ? world.mission.file_name : world.mission.title);
-    if (!win.create(wo)) { SDL_Quit(); return 1; }
-
     SceneRenderer scene(win, data, world);
     scene.opts.terrain_palette = o.terrain_palette;
     scene.fog().set_enabled(o.fog);
@@ -133,7 +121,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
     PlaytestScript playtest;
     bool pt = false;
     if (!o.script.empty()) {
-      if (!playtest.load(o.script, err)) { std::fprintf(stderr, "%s\n", err.c_str()); SDL_Quit(); return 1; }
+      if (!playtest.load(o.script, err)) { std::fprintf(stderr, "%s\n", err.c_str()); rc = 1; return PlayExit::Quit; }
       pt = true;
     }
     auto GetMouse = [&](int* x, int* y) { if (pt) { *x = in.mx; *y = in.my; } else SDL_GetMouseState(x, y); };
@@ -164,7 +152,9 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       game->submit(c);
     }
     for (int i = 0; i < o.pre_ticks; i++) { world.begin_tick(); sim->tick(world); }
-    while (!in.quit) {
+    PauseMenu pause;
+    bool leave = false;
+    while (!in.quit && !leave) {
       uint64_t now = SDL_GetPerformanceCounter();
       double dt = pt ? 1.0 / 12 : double(now - last) / double(freq);
       last = now;
@@ -201,7 +191,30 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       }
       cam.set_view(float(view_w), float(oh));
 
-      if (in.hit(SDL_SCANCODE_ESCAPE)) in.quit = true;
+      if (in.hit(SDL_SCANCODE_ESCAPE)) {
+        if (!o.menu_session) in.quit = true;
+        else if (world.outcome == kRunning) pause.open = !pause.open;
+        else { exit_reason = PlayExit::ToMenu; leave = true; }
+      }
+      if (world.outcome != kRunning && in.hit(SDL_SCANCODE_RETURN)) {
+        leave = true;
+        std::string lo = world.mission.file_name;
+        for (auto& ch : lo) ch = char(std::tolower(ch));
+        exit_reason = (world.outcome == kVictory && o.menu_session && lo.rfind("mission_", 0) == 0) ? PlayExit::Next : PlayExit::ToMenu;
+      }
+      if (o.menu_session && show_panel && in.pressed[SDL_BUTTON_LEFT] && in.mx >= ow - panel.width() && in.my < 24 * pscale && in.mx < ow - panel.width() + 100 * pscale) pause.open = true;
+      {
+        PauseMenu::Action pa = pause.update(in, ow, oh, pscale);
+        if (pa == PauseMenu::Action::Resume) pause.open = false;
+        if (pa == PauseMenu::Action::Restart) { exit_reason = PlayExit::Restart; leave = true; }
+        if (pa == PauseMenu::Action::Menu) { exit_reason = PlayExit::ToMenu; leave = true; }
+        if (pa == PauseMenu::Action::Quit) { exit_reason = PlayExit::Quit; in.quit = true; }
+        if (pause.open) {   // the world ignores input while the pause menu is up
+          for (int b = 0; b < 6; b++) { in.pressed[b] = in.released[b] = in.buttons[b] = false; }
+          std::fill(std::begin(in.key_hit), std::end(in.key_hit), false);
+          in.wheel = 0;
+        }
+      }
       if (in.hit(SDL_SCANCODE_F11)) win.cycle_borderless();
       if (in.hit(SDL_SCANCODE_RETURN) && in.alt) win.toggle_fullscreen();
       if (in.hit(SDL_SCANCODE_F1)) hud.show_help = !hud.show_help;
@@ -220,11 +233,11 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       }
 
       // Fixed 12 Hz simulation, independent of frame rate.
-      if (!paused) {
+      if (!paused && !pause.open) {
         int n = stepper.advance(dt);
         for (int i = 0; i < n; i++) { world.begin_tick(); sim->tick(world); }
       }
-      float alpha = paused ? 1.f : float(stepper.alpha());
+      float alpha = (paused || pause.open) ? 1.f : float(stepper.alpha());
 
       // Script requests: centerView / cameraActivate, mission end.
       if (world.center_serial != seen_center) { seen_center = world.center_serial; cam.center_on(float(world.center_x), float(world.center_y)); }
@@ -287,6 +300,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       hud.mouse_x = in.mx; hud.mouse_y = in.my; hud.alpha = alpha;
       hud.sprites = scene.stats.sprites; hud.placeholders = scene.stats.placeholders; hud.geometry_calls = scene.stats.geometry_calls;
       selui.draw_box(win.renderer());
+      pause.draw(win.renderer(), scene.font(), ow, oh, pscale);
       {  // script messages (printString) and end-of-mission banner
         int ty = 40 * ui;
         for (const Message& m : world.messages) {
@@ -298,7 +312,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
           std::string t = world.outcome == kVictory ? "MISSION COMPLETE" : "MISSION FAILED";
           int sc2 = ui * 2, tw = scene.font().width(t, sc2);
           scene.font().draw(win.renderer(), (ow - panel.width() - tw) / 2, oh / 3, t, sc2, world.outcome == kVictory ? SDL_Color{120, 255, 120, 255} : SDL_Color{255, 110, 110, 255});
-          std::string t2 = "PRESS ESC TO LEAVE";
+          std::string t2 = o.menu_session ? "ENTER: CONTINUE   ESC: MENU" : "PRESS ESC TO LEAVE";
           scene.font().draw(win.renderer(), (ow - panel.width() - scene.font().width(t2, ui)) / 2, oh / 3 + 18 * ui, t2, ui, {230, 230, 230, 255});
         }
       }
@@ -381,6 +395,56 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       }
     }
     if (pt && playtest.failures() > 0) playtest_failed = true;
+  }
+  return exit_reason;
+}
+
+int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider, std::unique_ptr<Simulation> sim) {
+  if (o.list) return list_missions(o.game_dir);
+  if (!o.sheet_spec.empty()) {
+    std::string e;
+    if (!write_sprite_sheet(o.game_dir, o.sheet_spec, o.sheet_out, e)) { std::fprintf(stderr, "%s\n", e.c_str()); return 1; }
+    return 0;
+  }
+  GameData data;
+  std::string err;
+  if (!data.open(o.game_dir, err)) { std::fprintf(stderr, "%s\n", err.c_str()); return 1; }
+  if (SDL_Init(SDL_INIT_VIDEO) != 0) { std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
+  int rc = 0;
+  bool playtest_failed = false;
+  {
+    Window win;
+    WindowOptions wo = o.window;
+    wo.title = "Aztec Empire";
+    if (!win.create(wo)) { SDL_Quit(); return 1; }
+    Options opts = o;
+    opts.menu_session = o.menu;
+    std::string spec = o.mission;
+    bool menu = o.menu;
+    std::string open_brief;
+    for (;;) {
+      if (menu) {
+        FrontendResult fr;
+        if (!run_frontend(win, data, opts, fr, open_brief)) break;
+        spec = fr.mission;
+        open_brief.clear();
+        menu = false;
+      }
+      PlayExit pe = play_mission(win, data, opts, provider, std::move(sim), spec, playtest_failed, rc);
+      sim.reset();
+      if (pe == PlayExit::Quit || rc != 0) break;
+      if (pe == PlayExit::ToMenu) { menu = true; continue; }
+      if (pe == PlayExit::Restart) continue;
+      if (pe == PlayExit::Next) {
+        std::string lo = spec;
+        for (auto& ch : lo) ch = char(std::tolower(ch));
+        int n = std::atoi(lo.c_str() + 8);
+        if (n >= 1 && n < 15) { open_brief = "mission_" + std::to_string(n + 1); menu = true; continue; }
+        menu = true;
+        continue;
+      }
+      break;
+    }
   }
   SDL_Quit();
   if (playtest_failed) rc = 3;

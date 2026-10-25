@@ -33,4 +33,23 @@ std::string cp1250_to_utf8(std::string_view in) {
   return out;
 }
 
+std::string utf8_to_cp1250(std::string_view in) {
+  std::string out;
+  for (size_t i = 0; i < in.size();) {
+    unsigned char c = in[i];
+    unsigned cp = c;
+    size_t n = 1;
+    if (c >= 0xF0 && i + 3 < in.size()) { cp = (c & 7) << 18 | (in[i + 1] & 63) << 12 | (in[i + 2] & 63) << 6 | (in[i + 3] & 63); n = 4; }
+    else if (c >= 0xE0 && i + 2 < in.size()) { cp = (c & 15) << 12 | (in[i + 1] & 63) << 6 | (in[i + 2] & 63); n = 3; }
+    else if (c >= 0xC0 && i + 1 < in.size()) { cp = (c & 31) << 6 | (in[i + 1] & 63); n = 2; }
+    i += n;
+    if (cp < 0x80) { out += char(cp); continue; }
+    char o = '?';
+    for (int k = 0; k < 128; k++)
+      if (kCp1250[k] == cp) { o = char(0x80 + k); break; }
+    out += o;
+  }
+  return out;
+}
+
 }  // namespace aztec

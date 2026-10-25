@@ -6,7 +6,11 @@ namespace aztec::engine {
 
 struct Options {
   std::string game_dir = "game";
-  std::string mission = "1";       // number, name or path to .mp
+  std::string mission = "1";
+  bool mission_given = false;      // a mission was named on the command line
+  bool menu_session = false;       // the front-end is in use: Esc opens the pause menu instead of quitting
+  bool no_menu = false;
+  bool menu = false;               // start in the front-end (set when no mission/script/screenshot was requested)       // number, name or path to .mp
   WindowOptions window;
   float zoom = 0;                  // 0 = automatic
   bool has_cam = false;
