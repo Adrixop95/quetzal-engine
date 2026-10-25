@@ -101,3 +101,12 @@ See the [documentation index](docs/README.md) and
 commands. Before submitting, build from a fresh directory, run CTest, review the
 staged diff for prohibited files and unrelated edits, and commit with a clear
 English message. Include the commands used for verification in your contribution.
+
+## Branching model (gitflow)
+
+- `main` holds released code only; `develop` is the integration branch and the default branch.
+- Work on `feature/<topic>` branches created from `develop`; open a pull request into `develop`.
+- Both `main` and `develop` are protected: changes arrive through pull requests with green `build` and `pre-commit` checks. Never push to them directly.
+- Releases: open a pull request `develop` -> `main`, then tag `vX.Y.Z` on `main` (the release workflow builds the binaries).
+- Hotfixes: `hotfix/<topic>` from `main`, merged into both `main` and `develop`.
+- Install the hooks once: `pip install pre-commit && pre-commit install`.
