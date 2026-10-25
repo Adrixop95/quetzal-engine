@@ -1,3 +1,4 @@
+#include "core/loader_limits.hpp"
 #include "core/ini.hpp"
 
 #include <cstdio>
@@ -17,13 +18,17 @@ bool Ini::load(const std::string& path) {
   std::string text;
   char buf[4096];
   size_t n;
-  while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) text.append(buf, n);
+  while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) {
+    if (text.size() + n > detail::kTextBytes) { std::fclose(f); return false; }
+    text.append(buf, n);
+  }
   std::fclose(f);
   return parse(text);
 }
 
 bool Ini::parse(const std::string& text) {
   data_.clear();
+  if (text.size() > detail::kTextBytes) return false;
   std::string section;
   size_t pos = 0;
   while (pos < text.size()) {
@@ -52,7 +57,7 @@ std::string Ini::get(const std::string& section, const std::string& key, const s
 
 int Ini::get_int(const std::string& section, const std::string& key, int def) const {
   std::string v = get(section, key);
-  return v.empty() ? def : std::atoi(v.c_str());
+  return v.empty() ? def : detail::integer(v.c_str(), def);
 }
 
 }  // namespace aztec

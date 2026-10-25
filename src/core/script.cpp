@@ -1,3 +1,4 @@
+#include "core/loader_limits.hpp"
 #include "core/script.hpp"
 
 #include <cctype>
@@ -65,7 +66,9 @@ class Reader {
     ws();
     const char* b = t_.data() + p_;
     char* e = nullptr;
+    errno = 0;
     long v = std::strtol(b, &e, 0);
+    if (errno == ERANGE || v < INT_MIN || v > INT_MAX) fail("Constant out of range");
     if (e == b) fail("Constant expected");
     p_ += size_t(e - b);
     return int(v);
@@ -304,7 +307,10 @@ bool is_keyword(const std::string& id, const char* k) { return lc(id) == k; }
 
 bool parse_script(std::string_view text, Script& out) {
   out = Script{};
-  Reader r(text);
+  if (text.size() > detail::kTextBytes) return false;
+  // Reader::integer uses strtol, which requires a terminated buffer.
+  const std::string terminated(text);
+  Reader r(terminated);
   try {
     while (!r.eof()) {
       std::string kw = r.ident();
@@ -340,7 +346,10 @@ bool load_script(const std::string& path, Script& out) {
   std::string text;
   char buf[4096];
   size_t n;
-  while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) text.append(buf, n);
+  while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) {
+    if (text.size() + n > detail::kTextBytes) { std::fclose(f); return false; }
+    text.append(buf, n);
+  }
   std::fclose(f);
   return parse_script(text, out);
 }

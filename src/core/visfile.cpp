@@ -1,3 +1,4 @@
+#include "core/loader_limits.hpp"
 #include "core/visfile.hpp"
 
 #include <cstdio>
@@ -6,6 +7,7 @@ namespace aztec {
 
 bool parse_vis(const std::vector<uint8_t>& d, VisFile& out) {
   out.sides.clear();
+  if (d.size() > detail::kFileBytes) return false;
   if (d.size() < 2) return false;
   size_t n = d[0] | d[1] << 8, o = 2;
   for (size_t i = 0; i < n; i++) {
@@ -15,7 +17,7 @@ bool parse_vis(const std::vector<uint8_t>& d, VisFile& out) {
     l.h = d[o + 2] | d[o + 3] << 8;
     o += 4;
     size_t sz = size_t(l.w) * l.h;
-    if (o + sz > d.size()) return false;
+    if (!sz || sz > detail::kCells || o + sz > d.size()) return false;
     l.v.assign(d.begin() + o, d.begin() + o + sz);
     o += sz;
     out.sides.push_back(std::move(l));
@@ -29,7 +31,10 @@ static bool slurp(const std::string& path, std::vector<uint8_t>& d) {
   uint8_t buf[4096];
   size_t n;
   d.clear();
-  while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) d.insert(d.end(), buf, buf + n);
+  while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) {
+    if (d.size() + n > detail::kFileBytes) { std::fclose(f); d.clear(); return false; }
+    d.insert(d.end(), buf, buf + n);
+  }
   std::fclose(f);
   return true;
 }
@@ -41,6 +46,7 @@ bool load_vis(const std::string& path, VisFile& out) {
 
 std::vector<BriefingSection> parse_briefing(const std::string& raw) {
   std::vector<BriefingSection> res;
+  if (raw.size() > detail::kTextBytes) return res;
   size_t p = 0;
   while (p < raw.size()) {
     size_t e = raw.find('\n', p);

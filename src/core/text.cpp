@@ -1,3 +1,4 @@
+#include "core/loader_limits.hpp"
 #include "core/text.hpp"
 
 namespace aztec {
@@ -15,6 +16,7 @@ static const unsigned short kCp1250[128] = {
 };
 
 std::string cp1250_to_utf8(std::string_view in) {
+  if (in.size() > detail::kTextBytes) return {};
   std::string out;
   out.reserve(in.size());
   for (unsigned char c : in) {
@@ -34,6 +36,7 @@ std::string cp1250_to_utf8(std::string_view in) {
 }
 
 std::string utf8_to_cp1250(std::string_view in) {
+  if (in.size() > detail::kTextBytes) return {};
   std::string out;
   for (size_t i = 0; i < in.size();) {
     unsigned char c = in[i];

@@ -1,3 +1,4 @@
+#include "core/loader_limits.hpp"
 #include "core/strbase.hpp"
 
 #include <cstdlib>
@@ -11,9 +12,11 @@ static const std::string kEmpty;
 
 // Reads a quoted string starting after `key` inside block [b, e); handles \" and \\ escapes.
 static bool quoted_after(const std::string& s, size_t b, size_t e, const char* key, std::string& out) {
-  size_t p = s.find(key, b);
+  size_t relative = std::string_view(s).substr(b, e - b).find(key);
+  size_t p = relative == std::string_view::npos ? std::string::npos : b + relative;
   if (p == std::string::npos || p >= e) return false;
-  p = s.find('"', p);
+  relative = std::string_view(s).substr(p, e - p).find('"');
+  p = relative == std::string_view::npos ? std::string::npos : p + relative;
   if (p == std::string::npos || p >= e) return false;
   out.clear();
   for (size_t i = p + 1; i < e && s[i] != '"'; i++) {
@@ -29,15 +32,21 @@ static bool quoted_after(const std::string& s, size_t b, size_t e, const char* k
 
 bool StrBase::parse(const std::string& s) {
   by_ordinal_.clear();
+  if (s.size() > detail::kTextBytes) return false;
   size_t pos = 0;
   while ((pos = s.find("*STRING", pos)) != std::string::npos) {
     size_t next = s.find("*STRING", pos + 7);
     size_t end = next == std::string::npos ? s.size() : next;
-    size_t o = s.find("*ORDINAL", pos);
-    size_t i = s.find("*ID", pos);
+    // Search within this block; missing keys must not rescan the whole tail.
+    auto field = [&](const char* key) {
+      size_t offset = std::string_view(s).substr(pos, end - pos).find(key);
+      return offset == std::string_view::npos ? std::string::npos : pos + offset;
+    };
+    size_t o = field("*ORDINAL");
+    size_t i = field("*ID");
     StrEntry e;
     int ordinal = -1;
-    if (o != std::string::npos && o < end) ordinal = std::atoi(s.c_str() + o + 8);
+    if (o != std::string::npos && o < end) ordinal = detail::integer(s.c_str() + o + 8);
     if (i != std::string::npos && i < end) e.id = unsigned(std::strtoul(s.c_str() + i + 3, nullptr, 16));
     std::string en, pl;
     if (quoted_after(s, pos, end, "*ENGLISH", en)) e.en = cp1250_to_utf8(en);

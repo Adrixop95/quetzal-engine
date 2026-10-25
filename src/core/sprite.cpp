@@ -1,3 +1,4 @@
+#include "core/loader_limits.hpp"
 #include "core/sprite.hpp"
 
 #include <cstring>
@@ -19,6 +20,8 @@ bool decode_sprite(Item item, Sprite& s) {
   s.ox = int16_t(rd16(d + 0x14));
   s.oy = int16_t(rd16(d + 0x16));
   size_t n = size_t(s.w) * s.h;
+  // Reject implausible dimensions before allocating decoded planes.
+  if (!n || n > detail::kPixels) return false;
   s.opaque.assign(n, 0);
   s.index.clear();
   s.color.clear();
@@ -40,6 +43,7 @@ bool decode_sprite(Item item, Sprite& s) {
   for (int y = 0; y < s.h; y++) {
     size_t ctrl = rd32(d + 0x18 + 8 * y), pix = rd32(d + 0x1c + 8 * y);
     int x = 0;
+    unsigned idle = 0;
     bool draw = false;
     while (x < s.w) {
       if (ctrl >= item.size) return false;
@@ -53,9 +57,12 @@ bool decode_sprite(Item item, Sprite& s) {
       } else {
         draw = !draw;
       }
+      // Alternating RLE permits an empty first skip, but repeated empty runs
+      // must not rescan an arbitrarily long stream for every row.
+      if (!count) { if (++idle > 2) return false; } else idle = 0;
       for (unsigned k = 0; k < count && x < s.w; k++, x++) {
         if (is_draw) {
-          if (pix + bpp > item.size) return false;
+          if (pix > item.size || bpp > item.size - pix) return false;
           put(size_t(y) * s.w + x, d + pix);
         }
         if (is_draw) pix += bpp;  // keep pixel cursor in step even if clipped
