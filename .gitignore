@@ -7,3 +7,7 @@ build/
 debug/
 rt_missing_entries.txt
 build_trace/
+build_*/
+**/__pycache__/
+*.log
+calls.txt
