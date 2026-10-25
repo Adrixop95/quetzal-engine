@@ -1,82 +1,80 @@
-# Aztec Empire: plan odtworzenia
+# Aztec Empire: reconstruction plan
 
-Cel: grywalny build Aztec Empire (New Media Generation, 1999) na Linux/Windows/macOS, z poprawkami (widescreen).
-Repo nie zawiera Aztec.exe, assetów ani kodu pochodzącego z binarki. Użytkownik dostarcza własną instalację gry.
+Goal: a playable build of Aztec Empire (New Media Generation, 1999) for Linux/Windows/macOS, with fixes (widescreen).
+The repo does not contain Aztec.exe, assets, or any code derived from the binary. The user supplies their own game installation.
 
-## Strategia: statyczna rekompilacja
-1. `tools/ghidra_scripts/LiftAll.java` (Ghidra headless) zamienia P-code każdej funkcji x86-32 na C
-   (`work/gen/gen_*.c`). Plik wynikowy jest pochodną Aztec.exe i nigdy nie trafia do gita.
-2. `runtime/` to ręcznie pisany runtime: 4 GiB pamięci gościa, loader PE, dyspozytor funkcji,
-   shimy WinAPI (win32.c) i DirectX na SDL2 (ddraw.c, dsound.c, dinput.c, backend.c).
-3. `src/core`, `src/app`, `src/tools`: własne dekodery formatów (archiwa .xbe, sprite'y, palety, mapy)
-   i przeglądarka SDL2. Służą do weryfikacji i do przyszłej czystej reimplementacji.
+## Strategy: static recompilation
+1. `tools/ghidra_scripts/LiftAll.java` (Ghidra headless) turns the P-code of each x86-32 function into C
+   (`work/gen/gen_*.c`). The output file is derived from Aztec.exe and never goes into git.
+2. `runtime/` is a hand-written runtime: 4 GiB of guest memory, PE loader, function dispatcher,
+   WinAPI shims (win32.c), and DirectX on SDL2 (ddraw.c, dsound.c, dinput.c, backend.c).
+3. `src/core`, `src/app`, `src/tools`: our own decoders for the formats (.xbe archives, sprites, palettes, maps)
+   and an SDL2 viewer. They serve verification and a future clean reimplementation.
 
-## Etapy
-- [x] Formaty zasobów rozpoznane i zweryfikowane (docs/formats.md).
-- [x] Lifter: 100% funkcji kompiluje się do C.
-- [~] Runtime: uruchomienie startu CRT i WinMain, kolejne brakujące shimy i adresy.
-- [ ] Grywalny tryb jednego gracza na Linuxie (menu, misje, dźwięk, wideo Indeo przez ffmpeg).
-- [ ] Widescreen: SetDisplayMode/viewport (patch stałych w grze lub reimplementacja widoku).
-- [ ] Windows i macOS (VirtualAlloc zamiast mmap, long double na ARM).
-- [ ] Multiplayer (protokół sieciowy z kodu `Network`).
-- [ ] Stopniowa zamiana zlifowanych funkcji na czysty C++ (moduł po module, wg ścieżek z `map_modules.py`).
+## Stages
+- [x] Resource formats identified and verified (docs/formats.md).
+- [x] Lifter: 100% of functions compile to C.
+- [~] Runtime: start-up CRT and WinMain run; further missing shims and addresses.
+- [ ] Playable single-player mode on Linux (menus, missions, sound, Indeo video via ffmpeg).
+- [ ] Widescreen: SetDisplayMode/viewport (patching the game's constants or reimplementing the view).
+- [ ] Windows and macOS (VirtualAlloc instead of mmap, long double on ARM).
+- [ ] Multiplayer (network protocol from the `Network` code).
+- [ ] Gradual conversion of lifted functions to clean C++ (module by module, following the paths in `map_modules.py`).
 
-## Iteracja
-Nieobsłużone API lub adres kończy się komunikatem `FATAL`. Brakujące adresy trafiają do
-`tools/extra_entries.txt`, brakujące shimy do `runtime/`.
+## Iteration
+An unhandled API or address ends with a `FATAL` message. Missing addresses go into
+`tools/extra_entries.txt`, missing shims into `runtime/`.
 
-## Stan (2026-10-18)
-Zlifowana gra uruchamia się na Linuxie i renderuje menu główne (800x600, 16 bpp, SDL2).
-Rozwiązane po drodze: odkrywanie funkcji (wskaźniki w danych i stałe w kodzie), DF nie może być eliminowana
-jako martwa flaga, DirectDraw2 (SetDisplayMode ma 5 argumentów), wirtualny rejestr, MCI dla filmów,
-GetVersionExA musi walidować rozmiar struktury.
-Diagnostyka: RT_TRACE_API, RT_TRACE_WAIT, RT_DUMP_DIR (zrzut klatek PPM), RT_DUMP_SURF, RT_WATCH_ADDR,
--DAZTEC_TRACE_CALLS=ON (licznik wejść do funkcji gościa), -DAZTEC_HEAPDEBUG=ON.
-Do zrobienia: filmy (ffmpeg), sieć, dźwięk (sprawdzić), widescreen, Windows/macOS, drugi dysk (muzyka CD2).
+## Status (2026-10-18)
+The lifted game starts on Linux and renders the main menu (800x600, 16 bpp, SDL2).
+Resolved along the way: function discovery (pointers in data and constants in code), DF cannot be eliminated
+as a dead flag, DirectDraw2 (SetDisplayMode takes 5 arguments), virtual register, MCI for movies,
+GetVersionExA must validate the structure size.
+Diagnostics: RT_TRACE_API, RT_TRACE_WAIT, RT_DUMP_DIR (PPM frame dump), RT_DUMP_SURF, RT_WATCH_ADDR,
+-DAZTEC_TRACE_CALLS=ON (counter of guest function entries), -DAZTEC_HEAPDEBUG=ON.
+To do: movies (ffmpeg), network, sound (to be checked), widescreen, Windows/macOS, second disk (CD2 music).
 
-## Tryb testowy (szybki)
+## Test mode (fast)
 `RT_TIMESCALE=3 RT_SCRIPT=scenariusz.txt RT_DUMP_DIR=katalog ./build/aztec_recomp game/Aztec.exe`
-Komendy skryptu (czas w ms czasu gry): `wait MS`, `move X Y`, `click X Y`, `rclick X Y`, `down`, `up`,
-`key DIK`, `keydown DIK`, `keyup DIK`, `shot` (zapis klatki shot_NN.ppm), `quit`.
-Scenariusz "utwórz gracza" trwa ok. 5 s zamiast 25 s. Pliki graczy (*.plr) powstają w katalogu gry.
+Script commands (time in ms of game time): `wait MS`, `move X Y`, `click X Y`, `rclick X Y`, `down`, `up`,
+`key DIK`, `keydown DIK`, `keyup DIK`, `shot` (saves frame shot_NN.ppm), `quit`.
+The scenario "create player" (`"utwórz gracza"`, game string: "create player") takes about 5 s instead of 25 s. Player files (*.plr) are created in the game directory.
 
-## Przejście od menu do misji (2026-10-18)
-Ścieżka: menu (Wybierz gracza) -> Gra pojedyncza -> Kampania -> Graj misję -> odprawa -> "Start Game" (tarcza) -> mapa misji 1.
-Układ katalogu gry (jak na płytach): Maps/ (mapy instalacyjne + misje z obu CD), Video/, Music/, Res/.
-Wirtualny rejestr podaje ścieżki "D:\Maps", "D:\Video", "D:\Music" (gra używa pierwszych 3 znaków jako "napędu CD").
+## Transition from menu to mission (2026-10-18)
+Path: menu ("Wybierz gracza", game string: "select player") -> "Gra pojedyncza" (single player) -> "Kampania" (campaign) -> "Graj misję" (play mission) -> "odprawa" (briefing) -> "Start Game" (shield) -> mission 1 map.
+Game directory layout (as on the discs): Maps/ (install maps + missions from both CDs), Video/, Music/, Res/.
+The virtual registry returns the paths "D:\Maps", "D:\Video", "D:\Music" (the game uses the first 3 characters as the "CD drive").
 
 ## Widescreen (2026-10-18)
-Misje renderują się w dowolnej rozdzielczości (zweryfikowane 1280x720): `./run_aztec.sh --res 1920x1080`.
-Mechanizm: gra trzyma tablicę rozdzielczości (0x515510) i białą listę trybów (0x495498); runtime podmienia wpis 0
-oraz 1280x1024 na żądany rozmiar i dodaje go do `EnumDisplayModes`. Widok mapy skaluje się, panel boczny
-zostaje stałego rozmiaru (kosmetyka: pusty obszar pod panelem). Menu (800x600) jest wycinane w backendzie, gdy reszta
-powierzchni jest czarna. Nie sprawdzone: bardzo duże rozdzielczości (bufory statyczne gry).
+Missions render at any resolution (verified at 1280x720): `./run_aztec.sh --res 1920x1080`.
+Mechanism: the game keeps a resolution table (0x515510) and a whitelist of modes (0x495498); the runtime replaces entry 0
+and 1280x1024 with the requested size and adds it to `EnumDisplayModes`. The map view scales, the side panel
+keeps a fixed size (cosmetic: empty area below the panel). The menu (800x600) is cut out in the backend when the rest
+of the surface is black. Not verified: very large resolutions (the game's static buffers).
 
-## Menu pomocnicze (F9) i cheaty
-Nakładka SDL (runtime/overlay.c, czcionka z tools/gen_font.py) otwierana klawiszem F9 lub `--menu`.
-Ustawienia (zapis w game/aztec_settings.ini): rozdzielczość, tryb okna (okno / bez ramki / pełny ekran, na żywo),
-skalowanie (ostre / gładkie), filmy. Zmiana rozdzielczości wymaga ponownego uruchomienia (przycisk w menu).
-Pomoc w grze: "Odblokuj wszystkie misje" (wywołuje funkcję gry 0x43f560(15): zapisuje postęp 15 w pliku gracza *.plr,
-zweryfikowane) i "Natychmiastowe zwycięstwo" (ustawia flagę jak wbudowany klawisz CheatWin: DAT_004dd2f4+0x140+idx*0x69c,
-zweryfikowane baner WYGRANA). W Keys.ini istnieje też wbudowana akcja `CheatWin <klawisz>`.
-Niezrealizowane: dodawanie złota (pole nie jest zwykłym int/float/double w tablicy stron; do dalszego śledzenia komendami
-skryptu snap/diff/fsnap/ddiff w backend.c).
-Komendy skryptu testowego: wait, move, click, rclick, down, up, key, keydown, keyup, shot, quit, f9, ovclick X Y,
-cheat unlock|win, scan/scan16/snap/diff/fsnap/fdiff/fdiffd/fdifff/dsnap/ddiff/poke/pokeb/pokeside/dumpside (diagnostyka pamięci).
+## Helper menu (F9) and cheats
+SDL overlay (runtime/overlay.c, font from tools/gen_font.py) opened with the F9 key or `--menu`.
+Settings (saved to game/aztec_settings.ini): resolution, window mode (window / borderless / fullscreen, live),
+scaling (sharp / smooth), movies. Changing the resolution requires a restart (button in the menu).
+In-game help: "Odblokuj wszystkie misje" (game string: "unlock all missions"; calls game function 0x43f560(15): saves progress 15 to the player file *.plr, verified)
+and "Natychmiastowe zwycięstwo" (game string: "instant victory"; sets the flag like the built-in CheatWin key: DAT_004dd2f4+0x140+idx*0x69c, verified with the WYGRANA banner, game string: "VICTORY"). Keys.ini also has a built-in action `CheatWin <key>`.
+Not done: adding gold (the field is not a plain int/float/double in the page array; to be tracked further with the snap/diff/fsnap/ddiff script commands in backend.c).
+Test script commands: wait, move, click, rclick, down, up, key, keydown, keyup, shot, quit, f9, ovclick X Y,
+cheat unlock|win, scan/scan16/snap/diff/fsnap/fdiff/fdiffd/fdifff/dsnap/ddiff/poke/pokeb/pokeside/dumpside (memory diagnostics).
 
-## Mysz: wirtualny kursor (2026-10-18)
-Wskaźnik systemowy jest zablokowany w oknie (SDL relative mouse mode), więc nie ucieka na żadnym kompozytorze.
-Ruch względny jest całkowany do wirtualnego kursora we współrzędnych obrazu (niezależnie od skalowania i pasów
-przy proporcjach), z czułością z menu F9 (`mouse_speed` w aztec_settings.ini, domyślnie 100%).
-Pozycja jest wpisywana do zmiennych kursora gry (0x4c5468/0x4c546c, 0x4c4f50/0x4c4f54), nakładka F9 rysuje własną strzałkę.
-Debug: `tools/debug_run.sh` (log w debug/<czas>/debug.log, kategorie mouse/window/render/dinput/overlay/state).
+## Mouse: virtual cursor (2026-10-18)
+The system pointer is locked to the window (SDL relative mouse mode), so it does not escape on any compositor.
+Relative motion is integrated into a virtual cursor in image coordinates (independent of scaling and of the bars
+when aspect ratios differ), with sensitivity set in the F9 menu (`mouse_speed` in aztec_settings.ini, default 100%).
+The position is written to the game's cursor variables (0x4c5468/0x4c546c, 0x4c4f50/0x4c4f54); the F9 overlay draws its own arrow.
+Debug: `tools/debug_run.sh` (log in debug/<time>/debug.log, categories mouse/window/render/dinput/overlay/state).
 
-## Freeze w misji: przyczyny (2026-10-19)
-1. Brak Winsock: gra prowadzi blokadę kroków (lockstep) przez warstwę sieciową nawet w single player. Bez `WS2_32.dll`
-   wątek sieciowy kończył się błędem i symulacja nigdy nie startowała. Teraz runtime/winsock.c daje prawdziwe gniazda UDP
-   (przy okazji LAN) oraz gniazdo IPX z pętlą zwrotną (gra wysyła sobie pakiet próbny i czeka na jego odbiór).
-2. Błąd w `timeGetTime`: ujemna różnica nanosekund rzutowana na uint64 dawała skoki czasu o miliardy ms, a pętla ticków
-   liczyła z tego `Sleep(140462661)`. Zawsze liczyć czas w int64.
-3. Wcześniej poprawione: mutexy z właścicielem, VirtualAlloc z odzyskiem, precyzja x87 53 bity (RT_FPU53).
-Diagnostyka: log `netstate` (session/frame) w debug.log, `[sleep]` dla Sleep > 300 ms, `[wait]` BEGIN/END dla nieskończonych oczekiwań,
-`[event]` dla Create/Set/Reset/PulseEvent.
+## Freeze in mission: causes (2026-10-19)
+1. No Winsock: the game runs a lockstep gate through the network layer even in single player. Without `WS2_32.dll`
+   the network thread ended with an error and the simulation never started. Now runtime/winsock.c provides real UDP sockets
+   (LAN as a side effect) and an IPX socket with a loopback (the game sends itself a test packet and waits to receive it).
+2. Bug in `timeGetTime`: a negative nanosecond difference cast to uint64 gave time jumps of billions of ms, and the tick loop
+   computed `Sleep(140462661)` from it. Always compute time in int64.
+3. Fixed earlier: mutexes with an owner, VirtualAlloc with recovery, x87 precision 53 bits (RT_FPU53).
+Diagnostics: `netstate` log (session/frame) in debug.log, `[sleep]` for Sleep > 300 ms, `[wait]` BEGIN/END for infinite waits,
+`[event]` for Create/Set/Reset/PulseEvent.

@@ -1,10 +1,10 @@
-# Statystyki typów (z obserwacji żywych obiektów mapy testowej)
+# Type statistics (from observing live objects of a test map)
 
-Źródło: mapa testowa z jednostką każdego typu (`tools/ztest_run.sh`). `hp_max` = pole `+0x3c` obiektu. Dla klasy Marine (rodzaj 0) rekord opisu typu leży pod
-`0x4ac430 + parametr*0x4c` (parametr = druga kolumna tabeli typów); konstruktor `0x433190` ustawia: `obiekt+0x7c = Anim(id animacji = rekord[0])`, `obiekt+0x38 = rekord[1]` (zdrowie początkowe),
-`obiekt+0x3c = rekord[4]` (zdrowie maksymalne). Pozostałe pola rekordu (19 dwordów): [2], [5], [6], [7] liczby o nieustalonym znaczeniu, [8..10] = -1, [11] flagi 0x101/0x10101, [12..15] rozmiary 0x40..0x100, [16..18] = 0, 1, wskaźnik.
+Source: test map with one unit of each type (`tools/ztest_run.sh`). `hp_max` = object field `+0x3c`. For class Marine (kind 0) the type description record lies at
+`0x4ac430 + parameter*0x4c` (parameter = second column of the type table); the constructor `0x433190` sets: `object+0x7c = Anim(animation id = record[0])`, `object+0x38 = record[1]` (starting health),
+`object+0x3c = record[4]` (maximum health). The other record fields (19 dwords): [2], [5], [6], [7] numbers of undetermined meaning, [8..10] = -1, [11] flags 0x101/0x10101, [12..15] sizes 0x40..0x100, [16..18] = 0, 1, pointer.
 
-| id | typ | klasa | parametr | hp_max | rekord Marine (dwordy hex) |
+| id | type | class | parameter | hp_max | Marine record (hex dwords) |
 |---|---|---|---|---|---|
 | 0 | FOOTMAN | Marine | 3 | 6000 | 4 1770 8 1770 1770 9 40 4 ffffffff ffffffff ffffffff 101 100 100 100 2 0 1 |
 | 1 | RIFLEMAN | Marine | 9 | 5000 | 12 1388 8 1388 1388 6 44 9 ffffffff ffffffff ffffffff 101 100 100 100 2 0 1 |

@@ -1,9 +1,9 @@
-# Typy obiektów gry (UGI)
+# Game object types (UGI)
 
-Tabela `0x4933f8` (rodzaj, parametr wariantu) połączona z listą nazw `UGI_*` (wskaźniki `0x4acb4c..0x4accb4`, indeks = id typu).
-Id typu jest używane w plikach misji (`Unit# = x, y, typ, zdrowie`), skryptach (`UGI_ABDULA`) i w `DisabledID`.
+Table `0x4933f8` (kind, variant parameter) joined with the list of `UGI_*` names (pointers `0x4acb4c..0x4accb4`, index = type id).
+The type id is used in mission files (`Unit# = x, y, type, health`), scripts (`UGI_ABDULA`) and in `DisabledID`.
 
-| id | nazwa UGI | rodzaj (klasa) | parametr |
+| id | UGI name | kind (class) | parameter |
 |---|---|---|---|
 | 0 | UGI_FOOTMAN | 0 (Marine) | 3 |
 | 1 | UGI_RIFLEMAN | 0 (Marine) | 9 |
@@ -96,9 +96,9 @@ Id typu jest używane w plikach misji (`Unit# = x, y, typ, zdrowie`), skryptach 
 | 88 | UGI_JOHNKA | 10 (Johnka) | 0 |
 | 89 | UGI_CAMERA | 11 ((kind 11)) | 0 |
 
-# Typy poleceń / pakietów (PCT)
+# Command / packet types (PCT)
 
-Tablica nazw `0x4ad5dc` (45 wskaźników), indeks = typ pakietu. Polecenia klatki (`PCT_FRAME_*`) są przetwarzane w ticku logiki (`0x4577b0`).
+Name table `0x4ad5dc` (45 pointers), index = packet type. Frame commands (`PCT_FRAME_*`) are processed in the logic tick (`0x4577b0`).
 
 | typ | nazwa |
 |---|---|
@@ -148,7 +148,7 @@ Tablica nazw `0x4ad5dc` (45 wskaźników), indeks = typ pakietu. Polecenia klatk
 | 0x2b | PCT_SETSPEED |
 | 0x2c | PCT_ERROR |
 
-Obsługa w ticku (switch w `0x4577b0`): 0x12 SAVE (flaga zapisu), 0x13 PAUSEON, 0x15 CREATEGROUP (`0x448b40`), 0x16 SELECTGROUP (`0x448520`),
+Handling in the tick (switch in `0x4577b0`): 0x12 SAVE (save flag), 0x13 PAUSEON, 0x15 CREATEGROUP (`0x448b40`), 0x16 SELECTGROUP (`0x448520`),
 0x18 ATTACK (`0x447e00`), 0x1a DESTROYHERE (`0x4489b0`), 0x1c BUILD, 0x1d GARRISON (`0x448350`), 0x1e REPEARMODE, 0x1f ATTACKMODE, 0x20 BUILDMODE,
-0x21 PAUSEBUILD, 0x22 QUEUEKILL, 0x23 SELECTBYNO (`0x448f60`), 0x24 FOLLOWTEAM (`0x448210`). Strukturę polecenia (53 dwordy, kolejka 64 wpisów od `0x4d9c50`)
-tworzy kod interfejsu; pole typu leży pod indeksem 2 (`cmd[2]`).
+0x21 PAUSEBUILD, 0x22 QUEUEKILL, 0x23 SELECTBYNO (`0x448f60`), 0x24 FOLLOWTEAM (`0x448210`). The command structure (53 dwords, queue of 64 entries from `0x4d9c50`)
+is created by the interface code; the type field lies at index 2 (`cmd[2]`).

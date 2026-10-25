@@ -1,39 +1,39 @@
-# Co jest potrzebne do przebudowy silnika (lista kontrolna)
+# Engine rebuild checklist: what is needed
 
-Stan: [x] gotowe, [~] częściowo, [ ] brak.
+Status: [x] done, [~] partial, [ ] missing.
 
-## Dane
-- [x] Archiwa `Res/*.xbe` (format znany, dekodery w `src/core`)
-- [x] Sprite'y 0x44c/0x454 (flagi 1,2,4,8,0x40; `docs/formats.md`)
-- [x] Mapy terenu `Maps/*.map`
-- [x] Palety `Pal.xbe`
-- [ ] Animacje (grupa 0x515)
-- [ ] `.spr .vis .rm .dat .scn .mit` (przy mapie): rozpoznać pola (mgła/widoczność, obiekty startowe, skrypty)
-- [~] `.mp` (INI z opisem mapy i jednostkami startowymi): format tekstowy, pola do spisania
-- [ ] `strbase.bds` (napisy, nazwy jednostek)
-- [ ] `Keys.ini`, `*.plr` (gracz), `single%i.sav` (zapis gry)
-- [ ] Muzyka `Music.xbe` (RIFF) i `Snd.xbe` (WAV): dekodery są w runtime, brak w `src/core`
+## Data
+- [x] Archives `Res/*.xbe` (format known, decoders in `src/core`)
+- [x] Sprites 0x44c/0x454 (flags 1,2,4,8,0x40; `docs/formats.md`)
+- [x] Terrain maps `Maps/*.map`
+- [x] Palettes `Pal.xbe`
+- [ ] Animations (group 0x515)
+- [ ] `.spr .vis .rm .dat .scn .mit` (next to a map): identify the fields (fog/visibility, starting objects, scripts)
+- [~] `.mp` (INI with map description and starting units): text format, fields to list
+- [ ] `strbase.bds` (strings, unit names)
+- [ ] `Keys.ini`, `*.plr` (player), `single%i.sav` (saved game)
+- [ ] Music `Music.xbe` (RIFF) and `Snd.xbe` (WAV): decoders are in the runtime, missing in `src/core`
 
-## Model obiektów
-- [x] Klasy z tablic wirtualnych: 176 (`docs/classes.md`), nazwy ze ścieżek źródłowych (58)
-- [x] Hierarchia (`tools/class_tree.py`), rozmiary i układ pól z obserwacji (`src/engine/model/objects.hpp`)
-- [x] Fabryka obiektów: 90 typów, 11 rodzajów
-- [ ] Znaczenie pól poza pozycją/zdrowiem/animacją
-- [ ] Znaczenie 70-88 metod wirtualnych klasy bazowej (VisibleThing) i klas pochodnych
-- [ ] Tabele statystyk typów (koszt, zdrowie, prędkość, zasięg): skąd są ładowane
-- [ ] Polecenia graczy (typy 0x12-0x24): pełna lista i dane
+## Object model
+- [x] Classes from virtual tables: 176 (`docs/classes.md`), names from source paths (58)
+- [x] Hierarchy (`tools/class_tree.py`), sizes and field layout from observation (`src/engine/model/objects.hpp`)
+- [x] Object factory: 90 types, 11 kinds
+- [ ] Meaning of fields other than position/health/animation
+- [ ] Meaning of the 70-88 virtual methods of the base class (VisibleThing) and derived classes
+- [ ] Type statistics tables (cost, health, speed, range): where they are loaded from
+- [ ] Player commands (types 0x12-0x24): full list and data
 
-## Symulacja
-- [~] Tik logiki `Test.cpp`/`0x4577b0` opisany z grubsza
-- [ ] Pathfinding: `WaveSearch.cpp` (0x46bb70, 0x46bdb0, 0x46cdc0) i `Heapsort.cpp` (0x473030)
+## Simulation
+- [~] Logic tick `Test.cpp`/`0x4577b0` roughly described
+- [ ] Pathfinding: `WaveSearch.cpp` (0x46bb70, 0x46bdb0, 0x46cdc0) and `Heapsort.cpp` (0x473030)
 - [ ] AI: `Tactic.cpp`, `Defence.cpp`, `Triggers.cpp`, `Conditions.cpp`
-- [ ] Ekonomia: `Harvest.cpp`, `Town.cpp`, `TownsInfo.cpp`, `BuildTree.cpp`
-- [ ] Walka: `Weapon.cpp`, `SplashDamage.cpp`, pociski (`Arrow`, `Axe`, `BallExpl`, `FireThrow`, `Cannon`)
-- [ ] Mgła wojny / widoczność: `MapExplorer.cpp`, `.vis`
-- [ ] Generator liczb losowych (determinizm lockstep)
+- [ ] Economy: `Harvest.cpp`, `Town.cpp`, `TownsInfo.cpp`, `BuildTree.cpp`
+- [ ] Combat: `Weapon.cpp`, `SplashDamage.cpp`, projectiles (`Arrow`, `Axe`, `BallExpl`, `FireThrow`, `Cannon`)
+- [ ] Fog of war / visibility: `MapExplorer.cpp`, `.vis`
+- [ ] Random number generator (lockstep determinism)
 
-## Reszta
-- [~] Renderer (sprite'y, teren, cienie, mgła): funkcje `display.cpp`, `sprite.cpp`, `color.cpp`, `View.cpp`
-- [ ] Interfejs (85 klas widgetów)
-- [~] Sieć: protokół pakietów lockstep (do spisania z `0x43a410`)
-- [ ] Dźwięk 3D (`3DSound.cpp`, `snd.cpp`, `mix.cpp`)
+## Other
+- [~] Renderer (sprites, terrain, shadows, fog): functions `display.cpp`, `sprite.cpp`, `color.cpp`, `View.cpp`
+- [ ] Interface (85 widget classes)
+- [~] Network: lockstep packet protocol (to be documented from `0x43a410`)
+- [ ] 3D sound (`3DSound.cpp`, `snd.cpp`, `mix.cpp`)

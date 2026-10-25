@@ -1,87 +1,87 @@
-# Przepisanie silnika (C++20): plan i stan
+# Engine rewrite (C++20): plan and status
 
-Cel: nowy silnik w czystym C++20, który wczytuje oryginalne dane gry (Aztec Empire, 1999) i zachowuje się tak samo,
-ale z poprawkami (renderer GPU z interpolacją, lepszy pathfinding, szerokie ekrany, nowe funkcje).
-Rekompilowana wersja (`runtime/` + `work/gen/`) pozostaje wzorcem do testów różnicowych, nie produktem.
+Goal: a new engine in clean C++20 that loads the original game data (Aztec Empire, 1999) and behaves the same way,
+but with improvements (GPU renderer with interpolation, better pathfinding, wide screens, new features).
+The recompiled version (`runtime/` + `work/gen/`) remains the reference for differential tests, not a product.
 
-## Zasady
-- Kod nowego silnika jest napisany od zera na podstawie obserwacji zachowania i zrekonstruowanych struktur.
-  Do repo nie trafia kod wygenerowany z binarki, binarka, ani zasoby gry.
-- Symulacja jest deterministyczna (stały krok 12 Hz, bez zależności od czasu ściany, liczby zmiennoprzecinkowe
-  tylko tam, gdzie oryginał też ich używa i z tą samą precyzją), bo multiplayer to lockstep.
-- Każdy moduł symulacji powstaje z testem różnicowym względem wzorca (ten sam stan wejściowy + te same polecenia =
-  ten sam stan wyjściowy, porównywany skrótem).
+## Rules
+- The code of the new engine is written from scratch, based on observed behavior and reconstructed structures.
+  No code generated from the binary, no binary, and no game assets go into the repo.
+- The simulation is deterministic (fixed 12 Hz step, no dependency on wall-clock time, floating-point numbers
+  only where the original also uses them and with the same precision), because multiplayer is lockstep.
+- Each simulation module is built with a differential test against the reference (same input state + same commands =
+  same output state, compared by hash).
 
-## Moduły docelowe
-| Moduł | Zawartość | Źródło wiedzy |
+## Target modules
+| Module | Contents | Source of knowledge |
 |---|---|---|
-| `core` | formaty plików, archiwa .xbe, sprite'y, mapy, ini (gotowe w `src/core`) | docs/formats.md |
-| `sim` | świat, jednostki, budynki, ekonomia, walka, pathfinding, AI, polecenia | klasy z `tools/analyze_classes.py` |
-| `render` | renderer GPU (SDL_GPU/OpenGL), interpolacja między tikami, mgła wojny, minimapa | funkcje rysujące + `docs/formats.md` |
-| `ui` | menu, panel, odprawy, dialogi, nakładka F9 | oryginał + `runtime/overlay.c` |
-| `audio` | miks, muzyka z CD (xbe), mowa | `runtime/dsound.c` |
-| `net` | lockstep, IPX/UDP, lobby | `runtime/winsock.c`, protokół z kodu |
-| `platform` | okno, wejście, zapis, ustawienia | `runtime/backend.c` |
+| `core` | file formats, .xbe archives, sprites, maps, ini (done in `src/core`) | docs/formats.md |
+| `sim` | world, units, buildings, economy, combat, pathfinding, AI, commands | classes from `tools/analyze_classes.py` |
+| `render` | GPU renderer (SDL_GPU/OpenGL), interpolation between ticks, fog of war, minimap | drawing functions + `docs/formats.md` |
+| `ui` | menus, panel, briefings, dialogs, F9 overlay | original + `runtime/overlay.c` |
+| `audio` | mixing, music from CD (xbe), speech | `runtime/dsound.c` |
+| `net` | lockstep, IPX/UDP, lobby | `runtime/winsock.c`, protocol from the code |
+| `platform` | window, input, saving, settings | `runtime/backend.c` |
 
-## Narzędzia przygotowane
-- `tools/analyze_classes.py`: odzyskuje klasy C++ z tablic wirtualnych (konstruktory zapisują adres vtable do `[reg]`):
+## Tools prepared
+- `tools/analyze_classes.py`: recovers C++ classes from virtual tables (constructors write the vtable address to `[reg]`):
   `python3 -I tools/analyze_classes.py game/Aztec.exe work/gen/gen_funcs.h work/classes.json`
-- `tools/class_fields.py`: katalog pól per klasa (offset, typ, liczba odwołań) z dekompilatora:
+- `tools/class_fields.py`: field catalog per class (offset, type, number of references) from the decompiler:
   `python3 -I tools/class_fields.py work/classes.json work/decomp/all.c work/classes.md`
-- `tools/coverage.py`, `tools/explore.sh`, `tools/monkey_all.sh`, `tools/mp_test.sh`: pokrycie funkcji i testy scenariuszowe.
-- Wyniki (`work/`) są pochodnymi binarki i nie są commitowane.
+- `tools/coverage.py`, `tools/explore.sh`, `tools/monkey_all.sh`, `tools/mp_test.sh`: function coverage and scenario tests.
+- Results (`work/`) are derived from the binary and are not committed.
 
-## Co odkryto (2026-10-19)
-- Gra ma 176 klas z tablicami wirtualnymi (brak RTTI). Rodzina ok. 20 klas po 75-88 metod wirtualnych, rozmiary
-  100-250 bajtów, dziedziczy po klasie bazowej o vtable `0x48f2d8` (75 metod): kandydaci na jednostki, budynki i obiekty świata.
-- Strona gracza (`Side`) to obiekt o rozmiarze 0x69c: `+0x640` suma wydana, `+0x688` wskaźnik na obiekt bazy, `+0x690` lista,
-  `+0x698` złoto, `+0x140` flaga zwycięstwa.
-- Gra rysuje scenę raz na tik logiki (12 Hz), kursor osobno (przechwytywany, rysowany przez backend).
+## Findings (2026-10-19)
+- The game has 176 classes with virtual tables (no RTTI). A family of about 20 classes with 75-88 virtual methods each,
+  sizes 100-250 bytes, inherits from a base class with vtable `0x48f2d8` (75 methods): candidates for units, buildings and world objects.
+- The player side (`Side`) is an object of size 0x69c: `+0x640` total spent, `+0x688` pointer to the base object, `+0x690` list,
+  `+0x698` gold, `+0x140` victory flag.
+- The game draws the scene once per logic tick (12 Hz), the cursor separately (captured, drawn by the backend).
 
-- Fabryka obiektów (`0x43d5d0`, napis "obj_NewUnit"): 90 typów obiektów w tabeli `0x4933f8` (rodzaj, parametr), 11 rodzajów
-  (ctor 0x433190, 0x44a350, 0x40fb70, 0x471390, 0x460090, 0x407360, 0x42bda0, 0x41cce0, 0x408410, 0x415f50, 0x42d9b0).
-  Rodzaj 2 obejmuje 44 typy, rodzaj 0 17 typów. Narzędzie: `tools/object_kinds.py`.
-- Obiekty żyją w pulach (alokator `0x4cc3d0`) w regionie VirtualAlloc 0x50000000+ oraz w stercie 0x10000000+.
-  Komenda skryptu `objscan VTABLES OUT` (RT_SCRIPT) wypisuje żywe obiekty (adres, vtable); `heapdump PATH` zapisuje sterte.
-  W misji 1 po 3 s: ok. 700 obiektów z 176 znanych vtable (najliczniejsze 0x490ab8: 148, 0x48f5e0: 96, 0x4932cc: 60).
-  Jeszcze nie przypisano klas do ról (jednostka, budynek, drzewo, pocisk).
+- Object factory (`0x43d5d0`, string "obj_NewUnit"): 90 object types in table `0x4933f8` (kind, parameter), 11 kinds
+  (ctors 0x433190, 0x44a350, 0x40fb70, 0x471390, 0x460090, 0x407360, 0x42bda0, 0x41cce0, 0x408410, 0x415f50, 0x42d9b0).
+  Kind 2 covers 44 types, kind 0 covers 17 types. Tool: `tools/object_kinds.py`.
+- Objects live in pools (allocator `0x4cc3d0`) in the VirtualAlloc region 0x50000000+ and in the heap 0x10000000+.
+  The script command `objscan VTABLES OUT` (RT_SCRIPT) lists live objects (address, vtable); `heapdump PATH` saves the heap.
+  In mission 1 after 3 s: about 700 objects from 176 known vtables (most numerous 0x490ab8: 148, 0x48f5e0: 96, 0x4932cc: 60).
+  Classes are not yet assigned to roles (unit, building, tree, projectile).
 
-- Pule obiektów (klasa z vtable `0x4953f8`): nagłówek `+4` baza areny, `+8` koniec użytego obszaru, `+0x10` stride (8 bajtów nagłówka
-  listy + dane), `+0x14` pojemność, `+0x18` liczba żywych. Pula jednostek: `0x4cc3d0` (stride 0xb8, pojemność 10000),
-  pozostałe aktualizowane w ticku: `0x4cd698` (stride 0x30), `0x5156f8` (0x1c0), `0x4c1978` (0x40).
-- Obiekt jednostki (klasa `0x4932cc` i pochodne, dane od `pool_elem+8`): `+0x24/+0x28` pozycja w pikselach świata (środek),
-  `+0x44/+0x48` kafel (kafel = 48 px), `+0x6c/+0x70` pozycja stałoprzecinkowa (px*256), `+0x38/+0x3c` (np. 0x1770/0x1770) wartość
-  zdrowia prawdopodobnie, `+0x80` kierunek/stan animacji, `+0x88` licznik animacji, `+0x30` wskaźnik do zestawu animacji.
-- Tik logiki (`0x4577b0`): przetwarza polecenia stron (typy 0x12-0x24 z kolejek `0x43d120`), potem aktualizuje 3 pule przez metody
-  wirtualne (+0x60, +0x8, +0x138) i strony (`0x449980`).
-- Wyrocznia stanu: `RT_STATE_LOG=plik` zapisuje co tik: liczbę żywych obiektów i skrót FNV po 4 pulach (wskaźniki maskowane).
-  Dwa niezależne przebiegi misji 1 bez wejścia zgadzają się w 211 z 214 ticków (3 różnice przejściowe, niewyjaśnione).
+- Object pools (class with vtable `0x4953f8`): header `+4` arena base, `+8` end of used area, `+0x10` stride (8 bytes of list header
+  + data), `+0x14` capacity, `+0x18` number of live objects. Unit pool: `0x4cc3d0` (stride 0xb8, capacity 10000),
+  the others updated in the tick: `0x4cd698` (stride 0x30), `0x5156f8` (0x1c0), `0x4c1978` (0x40).
+- Unit object (class `0x4932cc` and derivatives, data from `pool_elem+8`): `+0x24/+0x28` position in world pixels (centre),
+  `+0x44/+0x48` tile (tile = 48 px), `+0x6c/+0x70` fixed-point position (px*256), `+0x38/+0x3c` (e.g. 0x1770/0x1770) probably
+  the health value, `+0x80` animation direction/state, `+0x88` animation counter, `+0x30` pointer to the animation set.
+- Logic tick (`0x4577b0`): processes side commands (types 0x12-0x24 from queues `0x43d120`), then updates the 3 pools through
+  virtual methods (+0x60, +0x8, +0x138) and sides (`0x449980`).
+- State oracle: `RT_STATE_LOG=file` writes each tick: the number of live objects and an FNV hash over the 4 pools (pointers masked).
+  Two independent runs of mission 1 without input agree on 211 of 214 ticks (3 transient differences, unexplained).
 
-- Nazwy z napisów `assert` w exe: 58 plików źródłowych oryginału (`E:\SnakE\Empire\Source\*.cpp`), m.in. Marine (kind 0), Spider (1),
+- Names from `assert` strings in the exe: 58 source files of the original (`E:\SnakE\Empire\Source\*.cpp`), including Marine (kind 0), Spider (1),
   Building (2), Zeppelin (3), Truck (4), Bird (5), Headtruck (6), Defence (7), Boat (8), Cannon (9), Johnka (10), Arrow, Axe, BallExpl, FireThrow,
   SplashDamage, Weapon, Tactic (AI), Town/TownsInfo, BuildTree, Harvest, Triggers/Conditions, MapExplorer, WaveSearch (pathfinding), Heapsort.
-  Funkcje z nazwami w napisach: `wsr_WaveSearch` 0x46c470 (pathfinder: fala po siatce z tablicami przejezdności),
+  Functions with names in strings: `wsr_WaveSearch` 0x46c470 (pathfinder: wave across the grid with passability tables),
   `obj_NewUnit` 0x43d5d0, `obj_NewVoidUnit` 0x43e0b0, `wep_NewWeapon` 0x46d900, `wep_CalcKillTime(s)` 0x46fac0/0x46fbd0.
-- Dokumentacja klas: `docs/classes.md`; nagłówki układów: `src/engine/model/objects.hpp` (generowane); lista kontrolna: `docs/REBUILD_CHECKLIST.md`.
+- Class documentation: `docs/classes.md`; layout headers: `src/engine/model/objects.hpp` (generated); checklist: `docs/REBUILD_CHECKLIST.md`.
 
-- Pole `+0x50` każdego obiektu świata = id typu (UGI, 0..89); `+0x3c` = maks. zdrowie typu (np. 6000 piechur, 5000 muszkieter, 3500 łucznik,
-  10000 rycerz, 36000 niedźwiedź); `+0x68` = wskaźnik do statycznego rekordu opisu typu (0x4c bajty, .data od 0x4ac428, wypełniany przy starcie).
-- `docs/object_types.md`: 90 typów (nazwa UGI, klasa) i 45 typów pakietów/poleceń (PCT_*), w tym polecenia klatki (MOVE, ATTACK, BUILD, ...).
-- Narzędzia testowe: `tools/make_ztest.py` + `tools/ztest_run.sh` (własna mapa testowa z jednostkami wybranych typów na stronie przeciwnika;
-  budynki muszą powstawać przez sekcję [Town], w [Team] wywołują wywołanie pustego wskaźnika w `Building.cpp`).
+- Field `+0x50` of each world object = type id (UGI, 0..89); `+0x3c` = max health of the type (e.g. 6000 footman, 5000 rifleman, 3500 archer,
+  10000 knight, 36000 bear); `+0x68` = pointer to the static type description record (0x4c bytes, .data from 0x4ac428, filled at start-up).
+- `docs/object_types.md`: 90 types (UGI name, class) and 45 packet/command types (PCT_*), including frame commands (MOVE, ATTACK, BUILD, ...).
+- Test tools: `tools/make_ztest.py` + `tools/ztest_run.sh` (own test map with units of selected types on the enemy side;
+  buildings must be created through the [Town] section, in [Team] they call an empty pointer in `Building.cpp`).
 
-- Struktura ticku logiki `0x4577b0` (pełniej): (1) polecenia stron, (2) aktualizacja pul w kolejności: `0x4c1978` (+0x60), `0x4cd698` (+0x8),
-  `0x5156f8` (+0x138), strony `0x449980`, `0x4d9b50` (+0x138), jednostki `0x4cc3d0` (+0x120), `0x515a98` (+0x84), broń `0x4d9bbc[]` (`0x470c10`), `0x4c1298` (+0x8),
-  (3) składanie list wyświetlania: dla obiektów z pul `0x4cc3d0`, `0x515a98`, `0x4c1978` wywołanie `0x47cb30(lista 0x4d9c10, pozycja, ..., sprite)` oraz dla warstw
-  per strona `0x47d070`/`0x47d430` (lista `0x4d9c0c`); sprite bieżącej klatki zwraca metoda wirtualna +0x70/+0x74/+0x80/+0x5c, pozycję +0x14.
-  Wniosek dla renderera: scena jest składana raz na tik; płynny ruch wymaga zapamiętania poprzedniej pozycji każdego obiektu i interpolacji przy rysowaniu.
+- Structure of the logic tick `0x4577b0` (more fully): (1) side commands, (2) pool update in order: `0x4c1978` (+0x60), `0x4cd698` (+0x8),
+  `0x5156f8` (+0x138), sides `0x449980`, `0x4d9b50` (+0x138), units `0x4cc3d0` (+0x120), `0x515a98` (+0x84), weapons `0x4d9bbc[]` (`0x470c10`), `0x4c1298` (+0x8),
+  (3) building display lists: for objects from pools `0x4cc3d0`, `0x515a98`, `0x4c1978` a call to `0x47cb30(list 0x4d9c10, position, ..., sprite)`, and for layers
+  per side `0x47d070`/`0x47d430` (list `0x4d9c0c`); the sprite of the current frame is returned by the virtual method +0x70/+0x74/+0x80/+0x5c, the position by +0x14.
+  Conclusion for the renderer: the scene is built once per tick; smooth movement requires remembering each object's previous position and interpolating when drawing.
 
-## Etapy
-1. [x] Narzędzia klas i pól, plan.
-2. [ ] Rekonstrukcja struktur: klasa bazowa obiektu, lista obiektów świata, mapa kafli, polecenia.
-3. [~] Wyrocznia: skrót stanu co tik jest (RT_STATE_LOG). Brakuje zapisu poleceń per tik (hook na 0x43d120) i migawek pul do testów modułów.
-4. [ ] Renderer GPU z interpolacją (czyta stan gry z pamięci rekompilacji, potem ze `sim`).
-5. [ ] Moduł `sim`: pathfinding + kolizje, następnie reszta, każdy z testem różnicowym.
-6. [ ] Pokrycie funkcji niewykonywanych: scenariusze (misje 10-15, edytor, skirmish, AI w trudniejszych układach),
-      a dla funkcji bez scenariusza: testy jednostkowe wywołujące je bezpośrednio na zrzutach stanu.
-7. [ ] Zamiana modułów w rekompilacji na nowe, aż nic z lifteru nie zostanie.
+## Stages
+1. [x] Class and field tools, plan.
+2. [ ] Reconstruction of structures: base object class, world object list, tile map, commands.
+3. [~] Oracle: a state hash per tick exists (RT_STATE_LOG). Missing: recording of commands per tick (hook on 0x43d120) and pool snapshots for module tests.
+4. [ ] GPU renderer with interpolation (reads game state from the recompiled memory, later from `sim`).
+5. [ ] `sim` module: pathfinding + collisions, then the rest, each with a differential test.
+6. [ ] Coverage of unexecuted functions: scenarios (missions 10-15, editor, skirmish, AI in harder layouts),
+      and for functions without a scenario: unit tests calling them directly on state dumps.
+7. [ ] Replace modules in the recompilation with the new ones, until nothing from the lifter remains.

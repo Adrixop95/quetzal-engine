@@ -18,7 +18,7 @@ with open(out + '_bench.csv', 'w', newline='') as f:
     w = csv.writer(f); w.writerow(bk)
     for s in new: w.writerow([s.get(k) for k in bk])
 nb = {(s['course'], s['n']): s for s in new}
-lines = ['| kurs | n | oryginał (mgła): dotarło / makespan / mediana / stosunek drogi / max postój | oryginał (zbadane) | nowy: dotarło / makespan / mediana / stosunek / max postój | ideał |', '|---|---|---|---|---|---|']
+lines = ['| course | n | original (fog): arrived / makespan / median / path ratio / max idle | original (explored) | new: arrived / makespan / median / ratio / max idle | ideal |', '|---|---|---|---|---|---|']
 def fmt(s): return '-' if not s else '%s/%s | %s | %s | %s | %s' % (s.get('arrived'), s.get('n'), s.get('makespan'), s.get('median_arrival'), s.get('mean_path_ratio'), s.get('max_idle_ticks'))
 idx = {(s['course'], s['n'], s['fog']): s for s in orig}
 for c in sorted({s['course'] for s in orig}):
