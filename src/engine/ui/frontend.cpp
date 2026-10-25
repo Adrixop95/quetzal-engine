@@ -394,13 +394,13 @@ bool play_video(Window& win, const std::string& path) {
 
 SDL_Rect PauseMenu::button(int i, int ow, int oh, int sc) const {
   int w = 220 * sc, h = 30 * sc;
-  return {(ow - w) / 2, oh / 2 - 80 * sc + i * 40 * sc, w, h};
+  return {(ow - w) / 2, oh / 2 - 120 * sc + i * 40 * sc, w, h};
 }
 
 PauseMenu::Action PauseMenu::update(const Input& in, int ow, int oh, int sc) {
   if (!open || !in.pressed[SDL_BUTTON_LEFT]) return Action::None;
-  static const Action acts[4] = {Action::Resume, Action::Restart, Action::Menu, Action::Quit};
-  for (int i = 0; i < 4; i++) {
+  static const Action acts[6] = {Action::Resume, Action::Save, Action::Load, Action::Restart, Action::Menu, Action::Quit};
+  for (int i = 0; i < 6; i++) {
     SDL_Rect b = button(i, ow, oh, sc);
     if (in.mx >= b.x && in.mx < b.x + b.w && in.my >= b.y && in.my < b.y + b.h) return acts[i];
   }
@@ -412,10 +412,10 @@ void PauseMenu::draw(SDL_Renderer* r, const Font& font, int ow, int oh, int sc) 
   SDL_Rect all{0, 0, ow, oh};
   SDL_SetRenderDrawColor(r, 0, 0, 0, 150);
   SDL_RenderFillRect(r, &all);
-  static const char* labels[4] = {"Resume", "Restart mission", "Main menu", "Quit"};
+  static const char* labels[6] = {"Resume", "Save game", "Load game", "Restart mission", "Main menu", "Quit"};
   int mx, my;
   SDL_GetMouseState(&mx, &my);
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < 6; i++) {
     SDL_Rect b = button(i, ow, oh, sc);
     SDL_SetRenderDrawColor(r, 35, 26, 16, 235);
     SDL_RenderFillRect(r, &b);

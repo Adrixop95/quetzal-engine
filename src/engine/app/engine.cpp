@@ -21,6 +21,7 @@
 #include "engine/ui/names.hpp"
 #include "engine/ui/panel.hpp"
 #include "engine/sim/game_sim.hpp"
+#include "engine/sim/savegame.hpp"
 #include "engine/ui/commands_ui.hpp"
 #include "engine/ui/selection_ui.hpp"
 #include "core/strbase.hpp"
@@ -231,6 +232,40 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
       {
         PauseMenu::Action pa = pause.update(in, ow, oh, pscale);
         if (pa == PauseMenu::Action::Resume) pause.open = false;
+        bool do_save = pa == PauseMenu::Action::Save || (in.ctrl && in.hit(SDL_SCANCODE_S));
+        bool do_load = pa == PauseMenu::Action::Load || (in.ctrl && in.hit(SDL_SCANCODE_L));
+        if (game && do_save) {
+          SaveData sd;
+          sd.mission = spec; sd.tick = game->tick_count(); sd.hash = game->state_hash(world);
+          sd.cam_x = cam.x; sd.cam_y = cam.y; sd.cam_zoom = cam.zoom; sd.log = game->log();
+          std::string dir = data.root() + "/Saves";
+          std::error_code sec;
+          fs::create_directories(dir, sec);
+          std::printf(write_save(dir + "/engine_slot1.azs", sd) ? "saved game (tick %llu)\n" : "save failed (tick %llu)\n", (unsigned long long)sd.tick);
+          if (pa == PauseMenu::Action::Save) pause.open = false;
+        }
+        if (game && do_load) {
+          SaveData sd;
+          std::string path = data.root() + "/Saves/engine_slot1.azs";
+          World fresh;
+          std::string lerr;
+          if (read_save(path, sd) && sd.mission == spec && load_world(data, spec, fresh, lerr)) {
+            std::string scn = data.map_file(fresh.mission.file_name, "scn");
+            auto ns = GameSim::replay(fresh, rules, sd.log, sd.tick, scn);
+            if (ns->state_hash(fresh) != sd.hash) std::fprintf(stderr, "warning: replayed state differs from the saved hash\n");
+            world = std::move(fresh);
+            game = ns.get();
+            sim = std::move(ns);
+            cmdui.set_sim(game);
+            cam.x = sd.cam_x; cam.y = sd.cam_y; cam.zoom = sd.cam_zoom;
+            world.selection.clear();
+            world.fog_version++;
+            pause.open = false;
+            std::printf("loaded game (tick %llu)\n", (unsigned long long)sd.tick);
+          } else {
+            std::fprintf(stderr, "load failed (no save for this mission?)\n");
+          }
+        }
         if (pa == PauseMenu::Action::Restart) { exit_reason = PlayExit::Restart; leave = true; }
         if (pa == PauseMenu::Action::Menu) { exit_reason = PlayExit::ToMenu; leave = true; }
         if (pa == PauseMenu::Action::Quit) { exit_reason = PlayExit::Quit; in.quit = true; }
@@ -273,10 +308,11 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
       if (world.outcome != kRunning && !end_shown) { end_shown = true; paused = true; }
       // Camera input.
       CameraInput ci;
-      if (in.down(SDL_SCANCODE_LEFT) || in.down(SDL_SCANCODE_A)) ci.move_x -= 1;
-      if (in.down(SDL_SCANCODE_RIGHT) || in.down(SDL_SCANCODE_D)) ci.move_x += 1;
-      if (in.down(SDL_SCANCODE_UP) || in.down(SDL_SCANCODE_W)) ci.move_y -= 1;
-      if (in.down(SDL_SCANCODE_DOWN) || in.down(SDL_SCANCODE_S)) ci.move_y += 1;
+      bool nokeys = in.ctrl;
+      if (!nokeys && (in.down(SDL_SCANCODE_LEFT) || in.down(SDL_SCANCODE_A))) ci.move_x -= 1;
+      if (!nokeys && (in.down(SDL_SCANCODE_RIGHT) || in.down(SDL_SCANCODE_D))) ci.move_x += 1;
+      if (!nokeys && (in.down(SDL_SCANCODE_UP) || in.down(SDL_SCANCODE_W))) ci.move_y -= 1;
+      if (!nokeys && (in.down(SDL_SCANCODE_DOWN) || in.down(SDL_SCANCODE_S))) ci.move_y += 1;
       if (in.hit(SDL_SCANCODE_EQUALS)) ci.zoom_steps += 1;
       if (in.hit(SDL_SCANCODE_KP_PLUS)) ci.zoom_steps += 1;
       if (in.hit(SDL_SCANCODE_MINUS) || in.hit(SDL_SCANCODE_KP_MINUS)) ci.zoom_steps -= 1;

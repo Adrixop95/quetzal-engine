@@ -28,7 +28,7 @@ bool play_video(Window& win, const std::string& path);
 // In-game pause overlay.
 class PauseMenu {
  public:
-  enum class Action { None, Resume, Restart, Menu, Quit };
+  enum class Action { None, Resume, Save, Load, Restart, Menu, Quit };
   bool open = false;
   Action update(const Input& in, int ow, int oh, int scale);   // handles clicks while open
   void draw(SDL_Renderer* r, const Font& font, int ow, int oh, int scale) const;

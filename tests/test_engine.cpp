@@ -13,6 +13,7 @@
 #include "engine/assets/sprite_provider.hpp"
 #include "engine/platform/clock.hpp"
 #include "engine/sim/game_sim.hpp"
+#include "engine/sim/savegame.hpp"
 #include "engine/sim/simulation.hpp"
 #include "engine/world/camera.hpp"
 #include "engine/world/type_info.hpp"
@@ -198,6 +199,10 @@ static void test_sim(const std::string& dir) {
   CHECK(rs->state_hash(r) == sa.state_hash(a));
   std::vector<LoggedCommand> back;
   CHECK(deserialize_log(serialize_log(sa.log()), back) && back.size() == sa.log().size());
+  SaveData sv;
+  sv.mission = "1"; sv.tick = 200; sv.hash = sa.state_hash(a); sv.cam_x = 12.5f; sv.log = sa.log();
+  SaveData sv2;
+  CHECK(deserialize_save(serialize_save(sv), sv2) && sv2.mission == "1" && sv2.tick == 200 && sv2.hash == sv.hash && sv2.cam_x == 12.5f && sv2.log.size() == sv.log.size());
 
   // combat: a footman next to an enemy footman kills it with the measured duel (600 dmg per 10 ticks)
   World f;

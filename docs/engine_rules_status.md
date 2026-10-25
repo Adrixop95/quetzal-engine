@@ -70,3 +70,9 @@ Legenda: **V** = zweryfikowane w oryginale (kod lub zrzut), **M** = zmierzone na
 | Pan = (x - środek widoku) przycięte do +-4000 setnych dB; tłumienie: brak do 500 px, liniowo do -4000 przy 800 px, dalej cisza | V (z docs/formats.md), P (jednostka 100 = 1 dB) | pomijany warunek "komórka mgły >= 0x21" |
 | Muzyka: `Music=N` -> ścieżka N, inaczej `MusicMask`; kolejne utwory po zakończeniu | V (wybór maski), P (kolejność = od soli nazwy misji, cyklicznie) | `music_allowed_mask` z `core/audio` |
 | Głośności, mowa/napisy, dźwięki interfejsu, pętle stanów (nagłówek sekwencji), dźwięki budynków/pocisków | nie zrobione | `--volume`, `--no-audio` |
+
+## Zapis gry
+| Reguła | Stan | Uwagi |
+|---|---|---|
+| Zapis własny: misja + tik + hash + kamera + pełny log poleceń; wczytanie = deterministyczny replay na świeżym świecie (hash weryfikowany) | silnik | `Saves/engine_slot1.azs`, Ctrl+S / Ctrl+L i menu pauzy |
+| Format oryginalnych `*.sav` | nie zrobione | czeka na `docs/savegame.md` (agent formatów) |

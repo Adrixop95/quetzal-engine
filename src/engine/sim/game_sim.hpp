@@ -34,6 +34,7 @@ class GameSim : public Simulation {
   // Queues a command for the next tick (all clients submit the same commands in the same order in lockstep play).
   void submit(Command c) { pending_.push_back(std::move(c)); }
   bool paused() const { return paused_; }
+  uint64_t tick_count() const { return tick_; }
   const std::vector<LoggedCommand>& log() const { return log_; }
   // FNV-1a hash of the complete simulation state (objects, sides, queues, movement system, rng).
   uint64_t state_hash(const World& w) const;
@@ -56,7 +57,8 @@ class GameSim : public Simulation {
 
   // Re-runs a logged game from a fresh world (snapshot restore = deterministic replay). The world must be freshly loaded.
   static std::unique_ptr<GameSim> replay(World& fresh, std::shared_ptr<const RulesData> rules,
-                                         const std::vector<LoggedCommand>& log, uint64_t until_tick);
+                                         const std::vector<LoggedCommand>& log, uint64_t until_tick,
+                                         const std::string& scn_path = "");
 
  private:
   void apply(World& w, const Command& c);

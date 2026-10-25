@@ -1,0 +1,16 @@
+# Save / load round trip: loading rewinds to the saved tick (the replay is hash-checked internally; a mismatch prints a warning).
+# aztec_engine --game game 1 --size 1000x700 --script tests/playtest/saveload.txt
+drag 150 150 560 450
+rclick 100 300
+wait 3
+run 400
+print
+key ctrl+S
+wait 3
+run 300
+print
+key ctrl+L
+wait 3
+print
+expect tick < 500   # back near the saved tick 409 instead of 714+
+quit

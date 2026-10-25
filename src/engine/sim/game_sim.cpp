@@ -511,8 +511,9 @@ uint64_t GameSim::state_hash(const World& w) const {
 }
 
 std::unique_ptr<GameSim> GameSim::replay(World& fresh, std::shared_ptr<const RulesData> rules, const std::vector<LoggedCommand>& log,
-                                         uint64_t until_tick) {
+                                         uint64_t until_tick, const std::string& scn_path) {
   auto sim = std::make_unique<GameSim>(std::move(rules));
+  if (!scn_path.empty()) sim->attach_script(scn_path);
   sim->init(fresh);
   size_t i = 0;
   for (uint64_t t = 1; t <= until_tick; t++) {

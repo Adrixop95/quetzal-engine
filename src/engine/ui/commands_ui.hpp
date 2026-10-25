@@ -17,6 +17,7 @@ namespace aztec::engine {
 class CommandsUi {
  public:
   explicit CommandsUi(GameSim* sim = nullptr) : sim_(sim) {}
+  void set_sim(GameSim* s) { sim_ = s; attack_move_ = false; placing_ = -1; }
   bool active() const { return sim_ != nullptr; }
   // Call once per frame before the selection UI. `in_world`: the cursor is over the world view.
   void update(const Input& in, World& w, const Camera& cam, float alpha, const Minimap& mm, bool in_world, const SDL_Rect& panel);
