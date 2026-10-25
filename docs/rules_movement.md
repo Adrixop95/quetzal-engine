@@ -136,3 +136,49 @@ Each unit has an owner (`+0x30` = group object, "Tactic"); the player also comma
 3. End of move = radius of 3 tiles from the target + "arrived" units block the following ones (hence the irregular cluster of units around the target).
 4. Missing: continuous collision avoidance, pushing, movement in fractions of a tile, path hierarchy, memory beyond 8 steps.
 
+## 7. Design of the new system (`src/engine/sim/path/`)
+Goal: keep the "feel" (speed px/tick per type, 12 Hz step, 8 animation directions, groups move together, formation reaches a cluster around the target), remove the
+causes of loss/jams from chapter 5. Everything in integers (positions 24.8 px, angles 0..255 as in the original), no `float`, no dependencies.
+
+| element | files | description |
+|---|---|---|
+| maths | `fixed.hpp` | `isqrt` (exact), `sin/cos` table of 65 values, `angle_of` (binary search over cross products), `rotate`, `facing8` (same as the original: 0 = N, clockwise) |
+| grid | `navgrid.hpp/.cpp` | `.dat` bytes (0/1/2) -> classes `Small` (dat>=1) and `Large` (dat>=2) like layers L74/L78; dynamic building blocks with reference counter; disc vs tile test (`disc_hits`), pushing a disc out of walls (`push_out`), free segment for a disc (`segment_clear`) |
+| flow field | `flowfield.hpp/.cpp` | integer Dijkstra (Dial buckets, costs 10/14, penalty 4 next to walls), 8 directions **without corner-cutting**, one field per order instead of N queries; any number of goals |
+| A* | `astar.hpp/.cpp` | point-to-point, octile metric, "string pulling" smoothing with segments free for a disc; for AI and single units |
+| group movement | `mover.hpp/.cpp` | `MoveSystem`: agents (disc of radius 18 px, speed, class), `order_move` (field + slots), `tick` |
+| scenarios | `courses.hpp/.cpp` | the same obstacle courses as `tools/make_zpath.py` (for tests and benchmark) |
+
+### 7.1 Move order (`order_move`)
+1. One flow field from the goal tile (goal blocked -> nearest free; goal unreachable for the first agent -> flood field from the agent and selection of the reachable tile nearest to the goal,
+   i.e. what the original did only after the failed wave `FUN_0046ce80`).
+2. **Target slots**: hexagonal grid of points around the goal (spacing `2r + 4 px`), only reachable and without collision with a wall, sorted from the goal; agents and slots are sorted along the direction
+   of approach and paired (the front of the group takes the front slots), so nobody waits on an occupied goal point and paths do not cross.
+3. No query limit: field cost is O(number of tiles) (map 90x60: ~0.05 ms; 255x255: ~1 ms), computed once per order.
+
+### 7.2 Tick (`MoveSystem::tick`), in id order (deterministic)
+1. Spatial hashing (cell 96 px, counting sort).
+2. **Preferred velocity**: visible slot (segment free for the disc, <=16 tiles) -> go straight, otherwise follow the field gradient with a "jump": up to 10 consecutive field tiles, the
+   furthest visible one is selected; the steering target is buffered for 3-6 ticks. Landing exactly on the slot (no overshoot).
+3. **Local avoidance** (velocity sampling): 13 angles (+-0..64 units out of 256) x 3 speeds (100%, 50%, stop); penalty for deviation, direction hysteresis, wall, and the predicted time of collision with each
+   neighbour within a horizon of 8 ticks (quadratic equation in integers, `isqrt`); standing neighbours count less (they can be pushed), "hold" and moving ones more heavily. A tie is resolved by the first
+   candidate; the order favours a right turn over a left one, so head-on meetings pass each other like right-hand traffic.
+4. Position integration, then **overlap resolution** (3 iterations): a pair of discs is pushed apart along the normal; a moving one pushes a standing one (correction share 48/208 of 256), two moving ones equally,
+   a standing one with flag `hold` does not give way; after each iteration pushing out of walls. At the end an agent never ends inside a wall (revert to the previous position).
+5. **Jam**: window of 24 ticks; movement < 25% of expected -> jam level +1: level>=1 disables avoidance for the window (contact physics stays), >=3 lateral push of direction, >=4 withdrawal of lower priority
+   (parity of id + window; breaks head-on collision in a narrow passage), >=5 reduction of radius to 70% for 48 ticks ("squeezing"); a unit close to a slot whose neighbours already stand there occupies
+   the place where it is. The level drops with progress.
+6. Arrival: distance to the slot <= 2 px -> state `Arrived` (stands, but can be pushed by passers-by).
+
+### 7.3 Design decisions and trade-offs
+- *Why a flow field and not A\* per unit*: 30 units = one field; no starvation (original: 2 queries/tick) and no dependence on the order of units. For large maps (255x255) HPA* (16x16 clusters) could be added
+  as the first level of the field; **not done**, because for game maps (max 255x255, typically 90x60) the field is computed in under 2 ms.
+- *Why velocity sampling and not ORCA*: ORCA requires linear programming and square roots in the loop; sampling with `isqrt` is simple, integer and fully deterministic
+  (no dependence on the iteration order beyond id). Quality is similar in crowds of 30-100 units (benchmark), weaker at thousands.
+- *Preserving the "feel"*: speeds from type records (px/tick), no acceleration, instant turning (animation direction quantized to 8 as in the original). Two differences are **deliberate**: continuous positions instead of
+  one tile per unit (units can pass each other in a 1-tile-wide passage - not in the original) and smooth stopping in the slot instead of the "3 tile radius".
+- *Unit class*: `Small`/`Large` corresponds to bit `+0x2c` of the type record (knight, bizon, snowman, elephant are `Large`). Classes 2/3 (with wall margin) and flying (straight track) of the original are not needed:
+  the margin is given by the wall penalty, flying units ignore the grid.
+- *Lockstep determinism*: no `float`, no `std::unordered_*`, no dependence on pointers; sorts have full keys (ties by id/coordinates). `MoveSystem::state_hash` for network comparisons;
+  test `test_path` is the reference for the hash value.
+- *Limits*: no tracking of moving targets (follow/attack-move), formations of a given shape (only the order relative to the direction of approach is kept), vehicles with a turning radius, water units.
