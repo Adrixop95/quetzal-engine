@@ -1,0 +1,33 @@
+# Install once with:  pip install pre-commit && pre-commit install
+# Run on everything:   pre-commit run --all-files
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-yaml
+      - id: check-json
+        exclude: ^docs/data/sprites_mapping\.json$
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1200]
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+  - repo: local
+    hooks:
+      - id: forbid-game-assets
+        name: forbid game assets and executable-derived files
+        entry: python3 tools/hooks/forbid_assets.py
+        language: system
+        pass_filenames: true
+      - id: english-only
+        name: English-only text
+        entry: python3 tools/hooks/english_only.py
+        language: system
+        types: [text]
+        pass_filenames: true

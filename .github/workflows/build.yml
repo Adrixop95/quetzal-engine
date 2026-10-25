@@ -1,0 +1,24 @@
+name: Build and test
+
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build g++ libsdl2-dev
+      - name: Configure without the recompiled runtime
+        run: cmake -S . -B build_ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR= -DGAME_DIR=
+      - name: Build core, engine, tools, and tests
+        run: cmake --build build_ci --parallel 2
+      - name: Run tests (game-data tests skip without a local installation)
+        run: ctest --test-dir build_ci --output-on-failure

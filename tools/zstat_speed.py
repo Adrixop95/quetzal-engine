@@ -5,7 +5,7 @@ sys.argv = [sys.argv[0], sys.argv[1]]
 exec(open(__file__.replace('zstat_speed', 'zstat_track')).read().split("if __name__")[0])
 for (a, t), v in tr.items():
     if v[0][1] >= 400 or v[0][0] > 10: continue
-    d = []; 
+    d = [];
     for p, q in zip(v, v[1:]):
         if q[0] - p[0] == 1:
             dd = ((q[1] - p[1]) ** 2 + (q[2] - p[2]) ** 2) ** .5

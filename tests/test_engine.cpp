@@ -1,4 +1,5 @@
-// Engine unit tests: test_engine [GAME_DIR]. Pure tests always run; data tests run when GAME_DIR has the files.
+// Engine tests: test_engine --pure, or test_engine [GAME_DIR] for game-data checks.
+#include "game_dir.hpp"
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -116,9 +117,9 @@ static void test_pure() {
 static void test_data(const std::string& dir) {
   GameData data;
   std::string err;
-  if (!data.open(dir, err)) { std::printf("skip data tests: %s\n", err.c_str()); return; }
+  if (!data.open(dir, err)) { CHECK(false); std::printf("%s\n", err.c_str()); return; }
   World w;
-  if (!load_world(data, "1", w, err)) { std::printf("skip: %s\n", err.c_str()); return; }
+  if (!load_world(data, "1", w, err)) { CHECK(false); std::printf("%s\n", err.c_str()); return; }
   CHECK(w.terrain.w == 90 && w.terrain.h == 60);
   CHECK(!w.objects.empty());
   CHECK(w.preview.w == 180 && w.preview.h == 120);
@@ -173,9 +174,9 @@ static void run_scenario(World& w, GameSim& sim, int ticks, bool commands) {
 static void test_sim(const std::string& dir) {
   GameData data;
   std::string err;
-  if (!data.open(dir, err)) return;
+  if (!data.open(dir, err)) { CHECK(false); return; }
   auto rules = std::make_shared<RulesData>();
-  if (!rules->load_dir(dir + "/../docs/data")) { std::printf("skip sim tests: no docs/data\n"); return; }
+  if (!rules->load_dir(AZTEC_TEST_RULES_DIR)) { CHECK(false); return; }
   CHECK(rules->type(0).hp_max == 6000 && rules->type(0).hp_src == Src::Verified);
   CHECK(rules->type(0).price == 100);
 
@@ -271,11 +272,11 @@ static void test_sim(const std::string& dir) {
 static void test_script(const std::string& dir) {
   GameData data;
   std::string err;
-  if (!data.open(dir, err)) return;
+  if (!data.open(dir, err)) { CHECK(false); return; }
   auto rules = std::make_shared<RulesData>();
-  if (!rules->load_dir(dir + "/../docs/data")) return;
+  if (!rules->load_dir(AZTEC_TEST_RULES_DIR)) { CHECK(false); return; }
   World w;
-  if (!load_world(data, "1", w, err)) return;
+  if (!load_world(data, "1", w, err)) { CHECK(false); return; }
   GameSim sim(rules);
   CHECK(sim.attach_script(data.map_file("mission_1", "scn")));
   sim.init(w);
@@ -307,7 +308,7 @@ static void test_script(const std::string& dir) {
   CHECK(sa.state_hash(a) == sb.state_hash(b));
 }
 
-static void test_audio(const std::string& dir) {
+static void test_audio_pure() {
   // pure rules: no attenuation near the centre, silent far away, pan favours the near ear
   Positional c = positional_gain(0, 0);
   CHECK(c.audible && c.left > 0.99f && c.right > 0.99f);
@@ -325,6 +326,9 @@ static void test_audio(const std::string& dir) {
   m.mix(out, 200);
   CHECK(out[0] == int16_t(1000 * 0.8f) && out[1] == int16_t(1000 * 0.5f * 0.8f));
   CHECK(m.active_voices() == 0);
+}
+
+static void test_audio_data(const std::string& dir) {
   // with the real game data: sound set -> mixed non-silent output; music table selection
   AudioSystem a;
   a.init(dir);
@@ -339,8 +343,14 @@ static void test_audio(const std::string& dir) {
 }
 
 int main(int argc, char** argv) {
-  test_pure();
-  if (argc > 1) { test_data(argv[1]); test_sim(argv[1]); test_script(argv[1]); test_audio(argv[1]); }
+  if (argc == 2 && std::string(argv[1]) == "--pure") {
+    test_pure();
+    test_audio_pure();
+  } else {
+    std::string dir = test_game_dir(argc, argv);
+    if (!test_game_dir_exists(dir)) return 77;
+    test_data(dir); test_sim(dir); test_script(dir); test_audio_data(dir);
+  }
   std::printf(failures ? "FAILED\n" : "OK\n");
   return failures ? 1 : 0;
 }
