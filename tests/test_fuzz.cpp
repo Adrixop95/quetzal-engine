@@ -7,6 +7,7 @@
 #include "core/mp.hpp"
 #include "core/palette.hpp"
 #include "core/script.hpp"
+#include "core/savegame.hpp"
 #include "core/sprite_alpha.hpp"
 #include "core/strbase.hpp"
 #include "core/text.hpp"
@@ -141,6 +142,14 @@ int main() {
   std::vector<KeyBinding> keys; file.put(bytes("add lshift")); CHECK(load_keys_ini(file.path, keys));
   for (size_t size : {kPlayerFileSize, size_t(0x158)}) mutate(Bytes(size), [&](const Bytes& d) {
     PlayerFile p; parse_player_file(d, p); SaveHeader h; parse_save_header(d, h);
+  });
+  // Complete empty save: ten pool counts, two selection levels, UI build block and daylight.
+  Bytes original_save(0x158 + 28 + 40 + 4520 + 8);
+  SaveGame decoded_save; CHECK(parse_savegame(original_save, decoded_save));
+  mutate(original_save, [&](const Bytes& d) {
+    SaveGame g; SaveError error;
+    if (parse_savegame(d, g, &error)) CHECK(g.bytes == d && g.sections.size() == 12);
+    else CHECK(g.bytes.empty() && g.sections.empty() && !error.message.empty());
   });
   PlayerFile player; file.put(serialize_player_file(player)); CHECK(load_player_file(file.path, player));
   SaveHeader save; file.put(Bytes(0x158)); CHECK(load_save_header(file.path, save));

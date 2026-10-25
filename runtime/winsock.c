@@ -17,13 +17,22 @@
 #include "aztec_rt.h"
 #include "dbg.h"
 
+#include <pthread.h>
+
 #define WS_MODULE 0x70000000u
 #define FAKE_IPX 0x7777u   // IPX does not exist on Linux: a placeholder socket that accepts everything and never delivers
 static __thread int wsa_err;
 
+// Opt-in oracle hook for sandboxes without sockets. Single-player UDP only;
+// packets addressed to this instance or broadcast are delivered in memory.
+#define ORACLE_UDP 0x7778u
+static struct sockaddr_in oracle_address;
+static struct { uint8_t bytes[1600]; uint32_t size; } oracle_packets[64];
+static unsigned oracle_read, oracle_write;
+static pthread_mutex_t oracle_lock = PTHREAD_MUTEX_INITIALIZER;
+
 // Loopback queue for the IPX placeholder: the game broadcasts a probe and waits to receive it back to learn its own
 // address. Packets sent on the placeholder are delivered to its own receive queue, stamped with a fixed IPX address.
-#include <pthread.h>
 #define LB_MAX 64
 static struct { uint8_t data[1600]; uint32_t len; } lb_q[LB_MAX];
 static int lb_head, lb_tail;
@@ -83,6 +92,10 @@ SH(getprotobyname) {   // name -> struct protoent in guest memory
 SH(socket) {   // af, type, protocol
   UNUSED;
   if (a[0] == 6) { DBG("net", "socket(AF_IPX) -> placeholder %#x", FAKE_IPX); return FAKE_IPX; }
+  if (getenv("RT_ORACLE_UDP") && a[0] == AF_INET && a[1] == SOCK_DGRAM) {
+    DBG("net", "socket: RT_ORACLE_UDP in-memory transport enabled");
+    return ORACLE_UDP;
+  }
   int fd = socket((int)a[0], (int)a[1], (int)a[2]);
   DBG("net", "socket(af=%u type=%u proto=%u) -> %d", a[0], a[1], a[2], fd);
   if (fd < 0) { wsa_err = map_errno(errno); return (uint32_t)-1; }
@@ -91,7 +104,7 @@ SH(socket) {   // af, type, protocol
 
 SH(setsockopt) {   // s, level, optname, optval*, optlen
   UNUSED;
-  if (a[0] == FAKE_IPX) return 0;
+  if (a[0] == ORACLE_UDP || a[0] == FAKE_IPX) return 0;
   int level = (int)a[1], name = (int)a[2];
   if (level == 0xffff) {
     level = SOL_SOCKET;
@@ -129,7 +142,8 @@ SH(gethostbyname) {   // name -> struct hostent in guest memory
   struct addrinfo hints, *res = NULL;
   memset(&hints, 0, sizeof hints);
   hints.ai_family = AF_INET;
-  if (getaddrinfo(name, NULL, &hints, &res) == 0 && res) { ia = ((struct sockaddr_in*)res->ai_addr)->sin_addr; freeaddrinfo(res); }
+  if (getenv("RT_ORACLE_UDP")) inet_aton("192.168.1.125", &ia);
+  else if (getaddrinfo(name, NULL, &hints, &res) == 0 && res) { ia = ((struct sockaddr_in*)res->ai_addr)->sin_addr; freeaddrinfo(res); }
   else inet_aton("127.0.0.1", &ia);
   if (getenv("RT_HOST_IP")) inet_aton(getenv("RT_HOST_IP"), &ia);   // tests: two instances on one machine
   memcpy(GPTR(addr), &ia, 4);
@@ -141,6 +155,12 @@ SH(gethostbyname) {   // name -> struct hostent in guest memory
 
 SH(bind) {   // s, sockaddr*, len
   UNUSED;
+  if (a[0] == ORACLE_UDP) {
+    if (a[2] != sizeof oracle_address) { wsa_err = 10022; return (uint32_t)-1; }
+    memcpy(&oracle_address, GPTR(a[1]), sizeof oracle_address);
+    local_ip = oracle_address.sin_addr;
+    return 0;
+  }
   if (a[0] == FAKE_IPX) {
     memset(ipx_bound, 0, sizeof ipx_bound);
     memcpy(ipx_bound, GPTR(a[1]), a[2] < 14 ? a[2] : 14);
@@ -169,6 +189,11 @@ SH(bind) {   // s, sockaddr*, len
 
 SH(getsockname) {   // s, sockaddr*, int* len
   UNUSED;
+  if (a[0] == ORACLE_UDP) {
+    if (!a[2] || GU32(a[2]) < sizeof oracle_address) { wsa_err = 10022; return (uint32_t)-1; }
+    memcpy(GPTR(a[1]), &oracle_address, sizeof oracle_address); GU32(a[2]) = sizeof oracle_address;
+    return 0;
+  }
   if (a[0] == FAKE_IPX) {
     uint8_t me[14] = {0};
     me[0] = 6; memcpy(me + 8, &local_ip, 4); if (!local_ip.s_addr) me[11] = 1;
@@ -184,6 +209,22 @@ SH(getsockname) {   // s, sockaddr*, int* len
 
 SH(sendto) {   // s, buf, len, flags, to*, tolen
   UNUSED;
+  if (a[0] == ORACLE_UDP) {
+    if (a[2] > sizeof oracle_packets[0].bytes) { wsa_err = 10040; return (uint32_t)-1; }
+    if (!a[4] || a[5] < sizeof oracle_address) { wsa_err = 10022; return (uint32_t)-1; }
+    const struct sockaddr_in* to = GPTR(a[4]);
+    uint32_t ip = ntohl(to->sin_addr.s_addr);
+    if (to->sin_addr.s_addr == oracle_address.sin_addr.s_addr || (ip & 255) == 255) {
+      pthread_mutex_lock(&oracle_lock);
+      unsigned next = (oracle_write + 1) % 64;
+      if (next != oracle_read) {
+        memcpy(oracle_packets[oracle_write].bytes, GPTR(a[1]), a[2]);
+        oracle_packets[oracle_write].size = a[2]; oracle_write = next;
+      }
+      pthread_mutex_unlock(&oracle_lock);
+    }
+    return a[2];
+  }
   if (a[0] == FAKE_IPX) {   // IPX over UDP; packets for ourselves (and broadcasts) are also looped back locally
     const uint8_t* to = a[4] ? (const uint8_t*)GPTR(a[4]) : NULL;
     int bcast = !to, self = 0;
@@ -240,6 +281,22 @@ SH(sendto) {   // s, buf, len, flags, to*, tolen
 
 SH(recvfrom) {   // s, buf, len, flags, from*, fromlen*
   UNUSED;
+  if (a[0] == ORACLE_UDP) {
+    pthread_mutex_lock(&oracle_lock);
+    if (oracle_read == oracle_write) {
+      pthread_mutex_unlock(&oracle_lock); wsa_err = 10035; return (uint32_t)-1;
+    }
+    uint32_t n = oracle_packets[oracle_read].size;
+    if (n > a[2]) n = a[2];
+    memcpy(GPTR(a[1]), oracle_packets[oracle_read].bytes, n);
+    oracle_read = (oracle_read + 1) % 64;
+    pthread_mutex_unlock(&oracle_lock);
+    if (a[4] && a[5]) {
+      uint32_t len = GU32(a[5]); if (len > sizeof oracle_address) len = sizeof oracle_address;
+      memcpy(GPTR(a[4]), &oracle_address, len); GU32(a[5]) = sizeof oracle_address;
+    }
+    return n;
+  }
   if (a[0] == FAKE_IPX) {
     for (int tries = 0; tries < 50; tries++) {   // blocking receive with a short timeout
       uint8_t from[14] = {0};
@@ -284,7 +341,7 @@ SH(recvfrom) {   // s, buf, len, flags, from*, fromlen*
 
 SH(WSAIoctl) {   // s, code, in*, inlen, out*, outlen, *ret, overlapped, completion
   UNUSED;
-  if (a[0] == FAKE_IPX) { if (a[6]) GU32(a[6]) = 0; return 0; }
+  if (a[0] == ORACLE_UDP || a[0] == FAKE_IPX) { if (a[6]) GU32(a[6]) = 0; return 0; }
   uint32_t code = a[1];
   if (a[6]) GU32(a[6]) = 0;
   if (code == 0x8004667E) {   // FIONBIO
