@@ -506,6 +506,8 @@ void rt_objscan(const char* vtfile, const char* outfile) {
   fclose(f);
   FILE* o = fopen(outfile, "w");
   if (!o) return;
+  FILE* dr = NULL;   // optional dereference file (sprite/anim tracing): OUT.deref lines "obj off ptr w0..w7" for every pointer field into the pools/heap
+  if (getenv("RT_OBJSCAN_DEREF") && *getenv("RT_OBJSCAN_DEREF")) { char dn[600]; snprintf(dn, sizeof dn, "%s.deref", outfile); dr = fopen(dn, "w"); }
   static const uint32_t spools[13] = {0x4c1298, 0x4c1978, 0x4c4ce0, 0x4c4f00, 0x4cc3d0, 0x4cd698, 0x4d9b50, 0x4d9b88, 0x515530, 0x5156f8, 0x515a98, 0x516598, 0x5167e0};
   for (int i = 0; i < 13; i++) fprintf(o, "P %08x %08x %08x %08x %08x %08x\n", spools[i], GU32(spools[i] + 4), GU32(spools[i] + 8), GU32(spools[i] + 0x10), GU32(spools[i] + 0x14), GU32(spools[i] + 0x18));
   struct { uint32_t lo, hi; } rg[2] = {{0x10000000u, heap_top}, {0x50000000u, 0x6e000000u}};
@@ -515,11 +517,17 @@ void rt_objscan(const char* vtfile, const char* outfile) {
       if (mincore(g_mem + pg, 0x1000, &vec) != 0 || !(vec & 1)) continue;
       for (uint32_t a = (uint32_t)pg; a < pg + 0x1000; a += 4) {
         uint32_t x = GU32(a);
-        if (x >= 0x400000 && x < 0x800000 && (is_vt[(x - 0x400000) >> 2 >> 3] >> (((x - 0x400000) >> 2) & 7) & 1)) { fprintf(o, "%08x %08x %08x %08x", a, x, GU32(a - 8), GU32(a - 4)); for (int k = 1; k < 64; k++) fprintf(o, " %08x", GU32(a + 4 * k)); fputc('\n', o); }
+        if (x >= 0x400000 && x < 0x800000 && (is_vt[(x - 0x400000) >> 2 >> 3] >> (((x - 0x400000) >> 2) & 7) & 1)) { fprintf(o, "%08x %08x %08x %08x", a, x, GU32(a - 8), GU32(a - 4)); for (int k = 1; k < 64; k++) fprintf(o, " %08x", GU32(a + 4 * k)); fputc('\n', o);
+          if (dr) for (int k = 1; k < 64; k++) {
+            uint32_t pv = GU32(a + 4 * k); unsigned char pvec;
+            if (((pv >= 0x50000000u && pv < 0x6e000000u) || (pv >= 0x10000000u && pv < heap_top)) && !(pv & 3) && mincore(g_mem + (pv & ~0xfffu), 0x1000, &pvec) == 0 && (pvec & 1) && (pv & 0xfff) < 0xfe0) {
+              fprintf(dr, "%08x %x %08x", a, 4 * k, pv); for (int q = 0; q < 8; q++) fprintf(dr, " %08x", GU32(pv + 4 * q)); fputc('\n', dr);
+            }
+          } }
       }
     }
   }
-  fclose(o);
+  fclose(o); if (dr) fclose(dr);
 }
 void rt_debug_scan(uint32_t value) {
   uint32_t side_base = GU32(0x4dd2f4);

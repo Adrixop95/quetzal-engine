@@ -34,10 +34,11 @@ for team in range(nteams):
     out.append('[Team%d]\nScenarioID=%d\nSide=%d' % (team, team + 1, SIDE)); n = 0
     for tp in MOBILE[team:team + 1]:
         x, y = cells[k]; k += 1
-        out.append('Unit%d=%3d,%3d,%3d,%5d' % (n, x, y, tp, 6000)); placed.append((x, y, tp)); n += 1
+        out.append('Unit%d=%3d,%3d,%3d,%5d' % (n, x, y, tp, HP if False else 6000)); placed.append((x, y, tp)); n += 1
     out.append('Units=%d\n' % n)
 if SIDE == 0:   # keep the victory banner away: one passive enemy far from the objects
     out.append('[Team%d]\nScenarioID=%d\nSide=1\nUnit0=%3d,%3d,0, 6000\nUnits=1\n' % (nteams, nteams + 1, 80 if cx < 45 else 10, 50)); nteams += 1
+OPP = [int(x) for x in os.environ.get('OPP', '').split(',') if x]; OPPDX = int(os.environ.get('OPPDX', '2')); HP = int(os.environ.get('HP', '6000'))
 ntown = 1
 for g in range(0, len(BUILD), 6):
     grp = BUILD[g:g + 6]
@@ -45,8 +46,12 @@ for g in range(0, len(BUILD), 6):
     out.append('[Town%d]\nScenarioID=%d\nSide=%d\nX=%d\nY=%d\nType=2\nTendency=0\nBuildSpeed=1\nRace=1' % (ntown, 50 + ntown, SIDE, x0, y0))
     for j, tp in enumerate(grp):
         x, y = cells[k]; k += 1
-        out.append('Unit%d=%3d,%3d,%3d, 6000' % (j, x, y, tp)); placed.append((x, y, tp))
+        out.append('Unit%d=%3d,%3d,%3d,%5d' % (j, x, y, tp, HP)); placed.append((x, y, tp))
     out.append('Units=%d\n' % len(grp)); ntown += 1
+if OPP:   # hostile side-1 unit(s) next to every placed object (fights, building destruction)
+    for (x, y, tp) in list(placed):
+        for oi, ot in enumerate(OPP):
+            out.append('[Team%d]\nScenarioID=%d\nSide=1\nUnit0=%3d,%3d,%3d,%5d\nUnits=1\n' % (nteams, nteams + 1, x + OPPDX, y + oi, ot, HP)); nteams += 1
 text = '\n'.join(out)
 text = re.sub(r'Teams=\d+', 'Teams=%d' % nteams, text)
 text = re.sub(r'Towns=\d+', 'Towns=%d' % ntown, text)

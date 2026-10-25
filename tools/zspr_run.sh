@@ -12,9 +12,10 @@ mv game/Maps/$NAME.* "$G/Maps/"
 { echo "wait 6000"; echo "click 140 239"; echo "wait 800"; echo "click 160 543"; echo "wait 5000"; echo "click 650 58"; echo "wait 2500"
   for i in 1 2 3 4 5 6 7 8; do echo "click 645 421"; echo "wait 800"; done
   echo shot
-  echo "click 150 ${4:-318}"; echo "wait 800"; echo "click 160 543"; echo "wait ${5:-7000}"; echo shot; echo "wait 1000"; echo shot; echo "objscan $ROOT/work/vtables.txt $O/objs.txt"; echo "heapdump $O/heap.bin"; echo "wait 500"; echo quit; } > "$O/s.txt"
+  echo "click 150 ${4:-318}"; echo "wait 800"; echo "click 160 543"; echo "wait ${5:-7000}"; echo shot; echo "wait 1000"; echo shot; echo "objscan $ROOT/work/vtables.txt $O/objs.txt"; echo "heapdump $O/heap.bin"
+  i=0; while [ $i -lt ${SAMPLES:-0} ]; do [ -n "$POKE_FILE" ] && awk -v n=$i '$1==n{print "poke " $2 " " $3}' "$POKE_FILE"; echo "objscan $ROOT/work/vtables.txt $O/s_$i.txt"; echo "wait ${SAMPLE_MS:-100}"; i=$((i+1)); done; echo "wait 500"; echo quit; } > "$O/s.txt"
 cd "$G"
-RT_DUMP_DIR="$O" RT_RESOLUTION=800x600 RT_NO_GRAB=1 RT_NO_VIDEO=1 RT_SCRIPT="$O/s.txt" timeout -s KILL 120 unshare -rn sh -c "ip link set lo up; ip addr add 192.168.1.125/24 dev lo; exec $ROOT/build/aztec_recomp $G/Aztec.exe" >"$O/out.txt" 2>&1
+RT_OBJSCAN_DEREF=${SAMPLES:+1} RT_DUMP_DIR="$O" RT_RESOLUTION=800x600 RT_NO_GRAB=1 RT_NO_VIDEO=1 RT_SCRIPT="$O/s.txt" timeout -s KILL 400 unshare -rn sh -c "ip link set lo up; ip addr add 192.168.1.125/24 dev lo; exec ${BIN:-$ROOT/build_spr/aztec_recomp} $G/Aztec.exe" >"$O/out.txt" 2>&1
 echo "exit=$? $(grep -m1 FATAL "$O/out.txt")"
 cd "$O"; mv shot_01.ppm list.ppm 2>/dev/null; mv shot_02.ppm shot_01.ppm 2>/dev/null; mv shot_03.ppm shot_02.ppm 2>/dev/null
 rm -rf "$G"
