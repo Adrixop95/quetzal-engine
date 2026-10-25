@@ -95,6 +95,7 @@ struct World {
   uint32_t center_serial = 0;
   Selection selection;           // local player's selected objects (UI state, not simulation state)
   uint64_t tick = 0;
+  int script_side = 0;           // what `side(local)` means in mission scripts: the mission's human side (shared by all peers)
   int local_side = 0;            // side whose fog layer is shown / whose objects are always visible
   uint32_t fog_version = 1;      // bump when the local side's .vis layer changes
 

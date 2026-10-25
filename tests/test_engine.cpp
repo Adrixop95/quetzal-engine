@@ -50,6 +50,9 @@ static void test_pure() {
   CHECK(parse_resource_map(rm, g) && g.w == 2 && g.h == 1 && g.at(1, 0) == 8);
   CHECK(!parse_resource_map({2, 0, 2, 0, 1, 0}, g));
 
+  CHECK(parse_fixed256("9.26") == 2371 && parse_fixed256("10") == 2560 && parse_fixed256("0.5") == 128 && parse_fixed256("-1.5") == -384);
+  CHECK(parse_fixed256("") == 0 && parse_fixed256("abc") == 0 && parse_fixed256("99999999999") > 0);
+
   // 12 Hz stepper
   FixedStepper st;
   CHECK(st.advance(0.05) == 0);
@@ -191,6 +194,31 @@ static void test_sim(const std::string& dir) {
   std::vector<uint32_t> mine = side_units(a, 0, true);
   const Object* u = a.find(mine[0]);
   CHECK(u && std::abs(u->cur_x / 256 - 36 * 48) + std::abs(u->cur_y / 256 - 41 * 48) > 0);
+
+  // hostile coordinates are clamped into the map (no overflow), and the destination shows up in the state hash
+  {
+    World h1;
+    CHECK(load_world(data, "1", h1, err));
+    GameSim g1(rules);
+    g1.init(h1);
+    uint64_t before = g1.state_hash(h1);
+    Command big; big.type = Pct::Move; big.side = 0; big.a = 2000000000; big.b = -2000000000; big.ids = side_units(h1, 0, true);
+    g1.submit(big);
+    h1.begin_tick(); g1.tick(h1);
+    const Object* mo = h1.find(big.ids[0]);
+    CHECK(mo && mo->dest_x >= 0 && mo->dest_x < h1.width_px() && mo->dest_y == 0);
+    CHECK(g1.state_hash(h1) != before);
+    Command badbuild; badbuild.type = Pct::Build; badbuild.side = 0; badbuild.a = 14; badbuild.b = 2000000000; badbuild.c = 5;
+    g1.submit(badbuild);
+    h1.begin_tick(); g1.tick(h1);
+    // invalid object types are inert markers, not out-of-bounds reads
+    World h2;
+    CHECK(load_world(data, "1", h2, err));
+    h2.objects[0].type = 5000;
+    GameSim g2(rules);
+    g2.init(h2);
+    CHECK(h2.objects[0].type == -1);
+  }
 
   // replay of the command log reproduces the exact state (snapshot restore)
   World r;

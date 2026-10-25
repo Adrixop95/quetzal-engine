@@ -1,89 +1,87 @@
-# Silnik C++20 (src/engine)
+# C++20 engine (src/engine)
 
-Czysta reimplementacja, wczytuje oryginalne dane z `game/` (nic z gry ani z exe nie trafia do repo).
-Cel CMake: `aztec_engine` (biblioteka `aztec_engine_lib` + `src/engine/app/main.cpp`), testy: `test_engine`.
+A clean reimplementation that loads the original game data from `game/`. Nothing from the game or the executable is stored in the repository.
+CMake targets: `aztec_engine` (library `aztec_engine_lib` plus `src/engine/app/main.cpp`) and the tests `test_engine`, `test_path`, `test_formats` (run all with `ctest`).
 
-## Uruchomienie
+## Running
     cmake -S . -B build_engine && cmake --build build_engine -j --target aztec_engine test_engine
-    build_engine/aztec_engine --game game 1            # misja 1; też: 3, Mission_4, Pentagram, ścieżka do .mp
-    build_engine/aztec_engine --list                   # lista map
-    build_engine/aztec_engine 1 --wander --borderless  # jednostki chodzą losowo (test interpolacji 12 Hz)
+    build_engine/aztec_engine                          # front-end menu
+    build_engine/aztec_engine --game game 1            # mission 1 directly (also: 3, Mission_4, Pentagram, a path to a .mp)
+    build_engine/aztec_engine --list                   # list maps
+    build_engine/aztec_engine 1 --wander --borderless  # units walk randomly (shows 12 Hz tick interpolation)
     build_engine/aztec_engine 1 --size 1920x800 --screenshot out.png --cam 40,40 --zoom 1.5
     build_engine/test_engine game
-Klawisze: WASD/strzałki, scroll przy krawędzi, środkowy/prawy przycisk = przeciąganie, kółko = zoom,
-LPM na minimapie = skok kamery, F11 borderless, Alt+Enter fullscreen, F1 pomoc, F2 siatka, F3 przejezdność,
-F4 etykiety, F5 znaczniki, F6 edge scroll, F7 nakładki terenu, F10 HUD, Spacja pauza, F12 zrzut, Esc wyjście.
+Keys: WASD/arrows and edge scrolling, middle or right-drag = pan, wheel = zoom, left click on the minimap = jump,
+F11 borderless, Alt+Enter fullscreen, F1 help, F2 grid, F3 passability, F4 labels, F5 markers, F6 edge scroll, F7 terrain overlays, F8 fog,
+F10 HUD, Space pause (view), P pause (simulation), F12 screenshot, Esc quit / pause menu.
 
-## Moduły
-- `platform/`: `Window` (okno/borderless/fullscreen, vsync, dowolna rozdzielczość), `Input`, `FixedStepper` (stały krok 12 Hz).
-- `assets/`: `GameData` (archiwa, wyszukiwanie plików bez rozróżniania wielkości liter), `mission` (parser .mp, cp1250 -> UTF-8),
-  `sprite_provider.hpp` (interfejs mapowania typ -> sprite).
-- `world/`: `World`/`Object` (pozycje stałoprzecinkowe px*256, `prev_*` i `cur_*` per obiekt = interpolacja), `Camera`
-  (gładki scroll, kroki zoomu, clamp), `type_info` (nazwy i rodzaje 90 typów).
-- `sim/`: interfejs `Simulation` (tik 12 Hz; sim pisze tylko `cur_*`, driver robi `World::begin_tick()`), `NullSimulation`, `WanderSimulation`.
-- `render/`: `Atlas` (strony 2048^2, pakowanie półkami), `SpriteStore` (leniwe dekodowanie z .xbe), `QuadBatch`
-  (SDL_RenderGeometry, 1 wywołanie na stronę atlasu), `SceneRenderer` (teren + nakładki + obiekty), `Font` 3x5, zapis PNG bez zależności.
-- `ui/`: `Cursor` (programowy, rysowany na końcu każdej klatki z aktualnej pozycji myszy), `Minimap`, HUD.
-- `app/`: opcje wiersza poleceń, główna pętla (render co vsync, symulacja w stałym kroku).
+## Modules
+- `platform/`: `Window` (windowed / borderless / fullscreen, vsync, any resolution), `Input`, `FixedStepper` (fixed 12 Hz step).
+- `assets/`: `GameData` (archives, case-insensitive file lookup), `mission` (adapter over `core/mp.*`, cp1250 -> UTF-8), `sprite_provider.hpp`
+  (type -> sprite interface), `anim_provider.*`, `daylight.*`.
+- `world/`: `World` / `Object` (fixed-point positions px*256, `prev_*` and `cur_*` per object for interpolation), `Camera` (smooth scroll, zoom steps, clamping), `type_info`.
+- `sim/`: `Simulation` interface (12 Hz tick; the simulation writes only `cur_*`, the driver calls `World::begin_tick()`), `GameSim` (see below), `path/` (movement module).
+- `render/`: `Atlas` (2048^2 pages, shelf packing), `SpriteStore` (lazy decoding from .xbe), `QuadBatch` (SDL_RenderGeometry, one call per atlas page),
+  `SceneRenderer` (terrain, overlays, objects, fog), `Font` (original fonts, built-in 3x5 fallback), dependency-free PNG writer.
+- `ui/`: `Cursor` (software cursor drawn last every frame), `Minimap`, `Panel`, HUD, selection, command UI, front-end, pause menu.
+- `audio/`: software mixer plus SDL audio.
+- `app/`: command-line options, main loop (rendering at vsync, simulation at a fixed step), playtest driver, sprite-sheet tool.
 
-## Sprite'y i dane (stan po drugiej rundzie)
-- `AnimSpriteProvider` (`assets/anim_provider.*`) oparty na `data/sprites.hpp`: typ + stan (idle/move/attack/die/fidget) + kierunek 0..7 + tik animacji
-  -> sprite z `Units.xbe` (ciało 0x44c, cień 0x454 rysowany pod spodem jako półprzezroczysta sylwetka). Animacja liczy `Object::anim_tick`
-  (rośnie w `World::begin_tick()`, czyli w stałym kroku 12 Hz); pozycja nadal jest interpolowana między tikami.
-- Hotspot sprite'a: lewy górny róg = pozycja - (ox, oy) (+ `yoff` klatki). Zgadza się ze zrzutem oryginału (położenie budynku względem jednostek).
-- Paleta sprite'a z nagłówka (+0xC): Tiles0 używa Pal 4/5/6 (trawa/piasek, woda, brzeg), Tiles1 8/9/10, Units: id < 4 = paleta drużyny
-  `id + 0x10 + kolor*4`. Sprite'y z flagą 0x40 to indeksowane RLE z alfą (`core/sprite_alpha.*`), nie 16-bit kolor.
-- Kafle z `h > cell_h` to paski animacji (np. woda 8 klatek po 48 px): klatka = `(tick/2) % n`. Warstwa nakładek `.map` (górne 16 bitów) to drzewa/skały:
-  ciało w 0x44c, cień w 0x454 pod tym samym id, komórka 192x192 x 4 warianty, sortowane po y razem z obiektami.
-- Budynki z `[Town#]` dodawane są do świata (typ z `Type` i `Race`); budynek gotowy = slot 1 animacji (slot 0 = etapy budowy).
-- Mgła wojny: `.vis` warstwa strony lokalnej (`World::local_side`), tekstura 1 texel/kafel z filtrem liniowym; obiekty innych stron w ciemności ukryte;
-  F8 przełącza, `World::fog_version` do odświeżania przez przyszłą symulację. Minimapa też ma mgłę.
-- Kursory z `common.xbe`: pióro (id 1, domyślny), miecz (0, atak, wskazanie wroga), buty 6..13 = strzałki przewijania krawędzią (hotspot na krawędzi),
-  maczuga 2 i włócznia 5 (Move/Pan, przypisanie niepewne), młotki 3 (nieużyte), czerwone X 14..21 (nieużyte); animacje 80 ms/klatka jak w oryginale.
-- Panel prawy: `common.xbe` id 292 (204x493, paleta 48), pasek dolny powtarzany przy wyższych oknach; minimapa wpisana w okno panelu, kamera ma szerokość okna
-  minus panel. Przyciski/lista budowy/portrety nie są zrobione (tło panelu tylko).
-- Narzędzie: `aztec_engine --game game --sprite-sheet common:0-21 out.png` wypisuje arkusz obrazków z archiwum (units|tiles0|tiles1|common).
+## Sprites and data
+- `AnimSpriteProvider` (`assets/anim_provider.*`, built on `data/sprites.hpp`): type + state (idle / move / attack / die / fidget) + direction 0..7 + animation tick
+  -> sprite from `Units.xbe` (body 0x44c, shadow 0x454 drawn underneath as a translucent silhouette). Animation advances with `Object::anim_tick`
+  (incremented in `World::begin_tick()`, i.e. at the fixed 12 Hz step); positions are still interpolated between ticks.
+- Sprite hotspot: top-left = position - (ox, oy) (+ the frame's `yoff`). This matches a screenshot of the original (building position relative to units).
+- Sprite palette comes from the header (+0xC): Tiles0 uses Pal 4/5/6 (grass/sand, water, shore), Tiles1 8/9/10; for Units, ids < 4 are team palettes
+  `id + 0x10 + colour*4`. Sprites with flag 0x40 are palette-indexed RLE with alpha (`core/sprite_alpha.*`), not 16-bit colour.
+- Tiles with `h > cell_h` are animation strips (e.g. water: 8 frames of 48 px): frame = `(tick/2) % n`. The `.map` overlay layer (high 16 bits) holds trees and rocks:
+  body in 0x44c, shadow in 0x454 under the same id, 192x192 cells with 4 variants, y-sorted together with objects.
+- Buildings from `[Town#]` are added to the world (type from `Type` and `Race`); a finished building uses animation slot 1 (slot 0 = construction stages).
+- Fog of war: the local side's `.vis` layer (`World::local_side`), one texel per tile with linear filtering; objects of other sides in the dark are hidden;
+  F8 toggles it, `World::fog_version` triggers refreshes. The minimap is fogged too.
+- Cursors from `common.xbe`: feather (id 1, default), sword (0, attack / enemy hover), boots 6..13 = edge-scroll arrows (hotspot at the screen edge),
+  mace 2 and spear 5 (move / pan, assignment uncertain), hammers 3 (unused), red X 14..21 (unused); animated at 80 ms per frame like the original.
+- Right panel: `common.xbe` id 292 (204x493, palette 48), the bottom strip repeats in taller windows; the minimap sits inside the panel window and the camera
+  width is the window minus the panel. Command buttons and portraits are not implemented (panel background and a text menu only).
+- Tool: `aztec_engine --game game --sprite-sheet common:0-21 out.png` dumps a contact sheet from an archive (units|tiles0|tiles1|common).
+- Plugging in your own sprites: implement `SpriteProvider::pick/pick_shadow` (or fill a `TableSpriteProvider`) and pass it to `run_engine(opts, provider)`.
+  `--no-sprites` forces placeholder markers.
 
-## Podpięcie własnych sprite'ów
-Zaimplementuj `SpriteProvider::pick/pick_shadow` (lub wypełnij `TableSpriteProvider`) i przekaż do `run_engine(opts, provider)`;
-domyślnie używany jest `AnimSpriteProvider`, `--no-sprites` wymusza znaczniki zastępcze.
+## Lighting, fonts, UI
+- Daylight: the key tables (time, RGB, ambient level) are read at run time from `game/Aztec.exe` (`assets/daylight.*`; nothing from the executable is in the repo).
+  The clock is the mission `StartTime` plus simulation ticks (7200 ticks per day); keys are interpolated linearly (the original steps). Sprites are baked at palette
+  level 14 and modulated by colour (tint * brightness of level ambient+1 relative to 14). Against a screenshot of the original, sand is about (178,128,111) vs (201,124,112) and grass
+  about 1.3x too bright. The +1 level and the missing per-tile light map are approximations. `--no-light`, `--time T`.
+- Fonts: `fnts.xbe` base 1200 (small, anti-aliased, palette 53), glyph = base + cp1250 byte; the built-in 3x5 font remains as a fallback and for placeholder labels.
+- `core/strbase.*` parses `strbase.bds` (UTF-8); `ui/names.*` maps type ids to display names (ordinals 166-210, matched by name).
+- Selection: click or left-drag a box (own units only, Shift adds), animated selection ring (common 309 / 314), health bar (maximum = highest hp of that type in the mission),
+  panel summary, hover tooltip ("Name\nPrice: %i Time: %i" when `docs/data` is available). `--select X0,Y0,X1,Y1` selects in screenshot mode.
 
-## Oświetlenie, czcionki, UI (trzecia runda)
-- Oświetlenie dnia: tablice kluczy (czas, RGB, poziom ambient) są czytane w czasie uruchomienia z `game/Aztec.exe` (`assets/daylight.*`; w repo nic z exe nie leży).
-  Zegar = `StartTime` + tiki symulacji (doba 7200 tików), klucze interpolowane liniowo (oryginał: skokowo). Sprite'y są pieczone na poziomie 14 i modulowane kolorem
-  (tint * jasność poziomu ambient+1 względem 14); zgodność ze zrzutem oryginału: piasek ok. (178,128,111) vs (201,124,112), trawa ok. 1.3x jaśniej. Poziom +1 i brak
-  mapy światła per kafel to przybliżenie. `--no-light`, `--time T`.
-- Czcionki: `fnts.xbe` baza 1200 (małe, antyaliasowane, paleta 53), glif = baza + bajt cp1250; wbudowany 3x5 zostaje jako zapas i do etykiet zastępczych.
-- `core/strbase.*`: parser `strbase.bds` (UTF-8, test na prawdziwym pliku). `ui/names.*`: nazwy typów (ordinal 166-210 po nazwie).
-- Zaznaczanie: klik lub ramka LPM (tylko własne jednostki; shift dodaje), pierścień zaznaczenia (common 309/314, animowany), pasek zdrowia (maks = najwyższe hp tego typu
-  w misji), podsumowanie w panelu, tooltip przy najechaniu ("Nazwa\nPrice: %i Time: %i" jeśli jest `docs/data/types.csv` lub `--rules`).
-  Brak przycisków poleceń, listy budowy i portretów (nie ma jeszcze symulacji poleceń). `--select X0,Y0,X1,Y1` zaznacza w trybie zrzutu.
-- `.mp` czytane przez `core/mp.*`; `assets/mission.*` to cienki adapter.
+## Simulation
+- `sim/game_sim.*`: deterministic 12 Hz simulation (integers only), commands from `sim/commands.hpp` (numbers = PCT_FRAME_*), state hash (`state_hash`), command log
+  (`serialize_log`) and replay (`GameSim::replay`), which doubles as snapshot / restore. Tests (`test_engine game`): the same commands give the same hash, different ones do not,
+  replay reproduces the hash, combat, unit training, scripts.
+- Rules and data: `sim/rules.*` reads `docs/data/*.csv` at run time (`--rules-dir`); `docs/engine_rules_status.md` lists what is verified and what is a placeholder.
+- Movement: `sim/path/` (movement agent from the pathfinding work); `GameSim` only uses `MoveSystem`.
+- Controls (`ui/commands_ui.*`): right click = move / attack (right-drag pans), `A` + left click = attack-move, `H` = stop, Ctrl+0-9 / 0-9 = groups, `P` = pause the simulation,
+  right click on the minimap = move. Panel: production menu from the build tree (trainable units and `[B]` buildings placed by clicking the map), queue, tooltip.
+- Mission scripts: `sim/script_runner.*` executes `.scn` files (conditions, actions, tactics, timers, victory / defeat, messages, centerView); AI skeleton: `sim/ai.cpp`.
+- Test options: `--cmd-move X,Y` / `--cmd-attack-move X,Y` (for `--select`), `--no-sim`, `--wander`.
 
-## Symulacja (czwarta runda)
-- `sim/game_sim.*`: deterministyczna symulacja 12 Hz (liczby całkowite), polecenia z `sim/commands.hpp` (numery = PCT_FRAME_*), hash stanu (`state_hash`), log poleceń
-  (`serialize_log`) i odtwarzanie (`GameSim::replay`) = migawka/przywracanie stanu. Testy (`test_engine game`): ten sam ciąg poleceń daje ten sam hash, inny - inny,
-  replay daje identyczny hash, walka, trening jednostki.
-- Reguły i dane: `sim/rules.*` czyta `docs/data/*.csv` w czasie uruchomienia (`--rules-dir`); tabela, co jest zweryfikowane a co zastępcze: `docs/engine_rules_status.md`.
-- Ruch: `sim/path/` (agent ruchu od agenta pathfindingu), `GameSim` używa tylko `MoveSystem`.
-- Sterowanie (`ui/commands_ui.*`): PPM = ruch/atak (przeciągnięcie PPM = przesuwanie mapy), `A` + LPM = atak w marszu, `H` = stój, Ctrl+0-9 / 0-9 = grupy,
-  `P` = pauza symulacji, PPM na minimapie = ruch. Panel: menu produkcji z drzewa budowy (jednostki treningowe i budynki `[B]` stawiane kliknięciem na mapie), kolejka, tooltip.
-- Opcje testowe: `--cmd-move X,Y` / `--cmd-attack-move X,Y` (dla `--select`), `--no-sim`, `--wander`.
+## Front-end, audio, saves, playtests
+- Front-end (`ui/frontend.*`): main menu (common 280 background), campaign and custom maps (270), briefing with `.mit` text (290) and an intro video through `ffmpeg`
+  ("Intro video" button), options (284). Starting without a mission argument opens the menu; `--no-menu` skips it. Esc in a mission opens the pause menu
+  (resume, save, load, restart, main menu, quit); after a win, Enter continues to the next mission. `AZTEC_MENU_SHOT=dir` saves screenshots of the menu screens.
+- Audio (`audio/`): software mixer plus SDL; effects come from field [2] of animation frames with the original pan / attenuation rules; music follows `Music` / `MusicMask`.
+  `--no-audio`, `--volume V`.
+- Saves: Ctrl+S / Ctrl+L (slot 1), `sim/savegame.*` (command log plus replay).
+- Playtests without a human: `--script file` (`app/playtest.hpp` documents the commands: click, drag, key, run, shot, print, expect); examples in `tests/playtest/`.
+  Virtual time: one frame = one tick.
 
-## Skrypty, AI, menu, dźwięk, zapis, playtest (piąta runda)
-- Skrypty misji: `sim/script_runner.*` wykonuje `.scn` (warunki, akcje, taktyki, liczniki, zwycięstwo/porażka, komunikaty, centerView); AI: `sim/ai.cpp` (szkielet). Reguły i status: `docs/engine_rules_status.md`.
-- Front-end (`ui/frontend.*`): menu główne (tło common 280), kampania i własne mapy (270), odprawa z `.mit` (290) + film przez `ffmpeg` (przycisk "Intro video"), opcje (284).
-  Uruchomienie bez argumentu misji otwiera menu; `--no-menu` pomija. Esc w grze = menu pauzy (wznów, zapis, odczyt, restart, menu główne, wyjście); po wygranej Enter = następna misja.
-  `AZTEC_MENU_SHOT=katalog` zapisuje zrzuty ekranów menu.
-- Dźwięk (`audio/`): mikser programowy + SDL; efekty z pola [2] klatek animacji z regułami pan/tłumienia z oryginału, muzyka wg `Music`/`MusicMask`. `--no-audio`, `--volume V`.
-- Zapis: Ctrl+S / Ctrl+L (slot 1), `sim/savegame.*` (log poleceń + replay).
-- Playtest bez człowieka: `--script plik` (`app/playtest.hpp` opisuje polecenia: click, drag, key, run, shot, print, expect); przykłady w `tests/playtest/`. Czas wirtualny: 1 klatka = 1 tik.
-- Testy: `ctest` w katalogu budowania (formaty, silnik, pathfinding).
-
-## Znane braki
-- Brak mapy światła per kafel (źródła światła, maski light.xbe), maski nie są nakładane.
-- Kierunek początkowy jednostek (silnik: południe), stany attack/die/fidget i sloty 32-kierunkowe (ciężarówki, ptaki) nieobsłużone poza idle/move.
-- Uszkodzenia i budowa budynków, pociski, efekty, drugi sprite (wieżyczka/broń) nie są rysowane.
-- Mapa `.rm` wczytana, nie używana.
-- Brak AI wroga, skryptów `.scn`, garnizonu/naprawy, dźwięku i sieci; reszta reguł wg `docs/engine_rules_status.md`; kolory stron (`Color` 0..7) dla znaczników zastępczych są arbitralne.
-- Zrzut referencyjny rekompilacji (800x600, misja 1) porównany ręcznie: układ kamery/obiektów zgodny, różnice = oświetlenie i panel (przyciski).
+## Known gaps
+- No per-tile light map (light sources, `light.xbe` masks are not applied).
+- Initial unit facing (the engine uses south); attack / die / fidget states and 32-direction slots (trucks, birds) are only handled for idle / move.
+- Damage and construction stages, projectiles, effects and the second (turret / weapon) sprite are not drawn.
+- The `.rm` map is loaded but unused.
+- No garrison / repair, networking, original `.sav` format; side colours (`Color` 0..7) for placeholder markers are arbitrary. Other rules: see `docs/engine_rules_status.md`.
+- A screenshot of the recompiled original (800x600, mission 1) was compared by eye: camera / object layout matches; differences are lighting and the panel buttons.

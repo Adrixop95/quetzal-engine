@@ -28,6 +28,7 @@ void MoveSystem::stop(u32 id) {
   Agent& a = agents_[id];
   if (a.order >= 0) { --orders_[a.order]->refs; a.order = -1; }
   a.state = AgentState::Idle; a.vel = {0, 0};
+  a.target = {}; a.target_until = 0; a.backoff_ticks = 0;
 }
 
 void MoveSystem::order_move(const u32* ids, int n, Vec2 goal) {
@@ -40,8 +41,10 @@ void MoveSystem::order_move(const u32* ids, int n, Vec2 goal) {
   int gx = floor_div(goal.x, kTileFix), gy = floor_div(goal.y, kTileFix);
   MoveClass strict = MoveClass::Small; i32 maxr = 0;
   for (int i = 0; i < n; ++i) { Agent& a = agents_[ids[i]]; if (a.cls == MoveClass::Large) strict = MoveClass::Large; if (a.radius > maxr) maxr = a.radius; }
-  if (!grid_.in_bounds(gx, gy)) { gx = std::min(std::max(gx, 0), grid_.width() - 1); gy = std::min(std::max(gy, 0), grid_.height() - 1); }
-  if (grid_.blocked(gx, gy, strict)) grid_.nearest_free(gx, gy, strict, gx, gy);
+  bool relocated = false;
+  if (!grid_.in_bounds(gx, gy)) { gx = std::min(std::max(gx, 0), grid_.width() - 1); gy = std::min(std::max(gy, 0), grid_.height() - 1); relocated = true; }
+  if (grid_.blocked(gx, gy, strict)) { grid_.nearest_free(gx, gy, strict, gx, gy); relocated = true; }
+  if (relocated) { goal = tile_center(gx, gy); o.goal = goal; }   // slots must surround the real destination, not the blocked / outside point
   o.goal_cell = {gx, gy};
   ensure_field(o, strict);
   // Unreachable goal: flood from the first agent, aim at the reachable tile nearest to the goal ("closest approach", like the
@@ -98,6 +101,7 @@ void MoveSystem::order_move(const u32* ids, int n, Vec2 goal) {
   for (int i = 0; i < n; ++i) {
     Agent& a = agents_[ord[i]];
     if (a.order >= 0 && a.order != oi) --orders_[a.order]->refs;
+    a.target = {}; a.target_until = 0; a.backoff_ticks = 0;   // drop steering cached for the previous order
     a.order = oi; a.slot = slots[i]; a.state = AgentState::Moving; a.win_start = a.pos; a.win_ticks = 0; a.stuck_level = 0; a.ghost_ticks = a.squeeze_ticks = 0;
     ensure_field(o, a.cls);
   }
@@ -270,7 +274,19 @@ void MoveSystem::tick() {
 u64 MoveSystem::state_hash() const {
   u64 h = 1469598103934665603ull;
   auto mix = [&](u64 v) { h = (h ^ v) * 1099511628211ull; };
-  for (const Agent& a : agents_) { mix(a.id); mix((u32)a.pos.x); mix((u32)a.pos.y); mix((u32)a.vel.x); mix((u32)a.vel.y); mix((u64)a.state); }
+  mix(tick_);
+  mix(agents_.size());
+  for (const Agent& a : agents_) {
+    mix(a.id); mix((u32)a.pos.x); mix((u32)a.pos.y); mix((u32)a.vel.x); mix((u32)a.vel.y); mix((u32)a.prev_pos.x); mix((u32)a.prev_pos.y);
+    mix((u32)a.radius); mix((u32)a.speed); mix((u64)a.cls); mix((u64)a.state); mix(a.hold); mix((u32)a.order);
+    mix((u32)a.slot.x); mix((u32)a.slot.y); mix((u32)a.facing); mix((u32)a.heading);
+    mix((u32)a.win_start.x); mix((u32)a.win_start.y); mix((u32)a.win_ticks); mix((u32)a.stuck_level); mix((u32)a.squeeze_ticks); mix((u32)a.ghost_ticks); mix(a.moved_ticks);
+    mix((u32)a.target.x); mix((u32)a.target.y); mix(a.target_until); mix((u32)a.backoff_ticks);
+  }
+  mix(orders_.size());
+  for (const auto& o : orders_) {
+    mix((u32)o->refs); mix((u32)o->goal.x); mix((u32)o->goal.y); mix((u32)o->goal_cell.x); mix((u32)o->goal_cell.y); mix(o->have[0]); mix(o->have[1]);
+  }
   return h;
 }
 

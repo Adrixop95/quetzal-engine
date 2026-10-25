@@ -31,6 +31,9 @@ struct BuildItem {
 
 struct DuelEntry { int dmg = 0, interval = 0; };
 
+// Decimal text -> value*256 using integer arithmetic only (locale independent), rounded half up, bounded.
+int parse_fixed256(const std::string& text);
+
 class RulesData {
  public:
   // Loads from a directory containing types.csv, desc_*.csv, speed_measured.csv, duel_damage.csv, buildtree.csv.

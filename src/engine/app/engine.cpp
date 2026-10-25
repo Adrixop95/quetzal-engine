@@ -237,6 +237,7 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
         if (game && do_save) {
           SaveData sd;
           sd.mission = spec; sd.tick = game->tick_count(); sd.hash = game->state_hash(world);
+          sd.script_hash = file_hash(data.map_file(world.mission.file_name, "scn"));
           sd.cam_x = cam.x; sd.cam_y = cam.y; sd.cam_zoom = cam.zoom; sd.log = game->log();
           std::string dir = data.root() + "/Saves";
           std::error_code sec;
@@ -249,8 +250,9 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
           std::string path = data.root() + "/Saves/engine_slot1.azs";
           World fresh;
           std::string lerr;
-          if (read_save(path, sd) && sd.mission == spec && load_world(data, spec, fresh, lerr)) {
-            std::string scn = data.map_file(fresh.mission.file_name, "scn");
+          std::string scn;
+          if (read_save(path, sd) && sd.mission == spec && load_world(data, spec, fresh, lerr) &&
+              (scn = data.map_file(fresh.mission.file_name, "scn"), file_hash(scn) == sd.script_hash)) {
             auto ns = GameSim::replay(fresh, rules, sd.log, sd.tick, scn);
             if (ns->state_hash(fresh) != sd.hash) std::fprintf(stderr, "warning: replayed state differs from the saved hash\n");
             world = std::move(fresh);

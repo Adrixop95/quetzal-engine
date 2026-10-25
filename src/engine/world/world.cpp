@@ -50,6 +50,10 @@ bool load_world(const GameData& data, const std::string& spec, World& w, std::st
     o.teleport(tile_center_fixed(t.x), tile_center_fixed(t.y));
     w.objects.push_back(o);
   }
+  w.script_side = 0;
+  for (const SideDef& sd : w.mission.sides)
+    if (!sd.only_comp && !sd.neutral) { w.script_side = sd.index; break; }
+  w.local_side = w.script_side;
   w.side_state.assign(8, SideState{});
   for (int a = 0; a < 8; a++)
     for (int b = 0; b < 8; b++) w.relation[a][b] = a == b ? kFriend : kEnemy;

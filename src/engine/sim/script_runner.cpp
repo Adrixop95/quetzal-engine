@@ -169,7 +169,7 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
     case ActKind::TimerStop: timers_[a.id].running = false; break;
     case ActKind::TimerKill: timers_[a.id].exists = false; break;
     case ActKind::CenterView:
-      w.center_view = true; w.center_x = a.a * kTilePx + kTilePx / 2; w.center_y = a.b * kTilePx + kTilePx / 2; w.center_serial++;
+      w.center_view = true; w.center_x = std::clamp(a.a, 0, w.terrain.w - 1) * kTilePx + kTilePx / 2; w.center_y = std::clamp(a.b, 0, w.terrain.h - 1) * kTilePx + kTilePx / 2; w.center_serial++;
       break;
     case ActKind::SideCameraActivate: {
       for (const SideDef& sd : w.mission.sides)
@@ -186,7 +186,7 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
     case ActKind::SideVictory: case ActKind::SideDefeat: {
       uint8_t r = a.kind == ActKind::SideVictory ? kVictory : kDefeat;
       if (side >= 0 && side < 8 && w.side_outcome[side] == kRunning) w.side_outcome[side] = r;
-      if (side == w.local_side && w.outcome == kRunning) w.outcome = r;
+      if (side == w.script_side && w.outcome == kRunning) w.outcome = r;
       break;
     }
     case ActKind::SideAddMoney: if (side >= 0 && side < int(w.side_state.size())) w.side_state[size_t(side)].money += a.a; break;
@@ -208,7 +208,7 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
       break;
     }
     case ActKind::TacticMoveTo:
-      sim.script_order(w, tactic_members(w, side, a.id), a.a * kTilePx + kTilePx / 2, a.b * kTilePx + kTilePx / 2, true);
+      sim.script_order(w, tactic_members(w, side, a.id), std::clamp(a.a, 0, w.terrain.w - 1) * kTilePx + kTilePx / 2, std::clamp(a.b, 0, w.terrain.h - 1) * kTilePx + kTilePx / 2, true);
       tactics_[{side, a.id}].path = -1;
       break;
     case ActKind::TacticJoinTactic:
@@ -259,7 +259,7 @@ void ScriptRunner::follow_paths(GameSim& sim, World& w) {
       idx = 0;
     }
     int k = t.inverted ? n - 1 - idx : idx;
-    sim.script_order(w, m, pts[size_t(k)].first * kTilePx + kTilePx / 2, pts[size_t(k)].second * kTilePx + kTilePx / 2, true);
+    sim.script_order(w, m, std::clamp(pts[size_t(k)].first, 0, w.terrain.w - 1) * kTilePx + kTilePx / 2, std::clamp(pts[size_t(k)].second, 0, w.terrain.h - 1) * kTilePx + kTilePx / 2, true);
     t.path_index = idx + 1;
   }
 }

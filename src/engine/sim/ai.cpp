@@ -18,7 +18,7 @@ constexpr int kAlertRadius = 10 * kTilePx;  // placeholder
 void GameSim::run_ai(World& w) {
   for (const SideDef& sd : w.mission.sides) {
     int side = sd.index;
-    if (!sd.only_comp || sd.neutral || side == w.local_side || side < 0 || side >= int(w.side_state.size())) continue;
+    if (!sd.only_comp || sd.neutral || side < 0 || side >= int(w.side_state.size())) continue;
     SideState& ss = w.side_state[size_t(side)];
     if (tick_ % kAiIncomeEvery == 0) ss.money += kAiIncome;
 

@@ -38,7 +38,7 @@ class ScriptRunner {
   struct Timer { bool running = true; long value = 0; bool exists = true; };
   void run(GameSim& sim, World& w, const script::Action& a);
   std::vector<uint32_t> tactic_members(const World& w, int side, int tactic) const;
-  int resolve_side(const World& w, int s) const { return s == script::kLocal ? w.local_side : s; }
+  int resolve_side(const World& w, int s) const { return s == script::kLocal ? w.script_side : s; }
   int count_units(const World& w, int side) const;
   int count_towns(const World& w, int side) const;
 

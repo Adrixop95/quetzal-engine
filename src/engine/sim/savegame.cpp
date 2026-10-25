@@ -17,12 +17,13 @@ template <class T> static bool get(const std::vector<uint8_t>& v, size_t& o, T& 
 
 std::vector<uint8_t> serialize_save(const SaveData& s) {
   std::vector<uint8_t> v;
-  put(v, "AZS1", 4);
+  put(v, "AZS2", 4);
   uint32_t n = uint32_t(s.mission.size());
   put(v, &n, 4);
   put(v, s.mission.data(), n);
   put(v, &s.tick, 8);
   put(v, &s.hash, 8);
+  put(v, &s.script_hash, 8);
   put(v, &s.cam_x, 4); put(v, &s.cam_y, 4); put(v, &s.cam_zoom, 4);
   std::vector<uint8_t> log = serialize_log(s.log);
   uint32_t ln = uint32_t(log.size());
@@ -32,13 +33,13 @@ std::vector<uint8_t> serialize_save(const SaveData& s) {
 }
 
 bool deserialize_save(const std::vector<uint8_t>& v, SaveData& out) {
-  if (v.size() < 8 || std::memcmp(v.data(), "AZS1", 4) != 0) return false;
+  if (v.size() < 8 || std::memcmp(v.data(), "AZS2", 4) != 0) return false;
   size_t o = 4;
   uint32_t n, ln;
   if (!get(v, o, n) || o + n > v.size()) return false;
   out.mission.assign(reinterpret_cast<const char*>(v.data() + o), n);
   o += n;
-  if (!get(v, o, out.tick) || !get(v, o, out.hash) || !get(v, o, out.cam_x) || !get(v, o, out.cam_y) || !get(v, o, out.cam_zoom) || !get(v, o, ln)) return false;
+  if (!get(v, o, out.tick) || !get(v, o, out.hash) || !get(v, o, out.script_hash) || !get(v, o, out.cam_x) || !get(v, o, out.cam_y) || !get(v, o, out.cam_zoom) || !get(v, o, ln)) return false;
   if (o + ln > v.size()) return false;
   std::vector<uint8_t> log(v.begin() + long(o), v.begin() + long(o + ln));
   return deserialize_log(log, out.log);
@@ -51,6 +52,14 @@ bool write_save(const std::string& path, const SaveData& s) {
   bool ok = std::fwrite(v.data(), 1, v.size(), f) == v.size();
   std::fclose(f);
   return ok;
+}
+
+uint64_t file_hash(const std::string& path) {
+  std::vector<uint8_t> v;
+  if (path.empty() || !read_file(path, v)) return 0;
+  uint64_t h = 1469598103934665603ull;
+  for (uint8_t b : v) h = (h ^ b) * 1099511628211ull;
+  return h;
 }
 
 bool read_save(const std::string& path, SaveData& out) {

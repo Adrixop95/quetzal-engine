@@ -1,78 +1,83 @@
-# Silnik: stan reguł symulacji (zweryfikowane / pomiar / zastępcze)
+# Engine: status of the simulation rules (verified / measured / placeholder)
 
-Symulacja: `src/engine/sim/game_sim.*` (12 Hz, same liczby całkowite, polecenia z kolejki `commands.hpp`), dane z `docs/data/*.csv` wczytywane w czasie
-uruchomienia (`rules.*`). Ruch i pathfinding: `src/engine/sim/path/` (agent ruchu; interfejs wymienny: `GameSim` używa tylko `MoveSystem`).
-Legenda: **V** = zweryfikowane w oryginale (kod lub zrzut), **M** = zmierzone na rekompilacji, **P** = zastępcze (wymyślone, do wymiany).
+Simulation: `src/engine/sim/game_sim.*` (12 Hz, integers only, driven by the command queue in `commands.hpp`). Data comes from `docs/data/*.csv`, loaded at run time (`rules.*`).
+Movement and pathfinding: `src/engine/sim/path/` (movement agents; the interface is swappable: `GameSim` only uses `MoveSystem`).
+Legend: **V** = verified against the original (code or screenshot), **M** = measured on the recompiled original, **P** = placeholder (invented, to be replaced).
 
-| Reguła | Stan | Źródło / uwagi |
+## Core simulation
+| Rule | Status | Source / notes |
 |---|---|---|
-| Krok 12 Hz, pozycje 24.8 px, hash stanu po każdym ticku, replay z logu poleceń | V (konstrukcja) | brak porównania z oryginałem; hash silnika != hash rekompilacji |
-| Typy poleceń (PCT_FRAME_*) i ich numery | V | `docs/object_types.md`; zaimplementowane: PAUSEON/OFF, CREATEGROUP, ADDTOGROUP, MOVE, ATTACK, BUILD, DESTROYHERE, QUEUEKILL, PAUSEBUILD. Zapis tylko w logu: SELECTGROUP, GARRISON, REPEARMODE, ATTACKMODE, BUILDMODE, SELECTBYNO, FOLLOWTEAM |
-| Stop (0x50) i AttackMove (0x51) | P | rozszerzenia silnika, oryginał nie ma takich pakietów |
-| Kolejność wykonania poleceń w ticku: strona rosnąco, potem kolejność zgłoszenia | P | oryginał: kolejki stron w `0x4577b0` (kolejność nie sprawdzona) |
-| HP maks Marine = desc d4; budynek = desc d1 | V | `desc_marine.csv`, `desc_building.csv` |
-| HP maks pozostałych typów | P | najwyższe hp tego typu w misji |
-| Prędkość Marine = desc d5 px/tik | V | `desc_marine.csv`; nadpisywana pomiarem gdy jest w `speed_measured.csv` |
-| Prędkość zmierzona (wszystkie typy z pomiarem) | M | `speed_measured.csv` (średnia w środku biegu) |
-| Prędkość lotników, łodzi, nieznanych typów | P | 8 px/tik; lotnik leci po prostej, łodzie stoją |
-| Promień jednostki (koło kolizji) | P | 14 px, duże 20 px |
-| Klasa ruchu mała/duża (`.dat` 1 = tylko mała) | V (znaczenie `.dat`), P (przypisanie typów) | duże: ciężarówki, niedźwiedź, słoń |
-| Cena i czas budowy | V | `types.csv` = funkcje tooltipu; mnożniki BuildSpeed: Town.BuildSpeed nie jest czytane przez grę, więc K=1 |
-| Jednostka czasu "Time" (tiki) | P | zakładam 1 jednostka = 1 tik (footman 100 tików = 8,3 s) |
-| Drzewo budowy (kto co może, wymagania) | V | `buildtree.csv`, wpisy "A" (budynek obcej rasy) traktowane jak zwykłe wymaganie |
-| Ulepszenia ratusza (pozycje typu budynek z flagą 0) | nie zrobione | pomijane w menu |
-| `DisabledID` strony blokuje pozycje menu | V | `docs/formats.md` |
-| Obrażenia i odstęp strzałów | M dla par z `duel_damage.csv`, P dla reszty (500 dmg / 12 tików) | |
-| Zasięg broni | P | wręcz 56 px, dystans 288 px, wieże 336 px; typy wręcz: lista w `rules.cpp` |
-| Zasięg widzenia (zdobywanie celów, mgła) | P | 288 px (6 kafli), budynki 8 kafli |
-| Automatyczne atakowanie wrogów w zasięgu wzroku (stojące i AttackMove) | P | najbliższy wróg, remis = niższe id; strony `Neutral` pomijane |
-| Śmierć i zwłoki | P | animacja śmierci z `Units.xbe`, zwłoki 480 tików, potem znikają; budynki znikają od razu |
-| Mgła wojny: kafle w zasięgu = jasne, wcześniej widziane = 96 | P | wartości 0 / 96 / 152 z `.vis`, aktualizacja co 4 tiki |
-| Budowa budynku: stawianie na wolnym polu, postęp = czas budowy, etapy = slot 0 animacji | V (etapy), P (czas i brak budowniczych) | oryginał wymaga ekipy/zasobów? niezbadane |
-| Obrys budynku w kaflach | P | desc d4/d5 (px) zaokrąglone w górę, wyśrodkowane na kaflu |
-| Trening jednostek: kolejka (max 8), pierwsze w kolejce, odnawianie po anulowaniu 100% | P | miejsce pojawienia: pod budynkiem ratusza |
-| Dochód: kopalnia +4 / farma +1 co 12 tików | P | Harvest.cpp nierozpoznany |
-| Początkowa gotówka = `StartMoney` strony | V | `.mp` |
-| Garnizon, naprawa, tryby ataku, populacja, poziomy trudności, AI (Tactic/Defence/Triggers) | nie zrobione | wrogowie tylko bronią się/atakują w zasięgu wzroku |
-| Skrypty `.scn` (cele misji, zwycięstwo) | nie zrobione | |
+| 12 Hz step, 24.8 fixed-point positions, state hash after every tick, replay from the command log | V (construction) | no comparison with the original yet; the engine hash differs from the recompilation's hash |
+| State hash covers objects (incl. destinations, orders, construction timers), sides (money, queues, groups, build pause), spawn counter, relations, script state and the full movement system (agents, orders, slots, steering caches) | engine | collection sizes are mixed in |
+| Command types (PCT_FRAME_*) and their numbers | V | `docs/object_types.md`. Implemented: PAUSEON/OFF, CREATEGROUP, ADDTOGROUP, MOVE, ATTACK, BUILD, DESTROYHERE, QUEUEKILL, PAUSEBUILD. Logged only: SELECTGROUP, GARRISON, REPAIRMODE, ATTACKMODE, BUILDMODE, SELECTBYNO, FOLLOWTEAM |
+| Stop (0x50) and AttackMove (0x51) | P | engine extensions; the original has no such packets |
+| Command coordinates / tiles from packets | engine | clamped into the map before any fixed-point conversion; invalid tiles are ignored |
+| Command order inside a tick: ascending side, then submission order | P | original: per-side queues in `0x4577b0` (order not verified) |
+| Max hp of Marine = desc d4; building = desc d1 | V | `desc_marine.csv`, `desc_building.csv` |
+| Max hp of other types | P | highest hp of that type in the mission |
+| Marine speed = desc d5 px/tick | V | `desc_marine.csv`; overridden by `speed_measured.csv` when present (parsed with integer arithmetic, locale independent) |
+| Measured speed (all types with a measurement) | M | `speed_measured.csv` (mean mid-run speed) |
+| Speed of fliers, boats, unknown types | P | 8 px/tick; fliers move in straight lines, boats stand still |
+| Unit radius (collision disc) | P | 14 px, large 20 px |
+| Movement class small / large (`.dat` 1 = small only) | V (meaning of `.dat`), P (type assignment) | large: trucks, bear, elephant |
+| Price and build time | V | `types.csv` = the tooltip functions; BuildSpeed multipliers: the game does not read `Town.BuildSpeed`, so K = 1 |
+| Unit of the "Time" value | P | assumed 1 unit = 1 tick (footman 100 ticks = 8.3 s) |
+| Build tree (who can build what, prerequisites) | V | `buildtree.csv`; "A" entries (building of another race) are treated as ordinary prerequisites |
+| Town upgrades (building entries with flag 0) | not done | skipped in the menu |
+| Side `DisabledID` blocks menu entries | V | `docs/formats.md` |
+| Damage and shot interval | M for pairs in `duel_damage.csv`, P otherwise (500 dmg / 12 ticks) | |
+| Weapon range | P | melee 56 px, ranged 288 px, towers 336 px; melee type list in `rules.cpp` |
+| Sight range (target acquisition, fog) | P | 288 px (6 tiles), buildings 8 tiles |
+| Auto-attack of enemies in sight (idle and attack-moving units) | P | nearest enemy, ties = lower id; hostility from the relation matrix |
+| Death and corpses | P | death animation from `Units.xbe`, corpse for 480 ticks, then removed; buildings vanish at once |
+| Fog of war: tiles in sight = lit, previously seen = 96 | P | values 0 / 96 / 152 from `.vis`, updated every 4 ticks |
+| Building construction: placement on free tiles, progress = build time, stages = animation slot 0 | V (stages), P (time, no builders) | whether the original needs workers / resources is unknown |
+| Building footprint in tiles | P | desc d4/d5 (px) rounded up, centred on the clicked tile |
+| Unit training: queue (max 8), first item progresses, 100 % refund on cancel | P | spawn point: below the town building |
+| Income: mine +4 / farm +1 every 12 ticks | P | Harvest.cpp not decoded |
+| Starting money = side `StartMoney` | V | `.mp` |
+| Garrison, repair, attack modes, population limits, difficulty levels | not done | |
 
-## Skrypty misji (`.scn`, `sim/script_runner.*`)
-| Reguła | Stan | Uwagi |
-|---|---|---|
-| Wszystkie wyzwalacze sprawdzane co tik, akcje gdy wszystkie warunki prawdziwe; `trigger(N).disable` wyłącza | P | wniosek z użycia (`attacked != -1` + samowyłączenie) |
-| Wyzwalacze włączane przez inny wyzwalacz startują wyłączone | P | stan początkowy nieudokumentowany |
-| `localTime`/`globalTime` = tiki od startu misji | P | |
-| Liczniki: od 0, rosną co tik; `set(V)` ustawia i uruchamia, `stop`, `kill`; `timer(0)` istnieje od startu | P | |
-| `side(S).units` = żywe nie-budynki; `towns` = żywe ratusze (typy forpost/wieś/miasto/forteca); `enemies` = jednostki i ratusze wrogich stron | P | |
-| `tactic(N)` = żywe obiekty strony z `[Team#] ScenarioID = N`; `valid` 0/1; `idle` = wszyscy bezczynni; `attacked` = id ostatniego napastnika lub -1 | P | |
-| `attackTown(id)`, `moveTo(x,y)` = AttackMove całej grupy (kafle -> piksele) | P | |
-| `joinTactic`, `giftToSide`, `kill`, `lock/unlock`, `setPath/setCycledPath/...` (kolejne punkty z `[Paths]`) | P | |
-| `setFriendlyTo/NeutralTo/EnemyTo` zmienia relację jednostronnie (macierz 8x8) | P | |
-| `addMoney/takeMoney`, `printString`, `centerView`, `cameraActivate(i,v)` (skok do `Camera#`), `victory/defeat` | P | koniec misji tylko dla strony lokalnej |
-| `boat(N).activate`, `johnka(N).enable`, `submarine(N).go`, `buildCommand`, `moveCommand`, `cameraDeactivate` | nie zrobione | liczone jako `unsupported` |
-| Obrony z `[SideN] Defence#` pojawiają się jako obiekty (wieże), `defence(N).valid` = żyje | P | |
+## Mission scripts (`.scn`, `sim/script_runner.*`)
+`side(local)` means the mission's human side (`World::script_side`: the first side that is neither `OnlyComp` nor neutral), identical for every peer; the viewing side (`World::local_side`) never influences the simulation.
 
-## Komputer (AI, `sim/ai.cpp`) - szkielet
-| Reguła | Stan | Uwagi |
+| Rule | Status | Notes |
 |---|---|---|
-| Strony `OnlyComp=1` (nie lokalne, nie neutralne) sterowane przez AI | P | |
-| Dochód pasywny +60 co 300 tików | M | `docs/rules_types.md` (obserwacja na `zeco1`) |
-| Zakup jednostki co 56 tików, gdy kolejka pusta, losowa pozycja ze stać (deterministyczny RNG) | M (okres) / P (wybór) | oryginał: 161 za piechura (niewyjaśnione) |
-| Limit jednostek AI 80 | P | |
-| Obrona: trafiony budynek -> bezczynne jednostki w promieniu 10 kafli idą (AttackMove) do napastnika | P | |
-| Ataki fal | skrypt `.scn` (`attackTown`, `moveTo`, ścieżki) | AI sama nie planuje ataków |
-| `Tendency`, `BuildSpeed`, `Difficulty` z `.mp` | brak wpływu | gra ich nie czyta / wpływ niezmierzony |
+| Every trigger is evaluated each tick; actions run when all conditions hold; `trigger(N).disable` turns one off | P | inferred from usage (`attacked != -1` plus self-disable) |
+| Triggers enabled by another trigger start disabled; initialised in `GameSim::init()` (not tied to tick 1) | P | initial state undocumented |
+| `localTime` / `globalTime` = ticks since mission start | P | |
+| Timers: start at 0 and count every tick; `set(V)` sets and starts, `stop`, `kill`; `timer(0)` exists from the start | P | |
+| `side(S).units` = living non-buildings; `towns` = living town halls (outpost / village / town / fortress types); `enemies` = units and town halls of hostile sides | P | |
+| `tactic(N)` = living objects of the side with `[Team#] ScenarioID = N`; `valid` 0/1; `idle` = all idle; `attacked` = id of the last attacker or -1 | P | |
+| `attackTown(id)`, `moveTo(x,y)` = attack-move of the whole group (tiles -> pixels, clamped to the map) | P | |
+| `joinTactic`, `giftToSide`, `kill`, `lock/unlock`, `setPath/setCycledPath/...` (successive points of `[Paths]`) | P | |
+| `setFriendlyTo/NeutralTo/EnemyTo` changes the relation one-way (8x8 matrix) | P | |
+| `addMoney/takeMoney`, `printString`, `centerView`, `cameraActivate(i,v)` (jump to `Camera#`), `victory/defeat` | P | the mission ends for the script side |
+| `boat(N).activate`, `johnka(N).enable`, `submarine(N).go`, `buildCommand`, `moveCommand`, `cameraDeactivate` | not done | counted as `unsupported` |
+| Defences from `[SideN] Defence#` appear as objects (towers); `defence(N).valid` = alive | P | |
 
-## Dźwięk (`src/engine/audio/`)
-| Reguła | Stan | Uwagi |
-|---|---|---|
-| Efekty z `Snd.xbe`: zestaw dźwięków (`sound_set`) z pola [2] klatki animacji, odtwarzany w pierwszym ticku klatki, losowy element zestawu | V (format), P (losowanie: lokalny LCG, nie RNG symulacji) | |
-| Pan = (x - środek widoku) przycięte do +-4000 setnych dB; tłumienie: brak do 500 px, liniowo do -4000 przy 800 px, dalej cisza | V (z docs/formats.md), P (jednostka 100 = 1 dB) | pomijany warunek "komórka mgły >= 0x21" |
-| Muzyka: `Music=N` -> ścieżka N, inaczej `MusicMask`; kolejne utwory po zakończeniu | V (wybór maski), P (kolejność = od soli nazwy misji, cyklicznie) | `music_allowed_mask` z `core/audio` |
-| Głośności, mowa/napisy, dźwięki interfejsu, pętle stanów (nagłówek sekwencji), dźwięki budynków/pocisków | nie zrobione | `--volume`, `--no-audio` |
+## Computer player (`sim/ai.cpp`, skeleton)
+Controlled sides are those with `OnlyComp=1` that are not neutral (a mission property, the same on every peer).
 
-## Zapis gry
-| Reguła | Stan | Uwagi |
+| Rule | Status | Notes |
 |---|---|---|
-| Zapis własny: misja + tik + hash + kamera + pełny log poleceń; wczytanie = deterministyczny replay na świeżym świecie (hash weryfikowany) | silnik | `Saves/engine_slot1.azs`, Ctrl+S / Ctrl+L i menu pauzy |
-| Format oryginalnych `*.sav` | nie zrobione | czeka na `docs/savegame.md` (agent formatów) |
+| Passive income +60 every 300 ticks | M | `docs/rules_types.md` (observation on `zeco1`) |
+| Buys a unit every 56 ticks when its queue is empty (random affordable entry, deterministic RNG) | M (period) / P (choice) | original: 161 for a footman (unexplained) |
+| Unit cap 80 | P | |
+| Defence: a hit building sends idle units within 10 tiles (attack-move) to the attacker | P | |
+| Attack waves | scripts (`.scn`: `attackTown`, `moveTo`, paths) | the AI does not plan attacks itself |
+| `Tendency`, `BuildSpeed`, `Difficulty` from `.mp` | no effect | not read by the game / effect not measured |
+
+## Audio (`src/engine/audio/`)
+| Rule | Status | Notes |
+|---|---|---|
+| Effects from `Snd.xbe`: sound set (`sound_set`) from field [2] of an animation frame, played on the first tick of the frame, random member of the set | V (format), P (random choice uses a local LCG, not the simulation RNG) | |
+| Pan = (x - view centre x) clamped to +-4000 hundredths of dB; attenuation: none up to 500 px, linear to -4000 at 800 px, silent beyond | V (`docs/formats.md`), P (100 units = 1 dB) | the "fog cell >= 0x21" condition is not applied |
+| Music: `Music=N` -> track N, otherwise `MusicMask`; next track when one ends | V (mask selection), P (order = seeded by mission name, cyclic) | `music_allowed_mask` in `core/audio` |
+| Volumes, speech / subtitles, UI sounds, state loops (sequence header), building / projectile sounds | not done | `--volume`, `--no-audio` |
+
+## Saves
+| Rule | Status | Notes |
+|---|---|---|
+| Engine save: mission + tick + hash + camera + hash of the `.scn` + full command log; loading replays deterministically on a fresh world and verifies the hash | engine | `Saves/engine_slot1.azs`, Ctrl+S / Ctrl+L and the pause menu; a different script file is refused |
+| Original `*.sav` format | not done | waiting for the savegame documentation |

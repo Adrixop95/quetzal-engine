@@ -12,6 +12,7 @@ struct SaveData {
   std::string mission;          // spec to reload ("mission_3")
   uint64_t tick = 0;
   uint64_t hash = 0;            // state hash at `tick`, verified after replay
+  uint64_t script_hash = 0;     // FNV-1a of the mission .scn file used (0 = no script); loading refuses a different script
   float cam_x = 0, cam_y = 0, cam_zoom = 1;
   std::vector<LoggedCommand> log;
 };
@@ -19,6 +20,7 @@ struct SaveData {
 std::vector<uint8_t> serialize_save(const SaveData& s);
 bool deserialize_save(const std::vector<uint8_t>& bytes, SaveData& out);
 bool write_save(const std::string& path, const SaveData& s);
+uint64_t file_hash(const std::string& path);   // FNV-1a of a file's bytes, 0 if unreadable / missing
 bool read_save(const std::string& path, SaveData& out);
 
 }  // namespace aztec::engine

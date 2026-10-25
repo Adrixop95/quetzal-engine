@@ -45,14 +45,18 @@ void GameSim::init(World& w) {
     nav_.reset(w.terrain.w, w.terrain.h);
   mover_ = std::make_unique<path::MoveSystem>(nav_);
   if (w.side_state.size() < 8) w.side_state.resize(8);
+  paused_ = false;
+  spawn_counter_ = 0;
+  rng_ = 12345;
+  if (script_.loaded()) script_.init(w);
   // largest mission hp per type = fallback maximum
   std::vector<int> seen(kNumTypes, 0);
   for (const Object& o : w.objects)
-    if (o.type >= 0 && o.type < kNumTypes) seen[o.type] = std::max(seen[o.type], o.hp);
+    if (o.type >= 0 && o.type < kNumTypes) seen[size_t(o.type)] = std::max(seen[size_t(o.type)], o.hp);
   for (Object& o : w.objects) {
-    if (o.type < 0) { o.alive = true; continue; }
+    if (o.type < 0 || o.type >= kNumTypes) { o.type = -1; o.alive = true; continue; }   // unknown types become inert markers
     const TypeRules& r = rules_->type(o.type);
-    o.hp_max = r.hp_src == Src::Verified ? r.hp_max : std::max(seen[o.type], r.structure ? r.hp_max : 1);
+    o.hp_max = r.hp_src == Src::Verified ? r.hp_max : std::max(seen[size_t(o.type)], r.structure ? r.hp_max : 1);
     if (o.hp <= 0) o.hp = o.hp_max;
     o.progress = 1000;
     attach_agent(o);
@@ -157,12 +161,14 @@ void GameSim::apply(World& w, const Command& c) {
     case Pct::AttackMove: {
       std::vector<Object*> v = own_ids(true);
       std::vector<uint32_t> agents;
+      // Coordinates come from untrusted command packets: clamp into the map before any fixed-point conversion.
+      const int cx = std::clamp(c.a, 0, std::max(0, w.width_px() - 1)), cy = std::clamp(c.b, 0, std::max(0, w.height_px() - 1));
       for (Object* o : v) {
         o->order = uint8_t(c.type == Pct::Move ? Order::Move : Order::AttackMove);
-        o->dest_x = c.a; o->dest_y = c.b; o->target = 0; o->resume = 0;
+        o->dest_x = cx; o->dest_y = cy; o->target = 0; o->resume = 0;
         if (o->mover >= 0) agents.push_back(uint32_t(o->mover));
       }
-      if (!agents.empty()) mover_->order_move(agents.data(), int(agents.size()), {to_fixed(c.a), to_fixed(c.b)});
+      if (!agents.empty()) mover_->order_move(agents.data(), int(agents.size()), {to_fixed(cx), to_fixed(cy)});
       break;
     }
     case Pct::Attack: {
@@ -207,6 +213,7 @@ void GameSim::apply(World& w, const Command& c) {
       for (const MenuItem& m : items) if (m.type == c.a) mi = &m;
       if (!mi || !mi->enabled) break;
       if (mi->construct) {
+        if (c.b < 0 || c.c < 0 || c.b >= w.terrain.w || c.c >= w.terrain.h) break;
         if (!can_place(w, c.side, c.a, c.b, c.c, &why)) break;
         ss->money -= mi->price;
         spawn(w, c.a, c.side, c.b * kTilePx + kTilePx / 2, c.c * kTilePx + kTilePx / 2, 0, true);
@@ -446,10 +453,7 @@ void GameSim::tick(World& w) {
   }
   pending_.clear();
   if (paused_) return;
-  if (script_.loaded()) {
-    if (tick_ == 1) script_.init(w);
-    script_.tick(*this, w);
-  }
+  if (script_.loaded()) script_.tick(*this, w);
   economy(w);
   run_ai(w);
   run_orders(w);
@@ -459,6 +463,8 @@ void GameSim::tick(World& w) {
 }
 
 void GameSim::script_order(World& w, const std::vector<uint32_t>& ids, int pxx, int pyy, bool attack_move) {
+  pxx = std::clamp(pxx, 0, std::max(0, w.width_px() - 1));
+  pyy = std::clamp(pyy, 0, std::max(0, w.height_px() - 1));
   // Script orders bypass the side check of player commands: apply per owning side directly (not logged: scripts are deterministic).
   std::vector<uint32_t> agents;
   for (uint32_t id : ids) {
@@ -491,15 +497,17 @@ void GameSim::teleport(World& w, uint32_t id, int pxx, int pyy) {
 uint64_t GameSim::state_hash(const World& w) const {
   uint64_t h = 1469598103934665603ull;
   auto mix = [&](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
-  mix(tick_); mix(rng_); mix(paused_);
+  mix(tick_); mix(rng_); mix(paused_); mix(spawn_counter_); mix(w.objects.size());
   for (const Object& o : w.objects) {
     mix(o.id); mix(uint32_t(o.type)); mix(uint32_t(o.side)); mix(uint32_t(o.hp)); mix(uint32_t(o.cur_x)); mix(uint32_t(o.cur_y));
     mix(o.order); mix(o.target); mix(uint32_t(o.cooldown)); mix(o.alive); mix(o.removed); mix(uint32_t(o.progress));
     mix(o.facing); mix(o.anim_state); mix(uint32_t(o.corpse_ticks));
+    mix(uint32_t(o.dest_x)); mix(uint32_t(o.dest_y)); mix(o.resume); mix(uint32_t(o.build_elapsed)); mix(uint32_t(o.build_total));
+    mix(uint32_t(o.hp_max)); mix(uint32_t(o.tactic)); mix(uint32_t(o.scenario)); mix(o.last_hit_by); mix(uint32_t(o.mover)); mix(o.anim_variant);
   }
   for (const SideState& s : w.side_state) {
-    mix(uint32_t(s.money));
-    for (const QueueItem& q : s.queue) { mix(uint32_t(q.type)); mix(uint32_t(q.remaining)); }
+    mix(uint32_t(s.money)); mix(s.build_paused); mix(s.queue.size());
+    for (const QueueItem& q : s.queue) { mix(uint32_t(q.type)); mix(uint32_t(q.remaining)); mix(uint32_t(q.total)); }
     for (const auto& g : s.groups) { mix(g.size()); for (uint32_t id : g) mix(id); }
   }
   for (const VisFile::Layer& l : w.visibility.sides) { uint64_t sum = 0; for (uint8_t v : l.v) sum = sum * 31 + v; mix(sum); }

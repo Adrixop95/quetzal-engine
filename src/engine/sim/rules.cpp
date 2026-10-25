@@ -32,6 +32,25 @@ std::vector<std::vector<std::string>> read_csv(const std::string& path) {
   }
   return rows;
 }
+// Parses a decimal such as "9.26" into value * 256 with integer arithmetic only (no atof: it depends on the C locale).
+// Rounds half up, clamps to +-(1<<22) so the result always fits an int. Returns 0 for malformed text.
+int parse_fixed256_impl(const std::string& t) {
+  size_t i = 0;
+  bool neg = false;
+  if (i < t.size() && (t[i] == '-' || t[i] == '+')) neg = t[i++] == '-';
+  int64_t ip = 0, frac = 0, scale = 1;
+  bool digits = false;
+  for (; i < t.size() && t[i] >= '0' && t[i] <= '9'; i++) { ip = ip * 10 + (t[i] - '0'); digits = true; if (ip > (1 << 22)) ip = 1 << 22; }
+  if (i < t.size() && t[i] == '.') {
+    for (i++; i < t.size() && t[i] >= '0' && t[i] <= '9' && scale < 1000000; i++) { frac = frac * 10 + (t[i] - '0'); scale *= 10; digits = true; }
+  }
+  if (!digits) return 0;
+  int64_t v = (ip * scale + frac) * 256;
+  v = (v + scale / 2) / scale;
+  v = std::min<int64_t>(v, int64_t(1) << 22);
+  return int(neg ? -v : v);
+}
+
 int num(const std::vector<std::string>& r, size_t i, int def = 0) { return i < r.size() && !r[i].empty() ? std::atoi(r[i].c_str()) : def; }
 
 // Melee types use a short reach; everything else with a weapon shoots. Placeholder classification (see docs/engine_rules_status.md).
@@ -41,6 +60,8 @@ bool is_melee(int t) {
   return false;
 }
 }  // namespace
+
+int parse_fixed256(const std::string& t) { return parse_fixed256_impl(t); }
 
 void RulesData::init_defaults() {
   types_.assign(kNumTypes, TypeRules{});
@@ -102,8 +123,8 @@ bool RulesData::load_dir(const std::string& dir) {
   for (auto& r : speeds) {
     int id = num(r, 0);
     if (id < 0 || id >= kNumTypes || r.size() < 3) continue;
-    double v = std::atof(r[2].c_str());
-    if (v > 0) { types_[id].speed = int(v * 256 + 0.5); types_[id].speed_src = Src::Measured; }
+    int v = parse_fixed256(r[2]);
+    if (v > 0) { types_[id].speed = v; types_[id].speed_src = Src::Measured; }
   }
   for (auto& r : read_csv(dir + "/duel_damage.csv")) {
     // attacker,attacker_ugi,target,target_ugi,damage,interval,hits
