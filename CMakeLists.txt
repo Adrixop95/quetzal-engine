@@ -6,7 +6,7 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 add_library(aztec_core
-  src/core/archive.cpp src/core/sprite.cpp src/core/palette.cpp src/core/map.cpp src/core/ini.cpp
+  src/core/savegame.cpp src/core/archive.cpp src/core/sprite.cpp src/core/palette.cpp src/core/map.cpp src/core/ini.cpp
   src/core/ugi.cpp src/core/script.cpp src/core/visfile.cpp src/core/userfiles.cpp src/core/audio.cpp src/core/mp.cpp src/core/sprite_alpha.cpp src/core/mapfiles.cpp src/core/text.cpp src/core/strbase.cpp)
 target_include_directories(aztec_core PUBLIC src)
 target_compile_options(aztec_core PRIVATE -Wall -Wextra)
@@ -94,3 +94,8 @@ add_executable(test_fuzz tests/test_fuzz.cpp)
 target_link_libraries(test_fuzz aztec_core)
 add_test(NAME fuzz COMMAND test_fuzz)
 set_tests_properties(fuzz PROPERTIES TIMEOUT 55)
+
+add_executable(test_savegame tests/test_savegame.cpp)
+target_link_libraries(test_savegame aztec_core)
+add_test(NAME savegame COMMAND test_savegame)
+set_tests_properties(savegame PROPERTIES LABELS "unit")
