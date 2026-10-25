@@ -575,6 +575,27 @@ SH(WriteFile) {
     if (h >= 0x10 && h < 0x18) { fwrite(GPTR(a[1]), 1, a[2], h == 0x12 ? stderr : stdout); if (a[3]) GU32(a[3]) = a[2]; return 1; }
     return 0;
   }
+  if (getenv("RT_WRITE_TRACE")) {   // save-game format analysis: file offset, length, first bytes, guest call chain
+    static FILE* tf;
+    if (!tf) tf = fopen(getenv("RT_WRITE_TRACE"), "w");
+    if (tf) {
+      off_t pos = lseek(o->fd, 0, SEEK_CUR);
+      fprintf(tf, "%lld %u", (long long)pos, a[2]);
+      for (uint32_t k = 0; k < a[2] && k < 16; k++) fprintf(tf, " %02x", GU8(a[1] + k));
+      fprintf(tf, " |");
+      uint32_t sp = GREG(c, R_ESP);
+      int found = 0;
+      for (uint32_t q = 0; q < 0x600 && found < 10; q += 4) {
+        uint32_t v = GU32(sp + q);
+        if (v > 0x401005 && v < 0x48e382 && (GU8(v - 5) == 0xE8 || GU8(v - 6) == 0xFF || GU8(v - 2) == 0xFF || GU8(v - 3) == 0xFF)) {
+          fprintf(tf, " %x", v);
+          found++;
+        }
+      }
+      fprintf(tf, "\n");
+      fflush(tf);
+    }
+  }
   ssize_t n = write(o->fd, GPTR(a[1]), a[2]);
   if (n < 0) return 0;
   if (a[3]) GU32(a[3]) = (uint32_t)n;
