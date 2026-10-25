@@ -25,6 +25,8 @@ bool parse_mission(const Ini& ini, const std::string& base_name, MissionDef& m) 
   m.tileset = mp.tileset;
   m.start_time = mp.start_time;
   m.avi = mp.avi;
+  m.music = mp.music;
+  m.music_mask = mp.music_mask;
   for (const auto& n : mp.notes) m.notes.push_back(cp1250_to_utf8(n));
   for (const MpSide& s : mp.sides) {
     SideDef d;

@@ -7,6 +7,7 @@
 
 #include "engine/assets/anim_provider.hpp"
 #include "engine/assets/daylight.hpp"
+#include "engine/audio/audio_system.hpp"
 #include "engine/platform/clock.hpp"
 #include "engine/platform/input.hpp"
 #include "engine/platform/window.hpp"
@@ -52,7 +53,30 @@ static int list_missions(const std::string& dir) {
 
 enum class PlayExit { Quit, ToMenu, Restart, Next };
 
-static PlayExit play_mission(Window& win, GameData& data, const Options& o, std::shared_ptr<const SpriteProvider> provider,
+// Plays the sound attached to the first tick of each animation frame (frame field [2] = sound set id).
+static void emit_sounds(const World& w, const SpriteProvider* provider, AudioSystem& audio, float cx, float cy) {
+  const AnimSpriteProvider* ap = dynamic_cast<const AnimSpriteProvider*>(provider);
+  if (!ap) return;
+  for (const Object& o : w.objects) {
+    if (o.removed || o.type < 0) continue;
+    float x = float(o.cur_x) / 256.f, y = float(o.cur_y) / 256.f;
+    if (std::fabs(x - cx) > 900 || std::fabs(y - cy) > 900) continue;
+    ObjectState st;
+    st.type_id = o.type; st.side = o.side; st.facing = o.facing; st.anim_state = o.anim_state; st.anim_tick = o.anim_tick;
+    st.anim_variant = o.anim_variant; st.progress = o.progress;
+    data::SpriteRef now = ap->frame_for(st);
+    if (!now.valid() || now.sound <= 0) continue;
+    bool first = o.anim_tick == 0;
+    if (!first) {
+      st.anim_tick = o.anim_tick - 1;
+      data::SpriteRef prev = ap->frame_for(st);
+      first = prev.sprite != now.sprite;
+    }
+    if (first) audio.play_set_at(uint32_t(now.sound), x, y, cx, cy);
+  }
+}
+
+static PlayExit play_mission(Window& win, GameData& data, const Options& o, AudioSystem* audio, std::shared_ptr<const SpriteProvider> provider,
                              std::unique_ptr<Simulation> sim, const std::string& spec, bool& playtest_failed, int& rc) {
   std::string err;
   World world;
@@ -152,6 +176,7 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, std:
       game->submit(c);
     }
     for (int i = 0; i < o.pre_ticks; i++) { world.begin_tick(); sim->tick(world); }
+    if (audio && audio->bank_ok()) audio->start_music(world.mission.music, world.mission.music_mask, int(std::hash<std::string>()(world.mission.file_name) & 255));
     PauseMenu pause;
     bool leave = false;
     while (!in.quit && !leave) {
@@ -235,7 +260,11 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, std:
       // Fixed 12 Hz simulation, independent of frame rate.
       if (!paused && !pause.open) {
         int n = stepper.advance(dt);
-        for (int i = 0; i < n; i++) { world.begin_tick(); sim->tick(world); }
+        for (int i = 0; i < n; i++) {
+          world.begin_tick();
+          sim->tick(world);
+          if (audio && audio->bank_ok()) emit_sounds(world, provider.get(), *audio, cam.x + cam.visible_w() / 2, cam.y + cam.visible_h() / 2);
+        }
       }
       float alpha = (paused || pause.open) ? 1.f : float(stepper.alpha());
 
@@ -290,6 +319,7 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, std:
         cam.center_on(wx, wy);
       }
 
+      if (audio) audio->update();
       // Render. Day clock: mission StartTime + simulation ticks (+ interpolation).
       if (use_light) {
         double t = (o.time >= 0 ? o.time : world.mission.start_time) + (o.time >= 0 ? 0 : double(world.tick) + alpha);
@@ -396,6 +426,7 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, std:
     }
     if (pt && playtest.failures() > 0) playtest_failed = true;
   }
+  if (audio) audio->stop_music();
   return exit_reason;
 }
 
@@ -422,6 +453,9 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
     std::string spec = o.mission;
     bool menu = o.menu;
     std::string open_brief;
+    AudioSystem audio;
+    AudioSystem* audio_ptr = nullptr;
+    if (o.audio) { audio.init(o.game_dir); audio.set_volumes(o.sfx_volume, o.music_volume); audio_ptr = &audio; }
     for (;;) {
       if (menu) {
         FrontendResult fr;
@@ -430,7 +464,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
         open_brief.clear();
         menu = false;
       }
-      PlayExit pe = play_mission(win, data, opts, provider, std::move(sim), spec, playtest_failed, rc);
+      PlayExit pe = play_mission(win, data, opts, audio_ptr, provider, std::move(sim), spec, playtest_failed, rc);
       sim.reset();
       if (pe == PlayExit::Quit || rc != 0) break;
       if (pe == PlayExit::ToMenu) { menu = true; continue; }

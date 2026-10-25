@@ -44,6 +44,8 @@ struct MissionDef {
   std::string map_name;
   int w = 0, h = 0;
   int tileset = 0;
+  int music = 0;          // Globals Music= (exact track when != 0)
+  unsigned music_mask = 0;  // Globals MusicMask= (bit n-1 = track n)
   std::string avi;        // Globals AVI= (intro video file name)
   int start_time = 0;     // daylight clock 0..7199
   std::vector<SideDef> sides;

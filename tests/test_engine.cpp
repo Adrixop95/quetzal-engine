@@ -7,6 +7,7 @@
 #include "engine/ui/names.hpp"
 #include "core/text.hpp"
 #include "engine/assets/anim_provider.hpp"
+#include "engine/audio/audio_system.hpp"
 #include "engine/assets/game_data.hpp"
 #include "engine/assets/mission.hpp"
 #include "engine/assets/sprite_provider.hpp"
@@ -273,9 +274,40 @@ static void test_script(const std::string& dir) {
   CHECK(sa.state_hash(a) == sb.state_hash(b));
 }
 
+static void test_audio(const std::string& dir) {
+  // pure rules: no attenuation near the centre, silent far away, pan favours the near ear
+  Positional c = positional_gain(0, 0);
+  CHECK(c.audible && c.left > 0.99f && c.right > 0.99f);
+  Positional far = positional_gain(900, 900);
+  CHECK(!far.audible);
+  Positional right = positional_gain(300, 300);
+  CHECK(right.audible && right.right > right.left);
+  Positional mid = positional_gain(0, 650);
+  CHECK(mid.audible && mid.left < 0.6f && mid.left > 0.01f);
+  // mixer: a voice plays to its end and is released; music stream end is reported
+  auto pcm = std::make_shared<Pcm>(200, int16_t(1000));
+  Mixer m;
+  m.play(pcm, 1.f, 0.5f);
+  int16_t out[400];
+  m.mix(out, 200);
+  CHECK(out[0] == int16_t(1000 * 0.8f) && out[1] == int16_t(1000 * 0.5f * 0.8f));
+  CHECK(m.active_voices() == 0);
+  // with the real game data: sound set -> mixed non-silent output; music table selection
+  AudioSystem a;
+  a.init(dir);
+  if (a.bank_ok()) {
+    int played = 0;
+    for (uint32_t id = 1; id < 400 && !played; id++) played = a.play_sound(id) != 0;
+    CHECK(played);
+    CHECK(a.mixer().active_voices() >= 1);
+    a.start_music(0, 0xffff, 1);   // any available track of the first disc
+    CHECK(a.current_track() == 0 || a.mixer().music_playing());
+  }
+}
+
 int main(int argc, char** argv) {
   test_pure();
-  if (argc > 1) { test_data(argv[1]); test_sim(argv[1]); test_script(argv[1]); }
+  if (argc > 1) { test_data(argv[1]); test_sim(argv[1]); test_script(argv[1]); test_audio(argv[1]); }
   std::printf(failures ? "FAILED\n" : "OK\n");
   return failures ? 1 : 0;
 }

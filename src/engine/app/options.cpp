@@ -23,6 +23,7 @@ const char* usage_text() {
          "  --rules-dir DIR    docs/data CSVs for the game rules;  --no-sim  no game logic\n"
          "  --script FILE      playtest script: synthetic clicks/keys, screenshots, expectations (virtual time)\n"
          "  --no-menu          start the default mission directly instead of the front-end menu\n"
+         "  --no-audio         silent;  --volume V  effects and music volume 0..1\n"
          "  --no-edge-scroll   disable edge scrolling;  --no-hud  hide the info overlay;  --help-overlay  show key help\n"
          "  --palette N --shade N   terrain palette/shade override\n"
          "  --screenshot FILE.png  render --frames N frames (default 5), save PNG and exit\n"
@@ -65,6 +66,8 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     else if (a == "--no-fog") o.fog = false;
     else if (a == "--rules-dir") { if (!next(v)) return false; o.rules_dir = v; }
     else if (a == "--no-sim") o.sim = false;
+    else if (a == "--no-audio") o.audio = false;
+    else if (a == "--volume") { if (!next(v)) return false; o.sfx_volume = o.music_volume = float(std::atof(v)); }
     else if (a == "--no-menu") o.no_menu = true;
     else if (a == "--script") { if (!next(v)) return false; o.script = v; }
     else if (a == "--cmd-move" || a == "--cmd-attack-move") { if (!next(v)) return false; if (std::sscanf(v, "%d,%d", &o.cmd_x, &o.cmd_y) != 2) { err = "bad " + a; return false; } o.cmd_attack_move = a != "--cmd-move"; }

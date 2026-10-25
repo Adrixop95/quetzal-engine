@@ -62,3 +62,11 @@ Legenda: **V** = zweryfikowane w oryginale (kod lub zrzut), **M** = zmierzone na
 | Obrona: trafiony budynek -> bezczynne jednostki w promieniu 10 kafli idą (AttackMove) do napastnika | P | |
 | Ataki fal | skrypt `.scn` (`attackTown`, `moveTo`, ścieżki) | AI sama nie planuje ataków |
 | `Tendency`, `BuildSpeed`, `Difficulty` z `.mp` | brak wpływu | gra ich nie czyta / wpływ niezmierzony |
+
+## Dźwięk (`src/engine/audio/`)
+| Reguła | Stan | Uwagi |
+|---|---|---|
+| Efekty z `Snd.xbe`: zestaw dźwięków (`sound_set`) z pola [2] klatki animacji, odtwarzany w pierwszym ticku klatki, losowy element zestawu | V (format), P (losowanie: lokalny LCG, nie RNG symulacji) | |
+| Pan = (x - środek widoku) przycięte do +-4000 setnych dB; tłumienie: brak do 500 px, liniowo do -4000 przy 800 px, dalej cisza | V (z docs/formats.md), P (jednostka 100 = 1 dB) | pomijany warunek "komórka mgły >= 0x21" |
+| Muzyka: `Music=N` -> ścieżka N, inaczej `MusicMask`; kolejne utwory po zakończeniu | V (wybór maski), P (kolejność = od soli nazwy misji, cyklicznie) | `music_allowed_mask` z `core/audio` |
+| Głośności, mowa/napisy, dźwięki interfejsu, pętle stanów (nagłówek sekwencji), dźwięki budynków/pocisków | nie zrobione | `--volume`, `--no-audio` |

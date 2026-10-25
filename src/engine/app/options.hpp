@@ -19,6 +19,8 @@ struct Options {
   bool edge_scroll = true;
   bool hud = true;
   bool fog = true;
+  bool audio = true;               // --no-audio
+  float sfx_volume = 0.8f, music_volume = 0.6f;
   std::string script;              // --script FILE: headless playtest (see app/playtest.hpp)
   int cmd_x = -1, cmd_y = -1; bool cmd_attack_move = false;  // --cmd-move / --cmd-attack-move X,Y (tiles) for the --select group
   std::string rules_dir;           // --rules-dir DIR with the docs/data CSVs (default: ../docs/data next to the game dir)
