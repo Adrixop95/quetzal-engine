@@ -70,6 +70,16 @@ domyślnie używany jest `AnimSpriteProvider`, `--no-sprites` wymusza znaczniki 
   `P` = pauza symulacji, PPM na minimapie = ruch. Panel: menu produkcji z drzewa budowy (jednostki treningowe i budynki `[B]` stawiane kliknięciem na mapie), kolejka, tooltip.
 - Opcje testowe: `--cmd-move X,Y` / `--cmd-attack-move X,Y` (dla `--select`), `--no-sim`, `--wander`.
 
+## Skrypty, AI, menu, dźwięk, zapis, playtest (piąta runda)
+- Skrypty misji: `sim/script_runner.*` wykonuje `.scn` (warunki, akcje, taktyki, liczniki, zwycięstwo/porażka, komunikaty, centerView); AI: `sim/ai.cpp` (szkielet). Reguły i status: `docs/engine_rules_status.md`.
+- Front-end (`ui/frontend.*`): menu główne (tło common 280), kampania i własne mapy (270), odprawa z `.mit` (290) + film przez `ffmpeg` (przycisk "Intro video"), opcje (284).
+  Uruchomienie bez argumentu misji otwiera menu; `--no-menu` pomija. Esc w grze = menu pauzy (wznów, zapis, odczyt, restart, menu główne, wyjście); po wygranej Enter = następna misja.
+  `AZTEC_MENU_SHOT=katalog` zapisuje zrzuty ekranów menu.
+- Dźwięk (`audio/`): mikser programowy + SDL; efekty z pola [2] klatek animacji z regułami pan/tłumienia z oryginału, muzyka wg `Music`/`MusicMask`. `--no-audio`, `--volume V`.
+- Zapis: Ctrl+S / Ctrl+L (slot 1), `sim/savegame.*` (log poleceń + replay).
+- Playtest bez człowieka: `--script plik` (`app/playtest.hpp` opisuje polecenia: click, drag, key, run, shot, print, expect); przykłady w `tests/playtest/`. Czas wirtualny: 1 klatka = 1 tik.
+- Testy: `ctest` w katalogu budowania (formaty, silnik, pathfinding).
+
 ## Znane braki
 - Brak mapy światła per kafel (źródła światła, maski light.xbe), maski nie są nakładane.
 - Kierunek początkowy jednostek (silnik: południe), stany attack/die/fidget i sloty 32-kierunkowe (ciężarówki, ptaki) nieobsłużone poza idle/move.
