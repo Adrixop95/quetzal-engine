@@ -8,5 +8,5 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"; mkdir -p "$2"; M="$(mktemp
   [ -n "$4" ] && cat "$4"
   echo "wait $3"; echo shot; echo quit; } > "$O/s.txt"
 RT_UNIT_LOG="$O/units.log" RT_UNIT_EVERY="${RT_UNIT_EVERY:-4}" RT_DUMP_DIR="$O" RT_RESOLUTION=800x600 RT_NO_GRAB=1 RT_NO_VIDEO=1 RT_SCRIPT="$O/s.txt" \
-  timeout -s KILL 200 unshare -rnm sh -c "ip link set lo up; ip addr add 192.168.1.125/24 dev lo; mount --bind $M $ROOT/game/Maps; exec $ROOT/build_stats/aztec_recomp $ROOT/game/Aztec.exe" >"$O/out.txt" 2>&1
+  timeout -s KILL ${TMO:-200} unshare -rnm sh -c "ip link set lo up; ip addr add 192.168.1.125/24 dev lo; mount --bind $M $ROOT/game/Maps; exec $ROOT/build_stats/aztec_recomp $ROOT/game/Aztec.exe" >"$O/out.txt" 2>&1
 echo "exit=$?"
