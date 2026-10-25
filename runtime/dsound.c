@@ -145,7 +145,7 @@ static uint32_t com_release(CPU* c, uint32_t* a) {
 static uint32_t com_qi(CPU* c, uint32_t* a) { (void)c; DBG("sound", "QueryInterface iid=%08x-%04x-%04x", GU32(a[1]), GU16(a[1] + 4), GU16(a[1] + 6)); GU32(a[2]) = a[0]; return DS_OK; }
 static uint32_t ds_ok(CPU* c, uint32_t* a) { (void)c; (void)a; return DS_OK; }
 
-#define LOCKED(s) if (audio_dev) SDL_LockAudioDevice(audio_dev); 
+#define LOCKED(s) if (audio_dev) SDL_LockAudioDevice(audio_dev);
 #define UNLOCKED() if (audio_dev) SDL_UnlockAudioDevice(audio_dev);
 
 static uint32_t buf_getcurrentpos(CPU* c, uint32_t* a) {

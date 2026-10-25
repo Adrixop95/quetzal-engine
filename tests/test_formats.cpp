@@ -1,5 +1,6 @@
 // Format self-checks against the user's own game files: test_formats GAME_DIR
 #include <cstdio>
+#include "game_dir.hpp"
 #include <string>
 #include "core/archive.hpp"
 #include "core/ini.hpp"
@@ -20,8 +21,8 @@ static int failures = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); failures++; } } while (0)
 
 int main(int argc, char** argv) {
-  if (argc < 2) { std::printf("usage: test_formats GAME_DIR\n"); return 2; }
-  std::string g = argv[1];
+  std::string g = test_game_dir(argc, argv);
+  if (!test_game_dir_exists(g)) return 77;
   for (const char* name : {"Pal", "light", "Units", "Tiles0", "Tiles1", "fnts", "common", "Snd"}) {
     Archive a;
     CHECK(a.open(g + "/Res/" + name + ".xbe"));
@@ -188,7 +189,7 @@ int main(int argc, char** argv) {
     if (read_music_table(g + "/Music/music.xbe", mt)) {
       CHECK(mt.size() >= 6);
       std::vector<uint8_t> hdr;
-      MusicTrack head = mt[0]; 
+      MusicTrack head = mt[0];
       WavInfo w;
       head.size = 44;
       CHECK(read_music_track(g + "/Music/music.xbe", head, hdr) && parse_wav(hdr.data(), hdr.size(), w) && w.rate == 44100 && w.channels == 2);
