@@ -1,3 +1,4 @@
+#include "core/loader_limits.hpp"
 #include "core/sprite_alpha.hpp"
 
 #include <cstring>
@@ -17,6 +18,8 @@ bool decode_alpha_sprite(Item item, AlphaSprite& s) {
   s.ox = int16_t(r16(d + 0x14));
   s.oy = int16_t(r16(d + 0x16));
   size_t n = size_t(s.w) * s.h;
+  // Reject implausible dimensions before allocating decoded planes.
+  if (!n || n > detail::kPixels) return false;
   s.opaque.assign(n, 0);
   s.index.assign(n, 0);
   s.alpha.assign(n, 0);
@@ -24,15 +27,19 @@ bool decode_alpha_sprite(Item item, AlphaSprite& s) {
   for (int y = 0; y < s.h; y++) {
     size_t ctrl = r32(d + 0x18 + 8 * y), pix = r32(d + 0x1c + 8 * y);
     int x = 0;
+    unsigned idle = 0;
     while (x < s.w) {
       if (ctrl >= item.size) return false;
       unsigned c = d[ctrl++];
+      if (!(c < 0x80 ? c : c & 0x3f)) {
+        if (++idle > 2) return false;
+      } else idle = 0;
       if (c < 0x80) { x += int(c); continue; }
       unsigned cnt = c & 0x3f;
       bool blend = c >= 0xC0;
       for (unsigned k = 0; k < cnt; k++, x++) {
         size_t need = blend ? 2 : 1;
-        if (pix + need > item.size) return false;
+        if (pix > item.size || need > item.size - pix) return false;
         if (x < s.w) {
           size_t pos = size_t(y) * s.w + x;
           s.opaque[pos] = 1;

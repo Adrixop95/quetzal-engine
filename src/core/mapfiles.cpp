@@ -1,3 +1,4 @@
+#include "core/loader_limits.hpp"
 #include "core/mapfiles.hpp"
 
 #include <cstdio>
@@ -11,7 +12,8 @@ bool read_file(const std::string& path, std::vector<uint8_t>& out) {
   std::fseek(f, 0, SEEK_END);
   long n = std::ftell(f);
   std::fseek(f, 0, SEEK_SET);
-  out.resize(n > 0 ? size_t(n) : 0);
+  if (n < 0 || size_t(n) > detail::kFileBytes) { std::fclose(f); out.clear(); return false; }
+  out.resize(size_t(n));
   size_t got = out.empty() ? 0 : std::fread(out.data(), 1, out.size(), f);
   std::fclose(f);
   return got == out.size();
@@ -20,7 +22,7 @@ bool read_file(const std::string& path, std::vector<uint8_t>& out) {
 static uint16_t u16(const std::vector<uint8_t>& d, size_t o) { return uint16_t(d[o] | d[o + 1] << 8); }
 
 bool parse_passability(const std::vector<uint8_t>& d, int w, int h, Grid<uint8_t>& out) {
-  if (w <= 0 || h <= 0 || d.size() < size_t(w) * h) return false;
+  if (w <= 0 || h <= 0 || size_t(w) > detail::kCells / size_t(h) || d.size() < size_t(w) * h) return false;
   out.w = w;
   out.h = h;
   out.v.assign(d.begin(), d.begin() + size_t(w) * h);
@@ -28,7 +30,7 @@ bool parse_passability(const std::vector<uint8_t>& d, int w, int h, Grid<uint8_t
 }
 
 static bool parse_words(const std::vector<uint8_t>& d, size_t hdr, int w, int h, Grid<uint16_t>& out) {
-  if (w <= 0 || h <= 0 || d.size() < hdr + size_t(w) * h * 2) return false;
+  if (w <= 0 || h <= 0 || size_t(w) > detail::kCells / size_t(h) || d.size() < hdr + size_t(w) * h * 2) return false;
   out.w = w;
   out.h = h;
   out.v.resize(size_t(w) * h);

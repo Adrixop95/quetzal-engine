@@ -1,3 +1,4 @@
+#include "core/loader_limits.hpp"
 #include "core/userfiles.hpp"
 
 #include <cctype>
@@ -147,7 +148,10 @@ bool slurp(const std::string& path, std::vector<uint8_t>& d) {
   uint8_t buf[4096];
   size_t n;
   d.clear();
-  while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) d.insert(d.end(), buf, buf + n);
+  while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) {
+    if (d.size() + n > detail::kFileBytes) { std::fclose(f); d.clear(); return false; }
+    d.insert(d.end(), buf, buf + n);
+  }
   std::fclose(f);
   return true;
 }
@@ -247,6 +251,7 @@ int dik_from_name(const std::string& name) {
 
 bool parse_keys_ini(const std::string& text, std::vector<KeyBinding>& out) {
   out.clear();
+  if (text.size() > detail::kTextBytes) return false;
   size_t p = 0;
   while (p < text.size()) {
     size_t e = text.find('\n', p);
@@ -274,6 +279,7 @@ bool load_keys_ini(const std::string& path, std::vector<KeyBinding>& out) {
 
 bool parse_runtime_settings(const std::string& text, RuntimeSettings& s) {
   s = RuntimeSettings{};
+  if (text.size() > detail::kTextBytes) return false;
   size_t p = 0;
   int n = 0;
   while (p < text.size()) {
@@ -281,12 +287,30 @@ bool parse_runtime_settings(const std::string& text, RuntimeSettings& s) {
     if (e == std::string::npos) e = text.size();
     std::string line = text.substr(p, e - p);
     p = e + 1;
-    int v, w, h;
-    if (std::sscanf(line.c_str(), "resolution=%dx%d", &w, &h) == 2) { s.res_w = w; s.res_h = h; n++; }
-    else if (std::sscanf(line.c_str(), "window_mode=%d", &v) == 1) { s.window_mode = v; n++; }
-    else if (std::sscanf(line.c_str(), "smooth=%d", &v) == 1) { s.smooth = v; n++; }
-    else if (std::sscanf(line.c_str(), "video=%d", &v) == 1) { s.video = v; n++; }
-    else if (std::sscanf(line.c_str(), "mouse_speed=%d", &v) == 1) { s.mouse_speed = v < 20 ? 20 : v > 500 ? 500 : v; n++; }
+    // scanf's integer conversions have undefined behavior on overflowing text.
+    auto number = [](const char*& p, int& value) {
+      char* end;
+      errno = 0;
+      long v = std::strtol(p, &end, 10);
+      if (end == p || errno == ERANGE || v < INT_MIN || v > INT_MAX) return false;
+      p = end; value = int(v); return true;
+    };
+    auto setting = [&](const char* key, int& value) {
+      size_t len = std::strlen(key);
+      if (line.compare(0, len, key)) return false;
+      const char* p = line.c_str() + len;
+      return number(p, value);
+    };
+    int w, h;
+    if (line.compare(0, 11, "resolution=") == 0) {
+      const char* p = line.c_str() + 11;
+      if (number(p, w) && *p == 'x' && (++p, number(p, h))) { s.res_w = w; s.res_h = h; n++; }
+    } else if (setting("window_mode=", s.window_mode)) n++;
+    else if (setting("smooth=", s.smooth)) n++;
+    else if (setting("video=", s.video)) n++;
+    else if (setting("mouse_speed=", s.mouse_speed)) {
+      s.mouse_speed = s.mouse_speed < 20 ? 20 : s.mouse_speed > 500 ? 500 : s.mouse_speed; n++;
+    }
   }
   return n > 0;
 }

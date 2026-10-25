@@ -88,3 +88,9 @@ set_tests_properties(formats engine PROPERTIES SKIP_RETURN_CODE 77 LABELS "game-
 add_test(NAME engine_unit COMMAND test_engine --pure)
 set_tests_properties(engine_unit path PROPERTIES LABELS "unit")
 target_compile_definitions(test_engine PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data")
+
+# Synthetic malformed-input coverage, independent of user game files.
+add_executable(test_fuzz tests/test_fuzz.cpp)
+target_link_libraries(test_fuzz aztec_core)
+add_test(NAME fuzz COMMAND test_fuzz)
+set_tests_properties(fuzz PROPERTIES TIMEOUT 55)
