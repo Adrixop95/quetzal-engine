@@ -2,14 +2,16 @@
 """Orchestrate Codex CLI tasks that run in their own git worktrees.
 
 Commands (state lives in work/codex/state/<name>.json, local only):
-  start NAME PROMPT_FILE   start a task in the background (new worktree)
+  start NAME [PROMPT_FILE] start a task in the background (new worktree)
   status                   show every task: running / done / limited (usage limit hit) / stopped
   resume NAME|all          resume tasks that stopped (usage limit or crash) in the same session and worktree
   harvest NAME BRANCH "Title"   copy the worktree changes to a new branch off origin/develop, commit, push, open a PR
   log NAME                 print the tail of the task log
 
+Prompts default to tasks/queue/NAME.md (legacy work/codex/queue if absent).
 Typical flow when the Codex usage limit resets: `tools/codex_orch.py resume all`.
 """
+import glob
 import json
 import os
 import re
@@ -30,6 +32,22 @@ RESUME_PROMPT = (
     "worktree (git status, your notes, partial files), finish the remaining items of the original task, verify, and end with a "
     "summary listing the changed files."
 )
+
+
+def queue_files():
+    """Prefer the portable queue; use the legacy directory when it is absent."""
+    directory = os.path.join(ROOT, "tasks/queue")
+    if not os.path.isdir(directory):
+        directory = os.path.join(ROOT, "work/codex/queue")
+    return sorted(glob.glob(os.path.join(directory, "*.md")) +
+                  glob.glob(os.path.join(directory, "*.txt")))
+
+
+def queued_prompt(name):
+    for path in queue_files():
+        if os.path.splitext(os.path.basename(path))[0] == name:
+            return path
+    raise FileNotFoundError("No queued prompt for " + name)
 
 
 def sh(cmd, **kw):
@@ -138,7 +156,7 @@ def main():
     if not a:
         print(__doc__)
     elif a[0] == "start":
-        start(a[1], a[2])
+        start(a[1], a[2] if len(a) > 2 else queued_prompt(a[1]))
     elif a[0] == "status":
         for n in names():
             t = refresh(load(n))
