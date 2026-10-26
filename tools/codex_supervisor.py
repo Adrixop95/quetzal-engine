@@ -2,14 +2,16 @@
 """Unattended driver for Codex tasks (uses no Claude tokens).
 
 Loop: resume tasks stopped by the Codex usage limit (retrying every 20 minutes), start queued prompts
-(work/codex/queue/*.txt, at most 2 running), and land finished tasks: apply the worktree changes to a feature branch,
+(tasks/queue/*.md, legacy work/codex/queue fallback, at most 2 running), and land finished tasks: apply the worktree changes to a feature branch,
 build + ctest, commit, push, open a PR into develop, wait for green CI and squash-merge it (never --admin).
 Run:  nohup tools/codex_supervisor.py > work/codex/supervisor.log 2>&1 &
 """
-import glob
 import os
 import subprocess
+import sys
 import time
+
+from codex_orch import queue_files
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 ORCH = os.path.join(ROOT, "tools/codex_orch.py")
@@ -83,9 +85,14 @@ def main():
                 log("resume attempt", run(f"python3 {ORCH} resume all").stdout.strip())
             running = [n for n, s in status().items() if s == "running"]
             if len(running) < 2:
-                for q in sorted(glob.glob(os.path.join(ROOT, "work/codex/queue/*.txt"))):
-                    name = os.path.basename(q)[:-4]
-                    run(f"python3 {ORCH} start {name} {q} && mv {q} {q}.started")
+                for q in queue_files():
+                    name = os.path.splitext(os.path.basename(q))[0]
+                    if name in st:
+                        continue  # Local state prevents rerunning a tracked prompt.
+                    result = subprocess.run([sys.executable, ORCH, "start", name, q],
+                                            cwd=ROOT, text=True, capture_output=True)
+                    if result.returncode:
+                        raise RuntimeError(result.stdout + result.stderr)
                     log("started", name)
                     break
         except Exception as e:  # keep the loop alive
