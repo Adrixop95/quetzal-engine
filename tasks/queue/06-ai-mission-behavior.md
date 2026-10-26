@@ -1,3 +1,4 @@
+Depends: 01-oracle-parity,03-economy-production
 # Replace the AI purchase skeleton and close script gaps
 
 Read CLAUDE.md, docs/HANDOFF.md and docs/engine_rules_status.md first. This is a

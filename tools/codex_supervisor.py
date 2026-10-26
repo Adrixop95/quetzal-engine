@@ -18,6 +18,9 @@ ORCH = os.path.join(ROOT, "tools/codex_orch.py")
 GIT = ["git", "-c", "user.name=adrox", "-c", "user.email=adrixop95@gmail.com"]
 
 
+LAND = os.environ.get("LAND_ROOT", os.path.expanduser("~/aztec-re-land"))
+
+
 def run(cmd, cwd=ROOT, check=False):
     r = subprocess.run(cmd, shell=True, cwd=cwd, text=True, capture_output=True)
     if check and r.returncode:
@@ -38,42 +41,64 @@ def log(*a):
     print(time.strftime("%H:%M:%S"), *a, flush=True)
 
 
+def ensure_land():
+    if not os.path.isdir(LAND):
+        run(f"git worktree add --detach {LAND} origin/develop")
+
+
+def lrun(cmd):
+    return run(cmd, cwd=LAND)
+
+
 def land(name):
+    """Land a finished task in the dedicated checkout LAND (the main checkout is never touched)."""
+    ensure_land()
     branch = "feature/codex-" + name
-    run("git fetch -q origin && git checkout -q develop && git merge -q --ff-only origin/develop")
-    r = run(f"python3 {ORCH} harvest {name} {branch} '{name}'")
+    lrun("git reset -q --hard && git clean -qfd -e build_sup && git fetch -q origin")
+    env = f"LAND_ROOT={LAND}"
+    r = lrun(f"{env} python3 {ORCH} harvest {name} {branch} '{name}'")
     if "prepared" not in r.stdout:
-        log("harvest produced nothing for", name)
+        log("harvest produced nothing for", name, r.stdout[-200:], r.stderr[-200:])
         return
-    b = run("cmake -S . -B build_sup -DAZTEC_GEN_DIR= -DCMAKE_BUILD_TYPE=Release >/dev/null && cmake --build build_sup --parallel 6 2>&1 | tail -3")
-    t = run("ctest --test-dir build_sup --output-on-failure 2>&1 | tail -40")
-    if run("ctest --test-dir build_sup >/dev/null 2>&1").returncode != 0:
-        log("tests FAILED for", name, "- leaving", branch, "unmerged\n", t.stdout)
-        run("git add -A && git stash -q -u -m codex-" + name + "-failed; git checkout -q develop")
+    lrun("cmake -S . -B build_sup -DAZTEC_GEN_DIR= -DCMAKE_BUILD_TYPE=Release >/dev/null && cmake --build build_sup --parallel 8 2>&1 | tail -3")
+    if lrun("ctest --test-dir build_sup >/dev/null 2>&1").returncode != 0:
+        log("tests FAILED for", name, lrun("ctest --test-dir build_sup --output-on-failure 2>&1 | tail -30").stdout)
+        lrun("git reset -q --hard")
         return
+    committed = False
     for _ in range(3):   # pre-commit hooks may rewrite files (whitespace, EOF): re-add and retry
-        run("git add -A -- . ':!build_sup'")
-        if run(" ".join(GIT) + f" commit -qm 'Codex task {name}: automated landing (CI-gated)'").returncode == 0:
+        lrun("git add -A -- . ':!build_sup'")
+        c = lrun(" ".join(GIT) + f" commit -qm 'Codex task {name}: automated landing (CI-gated)'")
+        if c.returncode == 0:
+            committed = True
             break
-    run(f"git push -q -u origin {branch}")
-    pr = run(f"gh pr create --base develop --title 'Codex task {name}' --body 'Automated landing of the Codex task {name}; gated by ctest, pre-commit and CI.'").stdout.strip()
-    log("PR", pr)
-    if not pr.startswith("http"):
-        log("could not open PR for", name, pr)
+        last = (c.stdout + c.stderr)[-1500:]
+    if not committed:
+        log("commit failed for", name, "\n", last)
+        lrun("git reset -q --hard")
         return
-    num = pr.rstrip("/").split("/")[-1]
-    for _ in range(60):
-        time.sleep(30)
-        c = run(f"gh pr checks {num}").stdout
-        if "pending" in c or not c.strip():
-            continue
-        if "fail" in c:
-            log("CI failed for PR", num)
-            break
-        m = run(f"gh pr merge {num} --squash --delete-branch")
-        log("merge", num, m.stdout.strip()[-80:], m.stderr.strip()[-120:])
-        break
-    run("git checkout -q develop && git fetch -q origin && git merge -q --ff-only origin/develop")
+    lrun(f"git push -q -u origin {branch}")
+    pr = lrun(f"gh pr create --base develop --title 'Codex task {name}' --body 'Automated landing of the Codex task {name}; gated by ctest, pre-commit and CI.'").stdout.strip()
+    log("PR", pr)
+    lrun("git checkout -q --detach origin/develop")
+    if not pr.startswith("http"):
+        log("could not open PR for", name)
+        return
+    mark_harvested(name)
+
+
+def mark_harvested(name):
+    import json
+    f = os.path.join(ROOT, "work/codex/state", name + ".json")
+    t = json.load(open(f))
+    t["harvested"] = True
+    json.dump(t, open(f, "w"))
+
+
+def pending_merge():
+    """Names of codex tasks whose PR is still open (their code is not in develop yet)."""
+    out = run("gh pr list --json headRefName --jq '.[].headRefName'").stdout.split()
+    return {h[len("feature/codex-"):] for h in out if h.startswith("feature/codex-")}
 
 
 def merge_green_prs():
@@ -108,6 +133,10 @@ def main():
                     name = os.path.splitext(os.path.basename(q))[0]
                     if name in st:
                         continue  # Local state prevents rerunning a tracked prompt.
+                    deps = [d.strip() for d in (open(q).read().split("\n", 3)[0].replace("Depends:", "").split(",")) if d.strip()] \
+                        if open(q).read().startswith("Depends:") else []
+                    if any(st.get(d) != "harvested" or d in pending_merge() for d in deps):
+                        continue
                     result = subprocess.run([sys.executable, ORCH, "start", name, q],
                                             cwd=ROOT, text=True, capture_output=True)
                     if result.returncode:
