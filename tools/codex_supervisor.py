@@ -51,10 +51,16 @@ def land(name):
         log("tests FAILED for", name, "- leaving", branch, "unmerged\n", t.stdout)
         run("git add -A && git stash -q -u -m codex-" + name + "-failed; git checkout -q develop")
         return
-    run("git add -A -- . ':!build_sup' && " + " ".join(GIT) + f" commit -qm 'Codex task {name}: automated landing (CI-gated)' ")
+    for _ in range(3):   # pre-commit hooks may rewrite files (whitespace, EOF): re-add and retry
+        run("git add -A -- . ':!build_sup'")
+        if run(" ".join(GIT) + f" commit -qm 'Codex task {name}: automated landing (CI-gated)'").returncode == 0:
+            break
     run(f"git push -q -u origin {branch}")
     pr = run(f"gh pr create --base develop --title 'Codex task {name}' --body 'Automated landing of the Codex task {name}; gated by ctest, pre-commit and CI.'").stdout.strip()
     log("PR", pr)
+    if not pr.startswith("http"):
+        log("could not open PR for", name, pr)
+        return
     num = pr.rstrip("/").split("/")[-1]
     for _ in range(60):
         time.sleep(30)
@@ -70,10 +76,22 @@ def land(name):
     run("git checkout -q develop && git fetch -q origin && git merge -q --ff-only origin/develop")
 
 
+def merge_green_prs():
+    out = run("gh pr list --json number,headRefName --jq '.[]|\"\\(.number) \\(.headRefName)\"'").stdout.splitlines()
+    for line in out:
+        num, head = (line.split() + ["", ""])[:2]
+        if head.startswith("feature/codex-"):
+            c = run(f"gh pr checks {num}").stdout
+            if c.strip() and "pending" not in c and "fail" not in c:
+                m = run(f"gh pr merge {num} --squash --delete-branch")
+                log("merged green PR", num, m.stderr.strip()[-100:])
+
+
 def main():
     last_resume = 0
     while True:
         try:
+            merge_green_prs()
             st = status()
             running = [n for n, s in st.items() if s == "running"]
             for n, s in st.items():
