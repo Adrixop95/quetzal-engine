@@ -40,9 +40,10 @@ static void test_field_vs_astar() {
       u32 ps = g.near_wall(s.x, s.y, cls) ? 4 : 0, pe = g.near_wall(e.x, e.y, cls) ? 4 : 0;
       CHECK(a.cost + ps == ff.cost(s.x, s.y) + pe);
       // following the field from s reaches e in exactly the A* number of steps cost-wise
-      int x = s.x, y = s.y, guard = 2000; u32 prev = ff.cost(x, y);
-      while (ff.cost(x, y) != 0 && guard--) { int nx, ny; if (!ff.step(x, y, nx, ny)) break; CHECK(ff.cost(nx, ny) < prev); prev = ff.cost(nx, ny); x = nx; y = ny; }
+      int x = s.x, y = s.y, guard = 2000; u32 prev = ff.cost(x, y), walked = 0;
+      while (ff.cost(x, y) != 0 && guard--) { int nx, ny; if (!ff.step(x, y, nx, ny)) break; CHECK(ff.cost(nx, ny) < prev); walked += (nx != x && ny != y ? 14 : 10) + (g.near_wall(nx, ny, cls) ? 4 : 0); prev = ff.cost(nx, ny); x = nx; y = ny; }
       CHECK(x == e.x && y == e.y);
+      CHECK(walked == a.cost);
     }
   }
 }
@@ -70,7 +71,7 @@ static u64 run_course(const char* name, int n, int ticks, int* arrived = nullptr
 }
 
 static void test_courses() {
-  struct { const char* c; int n; int ticks; } cases[] = {{"open", 30, 600}, {"gap1", 30, 900}, {"corr1", 30, 900}, {"maze", 30, 1700}, {"utrap", 30, 700}, {"swap", 30, 700}, {"diag", 30, 700}, {"rooms", 30, 700}, {"park", 30, 900}, {"mixed", 30, 1300}, {"swap1", 30, 1200}};
+  struct { const char* c; int n; int ticks; } cases[] = {{"clusters", 30, 700}, {"open", 30, 600}, {"gap1", 30, 900}, {"corr1", 30, 900}, {"maze", 30, 1700}, {"utrap", 30, 700}, {"swap", 30, 700}, {"diag", 30, 700}, {"rooms", 30, 700}, {"park", 30, 900}, {"mixed", 30, 1300}, {"swap1", 30, 1200}};
   for (auto& k : cases) { int arrived = 0; run_course(k.c, k.n, k.ticks, &arrived); CHECK(arrived == k.n); if (arrived != k.n) printf("  %s: %d/%d arrived\n", k.c, arrived, k.n); }
 }
 
@@ -78,8 +79,8 @@ static void test_determinism() {
   u64 a = run_course("gap1", 30, 500), b = run_course("gap1", 30, 500);
   CHECK(a == b);
   // Golden value: lockstep requires identical state on every platform. Update only after an intentional algorithm change.
-  const u64 golden = 0x0ull;
-  if (golden) CHECK(a == golden); else printf("  gap1/30/500 hash = %016llx (golden not set)\n", (unsigned long long)a);
+  const u64 golden = 0xb523e3cb0e07c250ull;
+  CHECK(a == golden);
 }
 
 static void test_unreachable_goal() {

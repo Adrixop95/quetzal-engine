@@ -9,7 +9,7 @@ void rect(Course& c, int x0, int y0, int x1, int y1, u8 v = 0) {
 }  // namespace
 
 const std::vector<std::string>& course_names() {
-  static const std::vector<std::string> n = {"open", "gap1", "gap2", "gap4", "corr1", "corr2", "maze", "utrap", "wall", "rooms", "swap", "swap1", "diag", "park", "mixed"};
+  static const std::vector<std::string> n = {"open", "gap1", "gap2", "gap4", "corr1", "corr2", "maze", "utrap", "wall", "rooms", "swap", "swap1", "diag", "park", "mixed", "clusters"};
   return n;
 }
 
@@ -30,6 +30,9 @@ bool make_course(const std::string& name, int n, Course& c) {
   if (name == "open") {}
   else if (name.rfind("gap", 0) == 0) { int w = name.size() > 3 ? std::stoi(name.substr(3)) : 1; rect(c, 44, 2, 46, H - 3); rect(c, 44, 30 - w / 2, 46, 30 - w / 2 + w - 1, 2); }
   else if (name.rfind("corr", 0) == 0) { int w = name.size() > 4 ? std::stoi(name.substr(4)) : 1; rect(c, 40, 2, 60, H - 3); rect(c, 40, 30 - w / 2, 60, 30 - w / 2 + w - 1, 2); }
+  else if (name == "clusters") {
+    for (Cell p : {Cell{28, 24}, Cell{38, 29}, Cell{48, 24}, Cell{58, 29}}) rect(c, p.x, p.y, p.x + 5, p.y + 5);
+  }
   else if (name == "maze") {
     for (int i = 0, x = 20; x < 70; x += 10, ++i) { rect(c, x, 2, x + 1, H - 3); if (i % 2 == 0) rect(c, x, H - 8, x + 1, H - 3, 2); else rect(c, x, 2, x + 1, 8, 2); }
   }

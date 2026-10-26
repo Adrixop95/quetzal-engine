@@ -43,14 +43,19 @@ void FlowField::build(const NavGrid& g, MoveClass cls, const Cell* goals, int ng
 }
 
 bool FlowField::step(int x, int y, int& nx, int& ny) const {
-  u32 best = cost(x, y); bool found = false;
+  if (!reachable(x, y) || cost(x, y) == 0) return false;
+  u32 best = kInf; bool found = false;
   for (int d = 0; d < 8; ++d) {
     int tx = x + kDx[d], ty = y + kDy[d];
     if (!in_bounds(tx, ty)) continue;
     u32 c = cost(tx, ty);
-    if (c >= best) continue;
+    if (c == kInf) continue;
+    // Compare complete edges: a diagonal must earn its extra cost. The
+    // current tile wall penalty is shared by all outgoing choices.
+    u32 candidate = c + kStep[d];
+    if (candidate >= best) continue;
     if (d >= 4 && (grid_->blocked(x + kDx[d], y, cls_) || grid_->blocked(x, y + kDy[d], cls_))) continue;
-    best = c; nx = tx; ny = ty; found = true;
+    best = candidate; nx = tx; ny = ty; found = true;
   }
   return found;
 }

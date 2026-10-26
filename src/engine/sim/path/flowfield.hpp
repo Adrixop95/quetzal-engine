@@ -1,5 +1,5 @@
 // Goal-rooted integration field (Dijkstra, octile costs 10/14, Dial buckets) shared by every unit of an order.
-// One field replaces the original's per-unit WaveSearch calls (which were rate limited to 2 per tick, Chebyshev metric).
+// One field replaces the original's per-unit Chebyshev WaveSearch calls (two requester identities admitted per tick).
 #pragma once
 #include <vector>
 #include "navgrid.hpp"
@@ -20,7 +20,7 @@ class FlowField {
   MoveClass move_class() const { return cls_; }
   u32 cost(int x, int y) const { return cost_[(size_t)y * w_ + x]; }
   bool reachable(int x, int y) const { return in_bounds(x, y) && cost(x, y) != kInf; }
-  // Best neighbour of (x,y) (no corner cutting). Returns false at a local minimum (goal or unreachable).
+  // Minimize edge cost plus remaining integration cost (no corner cutting). False at a goal or unreachable cell.
   bool step(int x, int y, int& nx, int& ny) const;
   // Reachable tile closest (Euclid) to tile (x,y) among tiles with finite cost; used for unreachable goals.
   bool closest_reachable(int x, int y, int& ox, int& oy) const;

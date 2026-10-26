@@ -67,7 +67,7 @@ endif()
 
 # ---- deterministic pathfinding / movement module (src/engine/sim/path): no dependencies
 add_library(aztec_path src/engine/sim/path/navgrid.cpp src/engine/sim/path/flowfield.cpp src/engine/sim/path/astar.cpp src/engine/sim/path/courses.cpp
-  src/engine/sim/path/mover.cpp src/engine/sim/path/courses.cpp)
+  src/engine/sim/path/mover.cpp)
 target_include_directories(aztec_path PUBLIC src)
 target_compile_features(aztec_path PUBLIC cxx_std_20)
 target_compile_options(aztec_path PRIVATE -Wall -Wextra)
@@ -76,6 +76,13 @@ target_link_libraries(test_path aztec_path)
 add_test(NAME path COMMAND test_path)
 add_executable(path_bench tools/path_bench.cpp)
 target_link_libraries(path_bench aztec_path)
+add_test(NAME path_bench_smoke COMMAND path_bench --smoke)
+set_tests_properties(path_bench_smoke PROPERTIES LABELS "unit;benchmark" TIMEOUT 20)
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME zpath_tools COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_zpath_tools.py $<TARGET_FILE:path_bench>)
+  set_tests_properties(zpath_tools PROPERTIES LABELS "unit" TIMEOUT 20)
+endif()
 
 # ---- release test configuration (the path target above is already registered)
 set(GAME_DIR "$ENV{GAME_DIR}" CACHE PATH "Local game installation for data-dependent tests")
