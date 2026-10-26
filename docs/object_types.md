@@ -100,7 +100,7 @@ The type id is used in mission files (`Unit# = x, y, type, health`), scripts (`U
 
 Name table `0x4ad5dc` (45 pointers), index = packet type. Frame commands (`PCT_FRAME_*`) are processed in the logic tick (`0x4577b0`).
 
-| typ | nazwa |
+| Type | Name |
 |---|---|
 | 0x00 | PCT_NOTHING |
 | 0x01 | PCT_ENUMSERVERS |
@@ -152,3 +152,5 @@ Handling in the tick (switch in `0x4577b0`): 0x12 SAVE (save flag), 0x13 PAUSEON
 0x18 ATTACK (`0x447e00`), 0x1a DESTROYHERE (`0x4489b0`), 0x1c BUILD, 0x1d GARRISON (`0x448350`), 0x1e REPEARMODE, 0x1f ATTACKMODE, 0x20 BUILDMODE,
 0x21 PAUSEBUILD, 0x22 QUEUEKILL, 0x23 SELECTBYNO (`0x448f60`), 0x24 FOLLOWTEAM (`0x448210`). The command structure (53 dwords, queue of 64 entries from `0x4d9c50`)
 is created by the interface code; the type field lies at index 2 (`cmd[2]`).
+
+Verified command semantics: `PCT_FRAME_GARRISON` extracts mobile troops from the selected town into a new tactic. `PCT_FRAME_REPEARMODE` selects town repairer mode 0/1/2 (off/repair/destroy); `PCT_FRAME_DESTROYHERE` toggles a building in that repairer list. See [rule details](rules_types.md) and [AI rules](rules_ai.md). These command names do not establish building boarding or immediate object deletion.
