@@ -1,6 +1,7 @@
 #!/usr/bin/env python3 -I
 """Duel experiments. usage: zstat_duels.py run A:T [A:T ...]   (attacker type A on side 0 vs target type T on side 1, distance DIST tiles)
-Packs 3 duels per map (zdl<k>), runs all maps in parallel, writes work/zdl/<A>_<T>.txt summaries of target HP drops. Env DIST (default 5), WAIT (ms)."""
+Packs 4 duels per map, writes work/zdl/<A>_<T>.txt summaries of target HP drops.
+Requires private ZSTAT_GAME_DIR and ZSTAT_RUNTIME. Env DIST (default 5), WAIT (ms)."""
 import sys, os, subprocess, re, collections, csv
 os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 SLOTS = [(3, 4), (28, 4), (22, 30), (22, 42)]
@@ -26,26 +27,30 @@ for k, grp in enumerate(maps):
 def run(k):
     return subprocess.Popen(['tools/zstat_run.sh', os.environ.get('PFX', 'zdl') + '%d' % k, 'work/zdl/' + os.environ.get('PFX', 'zdl') + 'm%d' % k, WAIT], env=dict(os.environ, RT_UNIT_EVERY='1'), stdout=subprocess.DEVNULL)
 active = []
+failed = []
 for k in range(len(maps)):
     while len(active) >= 12:
-        active[0].wait(); active.pop(0)
+        failed.append(active[0].wait()); active.pop(0)
     active.append(run(k))
-for p in active: p.wait()
+failed.extend(p.wait() for p in active)
+if any(failed): sys.exit('Reference runtime failed; inspect work/zdl/*/out.txt. No duel results were accepted.')
 for k, grp in enumerate(maps):
     tr = collections.defaultdict(list)
     for l in open('work/zdl/' + os.environ.get('PFX', 'zdl') + 'm%d/units.log' % k):
         q = l.split()
-        if q[0] == 'U': tr[(q[2], int(q[3]))].append((int(q[1]), int(q[5]), int(q[6]), int(q[7]), int(q[8])))
+        if q[0] == 'U' and int(q[5]) >= 0 and int(q[6]) >= 0:
+            tr[(q[2], int(q[3]))].append((int(q[1]), int(q[5]), int(q[6]), int(q[7]), int(q[8])))
     for (a, t), (x, y) in zip(grp, SLOTS):
         cx = lambda tx: tx * 48 + 24
         def find(ty, tx):
-            for (ad, tt), v in tr.items():
-                if tt == ty and v[0][1] > 0 and abs(v[0][1] - cx(tx)) < 60 and abs(v[0][2] - cx(y)) < 60 or (tt == ty and v[0][1] > 0 and abs(v[0][1] - cx(tx)) < 130 and abs(v[0][2] - cx(y)) < 130):
-                    return v
+            candidates = [v for (ad, tt), v in tr.items() if tt == ty
+                          and abs(v[0][1] - cx(tx)) < 130 and abs(v[0][2] - cx(y)) < 130]
+            return min(candidates, key=lambda v: (v[0][1] - cx(tx)) ** 2 + (v[0][2] - cx(y)) ** 2) if candidates else None
         va, vt = find(a, x), find(t, x + DIST)
         with open('work/zdl/%d_%d%s.txt' % (a, t, os.environ.get('SUFFIX', '')), 'w') as f:
             if not vt or not va: f.write('missing %s %s\n' % (bool(va), bool(vt))); continue
-            f.write('attacker %d hp0 %d, target %d hp0 %d maxhp %d\n' % (a, va[0][3], t, vt[0][3], vt[0][4]))
+            f.write('attacker %d hp0 %d, target %d hp0 %d raw_object_3c %d\n' % (a, va[0][3], t, vt[0][3], vt[0][4]))
+            f.write('No HP drops alone do not establish target immunity; check visibility, orders and weapon eligibility.\n')
             ev = []
             for p, q in zip(vt, vt[1:]):
                 if q[3] != p[3]: ev.append((q[0], q[3] - p[3]))

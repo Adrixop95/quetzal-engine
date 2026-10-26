@@ -38,7 +38,7 @@ w('townhall_ids.csv', ['townhall_type', 'rus', 'aztec', 'chinese'], [[t] + [(lam
 fl = rx(0x4bc3c0, 8, 'f') + rh(0x4bc3e0, 2, 'f')
 w('town_factors.csv', ['name', 'value'], [['Ktime[0..2]', ' '.join('%g' % x for x in fl[0:3])], ['Kprice[0..2]', ' '.join('%g' % x for x in fl[3:6])], ['KWarehouse[0..1]', ' '.join('%g' % x for x in fl[6:8])], ['KAdvPostTime', '%g' % fl[8]], ['KAdvPostPrice', '%g' % fl[9]]])
 # descriptors (runtime dump)
-D = [('marine', 0x4ac430, 0x4c, 16), ('building', 0x49b538, 0x508, 32), ('defence', 0x4aa3b0, 0x110, 9), ('headtruck', 0x4ab2b0, 0x50, 8),
+D = [('marine', 0x4ac430, 0x4c, 16), ('building', 0x49b538, 0x508, 43), ('defence', 0x4aa3b0, 0x110, 9), ('headtruck', 0x4ab2b0, 0x50, 8),
      ('truck', 0x4bc738, 0x44, 1), ('spider', 0x4ae378, 0x4c, 2), ('zeppelin', 0x4bcd00, 0x44, 2), ('bird', 0x49b370, 0x58, 3), ('cannon', 0x4a8e18, 0x40, 1)]
 for nm, base, st, n in D:
     rows = []

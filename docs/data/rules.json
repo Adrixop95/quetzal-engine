@@ -1,5 +1,5 @@
 {
- "_note": "status: verified = code read and/or observed in game; guess = inferred; raw = unlabeled dwords",
+ "_note": "status: V/verified = code read and/or observed in game; G/guess = inferred; O = open; raw = unlabeled dwords",
  "constants": {
   "tick_hz": {
    "value": 12,
@@ -14,24 +14,24 @@
    "status": "verified"
   },
   "price_formula": {
-   "value": "ftol(UnitPrices*Kadv*f+0.5), Kadv(price)=1.0, f=0.8 for computer side not hostile to all",
-   "status": "verified from code; AI observed 0.8*P+1"
+   "value": "trunc(UnitPrices[type]*K*f+0.5); K=KAdvPostPrice for outposts, Kprice[0] for developed towns hostile to everyone, otherwise Kprice[town BuildSpeed]; f=0.8 for computer sides not hostile to everyone, otherwise 1",
+   "status": "verified"
   },
   "Kprice": [
-   0.667,
+   0.6666666865348816,
    1.0,
    2.0
   ],
   "Ktime": [
    2.0,
    1.0,
-   0.667
+   0.6666666865348816
   ],
   "KAdvPostTime": 1.5,
   "KAdvPostPrice": 1.0,
   "KWarehouse": [
    1.0,
-   1.3333
+   1.3333333730697632
   ]
  },
  "types": [
@@ -85,8 +85,16 @@
      "value": 6000,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 6000,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 9,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 64,
      "status": "verified"
     },
     "weapon_id": {
@@ -162,8 +170,16 @@
      "value": 5000,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 5000,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 6,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 68,
      "status": "verified"
     },
     "weapon_id": {
@@ -239,8 +255,16 @@
      "value": 8500,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 8500,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 7,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 68,
      "status": "verified"
     },
     "weapon_id": {
@@ -309,6 +333,10 @@
      "value": 9,
      "status": "verified"
     },
+    "sight_mask_id": {
+     "value": 67,
+     "status": "verified"
+    },
     "weapon_id": {
      "value": 7,
      "status": "guess"
@@ -365,6 +393,10 @@
     },
     "speed_px_per_tick": {
      "value": 6,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 70,
      "status": "verified"
     },
     "weapon_id": {
@@ -429,11 +461,19 @@
      "status": "verified"
     },
     "hp_max": {
+     "value": 40000,
+     "status": "verified"
+    },
+    "secondary_hp_initial": {
      "value": 36000,
      "status": "verified"
     },
     "speed_px_per_tick": {
      "value": 5,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 65,
      "status": "verified"
     },
     "weapon_id": {
@@ -506,11 +546,19 @@
      "status": "verified"
     },
     "hp_max": {
+     "value": 12000,
+     "status": "verified"
+    },
+    "secondary_hp_initial": {
      "value": 10000,
      "status": "verified"
     },
     "speed_px_per_tick": {
      "value": 15,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 67,
      "status": "verified"
     },
     "weapon_id": {
@@ -565,8 +613,12 @@
    ],
    "fields": {
     "hp_initial": {
-     "value": 3000,
-     "status": "guess"
+     "value": 9000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
     },
     "speed_px_per_tick": {
      "value": 8,
@@ -616,6 +668,10 @@
     },
     "speed_px_per_tick": {
      "value": 6,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 69,
      "status": "verified"
     },
     "weapon_id": {
@@ -674,6 +730,10 @@
     },
     "speed_px_per_tick": {
      "value": 5,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 69,
      "status": "verified"
     },
     "weapon_id": {
@@ -1028,13 +1088,25 @@
      "value": 30000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 0,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 70,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 10,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": 300,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -1375,13 +1447,25 @@
      "value": 60000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 20,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 20,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 20,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": 300,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -1722,13 +1806,25 @@
      "value": 15000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 0,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 69,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 36,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": 6,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -2069,13 +2165,25 @@
      "value": 20000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 0,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 69,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 16,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": 100,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -2416,13 +2524,25 @@
      "value": 25000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 5,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 69,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 5,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": -1,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -2763,13 +2883,25 @@
      "value": 40000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 10,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 70,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 10,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": -1,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -3110,13 +3242,25 @@
      "value": 50000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 0,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 69,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": -1,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -3197,7 +3341,21 @@
     0,
     0,
     268461832
-   ]
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 20000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 68,
+     "status": "verified"
+    },
+    "weapon_id": {
+     "value": 15,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 18,
@@ -3536,13 +3694,25 @@
      "value": 30000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 0,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 69,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": -1,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -3883,13 +4053,25 @@
      "value": 40000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 20,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 20,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 20,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": 300,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -4230,13 +4412,25 @@
      "value": 40000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 10,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 70,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 10,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": -1,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -4577,13 +4771,25 @@
      "value": 40000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 5,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 70,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 5,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": -1,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -4924,13 +5130,25 @@
      "value": 20000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 0,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 70,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": -1,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -5011,7 +5229,21 @@
     0,
     0,
     268459032
-   ]
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 40000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 70,
+     "status": "verified"
+    },
+    "weapon_id": {
+     "value": 7,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 24,
@@ -5350,13 +5582,25 @@
      "value": 60000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 40,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 60,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 40,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": 150,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -5697,13 +5941,25 @@
      "value": 50000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 15,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 15,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": -1,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -5784,7 +6040,21 @@
     0,
     0,
     268456712
-   ]
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 40000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
+    },
+    "weapon_id": {
+     "value": 51,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 27,
@@ -5836,8 +6106,16 @@
      "value": 3500,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 3500,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 8,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 66,
      "status": "verified"
     },
     "weapon_id": {
@@ -5913,8 +6191,16 @@
      "value": 6000,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 6000,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 5,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 67,
      "status": "verified"
     },
     "weapon_id": {
@@ -5990,8 +6276,16 @@
      "value": 2600,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 2600,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 10,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 66,
      "status": "verified"
     },
     "weapon_id": {
@@ -6059,6 +6353,10 @@
      "value": 4,
      "status": "verified"
     },
+    "sight_mask_id": {
+     "value": 70,
+     "status": "verified"
+    },
     "weapon_id": {
      "value": 1,
      "status": "guess"
@@ -6116,8 +6414,16 @@
      "value": 23000,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 23000,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 16,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 67,
      "status": "verified"
     },
     "weapon_id": {
@@ -6190,11 +6496,19 @@
      "status": "verified"
     },
     "hp_max": {
+     "value": 13000,
+     "status": "verified"
+    },
+    "secondary_hp_initial": {
      "value": 23000,
      "status": "verified"
     },
     "speed_px_per_tick": {
      "value": 12,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 68,
      "status": "verified"
     },
     "weapon_id": {
@@ -6251,7 +6565,17 @@
     12,
     0,
     268459496
-   ]
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 13000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 34,
@@ -6284,7 +6608,17 @@
     0,
     202,
     268457496
-   ]
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 12000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 69,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 35,
@@ -6326,6 +6660,10 @@
     },
     "speed_px_per_tick": {
      "value": 4,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 70,
      "status": "verified"
     },
     "weapon_id": {
@@ -6385,8 +6723,16 @@
      "value": 6000,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 6000,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 9,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 64,
      "status": "verified"
     },
     "weapon_id": {
@@ -6749,13 +7095,25 @@
      "value": 30000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 0,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 70,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 10,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": 300,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -7096,13 +7454,25 @@
      "value": 60000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 30,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 40,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 30,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": 150,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -7443,13 +7813,25 @@
      "value": 15000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 0,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 69,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 36,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": 10,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -7790,13 +8172,25 @@
      "value": 30000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 0,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 69,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": -1,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -8137,13 +8531,25 @@
      "value": 30000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 5,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 69,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 5,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": -1,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -8224,7 +8630,21 @@
     0,
     0,
     268462264
-   ]
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 30000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 68,
+     "status": "verified"
+    },
+    "weapon_id": {
+     "value": 14,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 43,
@@ -8563,13 +8983,25 @@
      "value": 20000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 0,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 70,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": -1,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -8910,13 +9342,25 @@
      "value": 40000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 10,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 70,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 10,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": -1,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -9257,13 +9701,25 @@
      "value": 40000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 0,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": -1,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -9604,13 +10060,25 @@
      "value": 20000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 0,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 70,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": -1,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -9951,13 +10419,25 @@
      "value": 40000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 30,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 30,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 30,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": 300,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -10298,13 +10778,25 @@
      "value": 20000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 0,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 69,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 16,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": 100,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -10385,7 +10877,21 @@
     0,
     0,
     268457432
-   ]
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 40000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 68,
+     "status": "verified"
+    },
+    "weapon_id": {
+     "value": 28,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 50,
@@ -10724,13 +11230,25 @@
      "value": 35000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 0,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": -1,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -11071,13 +11589,25 @@
      "value": 50000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 10,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 10,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": -1,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -11418,13 +11948,25 @@
      "value": 50000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 15,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 15,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": -1,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -11478,8 +12020,16 @@
      "value": 7500,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 7500,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 11,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 66,
      "status": "verified"
     },
     "weapon_id": {
@@ -11555,8 +12105,16 @@
      "value": 6000,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 6000,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 10,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 69,
      "status": "verified"
     },
     "weapon_id": {
@@ -11632,8 +12190,16 @@
      "value": 5000,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 5000,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 10,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 68,
      "status": "verified"
     },
     "weapon_id": {
@@ -11706,11 +12272,19 @@
      "status": "verified"
     },
     "hp_max": {
+     "value": 45000,
+     "status": "verified"
+    },
+    "secondary_hp_initial": {
      "value": 22500,
      "status": "verified"
     },
     "speed_px_per_tick": {
      "value": 4,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 66,
      "status": "verified"
     },
     "weapon_id": {
@@ -11786,8 +12360,16 @@
      "value": 28000,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 28000,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 4,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 68,
      "status": "verified"
     },
     "weapon_id": {
@@ -11856,6 +12438,10 @@
      "value": 7,
      "status": "verified"
     },
+    "sight_mask_id": {
+     "value": 69,
+     "status": "verified"
+    },
     "weapon_id": {
      "value": 19,
      "status": "guess"
@@ -11914,6 +12500,10 @@
      "value": 8,
      "status": "verified"
     },
+    "sight_mask_id": {
+     "value": 69,
+     "status": "verified"
+    },
     "weapon_id": {
      "value": 34,
      "status": "guess"
@@ -11960,7 +12550,17 @@
     0,
     0,
     268459352
-   ]
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 7000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 70,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 61,
@@ -12003,6 +12603,10 @@
     },
     "speed_px_per_tick": {
      "value": 11,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 69,
      "status": "verified"
     },
     "weapon_id": {
@@ -12061,6 +12665,10 @@
     },
     "speed_px_per_tick": {
      "value": 8,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 70,
      "status": "verified"
     },
     "weapon_id": {
@@ -12415,13 +13023,25 @@
      "value": 30000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 0,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 70,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 10,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": 300,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -12432,7 +13052,357 @@
    "param": 38,
    "unit_price": 1100,
    "build_time": 160,
-   "dev_level": 1
+   "dev_level": 1,
+   "descriptor_raw": [
+    409,
+    60000,
+    -67,
+    -72,
+    68,
+    47,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    1,
+    2,
+    2,
+    2,
+    1,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    71,
+    0,
+    0,
+    0,
+    1,
+    20,
+    0,
+    20,
+    0,
+    300,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    10,
+    268459160
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 60000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
+    },
+    "harvest_grass_factor": {
+     "value": 20,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 20,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
+     "value": 300,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 65,
@@ -12441,7 +13411,357 @@
    "param": 35,
    "unit_price": 240,
    "build_time": 200,
-   "dev_level": 0
+   "dev_level": 0,
+   "descriptor_raw": [
+    406,
+    15000,
+    -122,
+    -82,
+    75,
+    76,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    2,
+    2,
+    1,
+    0,
+    0,
+    1,
+    2,
+    2,
+    2,
+    2,
+    1,
+    0,
+    0,
+    1,
+    2,
+    2,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    69,
+    512,
+    0,
+    0,
+    256,
+    36,
+    0,
+    0,
+    1,
+    8,
+    0,
+    900,
+    1800,
+    2700,
+    3600,
+    4500,
+    5400,
+    6300,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    -1,
+    268461640
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 15000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 69,
+     "status": "verified"
+    },
+    "harvest_grass_factor": {
+     "value": 36,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
+     "value": 8,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 66,
@@ -12450,7 +13770,357 @@
    "param": 36,
    "unit_price": 200,
    "build_time": 160,
-   "dev_level": 0
+   "dev_level": 0,
+   "descriptor_raw": [
+    407,
+    20000,
+    -76,
+    -95,
+    32,
+    12,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    2,
+    2,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    2,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    71,
+    256,
+    0,
+    0,
+    256,
+    0,
+    24,
+    0,
+    0,
+    100,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    -1,
+    268459944
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 20000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
+    },
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 24,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
+     "value": 100,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 67,
@@ -12459,7 +14129,357 @@
    "param": 33,
    "unit_price": 400,
    "build_time": 250,
-   "dev_level": 1
+   "dev_level": 1,
+   "descriptor_raw": [
+    404,
+    25000,
+    -81,
+    -79,
+    83,
+    57,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    1,
+    2,
+    2,
+    2,
+    1,
+    0,
+    0,
+    0,
+    1,
+    2,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    69,
+    256,
+    0,
+    0,
+    0,
+    0,
+    0,
+    5,
+    0,
+    -1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    10,
+    268457480
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 25000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 69,
+     "status": "verified"
+    },
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 5,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
+     "value": -1,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 68,
@@ -12798,13 +14818,25 @@
      "value": 40000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 30,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 70,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 30,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": 100,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -12885,7 +14917,21 @@
     0,
     0,
     268459672
-   ]
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 25000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
+    },
+    "weapon_id": {
+     "value": 57,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 70,
@@ -12894,7 +14940,357 @@
    "param": 39,
    "unit_price": 500,
    "build_time": 200,
-   "dev_level": 0
+   "dev_level": 0,
+   "descriptor_raw": [
+    410,
+    30000,
+    -67,
+    -76,
+    65,
+    46,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    2,
+    1,
+    0,
+    0,
+    0,
+    1,
+    2,
+    2,
+    2,
+    1,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    70,
+    384,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    -1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    -1,
+    268457464
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 30000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 70,
+     "status": "verified"
+    },
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
+     "value": -1,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 71,
@@ -13233,13 +15629,25 @@
      "value": 40000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 30,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 70,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 30,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": 100,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -13250,7 +15658,357 @@
    "param": 42,
    "unit_price": 800,
    "build_time": 500,
-   "dev_level": 2
+   "dev_level": 2,
+   "descriptor_raw": [
+    413,
+    25000,
+    -66,
+    -104,
+    62,
+    35,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    1,
+    2,
+    2,
+    2,
+    1,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    71,
+    192,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    -1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    -1,
+    268461896
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 25000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
+    },
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
+     "value": -1,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 73,
@@ -13589,13 +16347,25 @@
      "value": 25000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 0,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": -1,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -13606,7 +16376,357 @@
    "param": 40,
    "unit_price": 1200,
    "build_time": 500,
-   "dev_level": 2
+   "dev_level": 2,
+   "descriptor_raw": [
+    411,
+    45000,
+    -68,
+    -83,
+    78,
+    50,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    2,
+    1,
+    0,
+    0,
+    0,
+    1,
+    2,
+    2,
+    2,
+    1,
+    0,
+    0,
+    0,
+    1,
+    2,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    70,
+    256,
+    0,
+    0,
+    0,
+    0,
+    0,
+    10,
+    0,
+    -1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    10,
+    268461608
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 45000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 70,
+     "status": "verified"
+    },
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 10,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
+     "value": -1,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 75,
@@ -13615,7 +16735,357 @@
    "param": 41,
    "unit_price": 1800,
    "build_time": 700,
-   "dev_level": 3
+   "dev_level": 3,
+   "descriptor_raw": [
+    412,
+    50000,
+    -99,
+    -99,
+    73,
+    45,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    2,
+    1,
+    0,
+    0,
+    0,
+    1,
+    2,
+    2,
+    2,
+    1,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    70,
+    256,
+    0,
+    0,
+    0,
+    0,
+    0,
+    5,
+    0,
+    -1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    20,
+    268457176
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 50000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 70,
+     "status": "verified"
+    },
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 5,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
+     "value": -1,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 76,
@@ -13954,13 +17424,25 @@
      "value": 60000,
      "status": "verified"
     },
-    "income_per_100_ticks": {
-     "value": 50,
-     "status": "verified for RUS_TOWN/VILLAGE, guess others"
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
     },
-    "weapon_id": {
+    "harvest_grass_factor": {
+     "value": 60,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 50,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
      "value": 300,
-     "status": "guess"
+     "status": "verified"
     }
    }
   },
@@ -13971,7 +17453,357 @@
    "param": 37,
    "unit_price": 1300,
    "build_time": 500,
-   "dev_level": 2
+   "dev_level": 2,
+   "descriptor_raw": [
+    408,
+    45000,
+    -76,
+    -88,
+    81,
+    63,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    2,
+    1,
+    0,
+    0,
+    0,
+    1,
+    2,
+    2,
+    2,
+    1,
+    0,
+    0,
+    0,
+    1,
+    2,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    70,
+    256,
+    0,
+    0,
+    0,
+    0,
+    0,
+    10,
+    0,
+    -1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    20,
+    268461960
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 45000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 70,
+     "status": "verified"
+    },
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 10,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
+     "value": -1,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 78,
@@ -13980,7 +17812,357 @@
    "param": 34,
    "unit_price": 1500,
    "build_time": 700,
-   "dev_level": 3
+   "dev_level": 3,
+   "descriptor_raw": [
+    405,
+    60000,
+    -78,
+    -65,
+    81,
+    52,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    2,
+    1,
+    0,
+    0,
+    0,
+    1,
+    2,
+    2,
+    2,
+    1,
+    0,
+    0,
+    0,
+    1,
+    2,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    70,
+    128,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    -1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    -1,
+    268459912
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 60000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 70,
+     "status": "verified"
+    },
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
+     "value": -1,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 79,
@@ -13989,7 +18171,357 @@
    "param": 32,
    "unit_price": 1200,
    "build_time": 400,
-   "dev_level": 3
+   "dev_level": 3,
+   "descriptor_raw": [
+    403,
+    45000,
+    -110,
+    -73,
+    109,
+    81,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    1,
+    2,
+    2,
+    2,
+    1,
+    0,
+    1,
+    2,
+    2,
+    2,
+    1,
+    0,
+    1,
+    2,
+    2,
+    2,
+    1,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    71,
+    256,
+    0,
+    0,
+    0,
+    0,
+    0,
+    15,
+    0,
+    -1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    20,
+    268456808
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 45000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
+    },
+    "harvest_grass_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "harvest_stone_factor": {
+     "value": 0,
+     "status": "verified"
+    },
+    "repair_income_per_100_clock_ticks": {
+     "value": 15,
+     "status": "verified"
+    },
+    "harvest_schedule_count_or_period": {
+     "value": -1,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 80,
@@ -14068,7 +18600,21 @@
     0,
     0,
     268460904
-   ]
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 17500,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 68,
+     "status": "verified"
+    },
+    "weapon_id": {
+     "value": -1,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 81,
@@ -14147,7 +18693,21 @@
     0,
     0,
     268459320
-   ]
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 15000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 68,
+     "status": "verified"
+    },
+    "weapon_id": {
+     "value": 20,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 82,
@@ -14196,11 +18756,19 @@
      "status": "verified"
     },
     "hp_max": {
+     "value": 12000,
+     "status": "verified"
+    },
+    "secondary_hp_initial": {
      "value": 3000,
      "status": "verified"
     },
     "speed_px_per_tick": {
      "value": 10,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 71,
      "status": "verified"
     },
     "weapon_id": {
@@ -14258,6 +18826,10 @@
      "value": 3000,
      "status": "guess"
     },
+    "sight_mask_id": {
+     "value": 66,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 8,
      "status": "verified"
@@ -14303,8 +18875,12 @@
    ],
    "fields": {
     "hp_initial": {
-     "value": 3000,
-     "status": "guess"
+     "value": 14000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 71,
+     "status": "verified"
     },
     "speed_px_per_tick": {
      "value": 9,
@@ -14390,7 +18966,21 @@
     0,
     0,
     268457752
-   ]
+   ],
+   "fields": {
+    "hp_initial": {
+     "value": 60000,
+     "status": "verified"
+    },
+    "sight_mask_id": {
+     "value": 68,
+     "status": "verified"
+    },
+    "weapon_id": {
+     "value": -1,
+     "status": "verified"
+    }
+   }
   },
   {
    "id": 87,
@@ -14418,6 +19008,12 @@
     14,
     268457896
    ],
+   "fields": {
+    "sight_mask_id": {
+     "value": 70,
+     "status": "verified"
+    }
+   },
    "speed_measured_px_per_tick": 6.86
   },
   {
@@ -16674,17 +21270,525 @@
    "chinese": 76
   }
  ],
+ "mechanics": {
+  "_note": "V = verified by code or observation; G = inference; O = open. This file contains behavioral specifications, never executable code. rules.json is generated by tools/build_rules.py. Addresses identify local research evidence; no decompilation is distributed.",
+  "vision": {
+   "status": "V",
+   "source": [
+    "0x4577b0",
+    "0x432f80",
+    "0x40fa30",
+    "0x41cb80",
+    "0x407240",
+    "0x47d070",
+    "0x480d20",
+    "0x402490",
+    "0x410340",
+    "0x42bc50",
+    "0x415dd0",
+    "0x471180"
+   ],
+   "model": "Sight is a light-mask resource ID, not a radius in pixels. Apply light.xbe group 0x455 at the object's pixel position on a 48-pixel grid, interpolating between cells. Masks overlap using minimum darkness. Combine with global illumination by unsigned nonnegative subtraction; retain the greater brightness. Mobile target visibility interpolates the resulting four cells and requires brightness > 32; structures test four bounding-box corner cells > 32.",
+   "descriptor_dword": {
+    "Marine": 6,
+    "Building": 55,
+    "Defence": 58,
+    "Bird": 8,
+    "Headtruck": 8,
+    "Spider": 8,
+    "Truck": 6,
+    "Zeppelin": 7,
+    "Cannon": 6
+   },
+   "mask_ids": {
+    "FOOTMAN": 64,
+    "ARCHER": 66,
+    "RIFLEMAN": 68
+   },
+   "memory_floor": 32,
+   "scalar_radius": {
+    "status": "O",
+    "value": null,
+    "reason": "Effective reach depends on daylight, mask sampling, position and other units. A single six-tile radius is not the reference rule."
+   },
+   "special_objects": {
+    "status": "O",
+    "note": "Boat, Johnka and Camera do not use the annotated descriptor families; their visibility contribution still needs separate callbacks."
+   }
+  },
+  "target_acquisition": {
+   "status": "V",
+   "source": [
+    "0x433db0",
+    "0x454820",
+    "0x451c30",
+    "0x452c70",
+    "0x4166a0",
+    "0x43e9f0",
+    "0x432050",
+    "0x449980",
+    "0x461fe0"
+   ],
+   "marine": "Think requests tactic movement and target assignment through callbacks +0x11c and +0x120. The tactic periodically scans an expanded bounding rectangle (six tiles before its minimum and eight after its maximum), then filters by liveness, visibility and hostility. Assignment uses estimated kill times and allied-damage penalties; it is not nearest-enemy selection.",
+   "scan_interval_ticks": {
+    "min": 15,
+    "max": 23,
+    "formula": "15 + floor(rand()*8/32767)"
+   },
+   "limits": {
+    "assignment_friendly_objects": 100,
+    "assignment_enemy_objects": 100,
+    "marine_pursuit_distance_limit": {
+     "value": 1152,
+     "inclusive": true,
+     "metric": "reference approximate pixel norm, not Euclidean distance"
+    }
+   },
+   "map_explorer": "Computer-side town intelligence. Count visible town forces plus nearby town forces with abs(dx)<8 and abs(dy)<8 tiles. Rebuild periodically every (side_index+1)*1000 side ticks. This is not the sight calculation.",
+   "nominal_type_radii": {
+    "status": "G",
+    "reason": "Existing auto_engage_tiles.csv is historical, map-dependent evidence, not a radius table."
+   },
+   "distance_norm": {
+    "status": "V",
+    "source": "0x461fe0",
+    "formula": "M=max(abs(dx),abs(dy)); s=min(abs(dx),abs(dy)); a=s+(s>>1); distance=M+(a>>2)+(a>>6)-(M>>7)-(M>>5)",
+    "note": "Used in pursuit and tactic distance tests. Even axial values differ from Euclidean pixel distance."
+   }
+  },
+  "target_categories": {
+   "status": "V",
+   "source": [
+    "0x4166a0",
+    "0x43e9f0",
+    "0x46dfe0",
+    "0x403d00",
+    "0x451c30",
+    "0x448350"
+   ],
+   "categories": {
+    "Building": {
+     "airborne": false,
+     "nonorganic": true,
+     "structure": true
+    },
+    "Defence": {
+     "airborne": false,
+     "nonorganic": true,
+     "structure": true
+    },
+    "Bird": {
+     "airborne": true,
+     "nonorganic": false,
+     "structure": false
+    },
+    "Zeppelin": {
+     "airborne": true,
+     "nonorganic": false,
+     "structure": false
+    }
+   },
+   "weapon_selection": "Return no weapon when its calculated damage against this target is <= 0. CanAttack also requires weapon CanFire (range and class-specific constraints). Apply all matching target multipliers successively, rather than choosing one exclusive category.",
+   "examples": {
+    "FOOTMAN_vs_Building_base_damage": 150,
+    "FOOTMAN_vs_Defence_base_damage": 150,
+    "FOOTMAN_vs_air_base_damage": 0,
+    "ARCHER_vs_Building_base_damage": 300,
+    "ARCHER_vs_air_base_damage": 800,
+    "RIFLEMAN_vs_air_base_damage": 2000
+   },
+   "building_acquisition": "Global tactic assignment normally omits ordinary buildings and town halls as candidate combat members; Defence objects pass the +0xfc discriminator. Explicit orders and structure handling must be tested separately.",
+   "custom_map_verification": {
+    "status": "O",
+    "reason": "The previous generator overlapped each target building with its automatically created town hall and inherited four footmen. Replacement maps were prepared, but the sandbox denies the runtime UDP socket inside unshare -rn."
+   }
+  },
+  "production": {
+   "status": "V",
+   "source": [
+    "0x45c5b0",
+    "0x45c690",
+    "0x45e7c0",
+    "0x459bb0",
+    "0x4810e4",
+    "0x430770"
+   ],
+   "price": {
+    "value": "trunc(UnitPrices[type]*K*f+0.5); K=KAdvPostPrice for outposts, Kprice[0] for developed towns hostile to everyone, otherwise Kprice[town BuildSpeed]; f=0.8 for computer sides not hostile to everyone, otherwise 1",
+    "status": "verified"
+   },
+   "time": "trunc(BuildTime[type]*K*f+0.5); same branches as price, with KAdvPostTime and Ktime",
+   "town_hall_levels": {
+    "outpost": 0,
+    "village": 1,
+    "town": 2,
+    "fortress": 3
+   },
+   "build_speed": {
+    "slow": 0,
+    "normal": 1,
+    "fast": 2,
+    "Kprice": [
+     0.6666666865348816,
+     1.0,
+     2.0
+    ],
+    "Ktime": [
+     2.0,
+     1.0,
+     0.6666666865348816
+    ]
+   },
+   "computer_speed_selection": "Every strategist tick choose normal when estimated income < estimated spending * Kprice[2], otherwise fast. This executes even while production is busy. Outposts still use their separate factors.",
+   "footman_puzzle": {
+    "status": "V",
+    "explanation": "A developed computer town in fast mode charges 100*2*0.8 before rounding, rather than 100*1*0.8. Time is 100*(2/3)*0.8 before rounding. BuildThink has one TakeMoney at production start; no second footman charge was found. The historical 161/56 observation includes lifted-runtime rounding and production scheduling."
+   },
+   "oracle_rounding": {
+    "status": "V",
+    "explanation": "Original __ftol sets x87 rounding toward zero before FISTP. Generated FISTP calls rt_round then rt_trunc; runtime rt_round uses host nearbyintl without the guest control word. Slightly-above-half results (including float32 0.8 products) can round up in the oracle. Original fast AI footman price is 160, not 161."
+   },
+   "exact_spawn_interval": {
+    "status": "O",
+    "reason": "56 is a historical oracle observation. Exact original queue/update and spawn tick ordering still requires a working runtime check."
+   },
+   "queue_capacity": 50,
+   "cancel": "Queued objects are reserved before production. Queue removal updates reservations; do not assume a 100-percent money refund, since payment occurs at production start.",
+   "map_keys": "Town loader reads Race and Type, but does not read Tendency or BuildSpeed; constructor tendency is zero, speed normal. Runtime commands and the computer strategist can change speed. Side Difficulty is not a price/time multiplier."
+  },
+  "economy": {
+   "status": "V",
+   "source": [
+    "0x410010",
+    "0x42acd0",
+    "0x42b040",
+    "0x42b180",
+    "0x42b1e0",
+    "0x42b200",
+    "0x4111af",
+    "0x45f6e0",
+    "0x45f8c0",
+    "0x45c450",
+    "0x4184a0"
+   ],
+   "clock": {
+    "ticks_per_day": 7200,
+    "increment_per_logic_tick": 1,
+    "initial": "mission StartTime; not zero elapsed mission time"
+   },
+   "descriptor_fields": {
+    "terrain_dependent_flag_byte_offset": "0xed",
+    "grass_factor_dword": 60,
+    "stone_factor_dword": 61,
+    "repair_credit_rate_dword": 62,
+    "scheduled_flag_dword": 63,
+    "period_or_schedule_count_dword": 64,
+    "schedule_start_dword": 65,
+    "repair_credit_period_dword": 320
+   },
+   "accumulator": "Start A=0. Every active building tick add fixed-point rate R. A trigger event pays (A+128)>>8 and resets A only when that rounded payment is nonzero. Fractional residue is otherwise retained. Gold is trunc(payment * warehouse_factor), with no extra +0.5 at this conversion.",
+   "constant_rate": "R = (floor((descriptor.d60<<16)/100)+128)>>8",
+   "terrain_rate": "Let Cg=((floor((d60<<16)/100)*2)+256)>>8 and Cs likewise from d61. Average 2*grass_byte*Cg + 2*stone_byte*Cs over the descriptor occupancy cells equal to 2, divide by cell count using unsigned integer division, then shift right 8. This is R, in 1/256 gold per tick. Terrain bytes come from the resource map; income is location dependent.",
+   "periodic_event": "Trigger compares current day clock to last event clock modulo 7200. Fire when difference >= period and reset last event clock to current clock. Do not accumulate missed periods as multiple events.",
+   "scheduled_event": "Start schedule cursor at 0. Fire at most one entry per logic tick when clock >= schedule[cursor], then advance. After the last entry, reset cursor to 0 only when clock <= schedule[0]. A map starting after earlier harvest times therefore consumes those entries immediately with small or zero payouts.",
+   "farm_schedule": {
+    "RUS_FARM": [
+     1000,
+     2050,
+     3100,
+     4150,
+     5200,
+     6250
+    ],
+    "AZT_FARM": [
+     700,
+     1350,
+     2000,
+     2650,
+     3300,
+     3950,
+     4600,
+     5250,
+     5900,
+     6550
+    ],
+    "CHI_FARM": [
+     0,
+     900,
+     1800,
+     2700,
+     3600,
+     4500,
+     5400,
+     6300
+    ]
+   },
+   "farm_wrap_edge": {
+    "status": "V",
+    "note": "The Chinese first schedule time is zero. The reset comparison is <= first entry; changing it to a strict comparison would prevent subsequent cycles."
+   },
+   "warehouse": {
+    "farm_type_ids": [
+     12,
+     39,
+     65
+    ],
+    "warehouse_type_ids": [
+     18,
+     40,
+     70
+    ],
+    "factor_without": 1.0,
+    "factor_with": 1.3333333730697632,
+    "scope": "Any completed warehouse in the same town's build-tree counts enables the multiplier. No stacking, proximity test or same-race requirement. Mines and halls always use factor 1."
+   },
+   "hall_examples": "RUS_FORPOST d60=10, period=300; RUS_TOWN and RUS_VILLAGE d60=20, period=300; RUS_FORTRESS d60=60, period=150. Round through the accumulator, not an assumed exact rational rate.",
+   "mine_examples": {
+    "status": "G",
+    "note": "Historical +3/+6 per 100 ticks are map-location observations, not race-wide fixed income constants."
+   }
+  },
+  "town_commands": {
+   "status": "V",
+   "source": [
+    "0x448350",
+    "0x4489b0",
+    "0x4577b0",
+    "0x4444e0",
+    "0x4445c0",
+    "0x444730",
+    "0x444920",
+    "0x45d4d0"
+   ],
+   "garrison": "PCT 0x1d requires selected tactic kind 1 (town). Collect its live non-building members into a new tactic; select it if any were transferred, otherwise discard it. This is a town troop-extraction command, not building boarding.",
+   "building_garrison_capacity": {
+    "status": "O",
+    "value": null,
+    "reason": "No building boarding/capacity mechanism identified; do not interpret unrelated raw fields or the town troop-extraction command as slots."
+   },
+   "repair_modes": {
+    "off": 0,
+    "repair": 1,
+    "destroy": 2
+   },
+   "repair_mode_command": "PCT 0x1e changes the selected town repairer's mode. Changing mode clears pending entries and their object marks. Arbitrary non-boolean command values can also toggle the local UI default; normal modes are 0/1/2.",
+   "repair_credit_supply": "Building descriptor d62 and d320 define a separate Harvest accumulator feeding repair credits, not gold. The repairer adds harvested_value*100 to its budget, distributes it and resets the per-tick budget.",
+   "repair_targets": "Only building-kind objects, including Defence, attached to a tactic. Exclude the town hall and current construction object. Repair requires damage; destroy can queue full-health objects. Marks are Building+0x8c or Defence+0x9c.",
+   "repair_priority": "Repair processes Defence first, then ordinary buildings grouped by maxHP/currentHP >=4, ==3, <3. Destroy processes Defence last. For each nonempty group use equal integer shares of the remaining budget, clipped to missing HP (repair) or current HP (destroy). Remove entries when no work remains.",
+   "repair_hp_factor": 1.0,
+   "destroy": "PCT 0x1a toggles the owned building under the cursor in the selected town's repairer list while a nonzero mode is active. Reject the current construction object and buildings attached to other towns. It is not an immediate universal delete command. Mode 2 triples the group's budget, delivers damage through weapon 10 with multiplier 3.0, then divides remaining budget by 3; damage resistance still applies.",
+   "mobile_service": {
+    "status": "G",
+    "note": "Town RepairUnits checks completed workshops, stables and air facilities, allied relation, category and distance, then heals 10 HP. The <=256-object and larger-pool branches differ; complete airborne and spatial boundary parity remains open."
+   }
+  },
+  "population": {
+   "status": "O",
+   "source": [
+    "0x411ac0",
+    "0x4594f0",
+    "0x451c30",
+    "0x447010"
+   ],
+   "side_limit": null,
+   "evidence": "No food or universal 80-unit cap occurs in the inspected build-tree and production path. Build-tree availability uses completed/queued type counts, DisabledID and prerequisites. The town queue holds 50 entries; combat assignment truncates each candidate array at 100. These are distinct limits, not verified population caps."
+  },
+  "upgrades": {
+   "status": "V",
+   "source": [
+    "0x45c4f0",
+    "0x459bb0",
+    "0x411ac0"
+   ],
+   "hall_upgrade_ids": {
+    "village": [
+     11,
+     38,
+     64
+    ],
+    "town": [
+     19,
+     47,
+     71
+    ],
+    "fortress": [
+     24,
+     76
+    ]
+   },
+   "behavior": "Town-hall upgrades replace the hall's state/type through its upgrade callback and install the corresponding race/level build tree. They do not create a second independent town. Completed buildings satisfy local prerequisites; advanced-race requirements use the side-wide completed-type array.",
+   "stat_upgrades": {
+    "status": "O",
+    "reason": "No verified universal armor/damage upgrade multiplier. Armory/laboratory unlocks must follow buildtree.csv; do not invent an additional stat bonus."
+   }
+  },
+  "ai": {
+   "status": "V",
+   "spec": "docs/rules_ai.md",
+   "source": [
+    "0x449980",
+    "0x432050",
+    "0x45e7c0",
+    "0x45dda0",
+    "0x45e770",
+    "0x430410",
+    "0x430350",
+    "0x45f470",
+    "0x45f4e0"
+   ],
+   "remaining": {
+    "status": "O",
+    "note": "Attack composition scoring, exact launch thresholds, camera activation rendering and difficulty effects outside the inspected paths still require verification. The state-machine skeleton and implemented branch thresholds are documented separately."
+   }
+  },
+  "health": {
+   "status": "V",
+   "source": [
+    "0x433190",
+    "0x45fe50",
+    "0x4028c0",
+    "0x46fac0"
+   ],
+   "marine": "Primary initial HP and virtual maximum HP use descriptor d1. Descriptor d4 initializes a secondary value at object +0x3c, read by virtual +0x78 for Hypno kill-time estimates; it is not primary maximum HP.",
+   "examples": {
+    "BEAR_primary_hp": 40000,
+    "BEAR_secondary_initial": 36000,
+    "BIZON_primary_hp": 13000,
+    "BIZON_secondary_initial": 23000
+   },
+   "engine_status": "The rewrite still reads primary maximum HP from CSV d4. Correcting the JSON annotation does not change that engine implementation."
+  }
+ },
  "economy": {
-  "status": "observed (maps zecn*, human side 0, Rus/Azt buildings added to Town0)",
-  "town_hall_passive": "building descriptor dword 0xf8 (index 62) / 100 gold per tick, paid in chunks every 300 ticks; RUS_TOWN 20 -> +60/300 ticks; verified",
-  "village": "RUS_VILLAGE (f8=20) adds another +60 per 300 ticks; verified",
-  "mine": "RUS_MINE +3 gold every 100 ticks, AZT_MINE +6 per 100 ticks (extra +60 chunk from the hall at 300-tick boundary); verified, mine descriptor f4=16, d100=100",
-  "farm": "RUS_FARM: single lump +146 at tick ~852 (first 852 ticks), AZT_FARM+WAREHOUSE: +29 at 152 and +125 at 800; cycle not yet determined (guess)",
-  "warehouse": "no direct income; code scales harvest by 1.0/1.333 (KWarehouse) - effect not seen for mines (guess)",
-  "passive_by_f8": {}
+  "status": "V",
+  "source": [
+   "0x410010",
+   "0x42acd0",
+   "0x42b040",
+   "0x42b180",
+   "0x42b1e0",
+   "0x42b200",
+   "0x4111af",
+   "0x45f6e0",
+   "0x45f8c0",
+   "0x45c450",
+   "0x4184a0"
+  ],
+  "clock": {
+   "ticks_per_day": 7200,
+   "increment_per_logic_tick": 1,
+   "initial": "mission StartTime; not zero elapsed mission time"
+  },
+  "descriptor_fields": {
+   "terrain_dependent_flag_byte_offset": "0xed",
+   "grass_factor_dword": 60,
+   "stone_factor_dword": 61,
+   "repair_credit_rate_dword": 62,
+   "scheduled_flag_dword": 63,
+   "period_or_schedule_count_dword": 64,
+   "schedule_start_dword": 65,
+   "repair_credit_period_dword": 320
+  },
+  "accumulator": "Start A=0. Every active building tick add fixed-point rate R. A trigger event pays (A+128)>>8 and resets A only when that rounded payment is nonzero. Fractional residue is otherwise retained. Gold is trunc(payment * warehouse_factor), with no extra +0.5 at this conversion.",
+  "constant_rate": "R = (floor((descriptor.d60<<16)/100)+128)>>8",
+  "terrain_rate": "Let Cg=((floor((d60<<16)/100)*2)+256)>>8 and Cs likewise from d61. Average 2*grass_byte*Cg + 2*stone_byte*Cs over the descriptor occupancy cells equal to 2, divide by cell count using unsigned integer division, then shift right 8. This is R, in 1/256 gold per tick. Terrain bytes come from the resource map; income is location dependent.",
+  "periodic_event": "Trigger compares current day clock to last event clock modulo 7200. Fire when difference >= period and reset last event clock to current clock. Do not accumulate missed periods as multiple events.",
+  "scheduled_event": "Start schedule cursor at 0. Fire at most one entry per logic tick when clock >= schedule[cursor], then advance. After the last entry, reset cursor to 0 only when clock <= schedule[0]. A map starting after earlier harvest times therefore consumes those entries immediately with small or zero payouts.",
+  "farm_schedule": {
+   "RUS_FARM": [
+    1000,
+    2050,
+    3100,
+    4150,
+    5200,
+    6250
+   ],
+   "AZT_FARM": [
+    700,
+    1350,
+    2000,
+    2650,
+    3300,
+    3950,
+    4600,
+    5250,
+    5900,
+    6550
+   ],
+   "CHI_FARM": [
+    0,
+    900,
+    1800,
+    2700,
+    3600,
+    4500,
+    5400,
+    6300
+   ]
+  },
+  "farm_wrap_edge": {
+   "status": "V",
+   "note": "The Chinese first schedule time is zero. The reset comparison is <= first entry; changing it to a strict comparison would prevent subsequent cycles."
+  },
+  "warehouse": {
+   "farm_type_ids": [
+    12,
+    39,
+    65
+   ],
+   "warehouse_type_ids": [
+    18,
+    40,
+    70
+   ],
+   "factor_without": 1.0,
+   "factor_with": 1.3333333730697632,
+   "scope": "Any completed warehouse in the same town's build-tree counts enables the multiplier. No stacking, proximity test or same-race requirement. Mines and halls always use factor 1."
+  },
+  "hall_examples": "RUS_FORPOST d60=10, period=300; RUS_TOWN and RUS_VILLAGE d60=20, period=300; RUS_FORTRESS d60=60, period=150. Round through the accumulator, not an assumed exact rational rate.",
+  "mine_examples": {
+   "status": "G",
+   "note": "Historical +3/+6 per 100 ticks are map-location observations, not race-wide fixed income constants."
+  }
  },
  "auto_engage": {
-  "status": "weak observation",
-  "note": "idle units auto-engage enemies inside a type dependent radius; clean-slot results: FOOTMAN 3 tiles, ARCHER 4, KNIGHT 4, JAGUAR 4, BEAR 3, RIFLEMAN 6-8, MAGE 8, BIZON 6; see docs/data/auto_engage_tiles.csv (lower map slots contaminated by base units)"
+  "status": "V",
+  "source": [
+   "0x433db0",
+   "0x454820",
+   "0x451c30",
+   "0x452c70",
+   "0x4166a0",
+   "0x43e9f0",
+   "0x432050",
+   "0x449980",
+   "0x461fe0"
+  ],
+  "marine": "Think requests tactic movement and target assignment through callbacks +0x11c and +0x120. The tactic periodically scans an expanded bounding rectangle (six tiles before its minimum and eight after its maximum), then filters by liveness, visibility and hostility. Assignment uses estimated kill times and allied-damage penalties; it is not nearest-enemy selection.",
+  "scan_interval_ticks": {
+   "min": 15,
+   "max": 23,
+   "formula": "15 + floor(rand()*8/32767)"
+  },
+  "limits": {
+   "assignment_friendly_objects": 100,
+   "assignment_enemy_objects": 100,
+   "marine_pursuit_distance_limit": {
+    "value": 1152,
+    "inclusive": true,
+    "metric": "reference approximate pixel norm, not Euclidean distance"
+   }
+  },
+  "map_explorer": "Computer-side town intelligence. Count visible town forces plus nearby town forces with abs(dx)<8 and abs(dy)<8 tiles. Rebuild periodically every (side_index+1)*1000 side ticks. This is not the sight calculation.",
+  "nominal_type_radii": {
+   "status": "G",
+   "reason": "Existing auto_engage_tiles.csv is historical, map-dependent evidence, not a radius table."
+  },
+  "distance_norm": {
+   "status": "V",
+   "source": "0x461fe0",
+   "formula": "M=max(abs(dx),abs(dy)); s=min(abs(dx),abs(dy)); a=s+(s>>1); distance=M+(a>>2)+(a>>6)-(M>>7)-(M>>5)",
+   "note": "Used in pursuit and tactic distance tests. Even axial values differ from Euclidean pixel distance."
+  }
  }
 }

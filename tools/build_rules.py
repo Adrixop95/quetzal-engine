@@ -1,5 +1,5 @@
 #!/usr/bin/env python3 -I
-"""Consolidate docs/data/*.csv into docs/data/rules.json (machine readable, status per item).
+"""Consolidate numeric CSVs and rules_mechanics.json into docs/data/rules.json.
 Run tools/extract_rules.py first. Field labels are only given where verified from code or experiment."""
 import csv, json, os
 os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
@@ -9,19 +9,25 @@ def num(x):
     except ValueError:
         try: return float(x)
         except ValueError: return x
-R = {'_note': 'status: verified = code read and/or observed in game; guess = inferred; raw = unlabeled dwords', 'constants': {}}
+R = {'_note': 'status: V/verified = code read and/or observed in game; G/guess = inferred; O = open; raw = unlabeled dwords', 'constants': {}}
 types = {int(r['id']): {k: num(v) for k, v in r.items()} for r in rd('types.csv')}
 desc = {k: {int(r['param']): [num(r['d%d' % i]) for i in range(len(r) - 1)] for r in rd('desc_%s.csv' % k)} for k in
         ('marine', 'building', 'defence', 'headtruck', 'truck', 'spider', 'zeppelin', 'bird', 'cannon')}
 speed = {int(r['type']): float(r['mean_px_per_tick_midrun']) for r in rd('speed_measured.csv')}
 # per-kind labeled field indices: name -> (index, status)
-L = {'marine': {'anim_id': (0, 'verified'), 'hp_initial': (1, 'verified'), 'regen_per_tick': (2, 'verified'), 'regen_cap_alt': (3, 'verified'), 'hp_max': (4, 'verified'),
-                'speed_px_per_tick': (5, 'verified'), 'weapon_id': (7, 'verified'), 'flags_bytes': (11, 'verified'), 'armor_fire': (12, 'verified'), 'armor_physical': (13, 'verified'), 'armor_d14': (14, 'guess')},
-     'headtruck': {'hp_initial': (3, 'verified'), 'hp_max': (6, 'verified'), 'speed_px_per_tick': (7, 'verified'), 'weapon_id': (9, 'guess'), 'armor_fire': (14, 'guess'), 'armor_physical': (15, 'guess')},
-     'spider': {'hp_initial': (3, 'verified'), 'hp_max': (6, 'verified'), 'speed_px_per_tick': (7, 'verified'), 'weapon_id': (9, 'guess')},
-     'zeppelin': {'hp_initial': (4, 'guess'), 'speed_px_per_tick': (5, 'verified')},
-     'truck': {'hp_initial': (4, 'guess'), 'speed_px_per_tick': (5, 'verified')},
-     'building': {'hp_initial': (1, 'verified'), 'income_per_100_ticks': (62, 'verified for RUS_TOWN/VILLAGE, guess others'), 'weapon_id': (64, 'guess')}}
+L = {'marine': {'anim_id': (0, 'verified'), 'hp_initial': (1, 'verified'), 'regen_per_tick': (2, 'verified'), 'regen_cap_alt': (3, 'verified'), 'hp_max': (1, 'verified'), 'secondary_hp_initial': (4, 'verified'),
+                'speed_px_per_tick': (5, 'verified'), 'sight_mask_id': (6, 'verified'), 'weapon_id': (7, 'verified'), 'flags_bytes': (11, 'verified'), 'armor_fire': (12, 'verified'), 'armor_physical': (13, 'verified'), 'armor_d14': (14, 'guess')},
+     'headtruck': {'hp_initial': (3, 'verified'), 'hp_max': (6, 'verified'), 'speed_px_per_tick': (7, 'verified'), 'sight_mask_id': (8, 'verified'), 'weapon_id': (9, 'guess'), 'armor_fire': (14, 'guess'), 'armor_physical': (15, 'guess')},
+     'spider': {'hp_initial': (3, 'verified'), 'hp_max': (6, 'verified'), 'speed_px_per_tick': (7, 'verified'), 'sight_mask_id': (8, 'verified'), 'weapon_id': (9, 'guess')},
+     'zeppelin': {'hp_initial': (1, 'verified'), 'sight_mask_id': (7, 'verified'), 'speed_px_per_tick': (5, 'verified')},
+     'truck': {'hp_initial': (4, 'guess'), 'sight_mask_id': (6, 'verified'), 'speed_px_per_tick': (5, 'verified')},
+     'bird': {'hp_initial': (1, 'verified'), 'sight_mask_id': (8, 'verified')},
+     'cannon': {'sight_mask_id': (6, 'verified')},
+     'defence': {'hp_initial': (3, 'verified'), 'sight_mask_id': (58, 'verified'), 'weapon_id': (59, 'verified')},
+     'building': {'hp_initial': (1, 'verified'), 'sight_mask_id': (55, 'verified'),
+                  'harvest_grass_factor': (60, 'verified'), 'harvest_stone_factor': (61, 'verified'),
+                  'repair_income_per_100_clock_ticks': (62, 'verified'),
+                  'harvest_schedule_count_or_period': (64, 'verified')}}
 out_types = []
 kmap = {'Marine': 'marine', 'Headtruck': 'headtruck', 'Spider': 'spider', 'Zeppelin': 'zeppelin', 'Truck': 'truck', 'Bird': 'bird', 'Building': 'building', 'Defence': 'defence', 'Cannon': 'cannon'}
 for i in range(90):
@@ -64,13 +70,12 @@ for r in ids:
 R['weapons'] = W
 R['build_tree'] = [{k: num(v) for k, v in r.items()} for r in rd('buildtree.csv')]
 R['townhall_ids'] = [{k: num(v) for k, v in r.items()} for r in rd('townhall_ids.csv')]
-R['economy'] = {'status': 'observed (maps zecn*, human side 0, Rus/Azt buildings added to Town0)', 'town_hall_passive': 'building descriptor dword 0xf8 (index 62) / 100 gold per tick, paid in chunks every 300 ticks; RUS_TOWN 20 -> +60/300 ticks; verified',
-    'village': 'RUS_VILLAGE (f8=20) adds another +60 per 300 ticks; verified', 'mine': 'RUS_MINE +3 gold every 100 ticks, AZT_MINE +6 per 100 ticks (extra +60 chunk from the hall at 300-tick boundary); verified, mine descriptor f4=16, d100=100',
-    'farm': 'RUS_FARM: single lump +146 at tick ~852 (first 852 ticks), AZT_FARM+WAREHOUSE: +29 at 152 and +125 at 800; cycle not yet determined (guess)', 'warehouse': 'no direct income; code scales harvest by 1.0/1.333 (KWarehouse) - effect not seen for mines (guess)',
-    'passive_by_f8': {t['ugi']: t['fields'] for t in []}}
-R['auto_engage'] = {'status': 'weak observation', 'note': 'idle units auto-engage enemies inside a type dependent radius; clean-slot results: FOOTMAN 3 tiles, ARCHER 4, KNIGHT 4, JAGUAR 4, BEAR 3, RIFLEMAN 6-8, MAGE 8, BIZON 6; see docs/data/auto_engage_tiles.csv (lower map slots contaminated by base units)'}
+R['mechanics'] = json.load(open('docs/data/rules_mechanics.json'))
+R['economy'] = R['mechanics']['economy']
+R['auto_engage'] = R['mechanics']['target_acquisition']
 R['constants'].update({'tick_hz': {'value': 12, 'status': 'verified'}, 'tile_px': {'value': 48, 'status': 'verified'},
-    'fixed_point': {'value': '8.8, product>>8', 'status': 'verified'}, 'price_formula': {'value': 'ftol(UnitPrices*Kadv*f+0.5), Kadv(price)=1.0, f=0.8 for computer side not hostile to all', 'status': 'verified from code; AI observed 0.8*P+1'},
-    'Kprice': [0.667, 1.0, 2.0], 'Ktime': [2.0, 1.0, 0.667], 'KAdvPostTime': 1.5, 'KAdvPostPrice': 1.0, 'KWarehouse': [1.0, 1.3333]})
+    'fixed_point': {'value': '8.8, product>>8', 'status': 'verified'},
+    'price_formula': R['mechanics']['production']['price'],
+    'Kprice': R['mechanics']['production']['build_speed']['Kprice'], 'Ktime': R['mechanics']['production']['build_speed']['Ktime'], 'KAdvPostTime': 1.5, 'KAdvPostPrice': 1.0, 'KWarehouse': [1.0, R['mechanics']['economy']['warehouse']['factor_with']]})
 json.dump(R, open('docs/data/rules.json', 'w'), indent=1)
 print('rules.json', os.path.getsize('docs/data/rules.json'))
