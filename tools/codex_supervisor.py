@@ -2,7 +2,7 @@
 """Unattended driver for Codex tasks (uses no Claude tokens).
 
 Loop: resume tasks stopped by the Codex usage limit (retrying every 20 minutes), start queued prompts
-(tasks/queue/*.md, legacy work/codex/queue fallback, at most 2 running), and land finished tasks: apply the worktree changes to a feature branch,
+(tasks/queue/*.md, legacy work/codex/queue fallback, at most CODEX_MAX_PARALLEL running (default 4)), and land finished tasks: apply the worktree changes to a feature branch,
 build + ctest, commit, push, open a PR into develop, wait for green CI and squash-merge it (never --admin).
 Run:  nohup tools/codex_supervisor.py > work/codex/supervisor.log 2>&1 &
 """
@@ -102,7 +102,8 @@ def main():
                 last_resume = time.time()
                 log("resume attempt", run(f"python3 {ORCH} resume all").stdout.strip())
             running = [n for n, s in status().items() if s == "running"]
-            if len(running) < 2:
+            free = int(os.environ.get("CODEX_MAX_PARALLEL", "4")) - len(running)
+            if free > 0:
                 for q in queue_files():
                     name = os.path.splitext(os.path.basename(q))[0]
                     if name in st:
@@ -112,7 +113,9 @@ def main():
                     if result.returncode:
                         raise RuntimeError(result.stdout + result.stderr)
                     log("started", name)
-                    break
+                    free -= 1
+                    if free <= 0:
+                        break
         except Exception as e:  # keep the loop alive
             log("error", e)
         time.sleep(300)
