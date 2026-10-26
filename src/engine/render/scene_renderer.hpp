@@ -37,6 +37,7 @@ class SceneRenderer {
   void draw(const Camera& cam, float alpha);
   // Time-of-day light: tint + ambient shade (sprites are baked at shade 14 and modulated).
   void set_light(const Light& l);
+  SDL_Color light_tint() const { return mod_; }
 
   SceneOptions opts;
   RenderStats stats;

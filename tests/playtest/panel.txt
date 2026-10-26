@@ -1,0 +1,48 @@
+# Right panel smoke test, 1000x700, scale 1. Run from the repository root:
+# SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy build/aztec_engine --game GAME 1 --size 1000x700 --no-audio --script tests/playtest/panel.txt
+# Screenshots stay in the ignored build directory.
+expect money == 1500
+wait 3
+drag 150 150 560 450
+expect selection == 5
+click 840 300                 # move button
+click 100 300                 # target must not change the selection
+expect selection == 5
+wait 3
+click 895 300                 # attack button
+click 200 300                 # terrain means attack-move
+expect selection == 5
+click 950 300                 # stop button
+key M
+key Escape                   # cancel targeting, keep the mission open
+expect selection == 5
+key W                        # repair is unavailable; W must not pan the camera
+key A                        # aggressive stance is unavailable
+key S                        # defensive stance is unavailable
+key D                        # normal stance is unavailable
+click 840 346                 # disabled repair
+click 895 346                 # disabled garrison
+move 840 346
+shot build/panel-repair.png
+click 830 415                 # train two swordsmen
+click 830 415
+wait 3
+expect money == 1300
+click 850 614                 # pause production
+run 120
+move 830 640
+shot build/panel-queue.png
+click 830 640                 # cancel first, with full refund
+wait 3
+expect money == 1400
+click 830 640                 # cancel second
+wait 3
+expect money == 1500
+move 830 415
+shot build/panel-cost.png
+key F12                      # Keys.ini ToggleInterface
+wait 2
+key F12
+wait 2
+print
+quit

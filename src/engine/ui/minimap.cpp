@@ -86,10 +86,12 @@ void Minimap::draw(SDL_Renderer* r, const Camera& cam, float alpha, const Fog* f
   SDL_Rect b{rect_.x - 2, rect_.y - 2, rect_.w + 4, rect_.h + 4};
   SDL_SetRenderDrawColor(r, 0, 0, 0, 220);
   SDL_RenderFillRect(r, &b);
+  SDL_SetTextureColorMod(tex_, tint_.r, tint_.g, tint_.b);
   SDL_RenderCopy(r, tex_, nullptr, &rect_);
   if (fog) fog->draw_minimap(r, rect_);
   float sx = float(rect_.w) / world_->width_px(), sy = float(rect_.h) / world_->height_px();
   for (const Object& o : world_->objects) {
+    if (!o.alive || o.removed) continue;
     Vec2f p = o.interpolated(alpha);
     if (fog && fog->enabled() && o.side != world_->local_side && fog->darkness(*world_, int(p.x / kTilePx), int(p.y / kTilePx)) >= 120) continue;
     SDL_Color c = side_color_rgb(world_->side_color(o.side));

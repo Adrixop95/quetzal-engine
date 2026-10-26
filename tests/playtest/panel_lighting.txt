@@ -1,0 +1,6 @@
+# Render at --time 0 / --time 3600 with identical inputs for daylight comparison.
+wait 3
+drag 150 150 560 450
+move 400 100
+shot build/panel-lighting.png
+quit
