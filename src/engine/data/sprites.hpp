@@ -6,10 +6,9 @@
 #include <map>
 #include "core/archive.hpp"
 #include "type_anims.hpp"
+#include "animation_slots.hpp"
 
 namespace aztec::data {
-
-enum class AnimState { Idle, Move, Attack, Die, Fidget, Icon };
 
 // One 32-byte frame record. Sprite ids index groups 0x44c (body) and 0x454 (shadow, same id) of Res/Units.xbe.
 struct SpriteRef {
@@ -18,7 +17,7 @@ struct SpriteRef {
   int32_t sound = 0;     // sound id played on the first tick of the frame
   int32_t fire = 0;      // non-zero: weapon fires on this frame
   int32_t dx = 0, dy = 0;  // world displacement (px) applied each tick while the frame is shown
-  int32_t yoff = 0;      // extra y offset added to the draw position
+  int32_t yoff = 0;      // height subtracted from draw Y (ground units); see render_rules.hpp
   int32_t duration = 0;  // ticks at 12/s; 0 = hold forever
   bool valid() const { return sprite != 0; }
 };
@@ -26,27 +25,41 @@ struct SpriteRef {
 class AnimSet {
  public:
   explicit AnimSet(Item it = {}) : d_(it.data), n_(it.size) {}
-  bool ok() const { return n_ > 0x208 && !std::memcmp(d_, "Anim", 4); }
-  uint32_t slot_start(int slot) const { return slot < 0 || slot >= 128 ? 0 : u32(8 + 4 * slot); }
+  bool ok() const { return d_ && n_ >= 0x228 && !std::memcmp(d_, "Anim", 4) && u32(4) == 3; }
+  uint32_t slot_start(int slot) const { return !ok() || slot < 0 || slot >= 128 ? 0 : u32(8 + 4 * slot); }
   // Frame `idx` of sequence `slot` (invalid ref past the terminator).
   SpriteRef frame(int slot, int idx) const {
     SpriteRef r; uint32_t s = slot_start(slot);
     if (!s || idx < 0) return r;
-    for (int i = 0; i <= idx; i++) { size_t o = 0x208 + size_t(s + i) * 32; if (o + 32 > n_ || u32(o) == 0) return r; }
-    size_t o = 0x208 + size_t(s + idx) * 32;
+    for (int i = 0; i <= idx; i++) { uint64_t o = 0x208 + (uint64_t(s) + i) * 32; if (o + 32 > n_ || u32(size_t(o)) == 0) return r; }
+    size_t o = size_t(0x208 + (uint64_t(s) + idx) * 32);
     r = {int32_t(u32(o)), int32_t(u32(o + 4)), int32_t(u32(o + 8)), int32_t(u32(o + 12)), int32_t(u32(o + 16)), int32_t(u32(o + 20)), int32_t(u32(o + 24)), int32_t(u32(o + 28))};
     return r;
   }
   int frame_count(int slot) const { int n = 0; while (frame(slot, n).valid()) n++; return n; }
   // Looping sound id of the state (header frame field [2]).
-  int loop_sound(int slot) const { uint32_t s = slot_start(slot); return s ? int32_t(u32(0x208 + size_t(s - 1) * 32 + 8)) : 0; }
+  int loop_sound(int slot) const {
+    uint32_t s = slot_start(slot);
+    uint64_t o = 0x208 + uint64_t(s ? s - 1 : 0) * 32 + 8;
+    return s && o + 4 <= n_ ? int32_t(u32(size_t(o))) : 0;
+  }
   // Frame shown `tick` ticks after the sequence start (honours durations; loops when `loop`).
   SpriteRef at_tick(int slot, int tick, bool loop) const {
-    int total = 0, n = frame_count(slot);
-    for (int i = 0; i < n; i++) { int dur = frame(slot, i).duration; if (!dur) return frame(slot, i); total += dur; }
-    if (!total) return {};
-    if (loop) tick %= total; else if (tick >= total) return {};
-    for (int i = 0; i < n; i++) { SpriteRef f = frame(slot, i); if (tick < f.duration) return f; tick -= f.duration; }
+    if (tick < 0) return {};
+    int64_t total = 0, elapsed = tick;
+    int n = frame_count(slot);
+    bool hold = false;
+    for (int i = 0; i < n; i++) {
+      int dur = frame(slot, i).duration;
+      if (dur < 0) return {};
+      if (!dur) { hold = true; break; }
+      total += dur;
+    }
+    if (!hold) {
+      if (!total) return {};
+      if (loop) elapsed %= total; else if (elapsed >= total) return {};
+    }
+    for (int i = 0; i < n; i++) { SpriteRef f = frame(slot, i); if (!f.duration || elapsed < f.duration) return f; elapsed -= f.duration; }
     return {};
   }
  private:
@@ -54,35 +67,9 @@ class AnimSet {
   const uint8_t* d_; size_t n_;
 };
 
-// Direction 0..7 counter-clockwise from east on screen: dir = ((angle + 0x10) >> 5) & 7, angle 0..255 as in original FUN_00461ac0
-// (0 = +x, 0x40 = up, 0x80 = -x, 0xC0 = down).
-inline int direction_from_angle(int angle) { return ((angle + 0x10) >> 5) & 7; }
-
-// 32-direction facing used by Truck/Headtruck/Bird/Zeppelin/Spider turrets: frame index = ((angle + 4) >> 3) & 31 (verified on screenshots).
-inline int direction32_from_angle(int angle) { return ((angle + 4) >> 3) & 31; }
-
-// Sprite top-left on screen = object position (world px) - (sprite.ox, sprite.oy) - view origin (verified). Flying objects (Zeppelin kind 3,
-// Bird kind 5): also subtract the altitude field (object +0x7c) from y. SpriteRef::yoff (frame[6]) is added to y by the original (always 0 on ground units).
-// Kind-specific idle/move frames (all verified against screenshots unless noted):
-//  Marine kind 0   : idle slot 0 frame dir8; move slot 1+dir8 (loop); attack 9+dir8; die 17+rand%3; fidget 20+rand%3 (code, attack/die not screenshot-checked)
-//  Truck kind 4    : idle slot 0 frame dir32 (angle at obj+0x74); moving only when the angle is on an 8-direction centre: slot 1+dir8 (code)
-//  Headtruck kind 6: body anim (rec[0]) slot 1+dir32(bodyAngle obj+0x78); weapon anim (rec[2]) slot 1 frame dir32(turretAngle obj+0x7c); firing: weapon slot dir32+2
-//  Zeppelin kind 3 : slot 0 frame dir32 (angle obj+0x70), y -= obj+0x7c
-//  Bird kind 5     : idle slot 0 frame dir32 (angle obj+0x70); flying slot 1+dir8, 29 frames (code, not pixel-verified)
-//  Spider kind 1   : body anim slot 0 frame 0 idle, legs slot 1+dir8 moving (code); weapon anim (rec[2]) slot 1 frame dir32(turret angle byte obj+0x92)
-//  Defence kind 7  : base anim slot 1 frame 0 (built); turret anim (rec[2]) slot 1 frame dir32 (angle obj+0x84) where present
-//  Building kind 2 : built = slot 1 frame 0; construction = slot 0 seek tick ((T+1)*hp/maxhp)-1; slot 6 overlay while state 1; slot 5 destruction (guess)
-// Sequence slot for a state (mobile units, kinds 0,1,4,5,6,9,10 follow the Marine convention; see docs).
-inline int slot_for(AnimState s, int dir, int variant = 0) {
-  switch (s) {
-    case AnimState::Idle: return 0;            // 8 one-tick frames, frame index = direction
-    case AnimState::Move: return 1 + dir;      // looping
-    case AnimState::Attack: return 9 + dir;    // one shot
-    case AnimState::Die: return 17 + variant % 3;
-    case AnimState::Fidget: return 20 + variant % 3;
-    case AnimState::Icon: return 23;
-  }
-  return 0;
+// Marine-only compatibility helper. Use body_sequence/turret_sequence for other kinds.
+inline int slot_for(AnimState state, int dir, int variant = 0) {
+  return body_sequence(0, state, (dir & 7) * 32, variant).slot;
 }
 
 class SpriteDb {
@@ -93,13 +80,21 @@ class SpriteDb {
   int anim_id(int type, int which = 0) const { return type < 0 || type >= 90 ? 0 : (which ? kTypeAnims[type].anim2 : kTypeAnims[type].anim); }
   // Frame for (type, state, direction 0..7, tick since state start). Idle uses frame index = direction.
   SpriteRef sprite_for(int type, AnimState st, int dir, int tick, int variant = 0) const {
+    if (type < 0 || type >= 90) return {};
     AnimSet a = anim(anim_id(type));
     if (!a.ok()) return {};
-    int slot = slot_for(st, dir, variant);
-    if (st == AnimState::Idle) return a.frame(0, dir & 7);
-    if (st == AnimState::Icon) return a.frame(23, dir);
-    return a.at_tick(slot, tick, st == AnimState::Move);
+    AnimSequence sequence = body_sequence(kTypeAnims[type].kind, st, (dir & 7) * 32,
+                                          st == AnimState::Icon ? dir : variant,
+                                          true, kTypeAnims[type].anim2 != 0);
+    return sprite_for_sequence(a, sequence, tick);
   }
+  // Full-angle callers can select body/turret/transport sequences explicitly.
+  static SpriteRef sprite_for_sequence(const AnimSet& a, AnimSequence sequence, int tick) {
+    if (!a.ok() || !sequence.valid()) return {};
+    return sequence.frame >= 0 ? a.frame(sequence.slot, sequence.frame)
+                               : a.at_tick(sequence.slot, tick, sequence.loop);
+  }
+
  private:
   Archive ar_;
 };

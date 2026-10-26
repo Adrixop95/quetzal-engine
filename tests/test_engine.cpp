@@ -11,6 +11,9 @@
 #include "engine/audio/audio_system.hpp"
 #include "engine/assets/game_data.hpp"
 #include "engine/assets/mission.hpp"
+#include "engine/data/effects.hpp"
+#include "engine/data/light_masks.hpp"
+#include "engine/data/terrain_sprites.hpp"
 #include "engine/assets/sprite_provider.hpp"
 #include "engine/platform/clock.hpp"
 #include "engine/sim/game_sim.hpp"
@@ -24,6 +27,95 @@ using namespace aztec;
 using namespace aztec::engine;
 static int failures = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); failures++; } } while (0)
+
+static void test_sprite_metadata() {
+  using namespace aztec::data;
+  CHECK(body_sequence(6, AnimState::Idle, 248).slot == 32);
+  CHECK(body_sequence(6, AnimState::Move, 248).loop);
+  CHECK(body_sequence(1, AnimState::Attack, 128).slot == 0);
+  CHECK(!body_sequence(4, AnimState::Die, 0).valid());
+  CHECK(!body_sequence(10, AnimState::Attack, 0).valid());
+  CHECK(body_sequence(7, AnimState::Attack, 0, 0, true, true).slot == 1);
+  CHECK(body_sequence(7, AnimState::Attack, 0).slot == 8);
+  CHECK(turret_sequence(AnimState::Attack, 248).slot == 33);
+  CHECK(body_sequence(5, AnimState::Move, 8, 0, false).frame == 1);
+  CHECK(boat_sequence(BoatPhase::Turning, 1).slot == 9);
+  CHECK(johnka_sequence(1).loop);
+  CHECK(construction_frame(5, 1, 6000) == -1);
+  CHECK(construction_frame(5, 1000, 6000) == 0);
+  CHECK(construction_frame(5, 5999, 6000) == 4);
+  CHECK(construction_frame(5, 6000, 6000) == -1);
+  CHECK(destruction_anim(96) == 116 && destruction_anim(97) == 115 && destruction_anim(145) == 114);
+  CHECK(damage_fire_anim(100, 100) == 0 && damage_fire_anim(75, 100) == 154);
+  CHECK(damage_fire_anim(50, 100) == 155 && damage_fire_anim(25, 100) == 156);
+  CHECK(palette_shade(0) == 0 && palette_shade(4) == 1 && palette_shade(152) == 19);
+  CHECK(overlay_frame(WindStrength::Still, 7) == 0);
+  CHECK(overlay_frame(WindStrength::Slow, 7) == 3);
+
+  // A timed prefix must play before a later hold frame, also when looping.
+  std::vector<uint8_t> bytes(0x208 + 4 * 32, 0);
+  auto put = [&](size_t offset, uint32_t value) { std::memcpy(bytes.data() + offset, &value, 4); };
+  std::memcpy(bytes.data(), "Anim", 4); put(4, 3); put(8, 1);
+  put(0x208 + 32, 123); put(0x208 + 32 + 28, 2);
+  put(0x208 + 64, 456);
+  AnimSet anim({bytes.data(), bytes.size()});
+  CHECK(anim.at_tick(0, 0, true).sprite == 123 && anim.at_tick(0, 1, false).sprite == 123);
+  CHECK(anim.at_tick(0, 2, true).sprite == 456 && anim.at_tick(0, 100, false).sprite == 456);
+  CHECK(!anim.at_tick(0, -1, false).valid());
+  put(0x208 + 64 + 28, 3);
+  CHECK(anim.at_tick(0, 5, true).sprite == 123 && !anim.at_tick(0, 5, false).valid());
+  put(8, 0xffffffff);
+  CHECK(!anim.frame(0, 0).valid() && anim.loop_sound(0) == 0);
+  CHECK(!AnimSet().ok() && !AnimSet({bytes.data(), 7}).frame(0, 0).valid());
+  CHECK(!LightMask().ok() && LightMask().sample(0, 0) == -1);
+}
+
+static void test_sprite_assets(const std::string& dir) {
+  using namespace aztec::data;
+  SpriteDb db;
+  CHECK(db.open(find_file_ci(dir + "/Res", "Units.xbe")));
+  int inventory_count = 0;
+  for (int id = 31; id < 200; id++) if (db.anim(id).ok()) inventory_count++;
+  CHECK(inventory_count == int(std::size(kEffectAnims)));
+  for (const auto& info : kEffectAnims) {
+    AnimSet anim = db.anim(info.id);
+    CHECK(anim.ok());
+    int slots = 0, min_frames = 10000, max_frames = 0, min_ticks = 10000, max_ticks = 0;
+    for (int slot = 0; slot < 128; slot++) {
+      if (!anim.slot_start(slot)) continue;
+      slots++;
+      int frames = anim.frame_count(slot), ticks = 0;
+      min_frames = std::min(min_frames, frames); max_frames = std::max(max_frames, frames);
+      for (int i = 0; i < frames; i++) {
+        SpriteRef frame = anim.frame(slot, i);
+        CHECK(frame.duration > 0);
+        CHECK(anim.at_tick(slot, ticks, false).sprite == frame.sprite);
+        ticks += frame.duration;
+      }
+      CHECK(!anim.at_tick(slot, ticks, false).valid());
+      min_ticks = std::min(min_ticks, ticks); max_ticks = std::max(max_ticks, ticks);
+    }
+    CHECK(slots == info.slots && min_frames == info.min_frames && max_frames == info.max_frames);
+    CHECK(min_ticks == info.min_ticks && max_ticks == info.max_ticks);
+  }
+  CHECK(db.sprite_for(3, AnimState::Idle, 7, 0).sprite == db.anim(14).frame(29, 0).sprite);
+  CHECK(db.sprite_for(30, AnimState::Idle, 7, 0).sprite == db.anim(22).frame(0, 0).sprite);
+  CHECK(!db.sprite_for(90, AnimState::Idle, 0, 0).valid());
+  Archive lights;
+  CHECK(lights.open(find_file_ci(dir + "/Res", "light.xbe")));
+  int count = 0;
+  for (int id = 1; id < 128; id++) {
+    Item item = lights.get(kLightGroup, id);
+    if (!item) continue;
+    LightMask mask(item);
+    CHECK(mask.ok()); count++;
+    for (int y = 0; y < 20; y++) for (int x = 0; x < 20; x++) CHECK(mask.sample(x, y) >= 0);
+    CHECK(mask.sample(-1, 0) == -1 && mask.sample(20, 0) == -1);
+    if (id <= 16) CHECK(mask.sample(10, 10) > mask.sample(0, 0));
+    if (id >= 64) CHECK(mask.sample(10, 10) < mask.sample(0, 0));
+  }
+  CHECK(count == 24);
+}
 
 static void test_pure() {
   CHECK(cp1250_to_utf8("abc") == "abc");
@@ -345,11 +437,13 @@ static void test_audio_data(const std::string& dir) {
 int main(int argc, char** argv) {
   if (argc == 2 && std::string(argv[1]) == "--pure") {
     test_pure();
+    test_sprite_metadata();
     test_audio_pure();
   } else {
     std::string dir = test_game_dir(argc, argv);
     if (!test_game_dir_exists(dir)) return 77;
     test_data(dir); test_sim(dir); test_script(dir); test_audio_data(dir);
+    test_sprite_assets(dir);
   }
   std::printf(failures ? "FAILED\n" : "OK\n");
   return failures ? 1 : 0;
