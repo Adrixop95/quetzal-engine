@@ -5,7 +5,7 @@ OUTDIR/cmd.txt (RT_CMD_REPLAY file: box-select + move orders) and OUTDIR/course.
 All coordinates are tiles (48 px). Units are footmen (UGI 0) of side 0, created in [Town0]."""
 import sys, os, json, shutil, struct, re
 W, H = 90, 60
-SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'game', 'Maps') + '/'
+SRC = os.path.join(os.environ.get('ZPATH_GAME_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'game')), 'Maps') + '/'
 
 def grid():
     g = [[2] * W for _ in range(H)]
@@ -29,6 +29,9 @@ def course(name):
         w = int(name[3:] or 1); rect(g, 44, 2, 46, H - 3); rect(g, 44, 30 - w // 2, 46, 30 - w // 2 + w - 1, 2)
     elif name.startswith('corr'):         # corridor of width w and length 20
         w = int(name[4:] or 1); rect(g, 40, 2, 60, H - 3); rect(g, 40, 30 - w // 2, 60, 30 - w // 2 + w - 1, 2)
+    elif name == 'clusters':              # building-sized footprint proxy, independent of art/assets
+        for x, y in ((28, 24), (38, 29), (48, 24), (58, 29)):
+            rect(g, x, y, x + 5, y + 5)
     elif name == 'maze':                  # serpentine: 5 walls, gaps alternate top/bottom
         for i, x in enumerate(range(20, 70, 10)):
             rect(g, x, 2, x + 1, H - 3)
@@ -135,4 +138,5 @@ def main():
     json.dump({'name': name, 'n': n, 'W': W, 'H': H, 'grid': [''.join(map(str, r)) for r in g], 'start': start, 'goal': goal,
                'units': units, 'goals': {str(k): v for k, v in goals.items()}, 'order_frames': {str(gi): gd['frame'] + 2 for gi, gd in enumerate(groups)}, 'order_frame': groups[0]['frame'] + 2, 'types': types, 'fog': fog, 'optimal_px': opt},
               open(out + '/course.json', 'w'))
-main()
+if __name__ == '__main__':
+    main()

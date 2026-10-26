@@ -1,7 +1,7 @@
 // Deterministic group movement: shared flow fields + slot assignment + velocity-sampling local avoidance
 // + position-based overlap resolution (units are discs with sub-tile 24.8 positions, walls are tiles).
 // Keeps the original feel (per-type speed in px/tick, 12 Hz tick, 8-way facing) but replaces the original's
-// tile-exclusive stepping, 2-searches-per-tick WaveSearch and 8-step path memory (docs/rules_movement.md).
+// tile-exclusive stepping, two-requester WaveSearch admission and 8-step path memory (docs/rules_movement.md).
 #pragma once
 #include <memory>
 #include <vector>
