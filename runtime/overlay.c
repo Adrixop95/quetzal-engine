@@ -23,13 +23,13 @@ enum { ACT_NONE, ACT_UNLOCK_MISSIONS, ACT_WIN_MISSION, ACT_ADD_GOLD };
 static const char* saved_argv0;
 
 static const struct { int w, h; const char* label; } res_presets[] = {
-  {0, 0, "Domyślna (800x600)"}, {1024, 768, "1024x768"}, {1280, 720, "1280x720"}, {1366, 768, "1366x768"},
-  {1600, 900, "1600x900"}, {1920, 1080, "1920x1080"}, {2560, 1440, "2560x1440"}, {-1, -1, "Rozdzielczość ekranu"},
+  {0, 0, "Default (800x600)"}, {1024, 768, "1024x768"}, {1280, 720, "1280x720"}, {1366, 768, "1366x768"},
+  {1600, 900, "1600x900"}, {1920, 1080, "1920x1080"}, {2560, 1440, "2560x1440"}, {-1, -1, "Desktop resolution"},
 };
 #define N_RES ((int)(sizeof res_presets / sizeof *res_presets))
 static int res_index = -1;
 
-static const char* const win_modes[] = {"Okno", "Okno bez ramki", "Pełny ekran"};
+static const char* const win_modes[] = {"Windowed", "Borderless window", "Fullscreen"};
 
 int overlay_is_open(void) { return is_open; }
 void overlay_set_argv0(const char* a) { saved_argv0 = a; }
@@ -132,7 +132,7 @@ static void restart_game(void) {
   if (n > 0) { self[n] = 0; } else snprintf(self, sizeof self, "%s", saved_argv0 ? saved_argv0 : "aztec_recomp");
   extern char** rt_saved_argv;
   execv(self, rt_saved_argv);
-  say("Nie udało się uruchomić ponownie");
+  say("Failed to restart");
 }
 
 extern void backend_overlay_cursor(int open);
@@ -195,43 +195,43 @@ void overlay_draw(SDL_Renderer* ren, int lw, int lh) {
   SDL_RenderFillRect(ren, &panel);
   SDL_SetRenderDrawColor(ren, 220, 180, 100, 255);
   SDL_RenderDrawRect(ren, &panel);
-  draw_text(ren, px + 20, py + 12, "Aztec Empire: menu pomocnicze (F9)", 2, 255, 220, 140);
-  if (button(ren, px + 20, py + 56, 200, 40, "Ustawienia")) tab = 0;
-  if (button(ren, px + 230, py + 56, 200, 40, "Pomoc w grze")) tab = 1;
+  draw_text(ren, px + 20, py + 12, "Aztec Empire: helper menu (F9)", 2, 255, 220, 140);
+  if (button(ren, px + 20, py + 56, 200, 40, "Settings")) tab = 0;
+  if (button(ren, px + 230, py + 56, 200, 40, "Game helpers")) tab = 1;
   int y = py + 120;
   if (tab == 0) {
     if (res_index < 0) sync_res_index();
-    int d = chooser(ren, px + 20, y, "Rozdzielczość gry:", res_presets[res_index].label);
+    int d = chooser(ren, px + 20, y, "Game resolution:", res_presets[res_index].label);
     if (d) apply_resolution_choice((res_index + d + N_RES) % N_RES);
     y += 56;
-    d = chooser(ren, px + 20, y, "Tryb okna:", win_modes[g_settings.window_mode]);
+    d = chooser(ren, px + 20, y, "Window mode:", win_modes[g_settings.window_mode]);
     if (d) { g_settings.window_mode = (g_settings.window_mode + d + 3) % 3; backend_apply_window_mode(g_settings.window_mode); settings_save(); }
     y += 56;
-    d = chooser(ren, px + 20, y, "Skalowanie obrazu:", g_settings.smooth ? "Gładkie" : "Ostre (piksele)");
+    d = chooser(ren, px + 20, y, "Image scaling:", g_settings.smooth ? "Smooth" : "Sharp (pixels)");
     if (d) { g_settings.smooth = !g_settings.smooth; backend_set_smooth(g_settings.smooth); settings_save(); }
     y += 56;
-    d = chooser(ren, px + 20, y, "Filmy:", g_settings.video ? "Włączone" : "Wyłączone");
+    d = chooser(ren, px + 20, y, "Videos:", g_settings.video ? "Enabled" : "Disabled");
     if (d) { g_settings.video = !g_settings.video; settings_save(); }
     y += 56;
     char spd[32];
     snprintf(spd, sizeof spd, "%d%%", g_settings.mouse_speed);
-    d = chooser(ren, px + 20, y, "Czułość myszy:", spd);
+    d = chooser(ren, px + 20, y, "Mouse sensitivity:", spd);
     if (d) { g_settings.mouse_speed += 25 * d; if (g_settings.mouse_speed < 25) g_settings.mouse_speed = 25; if (g_settings.mouse_speed > 400) g_settings.mouse_speed = 400; settings_save(); DBG("overlay", "mouse speed -> %d%%", g_settings.mouse_speed); }
     y += 62;
-    draw_text(ren, px + 20, y, "Rozdzielczość gry zmienia się po ponownym uruchomieniu.", 1, 200, 190, 170);
-    if (button(ren, px + 20, py + ph - 56, 440, 40, "Zapisz i uruchom ponownie")) restart_game();
+    draw_text(ren, px + 20, y, "Game resolution changes after restarting.", 1, 200, 190, 170);
+    if (button(ren, px + 20, py + ph - 56, 440, 40, "Save and restart")) restart_game();
   } else {
-    draw_text(ren, px + 20, y, "Działają na bieżącej misji i na zapisie gracza.", 1, 200, 190, 170);
+    draw_text(ren, px + 20, y, "These affect the current mission and player save.", 1, 200, 190, 170);
     y += 28;
-    if (button(ren, px + 20, y, 680, 44, "Odblokuj wszystkie misje kampanii")) { pending_action = ACT_UNLOCK_MISSIONS; }
+    if (button(ren, px + 20, y, 680, 44, "Unlock all campaign missions")) { pending_action = ACT_UNLOCK_MISSIONS; }
     y += 56;
-    if (button(ren, px + 20, y, 680, 44, "Natychmiastowe zwycięstwo w misji")) { pending_action = ACT_WIN_MISSION; }
+    if (button(ren, px + 20, y, 680, 44, "Win the mission immediately")) { pending_action = ACT_WIN_MISSION; }
     y += 56;
-    if (button(ren, px + 20, y, 680, 44, "Dodaj 10000 złota")) { pending_action = ACT_ADD_GOLD; }
+    if (button(ren, px + 20, y, 680, 44, "Add 10000 gold")) { pending_action = ACT_ADD_GOLD; }
     y += 66;
-    draw_text(ren, px + 20, y, "Odblokowane misje widać po ponownym wejściu w ekran Kampania.", 1, 200, 190, 170);
+    draw_text(ren, px + 20, y, "Reopen the Campaign screen to see unlocked missions.", 1, 200, 190, 170);
   }
-  if (button(ren, px + pw - 190, py + ph - 56, 170, 40, "Zamknij")) { is_open = 0; backend_overlay_cursor(0); }
+  if (button(ren, px + pw - 190, py + ph - 56, 170, 40, "Close")) { is_open = 0; backend_overlay_cursor(0); }
   if (SDL_GetTicks() < status_until) draw_text(ren, px + 20, py + ph - 88, status, 2, 255, 230, 160);
   if (clicked && SDL_GetTicks() - click_time > 300) clicked = 0;
   draw_cursor(ren, mx, my);   // a click survives until the next frame that can use it
@@ -245,19 +245,19 @@ void overlay_run_actions(CPU* c) {
   DBG("overlay", "running action %d on the main thread", a);
   if (a == ACT_UNLOCK_MISSIONS) {
     rt_call_guest(c, 0x43f560, 1, 15);   // set "missions reached" = 15 and save the player file
-    say("Misje odblokowane");
+    say("Missions unlocked");
   } else if (a == ACT_WIN_MISSION) {
     uint32_t sides = GU32(0x4dd2f4);
-    if (!sides) { say("Brak aktywnej misji"); return; }
+    if (!sides) { say("No active mission"); return; }
     uint32_t idx = rt_call_guest(c, 0x43d200, 0);   // index of the local side
     GU32(sides + 0x140 + idx * 0x69c) = 1;          // same flag the built-in CheatWin key sets
-    say("Zwycięstwo zgłoszone");
+    say("Victory requested");
   } else if (a == ACT_ADD_GOLD) {
     uint32_t sides = GU32(0x4dd2f4);
-    if (!sides) { say("Brak aktywnej misji"); return; }
+    if (!sides) { say("No active mission"); return; }
     uint32_t idx = rt_call_guest(c, 0x43d200, 0);
     GU32(sides + 0x698 + idx * 0x69c) += 10000;   // gold of the local side
-    say("Dodano 10000 złota");
+    say("Added 10000 gold");
   }
 }
 void overlay_request(int action) { pending_action = action; }
