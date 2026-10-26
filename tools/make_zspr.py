@@ -6,14 +6,15 @@ import re, sys, shutil, os, struct
 name = sys.argv[1]; types = [int(x) for x in sys.argv[2].split(',')]
 SIDE = int(os.environ.get('SIDE', '0'))
 ox, oy = (int(sys.argv[3]), int(sys.argv[4])) if len(sys.argv) > 4 else (0, 0)
-src = 'game/Maps/'
+game = os.environ.get('GAME_DIR', 'game')
+src = os.path.join(game, 'Maps') + os.sep
 for e in ('map', 'dat', 'rm', 'vis', 'spr', 'scn', 'mit'):
     s = src + 'mission_1.' + e
     if os.path.exists(s): shutil.copy(s, src + name + '.' + e)
 t = open(src + 'mission_1.mp', encoding='latin1').read()
 head = t.split('[Team0]')[0]
 head = re.sub(r'MapName=.*', 'MapName=' + name, head); head = re.sub(r'Name=Mission 1', 'Name=' + name, head)
-exe = open('game/Aztec.exe', 'rb').read()
+exe = open(os.path.join(game, 'Aztec.exe'), 'rb').read()
 def kind_of(t): return struct.unpack_from('<I', exe, 0x4933f8 + 8 * t - 0x400000)[0]
 BUILD = [t for t in types if kind_of(t) in (2, 7, 9)]
 MOBILE = [t for t in types if t not in BUILD and kind_of(t) not in (8, 10, 11)]
