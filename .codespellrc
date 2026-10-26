@@ -1,3 +1,3 @@
 [codespell]
 ignore-words-list = ba,nd,te,ot,fo,hist,alph,unx,iput,nin,sav,kinf,tolen,parms,ser,ue,tre,pres,seh
-skip = docs/data,docs/formats.md,docs/PLAN.md,runtime/overlay.c,*.json,*.csv
+skip = docs/data,docs/formats.md,docs/PLAN.md,*.json,*.csv

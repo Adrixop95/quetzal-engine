@@ -12,8 +12,6 @@ ALLOW = {
     "tools/hooks/english_only.py",  # contains the character class itself
     "docs/formats.md",       # quotes original Polish game strings as data
     "docs/PLAN.md",          # quotes menu texts used by scripted tests
-    "tools/gen_font.py",     # needs the Polish glyphs for the font generator
-    "runtime/overlay.c",     # in-game overlay texts (to be translated)
 }
 
 failed = False
