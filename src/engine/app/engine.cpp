@@ -102,7 +102,8 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
     Cursor cursor;
     cursor.init(win.renderer(), scene.store());
     Panel panel;
-    bool show_panel = o.panel && panel.init(scene.store());
+    const bool panel_available = panel.init(scene.store());
+    bool show_panel = o.panel && panel_available;
 
     auto rules = std::make_shared<RulesData>();
     bool rules_ok = false;
@@ -116,6 +117,10 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
       else sim = std::make_unique<NullSimulation>();
     }
     CommandsUi cmdui(game);
+    cmdui.open_sprites(find_file_ci(o.game_dir + "/Res", "Units.xbe"));
+    std::vector<KeyBinding> bindings;
+    const std::string keys_path = find_file_ci(o.game_dir, "Keys.ini");
+    if (!keys_path.empty() && load_keys_ini(keys_path, bindings)) cmdui.set_bindings(std::move(bindings));
     if (game) {
       std::string scn = data.map_file(world.mission.file_name, "scn");
       if (!scn.empty() && !game->attach_script(scn)) std::fprintf(stderr, "warning: cannot parse %s\n", scn.c_str());
@@ -217,6 +222,10 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
       }
       cam.set_view(float(view_w), float(oh));
 
+      if (in.hit(SDL_SCANCODE_ESCAPE) && cmdui.wants_left_click()) {
+        cmdui.cancel_mode();
+        in.key_hit[SDL_SCANCODE_ESCAPE] = false;
+      }
       if (in.hit(SDL_SCANCODE_ESCAPE)) {
         if (!o.menu_session) in.quit = true;
         else if (world.outcome == kRunning) pause.open = !pause.open;
@@ -288,8 +297,9 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
       if (in.hit(SDL_SCANCODE_F7)) scene.opts.overlays = !scene.opts.overlays;
       if (in.hit(SDL_SCANCODE_F8)) scene.fog().set_enabled(!scene.fog().enabled());
       if (in.hit(SDL_SCANCODE_F10)) show_hud = !show_hud;
-      if (in.hit(SDL_SCANCODE_SPACE)) paused = !paused;
-      if (in.hit(SDL_SCANCODE_F12)) {
+      if (in.hit(SDL_SCANCODE_SPACE) && !cmdui.key_bound(SDL_SCANCODE_SPACE)) paused = !paused;
+      if (panel_available && cmdui.action_hit(in, "ToggleInterface")) show_panel = !show_panel;
+      if (cmdui.action_hit(in, "PrintScreen")) {
         std::string p = "aztec_shot_" + std::to_string(++shot_no) + ".png";
         std::printf(save_screenshot(win.renderer(), p) ? "saved %s\n" : "screenshot failed %s\n", p.c_str());
       }
@@ -311,10 +321,10 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
       // Camera input.
       CameraInput ci;
       bool nokeys = in.ctrl;
-      if (!nokeys && (in.down(SDL_SCANCODE_LEFT) || in.down(SDL_SCANCODE_A))) ci.move_x -= 1;
-      if (!nokeys && (in.down(SDL_SCANCODE_RIGHT) || in.down(SDL_SCANCODE_D))) ci.move_x += 1;
-      if (!nokeys && (in.down(SDL_SCANCODE_UP) || in.down(SDL_SCANCODE_W))) ci.move_y -= 1;
-      if (!nokeys && (in.down(SDL_SCANCODE_DOWN) || in.down(SDL_SCANCODE_S))) ci.move_y += 1;
+      if (!nokeys && cmdui.action_down(in, "ScrollLeft")) ci.move_x -= 1;
+      if (!nokeys && cmdui.action_down(in, "ScrollRight")) ci.move_x += 1;
+      if (!nokeys && cmdui.action_down(in, "ScrollUp")) ci.move_y -= 1;
+      if (!nokeys && cmdui.action_down(in, "ScrollDown")) ci.move_y += 1;
       if (in.hit(SDL_SCANCODE_EQUALS)) ci.zoom_steps += 1;
       if (in.hit(SDL_SCANCODE_KP_PLUS)) ci.zoom_steps += 1;
       if (in.hit(SDL_SCANCODE_MINUS) || in.hit(SDL_SCANCODE_KP_MINUS)) ci.zoom_steps -= 1;
@@ -340,13 +350,15 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
       ci.drag_dx = float(in.dx);
       ci.drag_dy = float(in.dy);
 
-      if (in.pressed[SDL_BUTTON_LEFT] && on_mm) drag_minimap = true;
+      if (in.pressed[SDL_BUTTON_LEFT] && on_mm && !cmdui.wants_left_click()) drag_minimap = true;
       if (!in.buttons[SDL_BUTTON_LEFT]) drag_minimap = false;
       // Selection (left button in the world view).
       {
         bool in_world = !on_mm && !on_panel && !drag_minimap && !pan;
-        cmdui.update(in, world, cam, alpha, minimap, in_world, show_panel ? panel.rect() : SDL_Rect{ow, 0, 0, oh});
-        selui.update(in, world, cam, alpha, in_world && !cmdui.wants_left_click());
+        bool consumed = cmdui.update(in, world, cam, alpha, minimap, in_world, show_panel ? panel.rect() : SDL_Rect{ow, 0, 0, oh});
+        Input selection_input = in;
+        selection_input.shift = cmdui.action_down(in, "Add");
+        selui.update(selection_input, world, cam, alpha, in_world && !consumed && !cmdui.wants_left_click());
       }
       cam.update(ci, float(std::min(dt, 0.1)));
       if (drag_minimap) {
@@ -363,6 +375,7 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
         double t = (o.time >= 0 ? o.time : world.mission.start_time) + (o.time >= 0 ? 0 : double(world.tick) + alpha);
         scene.set_light(daylight.sample(world.mission.tileset, t));
       }
+      minimap.set_tint(scene.light_tint());
       scene.draw(cam, alpha);
       if (!show_panel) minimap.draw(win.renderer(), cam, alpha, &scene.fog());
       hud.mouse_x = in.mx; hud.mouse_y = in.my; hud.alpha = alpha;
@@ -392,14 +405,6 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
       if (show_panel) {
         int gold = 0;
         for (const SideDef& sd : world.mission.sides) if (sd.index == world.local_side) gold = sd.money;
-        std::vector<std::string> info;
-        if (!world.selection.ids.empty()) {
-          const Object* first = world.find(world.selection.ids[0]);
-          if (first) {
-            info.push_back(type_display_name(strings, first->type) + (world.selection.ids.size() > 1 ? " x" + std::to_string(world.selection.ids.size()) : ""));
-            info.push_back("HP " + std::to_string(first->hp));
-          }
-        }
         std::string tip;
         {
           int mx2, my2;
@@ -416,11 +421,11 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
         }
         const SideState* mss = world.local_side < int(world.side_state.size()) ? &world.side_state[world.local_side] : nullptr;
         if (mss) gold = mss->money;
-        panel.draw(win.renderer(), scene.store(), scene.font(), gold, info, "");
+        panel.draw(win.renderer(), scene.store(), scene.font(), gold);
         {
           int mx3, my3;
           GetMouse(&mx3, &my3);
-          std::string mt = cmdui.draw_menu(win.renderer(), scene.font(), strings, world, panel.rect(), pscale, int(mx3 * sx), int(my3 * sy));
+          std::string mt = cmdui.draw_menu(win.renderer(), scene.store(), scene.font(), strings, world, panel.rect(), pscale, int(mx3 * sx), int(my3 * sy));
           if (!mt.empty()) tip = mt;
         }
         if (!tip.empty()) panel.draw_tooltip(win.renderer(), scene.font(), tip);

@@ -62,18 +62,38 @@ void Panel::draw(SDL_Renderer* r, SpriteStore& store, const Font& font, int gold
 }
 
 void Panel::draw_tooltip(SDL_Renderer* r, const Font& font, const std::string& tip) const {
-  std::string tooltip = tip;
-  for (char& c : tooltip) if (c == '\n') c = ' ';
   int sc = scale_;
   int ts = std::max(1, sc);
-  int lh = std::max(12, font.height(ts * 2)) + 2 * sc;
-  int tw = font.width(tooltip, ts * 2) + 8 * sc, th = lh + 4 * sc;
-  SDL_Rect b{rect_.x - tw - 4 * sc, rect_.h - th - 8 * sc, tw, th};
-  SDL_SetRenderDrawColor(r, 20, 16, 10, 230);
+  int lh = font.height(ts) + 4 * sc;
+  int maxw = std::max(80 * sc, std::min(360 * sc, rect_.x - 16 * sc));
+  std::vector<std::string> lines;
+  std::string line, word;
+  auto flush = [&] { if (!line.empty()) lines.push_back(line); line.clear(); };
+  auto append = [&] {
+    if (word.empty()) return;
+    if (!line.empty() && font.width(line + " " + word, ts) > maxw) flush();
+    if (!line.empty()) line += ' ';
+    line += word;
+    word.clear();
+  };
+  for (char c : tip) {
+    if (c == ' ' || c == '\n') {
+      append();
+      if (c == '\n') flush();
+    } else word += c;
+  }
+  append(); flush();
+  int tw = 0;
+  for (const auto& text : lines) tw = std::max(tw, font.width(text, ts));
+  tw += 12 * sc;
+  int th = int(lines.size()) * lh + 8 * sc;
+  SDL_Rect b{std::max(0, rect_.x - tw - 4 * sc), std::max(0, rect_.y + rect_.h - th - 8 * sc), tw, th};
+  SDL_SetRenderDrawColor(r, 20, 16, 10, 240);
   SDL_RenderFillRect(r, &b);
   SDL_SetRenderDrawColor(r, 200, 170, 100, 255);
   SDL_RenderDrawRect(r, &b);
-  font.draw(r, b.x + 4 * sc, b.y + 2 * sc, tooltip, ts * 2, {255, 240, 190, 255});
+  for (size_t i = 0; i < lines.size(); i++)
+    font.draw(r, b.x + 6 * sc, b.y + 4 * sc + int(i) * lh, lines[i], ts, {255, 240, 190, 255});
 }
 
 }  // namespace aztec::engine

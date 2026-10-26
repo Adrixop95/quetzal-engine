@@ -1,12 +1,15 @@
-// Turns mouse/keyboard input into simulation commands: right-click move/attack, stop (H), attack-move (A + click),
-// control groups (Ctrl+0-9 / 0-9), minimap orders, and the production / building menu in the right-hand panel.
+// Input and right-hand panel presentation. Gameplay changes are submitted as simulation commands.
 #pragma once
 #include <SDL2/SDL.h>
+#include <array>
 #include <string>
 #include <vector>
 #include "core/strbase.hpp"
+#include "core/userfiles.hpp"
+#include "engine/data/sprites.hpp"
 #include "engine/platform/input.hpp"
 #include "engine/render/font.hpp"
+#include "engine/render/sprite_store.hpp"
 #include "engine/sim/game_sim.hpp"
 #include "engine/ui/minimap.hpp"
 #include "engine/world/camera.hpp"
@@ -14,33 +17,57 @@
 
 namespace aztec::engine {
 
+enum class PanelAction { Move, Attack, Stop, Repair, Garrison, Destroy };
+enum class TargetMode { None, Move, Attack };
+
+// Shared by drawing, hit testing, and pure tests. All rectangles include the panel origin.
+struct CommandPanelLayout {
+  SDL_Rect portrait{}, summary{}, previous{}, next{}, pause{};
+  std::array<SDL_Rect, 6> commands{};
+  std::vector<SDL_Rect> production;
+  std::array<SDL_Rect, 8> queue{};
+};
+
 class CommandsUi {
  public:
-  explicit CommandsUi(GameSim* sim = nullptr) : sim_(sim) {}
-  void set_sim(GameSim* s) { sim_ = s; attack_move_ = false; placing_ = -1; }
+  explicit CommandsUi(GameSim* sim = nullptr);
+  void set_sim(GameSim* s) { sim_ = s; cancel_mode(); }
   bool active() const { return sim_ != nullptr; }
-  // Call once per frame before the selection UI. `in_world`: the cursor is over the world view.
-  void update(const Input& in, World& w, const Camera& cam, float alpha, const Minimap& mm, bool in_world, const SDL_Rect& panel);
-  bool right_dragging() const { return right_down_ && right_moved_; }   // the engine pans the map meanwhile
-  bool wants_left_click() const { return attack_move_ || placing_ >= 0; }
-  bool attack_move() const { return attack_move_; }
+  void set_bindings(std::vector<KeyBinding> bindings) { bindings_ = std::move(bindings); }
+  bool action_hit(const Input& in, const char* action) const;
+  bool action_down(const Input& in, const char* action) const;
+  bool key_bound(SDL_Scancode key) const;
+  static SDL_Scancode sdl_scancode(int dik);
+  bool open_sprites(const std::string& path) { return icons_.open(path); }
+  // Returns true if a targeting click was consumed, including the frame that completes the order.
+  bool update(const Input& in, World& w, const Camera& cam, float alpha, const Minimap& mm, bool in_world, const SDL_Rect& panel);
+  bool right_dragging() const { return right_down_ && right_moved_; }
+  bool wants_left_click() const { return mode_ != TargetMode::None || placing_ >= 0; }
+  bool attack_move() const { return mode_ == TargetMode::Attack; }
+  TargetMode target_mode() const { return mode_; }
+  void cancel_mode() { mode_ = TargetMode::None; placing_ = -1; }
   int placing() const { return placing_; }
-  // Menu in the panel (below the selection summary). Returns the tooltip of the row under the mouse, if any.
-  std::string draw_menu(SDL_Renderer* r, const Font& font, const StrBase& strings, const World& w, const SDL_Rect& panel,
-                        int scale, int mx, int my) const;
-  // Placement ghost drawn over the world.
+  std::string draw_menu(SDL_Renderer* r, SpriteStore& store, const Font& font, const StrBase& strings, const World& w,
+                        const SDL_Rect& panel, int scale, int mx, int my) const;
   void draw_ghost(SDL_Renderer* r, const World& w, const Camera& cam, int mx, int my) const;
-  // Layout shared by draw and click: first row y and row height.
-  static void menu_layout(const SDL_Rect& panel, int scale, int& x, int& y0, int& row_h);
+  static CommandPanelLayout layout(const SDL_Rect& panel, int scale);
+  static bool action_enabled(PanelAction action, const World& w, const RulesData* rules = nullptr);
+  static int icon_slot(int kind);
+  // Resolves icons/portraits from the user's Units.xbe animation sequences, never from embedded pixels.
+  uint32_t icon_sprite(int type, bool portrait) const;
 
  private:
   void issue_to_selection(const World& w, Command c) const;
+  void activate(PanelAction action, const World& w);
+  bool bound_hit(const Input& in, SDL_Scancode key) const;
   GameSim* sim_;
-  bool attack_move_ = false;
+  data::SpriteDb icons_;
+  std::vector<KeyBinding> bindings_;
+  TargetMode mode_ = TargetMode::None;
   int placing_ = -1;
+  int page_ = 0;
   bool right_down_ = false, right_moved_ = false;
   int rx_ = 0, ry_ = 0;
-  SDL_Rect panel_{0, 0, 0, 0};
 };
 
 }  // namespace aztec::engine

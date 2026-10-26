@@ -40,9 +40,9 @@ void draw_hud(SDL_Renderer* r, const Font& font, const World& w, const Camera& c
     y += lh;
   }
   if (in.show_help) {
-    const char* help[] = {"WASD/ARROWS SCROLL   EDGE SCROLL   MIDDLE/RIGHT DRAG PAN   WHEEL +/- ZOOM",
-                          "LMB MINIMAP JUMP   F11 BORDERLESS   ALT+ENTER FULLSCREEN   F12 SCREENSHOT",
-                          "F1 HELP  F2 GRID  F3 PASSABILITY  F4 LABELS  F5 MARKERS  F6 EDGE SCROLL  F7 OVERLAYS  SPACE PAUSE  ESC QUIT"};
+    const char* help[] = {"KEYS.INI SCROLL   EDGE SCROLL   MIDDLE/RIGHT DRAG PAN   WHEEL +/- ZOOM",
+                          "LMB MINIMAP JUMP   F11 BORDERLESS   ALT+ENTER FULLSCREEN",
+                          "M MOVE  X ATTACK  H STOP  P PAUSE   KEYS.INI: PANEL / SCREENSHOT / DESTROY"};
     for (const char* h : help) { font.draw(r, x, y, h, scale, dim); y += lh; }
   }
 }

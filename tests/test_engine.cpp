@@ -6,6 +6,8 @@
 #include "core/mapfiles.hpp"
 #include "core/strbase.hpp"
 #include "engine/ui/names.hpp"
+#include "engine/ui/commands_ui.hpp"
+#include "engine/ui/selection_ui.hpp"
 #include "core/text.hpp"
 #include "engine/assets/anim_provider.hpp"
 #include "engine/audio/audio_system.hpp"
@@ -206,10 +208,165 @@ static void test_pure() {
   CHECK(a.objects[0].cur_x == b.objects[0].cur_x && a.objects[0].cur_y == b.objects[0].cur_y);
 }
 
+static void test_commands_ui() {
+  // Hit regions stay within the panel and do not overlap across supported UI scales.
+  for (int scale : {1, 2}) for (int height : {493, 600, 700}) {
+    SDL_Rect panel{796, 11, 204 * scale, height * scale};
+    auto l = CommandsUi::layout(panel, scale);
+    std::vector<SDL_Rect> regions(l.commands.begin(), l.commands.end());
+    regions.insert(regions.end(), l.production.begin(), l.production.end());
+    regions.insert(regions.end(), l.queue.begin(), l.queue.end());
+    regions.push_back(l.pause); regions.push_back(l.previous); regions.push_back(l.next);
+    for (size_t i = 0; i < regions.size(); i++) {
+      CHECK(regions[i].x >= panel.x && regions[i].y >= panel.y);
+      CHECK(regions[i].x + regions[i].w <= panel.x + panel.w);
+      CHECK(regions[i].y + regions[i].h <= panel.y + panel.h);
+      for (size_t j = i + 1; j < regions.size(); j++) CHECK(!SDL_HasIntersection(&regions[i], &regions[j]));
+    }
+  }
+  CommandsUi keys;
+  std::vector<KeyBinding> bindings;
+  CHECK(parse_keys_ini("Repair r\nDestroy t\nScrollLeft pad4\nScrollLeft left\nAdd rshift\n", bindings));
+  keys.set_bindings(bindings);
+  Input key;
+  key.key_hit[SDL_SCANCODE_R] = true;
+  CHECK(keys.action_hit(key, "Repair") && !keys.action_hit(key, "Destroy"));
+  CHECK(keys.key_bound(SDL_SCANCODE_R) && !keys.key_bound(SDL_SCANCODE_W));
+  key.key_down[SDL_SCANCODE_KP_4] = true;
+  CHECK(keys.action_down(key, "ScrollLeft"));
+  key.key_down[SDL_SCANCODE_KP_4] = false; key.key_down[SDL_SCANCODE_LEFT] = true;
+  CHECK(keys.action_down(key, "ScrollLeft"));
+  CHECK(CommandsUi::sdl_scancode(999) == SDL_SCANCODE_UNKNOWN);
+  CHECK(CommandsUi::icon_slot(0) == 23 && CommandsUi::icon_slot(2) == 7 && CommandsUi::icon_slot(6) == 39);
+
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  World w;
+  w.terrain.w = w.terrain.h = 40;
+  w.terrain.cells.resize(1600);
+  w.mission.sides.push_back(SideDef{});
+  w.mission.towns.push_back(TownDef{});
+  w.mission.towns.back().type = 1;
+  Object unit; unit.id = 1; unit.type = 0; unit.teleport(to_fixed(200), to_fixed(200));
+  Object town; town.id = 2; town.type = 10; town.teleport(to_fixed(600), to_fixed(600));
+  Object enemy; enemy.id = 3; enemy.type = 0; enemy.side = 1; enemy.teleport(to_fixed(700), to_fixed(600));
+  w.objects = {unit, town, enemy};
+  GameSim sim(rules); sim.init(w);
+  w.side_state[0].money = 2000;
+  w.selection.ids = {1};
+  World fresh = w;
+  CommandsUi ui(&sim);
+  Camera cam; cam.set_world(1920, 1920); cam.set_view(796, 700);
+  Minimap mm;
+  SDL_Rect panel{796, 0, 204, 700};
+  auto l = CommandsUi::layout(panel, 1);
+  auto tick = [&] { w.begin_tick(); sim.tick(w); };
+  auto click = [&](SDL_Rect rect) {
+    Input in; in.mx = rect.x + rect.w / 2; in.my = rect.y + rect.h / 2;
+    in.pressed[SDL_BUTTON_LEFT] = true; in.buttons[SDL_BUTTON_LEFT] = true;
+    return ui.update(in, w, cam, 1, mm, false, panel);
+  };
+  CHECK(CommandsUi::action_enabled(PanelAction::Move, w));
+  CHECK(!CommandsUi::action_enabled(PanelAction::Repair, w));
+  CHECK(!CommandsUi::action_enabled(PanelAction::Garrison, w));
+  auto before = sim.state_hash(w);
+  click(l.commands[0]);
+  CHECK(ui.target_mode() == TargetMode::Move);
+  CHECK(sim.state_hash(w) == before && sim.log().empty());
+  Input target; target.mx = 400; target.my = 300;
+  target.pressed[SDL_BUTTON_LEFT] = true; target.buttons[SDL_BUTTON_LEFT] = true;
+  CHECK(ui.update(target, w, cam, 1, mm, true, panel));
+  CHECK(!ui.wants_left_click() && sim.state_hash(w) == before);
+  tick();
+  CHECK(sim.log().back().cmd.type == Pct::Move && sim.log().back().cmd.a == 400);
+  // A consumed targeting press must not start a new selection when the button is released.
+  SelectionUi selection;
+  CHECK(!selection.update(target, w, cam, 1, false));
+  target.pressed[SDL_BUTTON_LEFT] = false; target.buttons[SDL_BUTTON_LEFT] = false; target.released[SDL_BUTTON_LEFT] = true;
+  selection.update(target, w, cam, 1, true);
+  CHECK(w.selection.ids == std::vector<uint32_t>{1});
+  click(l.commands[1]);
+  target.pressed[SDL_BUTTON_LEFT] = true; target.released[SDL_BUTTON_LEFT] = false;
+  ui.update(target, w, cam, 1, mm, true, panel); tick();
+  CHECK(sim.log().back().cmd.type == Pct::AttackMove);
+  click(l.commands[1]);
+  target.mx = 700; target.my = 600;
+  ui.update(target, w, cam, 1, mm, true, panel); tick();
+  CHECK(sim.log().back().cmd.type == Pct::Attack && sim.log().back().cmd.a == 3);
+  click(l.commands[2]); tick();
+  CHECK(sim.log().back().cmd.type == Pct::Stop);
+  size_t logged = sim.log().size();
+  click(l.commands[3]); click(l.commands[4]); tick();
+  CHECK(!ui.wants_left_click() && sim.log().size() == logged);
+  click(l.commands[0]);
+  Input cancel; cancel.key_hit[SDL_SCANCODE_ESCAPE] = true;
+  ui.update(cancel, w, cam, 1, mm, true, panel);
+  CHECK(!ui.wants_left_click());
+  w.selection.ids = {2};
+  CHECK(!CommandsUi::action_enabled(PanelAction::Move, w));
+  CHECK(CommandsUi::action_enabled(PanelAction::Destroy, w));
+  w.selection.ids = {3};
+  CHECK(!CommandsUi::action_enabled(PanelAction::Destroy, w));
+  w.selection.ids = {1};
+  click(l.production[0]);
+  CHECK(w.side_state[0].money == 2000 && w.side_state[0].queue.empty());
+  tick();
+  CHECK(w.side_state[0].money == 1900 && w.side_state[0].queue.size() == 1);
+  click(l.pause); tick();
+  CHECK(w.side_state[0].build_paused);
+  int remaining = w.side_state[0].queue.front().remaining;
+  tick(); CHECK(w.side_state[0].queue.front().remaining == remaining);
+  click(l.queue[0]); tick();
+  CHECK(w.side_state[0].queue.empty() && w.side_state[0].money == 2000);
+  // Construction is a targeting mode and submits Build only when a valid tile is clicked.
+  auto menu = sim.menu(w, 0);
+  panel.h = 493;
+  l = CommandsUi::layout(panel, 1);
+  int build_index = -1;
+  for (size_t i = 0; i < menu.size(); i++) if (menu[i].construct && menu[i].enabled) { build_index = int(i); break; }
+  CHECK(build_index >= int(l.production.size()));
+  if (build_index >= 0) {
+    for (int page = 0; page < build_index / int(l.production.size()); page++) click(l.next);
+    click(l.production[size_t(build_index) % l.production.size()]);
+    CHECK(ui.placing() == menu[size_t(build_index)].type);
+    int money = w.side_state[0].money;
+    target.mx = 400; target.my = 500;
+    CHECK(ui.update(target, w, cam, 1, mm, true, panel));
+    CHECK(!ui.wants_left_click() && w.side_state[0].money == money);
+    tick();
+    CHECK(sim.log().back().cmd.type == Pct::Build);
+    CHECK(w.side_state[0].money == money - menu[size_t(build_index)].price);
+    CHECK(w.objects.back().progress < 1000);
+  }
+  // Original unsupported mode keys never submit gameplay packets or activate engine targeting.
+  size_t mode_log_size = sim.log().size();
+  for (SDL_Scancode code : {SDL_SCANCODE_W, SDL_SCANCODE_Q, SDL_SCANCODE_A, SDL_SCANCODE_S, SDL_SCANCODE_D, SDL_SCANCODE_GRAVE}) {
+    Input mode; mode.key_hit[code] = true;
+    ui.update(mode, w, cam, 1, mm, true, panel);
+    CHECK(!ui.wants_left_click());
+  }
+  tick(); CHECK(sim.log().size() == mode_log_size);
+  // Every UI action above replays with the same simulation hash.
+  auto replay = GameSim::replay(fresh, rules, sim.log(), sim.tick_count());
+  CHECK(replay->state_hash(fresh) == sim.state_hash(w));
+}
+
 static void test_data(const std::string& dir) {
   GameData data;
   std::string err;
   if (!data.open(dir, err)) { CHECK(false); std::printf("%s\n", err.c_str()); return; }
+  CommandsUi sprites;
+  CHECK(sprites.open_sprites(find_file_ci(dir + "/Res", "Units.xbe")));
+  CHECK(sprites.icon_sprite(0, false) == 1385 && sprites.icon_sprite(0, true) == 1386);
+  CHECK(sprites.icon_sprite(19, false) == 4119 && sprites.icon_sprite(19, true) == 4120);
+  CHECK(sprites.icon_sprite(4, true) == 3988);   // cannon, second weapon variant
+  CHECK(sprites.icon_sprite(35, true) == 86);    // spider flamethrower, fifth weapon variant
+  CHECK(sprites.icon_sprite(59, true) == 6317); // wheeled flamethrower
+  for (int type = 0; type < kNumTypes; type++) {
+    if (type == 89) continue;  // camera marker has no sprite
+    Sprite icon;
+    CHECK(decode_sprite(data.archive(ArchiveId::Units).get(0x44c, sprites.icon_sprite(type, true)), icon));
+  }
   World w;
   if (!load_world(data, "1", w, err)) { CHECK(false); std::printf("%s\n", err.c_str()); return; }
   CHECK(w.terrain.w == 90 && w.terrain.h == 60);
@@ -439,6 +596,7 @@ int main(int argc, char** argv) {
     test_pure();
     test_sprite_metadata();
     test_audio_pure();
+    test_commands_ui();
   } else {
     std::string dir = test_game_dir(argc, argv);
     if (!test_game_dir_exists(dir)) return 77;

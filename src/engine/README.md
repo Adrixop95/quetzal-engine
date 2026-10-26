@@ -11,9 +11,9 @@ CMake targets: `aztec_engine` (library `aztec_engine_lib` plus `src/engine/app/m
     build_engine/aztec_engine 1 --wander --borderless  # units walk randomly (shows 12 Hz tick interpolation)
     build_engine/aztec_engine 1 --size 1920x800 --screenshot out.png --cam 40,40 --zoom 1.5
     build_engine/test_engine game
-Keys: WASD/arrows and edge scrolling, middle or right-drag = pan, wheel = zoom, left click on the minimap = jump,
+Keys: scrolling bindings from `Keys.ini` (arrows / numeric keypad by default) and edge scrolling, middle or right-drag = pan, wheel = zoom, left click on the minimap = jump,
 F11 borderless, Alt+Enter fullscreen, F1 help, F2 grid, F3 passability, F4 labels, F5 markers, F6 edge scroll, F7 terrain overlays, F8 fog,
-F10 HUD, Space pause (view), P pause (simulation), F12 screenshot, Esc quit / pause menu.
+F10 HUD, Space pause (view, only if unbound in `Keys.ini`), P pause (simulation), PrintScreen screenshot, F12 toggle panel, Esc cancel targeting / quit / pause menu.
 
 ## Modules
 - `platform/`: `Window` (windowed / borderless / fullscreen, vsync, any resolution), `Input`, `FixedStepper` (fixed 12 Hz step).
@@ -42,7 +42,12 @@ F10 HUD, Space pause (view), P pause (simulation), F12 screenshot, Esc quit / pa
 - Cursors from `common.xbe`: feather (id 1, default), sword (0, attack / enemy hover), boots 6..13 = edge-scroll arrows (hotspot at the screen edge),
   mace 2 and spear 5 (move / pan, assignment uncertain), hammers 3 (unused), red X 14..21 (unused); animated at 80 ms per frame like the original.
 - Right panel: `common.xbe` id 292 (204x493, palette 48), the bottom strip repeats in taller windows; the minimap sits inside the panel window and the camera
-  width is the window minus the panel. Command buttons and portraits are not implemented (panel background and a text menu only).
+  width is the window minus the panel. Command buttons use common 275 (move hand), 257 (attack sword), 268 (stop shield),
+  301 (repair tools), 288 (garrison helmet), and 269 (destroy bomb). Repair and garrison are disabled because the simulation does not implement them.
+  Production uses original monochrome icons and the selection uses colour portraits from Units animation icon sequences: slot 23 (most units),
+  7 (buildings), 39 (trucks), 9 (spiders), 17 (hopcannon); types without icon sequences fall back to their original idle sprite.
+  Contact sheets identify footman icon/portrait 1385/1386, Russian town 4119/4120, truck weapon variants 3984..3995, and spider variants 73..87.
+  Only sprite ids and animation references are stored in source; images remain in the user's game files.
 - Tool: `aztec_engine --game game --sprite-sheet common:0-21 out.png` dumps a contact sheet from an archive (units|tiles0|tiles1|common).
 - Plugging in your own sprites: implement `SpriteProvider::pick/pick_shadow` (or fill a `TableSpriteProvider`) and pass it to `run_engine(opts, provider)`.
   `--no-sprites` forces placeholder markers.
@@ -63,8 +68,14 @@ F10 HUD, Space pause (view), P pause (simulation), F12 screenshot, Esc quit / pa
   replay reproduces the hash, combat, unit training, scripts.
 - Rules and data: `sim/rules.*` reads `docs/data/*.csv` at run time (`--rules-dir`); `docs/engine_rules_status.md` lists what is verified and what is a placeholder.
 - Movement: `sim/path/` (movement agent from the pathfinding work); `GameSim` only uses `MoveSystem`.
-- Controls (`ui/commands_ui.*`): right click = move / attack (right-drag pans), `A` + left click = attack-move, `H` = stop, Ctrl+0-9 / 0-9 = groups, `P` = pause the simulation,
-  right click on the minimap = move. Panel: production menu from the build tree (trainable units and `[B]` buildings placed by clicking the map), queue, tooltip.
+- Controls (`ui/commands_ui.*`): right click = move / attack (right-drag pans), `M` + click = move, `X` + click = attack an enemy / attack-move on terrain,
+  `H` = stop, Ctrl+0-9 / 0-9 = groups, Ctrl+Shift+0-9 adds to a group, `P` = pause the simulation. M/X/H/P are engine extensions, available only when
+  the key is unbound in `Keys.ini`. Original Destroy, Add, scrolling, ToggleInterface and PrintScreen bindings are loaded through `core/userfiles.*`.
+  Unsupported repair, garrison and stance bindings perform no gameplay action. Arrow/keypad scrolling avoids conflicting with W/A/S/D mode bindings.
+  Targeting also works on the minimap; right-click or Escape cancels it. Target clicks preserve selection.
+  Panel: production icons from the side's build tree, prerequisites / money / queue-full tooltips, paged entries for short windows, and `[B]` placement icons.
+  Click queued icons to cancel with the simulation's refund; click the queue header to pause/resume production. All gameplay actions use `sim/commands.hpp`.
+  The minimap terrain receives the same daylight tint and palette brightness as the world; team markers and UI artwork retain their own colours.
 - Mission scripts: `sim/script_runner.*` executes `.scn` files (conditions, actions, tactics, timers, victory / defeat, messages, centerView); AI skeleton: `sim/ai.cpp`.
 - Test options: `--cmd-move X,Y` / `--cmd-attack-move X,Y` (for `--select`), `--no-sim`, `--wander`.
 
@@ -85,3 +96,14 @@ F10 HUD, Space pause (view), P pause (simulation), F12 screenshot, Esc quit / pa
 - The `.rm` map is loaded but unused.
 - No garrison / repair, networking, original `.sav` format; side colours (`Color` 0..7) for placeholder markers are arbitrary. Other rules: see `docs/engine_rules_status.md`.
 - A screenshot of the recompiled original (800x600, mission 1) was compared by eye: camera / object layout matches; differences are lighting and the panel buttons.
+
+## Panel verification
+
+Run `test_engine --pure` for input, layout, targeting, construction, queue pause/cancel/refund, and deterministic command replay checks without game files.
+With the original game installed, run from the repository root:
+
+    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy build/aztec_engine --game /path/to/game 1 --size 1000x700 --no-audio --script tests/playtest/basic.txt
+    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy build/aztec_engine --game /path/to/game 1 --size 1000x700 --no-audio --script tests/playtest/panel.txt
+
+`panel.txt` verifies selection preservation, command cancellation, production pause, refunds, and keyboard conflicts. Its screenshots are written under `build/`.
+Use `tests/playtest/panel_lighting.txt` with `--time 0` and `--time 3600` to compare minimap daylight while keeping identical camera and selection inputs.

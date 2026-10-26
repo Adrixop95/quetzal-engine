@@ -20,6 +20,7 @@ class Minimap {
   void layout_in(const SDL_Rect& area);
   SDL_Rect rect() const { return rect_; }
   bool contains(int x, int y) const { return x >= rect_.x && y >= rect_.y && x < rect_.x + rect_.w && y < rect_.y + rect_.h; }
+  void set_tint(SDL_Color tint) { tint_ = tint; }
   bool from_preview() const { return from_preview_; }
   // Maps a screen point inside the minimap to world pixels.
   void to_world(int sx, int sy, float& wx, float& wy) const;
@@ -30,6 +31,7 @@ class Minimap {
   SDL_Texture* tex_ = nullptr;
   SDL_Rect rect_{0, 0, 0, 0};
   bool from_preview_ = false;
+  SDL_Color tint_{255, 255, 255, 255};
 };
 
 }  // namespace aztec::engine

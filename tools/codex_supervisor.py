@@ -44,8 +44,8 @@ def land(name):
         log("harvest produced nothing for", name)
         return
     b = run("cmake -S . -B build_sup -DAZTEC_GEN_DIR= -DCMAKE_BUILD_TYPE=Release >/dev/null && cmake --build build_sup --parallel 6 2>&1 | tail -3")
-    t = run("ctest --test-dir build_sup 2>&1 | tail -4")
-    if "100% tests passed" not in t.stdout:
+    t = run("ctest --test-dir build_sup --output-on-failure 2>&1 | tail -40")
+    if run("ctest --test-dir build_sup >/dev/null 2>&1").returncode != 0:
         log("tests FAILED for", name, "- leaving", branch, "unmerged\n", t.stdout)
         run("git add -A && git stash -q -u -m codex-" + name + "-failed; git checkout -q develop")
         return
