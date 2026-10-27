@@ -8,13 +8,8 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Rule | Status | Source / notes |
 |---|---|---|
 | 12 Hz step, 24.8 fixed-point positions, state hash after every tick, replay from the command log | V (construction) | no comparison with the original yet; the engine hash differs from the recompilation's hash |
-<<<<<<< ours
-| State hash covers objects (incl. secondary HP, regeneration selector, destinations, orders, construction timers), sides (money, queues including paid costs/town ownership, groups, build pause), day clock, town speeds, repair credits and harvest accumulators/cursors, spawn counter, transient projectiles/effects (flight endpoints, payloads and animation clocks), relations, script state and the full movement system (agents, orders, slots, steering caches) | engine | collection sizes are mixed in |
-| Command types (PCT_FRAME_*) and their numbers | V | `docs/object_types.md`. Implemented: PAUSEON/OFF, CREATEGROUP, ADDTOGROUP, MOVE, ATTACK, BUILD, BUILDMODE, DESTROYHERE, QUEUEKILL, PAUSEBUILD. Logged only: SELECTGROUP, GARRISON, REPAIRMODE, ATTACKMODE, SELECTBYNO, FOLLOWTEAM |
-=======
-| State hash covers objects (incl. secondary HP, regeneration selector, destinations, orders, construction timers), sides (money, queues, groups, selected tactic, build pause), town membership/hall identity and repairer modes/lists, spawn counter, transient projectiles/effects (flight endpoints, payloads and animation clocks), relations, script state and the full movement system (agents, orders, slots, steering caches) | engine | collection sizes are mixed in |
-| Command types (PCT_FRAME_*) and their numbers | V | `docs/object_types.md`. Implemented: PAUSEON/OFF, CREATEGROUP, ADDTOGROUP, MOVE, ATTACK, BUILD, DESTROYHERE (list toggle), GARRISON, REPAIRMODE, QUEUEKILL, PAUSEBUILD. Logged only: SELECTGROUP, ATTACKMODE, BUILDMODE, SELECTBYNO, FOLLOWTEAM |
->>>>>>> theirs
+| State hash covers objects (incl. secondary HP, regeneration selector, destinations, orders, construction timers), sides (money, queues including paid costs/town ownership, groups, selected tactic, build pause), town membership/hall identity and repairer modes/lists, day clock, town speeds, repair credits and harvest accumulators/cursors, spawn counter, transient projectiles/effects (flight endpoints, payloads and animation clocks), relations, script state and the full movement system (agents, orders, slots, steering caches) | engine | collection sizes are mixed in |
+| Command types (PCT_FRAME_*) and their numbers | V | `docs/object_types.md`. Implemented: PAUSEON/OFF, CREATEGROUP, ADDTOGROUP, MOVE, ATTACK, BUILD, BUILDMODE, DESTROYHERE (list toggle), GARRISON, REPAIRMODE, QUEUEKILL, PAUSEBUILD. Logged only: SELECTGROUP, ATTACKMODE, SELECTBYNO, FOLLOWTEAM |
 | Stop (0x50) and AttackMove (0x51) | P | engine extensions; the original has no such packets |
 | Command coordinates / tiles from packets | engine | clamped into the map before any fixed-point conversion; invalid tiles are ignored |
 | Command order inside a tick: ascending side, then submission order | P | original: per-side queues in `0x4577b0` (order not verified) |
