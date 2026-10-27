@@ -37,8 +37,8 @@ void GameSim::attach_agent(Object& o) {
 }
 
 void GameSim::init(World& w) {
-  tick_ = 0;
-  w.day_clock = (w.mission.start_time % kDayTicks + kDayTicks) % kDayTicks;
+  tick_ = w.original_save ? w.tick : 0;
+  if (!w.original_save) w.day_clock = (w.mission.start_time % kDayTicks + kDayTicks) % kDayTicks;
   w.town_speed.assign(w.mission.towns.size(), 1);
   w.repair_credits.assign(w.mission.towns.size(), 0);
   w.effects.clear();
@@ -52,7 +52,7 @@ void GameSim::init(World& w) {
   paused_ = false;
   spawn_counter_ = 0;
   rng_ = 12345;
-  if (script_.loaded()) script_.init(w);
+  if (script_.loaded() && !w.original_save) script_.init(w);
   // largest mission hp per type = fallback maximum
   std::vector<int> seen(kNumTypes, 0);
   for (const Object& o : w.objects)
@@ -60,11 +60,14 @@ void GameSim::init(World& w) {
   for (Object& o : w.objects) {
     if (o.type < 0 || o.type >= kNumTypes) { o.type = -1; o.alive = true; continue; }   // unknown types become inert markers
     const TypeRules& r = rules_->type(o.type);
-    o.hp_max = r.hp_src == Src::Verified ? r.hp_max : std::max(seen[size_t(o.type)], r.structure ? r.hp_max : 1);
-    if (o.hp <= 0) o.hp = o.hp_max;
-    o.secondary_hp = r.secondary_hp;
-    o.progress = 1000;
-    o.gold_harvest = {}; o.repair_harvest = {}; o.harvest_ready = false;
+    if (!w.original_save) {
+      o.hp_max = r.hp_src == Src::Verified ? r.hp_max : std::max(seen[size_t(o.type)], r.structure ? r.hp_max : 1);
+      if (o.hp <= 0) o.hp = o.hp_max;
+      o.secondary_hp = r.secondary_hp;
+      o.progress = 1000;
+      o.gold_harvest = {}; o.repair_harvest = {}; o.harvest_ready = false;
+    }
+    if (o.removed || !o.alive) continue;
     attach_agent(o);
     if (r.structure) {
       int x0, y0, x1, y1;
@@ -641,7 +644,7 @@ void GameSim::tick(World& w) {
   }
   pending_.clear();
   if (paused_) return;
-  if (script_.loaded()) script_.tick(*this, w);
+  if (script_.loaded() && !w.original_save) script_.tick(*this, w);
   w.day_clock = (w.day_clock + 1) % kDayTicks;
   economy(w);
   run_ai(w);

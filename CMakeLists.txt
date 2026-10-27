@@ -22,6 +22,7 @@ add_test(NAME formats COMMAND test_formats ${CMAKE_SOURCE_DIR}/game)
 
 # ---- clean C++20 engine (src/engine): loads the original data files, no recompiled code
 add_library(aztec_engine_lib
+  src/engine/save_import.cpp
   src/engine/assets/game_data.cpp src/engine/assets/mission.cpp src/engine/assets/anim_provider.cpp src/engine/assets/daylight.cpp
   src/engine/platform/input.cpp src/engine/platform/window.cpp
   src/engine/world/world.cpp src/engine/world/camera.cpp src/engine/world/type_info.cpp
@@ -116,4 +117,15 @@ set_tests_properties(render_contracts PROPERTIES LABELS "unit")
 if(Python3_Interpreter_FOUND)
   add_test(NAME zspr_tools COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_zspr_tools.py)
   set_tests_properties(zspr_tools PROPERTIES LABELS "unit")
+endif()
+
+# Original-save adapter checks: synthetic stream plus optional private installation.
+add_executable(test_save_import tests/test_save_import.cpp)
+target_link_libraries(test_save_import aztec_engine_lib)
+add_test(NAME save_import COMMAND test_save_import)
+set_tests_properties(save_import PROPERTIES LABELS "unit")
+add_test(NAME save_import_private COMMAND test_save_import --private ${CMAKE_SOURCE_DIR}/game)
+set_tests_properties(save_import_private PROPERTIES SKIP_RETURN_CODE 77 LABELS "game-data")
+if(GAME_DIR)
+  set_tests_properties(save_import_private PROPERTIES ENVIRONMENT "GAME_DIR=${GAME_DIR}")
 endif()
