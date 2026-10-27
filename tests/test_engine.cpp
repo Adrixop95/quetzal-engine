@@ -316,7 +316,7 @@ static void test_commands_ui() {
   CHECK(!ui.wants_left_click());
   w.selection.ids = {2};
   CHECK(!CommandsUi::action_enabled(PanelAction::Move, w));
-  CHECK(CommandsUi::action_enabled(PanelAction::Destroy, w));
+  CHECK(!CommandsUi::action_enabled(PanelAction::Destroy, w));
   w.selection.ids = {3};
   CHECK(!CommandsUi::action_enabled(PanelAction::Destroy, w));
   w.selection.ids = {1};
@@ -390,6 +390,12 @@ static void test_data(const std::string& dir) {
   CHECK(load_world(data, "Mission_4", w2, err) && w2.terrain.w == 120);  // mixed-case file names
   CHECK(!load_world(data, "no_such_map", w2, err));
   CHECK(w.mission.towns.size() == 1);
+  for (size_t i = 0; i < w.mission.objects.size(); i++) {
+    const PlacedObject& p = w.mission.objects[i];
+    CHECK(w.objects[i].town == (p.source == ObjectSource::Town && !p.defence ? p.group : -1));
+    CHECK(!w.objects[i].town_hall);
+  }
+  CHECK(w.objects.back().town_hall && w.objects.back().town == w.mission.towns[0].index);
   StrBase real;
   std::string sbp = find_file_ci(dir + "/Res", "strbase.bds");
   CHECK(!sbp.empty() && real.load(sbp) && real.size() > 200 && real.get(198) == "Swordsman");
@@ -946,6 +952,137 @@ static void test_descriptor_combat() {
   CHECK(!rules->loaded() && !rules->weapon(4, target).damage_known);
 }
 
+static void test_town_commands() {
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  World initial;
+  initial.terrain.w = initial.terrain.h = 80;
+  initial.terrain.cells.resize(6400);
+  initial.mission.towns = {{4, 0, 4, 4, 0, 0, -1}, {9, 0, 40, 40, 0, 0, -1},
+                           {12, 1, 60, 60, 0, 0, -1}};
+  auto add = [&](int type, int side, int town, int x, int y, bool hall = false) {
+    Object o;
+    o.id = uint32_t(initial.objects.size() + 1); o.type = type; o.side = side;
+    o.town = town; o.town_hall = hall;
+    o.teleport(tile_center_fixed(x), tile_center_fixed(y));
+    initial.objects.push_back(o);
+  };
+  add(10, 0, 4, 4, 4, true);   // 1: first hall
+  add(10, 0, 9, 40, 40, true); // 2: same-side second hall
+  add(10, 1, 12, 60, 60, true);
+  add(0, 0, 4, 8, 8);         // 4: extractable troop
+  add(0, 0, 9, 42, 42);       // 5: other town's troop
+  add(0, 0, -1, 10, 10);      // 6: existing independent tactic
+  initial.objects.back().tactic = 7;
+  add(14, 0, 4, 12, 12);      // 7: ordinary building
+  add(17, 0, 4, 16, 16);      // 8: defence
+  add(14, 0, 9, 44, 44);      // 9: other town's building
+  add(14, 1, 12, 64, 64);     // 10: hostile building
+  add(0, 0, 4, 18, 18);      // 11: dead member
+  initial.objects.back().alive = false;
+  add(0, 0, 4, 20, 20);      // 12: removed member
+  initial.objects.back().removed = true;
+  add(14, 0, 4, 22, 22);     // 13: current construction
+  World w = initial;
+  GameSim sim(rules); sim.init(w);
+  w.objects[6].hp /= 2;
+  w.objects[7].hp /= 2;
+  // Store damaged mission inputs before init for command-log save replay.
+  initial.objects[6].hp = w.objects[6].hp;
+  initial.objects[7].hp = w.objects[7].hp;
+  bool verify_replay = true;
+  auto send = [&](Pct type, int a, int town, std::vector<uint32_t> ids = {}, uint8_t side = 0) {
+    Command c; c.type = type; c.side = side; c.a = a; c.b = town; c.ids = std::move(ids);
+    sim.submit(c); w.begin_tick(); sim.tick(w);
+    if (verify_replay) {
+      World replay_world = initial;
+      auto replay = GameSim::replay(replay_world, rules, sim.log(), sim.tick_count());
+      CHECK(replay->state_hash(replay_world) == sim.state_hash(w));
+    }
+  };
+  send(Pct::Garrison, 0, 99);
+  CHECK(w.objects[3].town == 4 && w.side_state[0].selected_tactic == -1);
+  send(Pct::Garrison, 0, 12); // enemy town
+  CHECK(w.objects[3].town == 4);
+  w.selection.ids = {1};
+  CHECK(CommandsUi::action_enabled(PanelAction::Garrison, w));
+  CommandsUi ui(&sim);
+  Input input; input.key_hit[SDL_SCANCODE_GRAVE] = true;
+  Camera camera; Minimap minimap; SDL_Rect panel{0, 0, 204, 700};
+  ui.update(input, w, camera, 1, minimap, false, panel);
+  CHECK(w.objects[3].town == 4); // UI only submits a command
+  w.begin_tick(); sim.tick(w);
+  CHECK(sim.log().back().cmd.type == Pct::Garrison && sim.log().back().cmd.b == 4);
+  CHECK(w.objects[3].town == -1 && w.objects[3].tactic == 8);
+  CHECK(w.side_state[0].selected_tactic == 8 && w.selection.ids == std::vector<uint32_t>{4});
+  CHECK(w.objects[4].town == 9 && w.objects[5].tactic == 7);
+  CHECK(w.objects[6].town == 4 && w.objects[10].town == 4 && w.objects[11].town == 4);
+  send(Pct::Garrison, 0, 4); // empty extraction does not select a new tactic
+  CHECK(w.side_state[0].selected_tactic == 8);
+  send(Pct::Garrison, 0, 9);
+  CHECK(w.objects[4].tactic == 9 && w.side_state[0].selected_tactic == 9);
+  send(Pct::RepairMode, 2, 4);
+  CHECK(w.town_state[0].repair_mode == RepairMode::Destroy && w.town_state[0].marked.empty());
+  send(Pct::DestroyHere, 0, 4, {7, 7, 8, 1, 4, 9, 10, 999, 0});
+  CHECK((w.town_state[0].marked == std::vector<uint32_t>{7, 8}));
+  CHECK(w.objects[6].alive && w.objects[7].alive);
+  send(Pct::DestroyHere, 0, 4, {7});
+  CHECK(w.town_state[0].marked == std::vector<uint32_t>{8});
+  send(Pct::RepairMode, 2, 4); // same mode preserves membership
+  CHECK(w.town_state[0].marked == std::vector<uint32_t>{8});
+  send(Pct::RepairMode, 3, 4); // invalid mode preserves membership
+  CHECK(w.town_state[0].marked == std::vector<uint32_t>{8});
+  send(Pct::RepairMode, 1, 4);
+  CHECK(w.town_state[0].marked.empty());
+  send(Pct::DestroyHere, 0, 4, {7, 8});
+  CHECK((w.town_state[0].marked == std::vector<uint32_t>{7, 8}));
+  send(Pct::RepairMode, 2, 9);
+  send(Pct::DestroyHere, 0, 9, {9}); // full HP allowed in destroy mode
+  CHECK(w.town_state[1].marked == std::vector<uint32_t>{9});
+  send(Pct::RepairMode, 1, 9);
+  send(Pct::DestroyHere, 0, 9, {9}); // full HP rejected in repair mode
+  CHECK(w.town_state[1].marked.empty());
+  send(Pct::RepairMode, 0, 4);
+  CHECK(w.town_state[0].marked == std::vector<uint32_t>{7}); // off-mode ordinary service
+  send(Pct::RepairMode, 1, 4); // clears automatically collected marks
+  CHECK(w.town_state[0].marked.empty());
+  send(Pct::DestroyHere, 0, 4, {7, 8});
+  CHECK(w.side_state[0].money == 0); // marking has no cash or HP effect
+  SaveData save; save.mission = "synthetic-towns"; save.tick = sim.tick_count();
+  save.hash = sim.state_hash(w); save.log = sim.log();
+  SaveData restored;
+  CHECK(deserialize_save(serialize_save(save), restored));
+  World fresh = initial;
+  auto replay = GameSim::replay(fresh, rules, restored.log, restored.tick);
+  CHECK(replay->state_hash(fresh) == restored.hash);
+  CHECK(fresh.town_state[0].marked == w.town_state[0].marked);
+  World other_view = initial; other_view.local_side = 1;
+  auto other_replay = GameSim::replay(other_view, rules, restored.log, restored.tick);
+  CHECK(other_replay->state_hash(other_view) == restored.hash);
+  CHECK(other_view.selection.ids.empty());
+  verify_replay = false;
+  const auto hash = sim.state_hash(w);
+  w.objects[6].town = 9; CHECK(sim.state_hash(w) != hash); w.objects[6].town = 4;
+  w.objects[0].town_hall = false; CHECK(sim.state_hash(w) != hash); w.objects[0].town_hall = true;
+  w.town_state[0].marked.clear(); CHECK(sim.state_hash(w) != hash); w.town_state[0].marked = {7, 8};
+  w.town_state[0].repair_mode = RepairMode::Destroy; CHECK(sim.state_hash(w) != hash);
+  w.town_state[0].repair_mode = RepairMode::Repair;
+  w.side_state[0].selected_tactic = -1; CHECK(sim.state_hash(w) != hash);
+  w.objects[12].progress = 100;
+  w.objects[12].build_total = 1000;
+  w.objects[12].hp = 1;
+  send(Pct::DestroyHere, 0, 4, {13});
+  CHECK((w.town_state[0].marked == std::vector<uint32_t>{7, 8}));
+  // Stale, repaired and reassigned objects are pruned independently of explicit toggles.
+  w.objects[6].hp = w.objects[6].hp_max;
+  w.objects[7].side = 1;
+  send(Pct::Nothing, 0, 0);
+  CHECK(w.town_state[0].marked.empty());
+  w.objects[0].alive = false;
+  send(Pct::Garrison, 0, 4);
+  CHECK(w.side_state[0].selected_tactic == -1);
+}
+
 static void test_audio_pure() {
   // pure rules: no attenuation near the centre, silent far away, pan favours the near ear
   Positional c = positional_gain(0, 0);
@@ -986,6 +1123,7 @@ int main(int argc, char** argv) {
     test_production();
     test_projectiles();
     test_descriptor_combat();
+    test_town_commands();
     test_sprite_metadata();
     test_audio_pure();
     test_commands_ui();

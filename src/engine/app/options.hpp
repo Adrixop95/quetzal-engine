@@ -6,6 +6,7 @@ namespace aztec::engine {
 
 struct Options {
   std::string game_dir = "game";
+  std::string original_save;        // --load-original FILE
   std::string mission = "1";
   bool mission_given = false;      // a mission was named on the command line
   bool menu_session = false;       // the front-end is in use: Esc opens the pause menu instead of quitting

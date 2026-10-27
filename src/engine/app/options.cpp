@@ -10,6 +10,7 @@ const char* usage_text() {
   return "usage: aztec_engine [options] [MISSION]\n"
          "  MISSION            number (campaign mission_N), map name from game/Maps, or path to .mp (default 1)\n"
          "  --game DIR         game directory (default ./game, or $AZTEC_GAME)\n"
+         "  --load-original FILE  import an original .sav (partial resume; see docs/savegame.md)\n"
          "  --size WxH         window size (default 1280x720)\n"
          "  --fullscreen       exclusive fullscreen;  --borderless  desktop-size borderless window\n"
          "  --no-vsync         disable vsync;  --software  force software renderer;  --fps N  frame cap\n"
@@ -45,6 +46,7 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     const char* v = nullptr;
     if (a == "--help" || a == "-h") { usage = true; return true; }
     else if (a == "--game") { if (!next(v)) return false; o.game_dir = v; }
+    else if (a == "--load-original") { if (!next(v)) return false; o.original_save = v; }
     else if (a == "--size") {
       if (!next(v)) return false;
       if (std::sscanf(v, "%dx%d", &o.window.width, &o.window.height) != 2 || o.window.width < 160 || o.window.height < 120) { err = "bad --size"; return false; }
@@ -88,8 +90,11 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     else if (!a.empty() && a[0] == '-') { err = "unknown option " + a; return false; }
     else { o.mission = a; o.mission_given = true; }
   }
+  if (!o.original_save.empty() && (o.mission_given || o.wander)) {
+    err = "--load-original cannot be combined with a mission or --wander"; return false;
+  }
   if (!o.screenshot.empty() && o.frames <= 0) o.frames = 5;
-  o.menu = !o.mission_given && o.screenshot.empty() && o.script.empty() && !o.no_menu;
+  o.menu = o.original_save.empty() && !o.mission_given && o.screenshot.empty() && o.script.empty() && !o.no_menu;
   return true;
 }
 

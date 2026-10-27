@@ -1,0 +1,2 @@
+Task: portability of the new engine to Windows (MSVC and MinGW) and macOS.
+Review CMake and sources for POSIX/GCC-only assumptions (paths, endianness, alignment, filesystem case sensitivity of game files, SDL2 discovery). Fix them in the new engine and core only (not runtime/). Add CI matrix jobs in .github/workflows/build.yml for windows-latest and macos-latest building and running the synthetic ctest. Document in docs/SETUP.md.

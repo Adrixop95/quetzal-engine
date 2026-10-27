@@ -34,7 +34,7 @@ manually. It does not install packages or alter branches. Always build inside
 the current worktree. If a system ccache wrapper attempts to write outside it,
 set `CCACHE_DIR="$PWD/build/ccache"` for configure/build (create build/ first).
 
-CTest reports four asset-independent checks and two game-data checks; the latter
+CTest includes asset-independent checks and two game-data checks; the latter
 skip without an installation. Skipping is not game-data verification. See
 [CONTRIBUTING.md](../CONTRIBUTING.md) for GAME_DIR precedence and test labels.
 Run pre-commit on all tracked files before a PR; use `--files PATH...` as well for
@@ -126,6 +126,50 @@ Experiments may write maps, saves, profiles and settings. Use private writable
 copies as described in [EXPERIMENTS.md](EXPERIMENTS.md), with read-only asset
 symlinks and separate ordinary Maps/Saves directories. Never share writable
 installation state across reference processes.
+
+## Standalone map inspector
+
+`aztec_map_viewer` is a separate, read-only tool using the engine mission loader
+and core terrain/fog loaders. It does not start a simulation. Build it with the
+normal build above, or `cmake --build build --target aztec_map_viewer --parallel 2`.
+
+```sh
+build/aztec_map_viewer --game /absolute/path/to/game
+build/aztec_map_viewer --game /absolute/path/to/game 3
+build/aztec_map_viewer --maps /absolute/path/to/Maps --list
+build/aztec_map_viewer --maps /absolute/path/to/Maps --dump mission_3
+build/aztec_map_viewer --maps /absolute/path/to/Maps --dump > build/maps.txt
+```
+
+The browser discovers every `.mp` file, including custom missions, in sorted,
+case-insensitive filename order. Select a mission by number (`3` resolves to
+`mission_3`), basename, or `.mp` path. PageUp/PageDown cycles missions. Arrow keys
+scroll, middle-button dragging pans, the wheel zooms around the pointer, Home
+resets the camera, and Escape exits. O toggles object/town markers, S toggles
+start crosses, T toggles terrain-overlay markers, and F cycles through fog
+layers and off. Click a tile to inspect its base/overlay IDs, placed object
+type, side, HP and scenario ID, and values from every fog layer.
+
+Terrain textures use the mission tileset when resource archives are available;
+without archives the view uses deterministic tile ID colors. Overlays appear as
+small pale squares, towns as boxes labelled T plus town index, placed objects
+as boxes labelled with their type ID, and starts as crosses labelled S plus side
+index. Marker colors identify side indices modulo eight. These are inspection
+symbols, not an animated or pixel-parity game renderer. Object/start markers
+remain visible above fog for inspection. Fog values are shown as darkening
+(0 lit, 152 fully dark); grids with different dimensions are scaled over the
+terrain extent. Missing `.vis` means no fog layers; malformed present fog fails
+loading. Terrain lookup prefers the mission basename, then `MapName` in its `.mp`.
+
+`--dump` needs neither SDL initialization nor resource archives. With no mission
+argument it dumps all discovered missions; otherwise it dumps the selected one.
+The deterministic text includes terrain rows as `base:overlay`, side start
+positions (including disabled `-1,-1` starts), town records, every placed object
+and its source/group/scenario fields, and each fog layer's original dimensions
+and byte rows. It returns nonzero on bad input and continues past failed entries
+when dumping all missions. `--list` only lists filenames. The synthetic CTest
+`map_viewer` verifies dumps, errors and a dummy-SDL rendering smoke check;
+`--frames N` allows a bounded SDL view for smoke checks. No private data is needed.
 
 ## Regenerate local analysis
 

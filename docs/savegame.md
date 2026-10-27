@@ -327,3 +327,82 @@ target passed 94,262 deterministic mutations. The save and fuzz targets also
 passed Clang AddressSanitizer and UndefinedBehaviorSanitizer, including both
 local game-generated saves. These checks validate parsing and the stated
 resource bounds; unresolved gameplay semantics remain listed above.
+
+## Independent engine import
+
+`aztec_engine --game /path/to/private-game --load-original /path/to/single0.sav`
+loads an original save directly, bypassing the front-end. Do not also specify a
+mission or `--wander`. Use `--no-sim` to inspect the imported snapshot without
+advancing it. Normal simulation resumes with the engine's current rules and the
+limitations below; this is not full original-game continuation parity.
+
+`src/engine/save_import.{hpp,cpp}` adapts the decoded stream. The file loader
+strips Windows or Unix directory components from the saved mission path and
+resolves its basename case-insensitively inside the supplied installation's
+`Maps` directory. It never follows an absolute path from a save. Supply that
+mission's original `.mp`, `.map`, `.dat` and `.rm` files: terrain, passability and
+resource deposits are not embedded in the save. Missing missions or malformed
+imports fail with a diagnostic and leave the destination world unchanged.
+The lower-level adapter requires a world with the matching mission already loaded.
+
+The importer replaces initial mission placements with saved units, maps sparse
+original pool IDs to dense engine IDs, and resolves owning Town/Tactic references
+and their Side references independently of record order. `World::original_unit_ids`
+retains the inverse unit mapping for imported objects. Town `+f0` unit links
+are treated as town hall references to restore town positions (an inference
+supported by all nine linked hall types in the locally checked save);
+recognised hall types restore race and level where unambiguous (type 47 shares
+two levels and retains matching mission metadata). Objects restore current and
+maximum HP, pixel positions and Marine fractional positions. Zero/nonpositive HP
+remains dead through simulation initialization. Side treasury, team colour and
+nonzero disabled-type bytes for the 90 UGI types populate engine economy and
+build-menu restrictions. Saved fog replaces each side's mission `.vis` layer. A grid matching the map
+dimensions is copied directly; a `(width+1)*(height+1)` grid is sampled at each
+tile's top-left corner for the engine, with its full border retained in the
+decoded snapshot. Other dimensions are rejected. This conversion does not
+establish original fog interpolation parity. Simulation tick, daylight clock,
+local side and initial camera offset are restored. An explicit `--cam` overrides
+the saved view. The mission's resource grid remains loaded from `.rm`.
+
+Unknown fields are retained in memory in `World::original_save`, including
+Side per-type arrays and Town BuildTree research/production blocks. **Research
+and tech progression are not interpreted or executed**: only the decoded type
+restrictions affect build menus. Current research levels, production queues,
+construction progress, harvest state, spending statistics, diplomacy, outcomes,
+orders/targets, pathfinding state, facing/playback, secondary HP, RNG, transports,
+projectiles, effects, decorations, selection and active triggers/timers are not
+restored to their engine systems. Ungrouped objects have side -1 because their
+ownership is unresolved. Tactic scenario identity is not inferred from an
+unresolved scalar. Mission scripts are not started afresh on import, avoiding
+repeated startup grants/spawns, but saved script execution is not resumed.
+Engine fog updates and other subsequent simulation use independent engine rules.
+Mission metadata supplies fields without a verified saved equivalent; imported
+town speed defaults to 1. The retained original snapshot does not track later
+engine changes and is not a save writer. Ctrl+S reports that saving an imported
+world as an engine command replay is unsupported.
+
+Synthetic `save_import` CTest coverage builds original wire-format saves in
+memory, decodes them with the unchanged core reader, and checks ownership,
+positions, HP, economy, restrictions, fog, resource preservation, clock continuity,
+simulation initialization, invalid references and atomic failure. Optional
+`save_import_private` scans `GAME_DIR/Saves` for `.sav` files and checks loading
+and initialization against the supplied mission assets. It returns skip code 77
+when the installation or original saves are absent. To run it explicitly:
+
+```sh
+GAME_DIR=/path/to/private-game ctest --test-dir build -R save_import --output-on-failure
+```
+
+These checks establish the supported field mapping, not equivalent gameplay
+continuation. Running either game still requires the private-copy, dummy SDL
+and `unshare -rn` procedure in [EXPERIMENTS.md](EXPERIMENTS.md).
+
+Local validation on 2026-10-27 imported the available private save containing
+259 units and 9 towns at tick 116. Per-unit type, HP, position and owning side,
+Side treasury and adapted fog bytes matched the core decoder. The 90-by-90 map
+had 91-by-91 saved fog layers. Headless CLI runs with both dummy SDL drivers,
+inside `unshare -rn` against a private game copy, advanced one tick and wrote
+screenshots with markers and with original sprites, exiting successfully.
+All synthetic CTest checks and pre-commit gates passed; the optional private-save
+check also passed when supplied that installation. This did not compare resumed
+simulation against a reference-runtime replay, and makes no parity claim.

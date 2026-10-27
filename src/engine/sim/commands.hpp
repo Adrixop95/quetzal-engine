@@ -20,7 +20,11 @@ enum class Pct : uint8_t {
 };
 
 // Field use per type:
-//   Move/AttackMove: ids, a,b = world px.   Attack: ids, a = target object id.   Stop/DestroyHere: ids.
+//   Move/AttackMove: ids, a,b = world px.   Attack: ids, a = target object id.   Stop: ids.
+//   Garrison: b = town section number; extract its live mobile members into a fresh tactic.
+//   RepairMode: a = 0 off / 1 repair / 2 destroy, b = town section number.
+//   DestroyHere: b = town section number, ids = buildings to toggle in its current repairer list.
+//   These are engine field conventions, not a claim about the reference packet payload layout.
 //   CreateGroup/AddToGroup/SelectGroup/SelectByNo: a = group number 0..9 (+ ids for Create/Add).
 //   Build: a = item type (UGI); for buildings b,c = tile x,y of the footprint centre; units ignore b,c.
 //   Build/BuildMode: optional ids[0] selects an owned town member; absent = first owned town (engine convention).
