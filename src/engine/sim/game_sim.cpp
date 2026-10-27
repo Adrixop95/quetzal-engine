@@ -121,8 +121,9 @@ void GameSim::kill(World& w, Object& o) {
     int x0, y0, x1, y1;
     footprint(r, px(o.cur_x) / kTilePx, px(o.cur_y) / kTilePx, x0, y0, x1, y1);
     nav_.add_block(x0, y0, x1 - x0 + 1, y1 - y0 + 1, -1);
-    o.removed = true;  // no destruction animation yet
-    return;
+    // Keep known rubble visible for its resource lifetime; unknown radii and
+    // construction cancellations remain explicit missing visual inputs.
+    if (o.destruction_radius < 0 || o.progress < 1000) { o.removed = true; return; }
   }
   o.anim_state = kAnimDie;
   o.anim_tick = 0;
@@ -399,7 +400,7 @@ void GameSim::run_orders(World& w) {
     Object& o = w.objects[i];
     if (o.removed || o.type < 0) continue;
     if (!o.alive) {
-      if (++o.corpse_ticks > kCorpseTicks) { o.removed = true; }
+      if (++o.corpse_ticks > (rules_->type(o.type).structure ? 249 : kCorpseTicks)) { o.removed = true; }
       continue;
     }
     const TypeRules& r = rules_->type(o.type);
@@ -463,6 +464,7 @@ void GameSim::run_orders(World& w) {
       if (o.cooldown == 0) {
         // Projectile/animation delay is additional and remains unresolved; hits are immediate here.
         o.cooldown = std::max(1, shot.reload + 1);
+        o.has_fired = true;
         o.anim_state = kAnimAttack; o.anim_tick = 0;
         t->hp -= shot.damage;
         t->last_hit_by = o.id;
@@ -580,6 +582,8 @@ uint64_t GameSim::state_hash(const World& w) const {
     for (const auto* h : {&o.gold_harvest, &o.repair_harvest}) { mix(h->accumulated); mix(h->last_clock); mix(h->cursor); }
     mix(o.id); mix(uint32_t(o.type)); mix(uint32_t(o.side)); mix(uint32_t(o.hp)); mix(uint32_t(o.cur_x)); mix(uint32_t(o.cur_y));
     mix(o.order); mix(o.target); mix(uint32_t(o.cooldown)); mix(o.alive); mix(o.removed); mix(uint32_t(o.progress));
+    mix(uint32_t(o.render_height)); mix(uint32_t(o.destruction_radius));
+    mix(uint32_t(o.transport_phase)); mix(uint32_t(o.orientation)); mix(o.construction_overlay); mix(o.has_fired);
     mix(o.facing); mix(o.anim_state); mix(uint32_t(o.corpse_ticks));
     mix(uint32_t(o.dest_x)); mix(uint32_t(o.dest_y)); mix(o.resume); mix(uint32_t(o.build_elapsed)); mix(uint32_t(o.build_total));
     mix(uint32_t(o.secondary_hp)); mix(o.regen_alternate);
