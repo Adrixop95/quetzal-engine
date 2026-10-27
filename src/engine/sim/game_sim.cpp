@@ -363,7 +363,7 @@ void GameSim::economy(World& w) {
       o.build_elapsed++;
       o.progress = std::min(1000, o.build_elapsed * 1000 / std::max(1, o.build_total));
       o.hp = std::max(1, int(int64_t(o.hp_max) * o.progress / 1000));
-      if (o.progress >= 1000) { o.anim_state = kAnimIdle; o.anim_tick = 0; }
+      if (o.progress >= 1000) { o.anim_state = kAnimIdle; o.anim_tick = 0; o.body_tick = -1; }
     } else if (o.side >= 0 && o.side < int(w.side_state.size())) {
       if (!o.harvest_ready) {
         // The first active tick follows creation/completion of the accumulator.
@@ -474,7 +474,7 @@ void GameSim::run_orders(World& w) {
         // Descriptor damage/reload feed provisional projectile flight; direct weapons hit immediately.
         o.cooldown = std::max(1, shot.reload + 1);
         o.has_fired = true;
-        o.anim_state = kAnimAttack; o.anim_tick = 0;
+        o.anim_state = kAnimAttack; o.anim_tick = 0; o.attack_tick = 0;
         fire(w, o, *t, shot.damage);
       }
     } else if (ag && ((tick_ + o.id) % 6 == 0 || !moving)) {
@@ -641,6 +641,7 @@ void GameSim::tick(World& w) {
   }
   pending_.clear();
   if (paused_) return;
+  for (auto& o : w.objects) if (!o.removed && o.attack_tick >= 0) ++o.attack_tick;
   if (script_.loaded()) script_.tick(*this, w);
   w.day_clock = (w.day_clock + 1) % kDayTicks;
   economy(w);
@@ -649,6 +650,12 @@ void GameSim::tick(World& w) {
   run_orders(w);
   mover_->tick();
   sync_movement(w);
+  for (auto& o : w.objects) {
+    if (o.removed || !o.alive) continue;
+    const bool moving = o.cur_x != o.prev_x || o.cur_y != o.prev_y;
+    o.body_tick = moving == o.body_moving ? o.body_tick + 1 : 0;
+    o.body_moving = moving;
+  }
   if (tick_ % 4 == 0) update_fog(w);
 }
 
@@ -698,6 +705,7 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(o.order); mix(o.target); mix(uint32_t(o.cooldown)); mix(o.alive); mix(o.removed); mix(uint32_t(o.progress));
     mix(uint32_t(o.render_height)); mix(uint32_t(o.destruction_radius));
     mix(uint32_t(o.transport_phase)); mix(uint32_t(o.orientation)); mix(o.construction_overlay); mix(o.has_fired);
+    mix(o.body_tick); mix(o.attack_tick); mix(o.body_moving); mix(o.anim_tick);
     mix(o.facing); mix(o.anim_state); mix(uint32_t(o.corpse_ticks));
     mix(uint32_t(o.dest_x)); mix(uint32_t(o.dest_y)); mix(o.resume); mix(uint32_t(o.build_elapsed)); mix(uint32_t(o.build_total));
     mix(uint32_t(o.secondary_hp)); mix(o.regen_alternate);

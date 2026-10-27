@@ -932,6 +932,13 @@ static void test_descriptor_combat() {
   for (int tick = 1; tick <= 24; ++tick) {
     world.begin_tick(); sim.tick(world);
     CHECK(world.objects[0].has_fired);
+    CHECK(world.objects[0].attack_tick == (tick - 1) % 10);
+    CHECK(world.objects[1].body_tick == tick - 1); // the built body clock continues through combat
+    if (tick == 11 || tick == 21) CHECK(world.objects[0].body_tick > 0);
+    auto visual_hash = sim.state_hash(world);
+    ++world.objects[0].attack_tick;
+    CHECK(sim.state_hash(world) != visual_hash);
+    --world.objects[0].attack_tick;
     if (tick == 1 || tick == 11 || tick == 21) CHECK(world.objects[0].cooldown == 10);
     CHECK(world.objects[1].hp == 30000 - 150 * ((tick - 1) / 10 + 1));
     CHECK(world.objects[2].hp == 20044 && world.objects[2].secondary_hp == 36000);

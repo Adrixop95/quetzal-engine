@@ -4,10 +4,12 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <unistd.h>
 #include "engine/assets/anim_provider.hpp"
 #include "engine/render/light_grid.hpp"
+#include "engine/render/scene_renderer.hpp"
 
 using namespace aztec;
 using namespace aztec::engine;
@@ -33,14 +35,21 @@ static Bytes animation(int id) {
 
 static void provider_controls() {
   // A tiny single-group archive, created privately and deleted after the test.
-  Bytes archive(20 + 317 * 4);
+  Bytes archive(20 + 417 * 4);
   put(archive, 0, 1); put(archive, 4, 0x515);  // animation group 0x515
-  put(archive, 8, 20); put(archive, 12, 0); put(archive, 16, 317);
-  for (int id = 0; id < 317; ++id) {
+  put(archive, 8, 20); put(archive, 12, 0); put(archive, 16, 417);
+  for (int id = 0; id < 417; ++id) {
     put(archive, 20 + id * 4, uint32_t(archive.size()));
-    if (id == 4 || id == 5 || id == 14 || id == 22 || id == 23 || id == 29 || id == 51 ||
+    bool unit_anim = false;
+    for (const auto& type : data::kTypeAnims) unit_anim |= type.anim == id || type.anim2 == id;
+    if (unit_anim || id == 4 || id == 5 || id == 14 || id == 22 || id == 23 || id == 29 || id == 51 ||
         id == 113 || id == 114 || id == 115 || id == 116 || id == 152 || id == 154 || id == 155 || id == 156 || id == 200) {
-      auto bytes = animation(id); archive.insert(archive.end(), bytes.begin(), bytes.end());
+      auto bytes = animation(id);
+      if (id == 18 || id == 52 || id == 13) {
+        for (int slot = 0; slot < 128; ++slot)
+          put(bytes, 0x208 + (slot * 4 + 2) * 32 + 28, 10);
+      }
+      archive.insert(archive.end(), bytes.begin(), bytes.end());
     }
   }
   char path[] = "/tmp/aztec-render-XXXXXX";
@@ -48,6 +57,46 @@ static void provider_controls() {
   close(fd);
   { std::ofstream file(path, std::ios::binary); file.write(reinterpret_cast<const char*>(archive.data()), archive.size()); }
   AnimSpriteProvider provider; CHECK(provider.open(path)); unlink(path);
+  // Every initialized type has a built/idle body and a supported walk path.
+  // The synthetic tables deliberately supply every slot; selection remains kind-specific.
+  for (int type = 0; type < 90; ++type) {
+    ObjectState input; input.type_id = type;
+    const auto kind = data::kTypeAnims[type].kind;
+    if (kind == 11) { CHECK(!provider.frame_for(input).valid()); continue; }
+    CHECK(provider.frame_for(input).valid());
+    if (kind == 8 || kind == 10) {
+      CHECK(provider.height(input) == 0 && provider.vision_mask(input) == 71);
+    }
+    if (kind != 2 && kind != 7) {
+      input.anim_state = int(data::AnimState::Move);
+      CHECK(provider.frame_for(input).valid());
+    }
+  }
+  ObjectState timed; timed.type_id = 1; timed.anim_state = int(data::AnimState::Attack);
+  timed.body_tick = 42; timed.attack_tick = 0;
+  CHECK(provider.frame_for(timed).sprite == 18019);
+  timed.attack_tick = 2; CHECK(provider.frame_for(timed).sprite == 18020);
+  // The simulation may have returned to idle at tick 8; resource timing lasts 12 ticks.
+  timed.anim_state = int(data::AnimState::Idle); timed.attack_tick = 9;
+  CHECK(provider.frame_for(timed).sprite == 18020);
+  timed.attack_tick = 12; CHECK(provider.frame_for(timed).sprite == 18001);
+  timed.anim_state = int(data::AnimState::Die); timed.anim_tick = 12;
+  CHECK(provider.frame_for(timed).sprite == 18036); // final Marine corpse frame is retained
+  timed.type_id = 4; timed.anim_state = int(data::AnimState::Move); timed.moving = true;
+  timed.body_tick = 2; timed.attack_tick = 0;
+  CHECK(provider.parts(timed)[1].key.index == 14004);
+  CHECK(provider.parts(timed)[3].key.index == 52005);
+  timed.attack_tick = 9; CHECK(provider.parts(timed)[3].key.index == 52006);
+  timed.attack_tick = 12; CHECK(provider.parts(timed)[3].key.index == 52001);
+  CHECK(provider.parts(timed)[1].key.index == 14004); // firing never resets wheel phase
+  timed.type_id = 33; timed.angle = 8;
+  CHECK(provider.frame_for(timed).sprite == 13002); // unaligned flight seeks dir32
+  timed.angle = 0; CHECK(provider.frame_for(timed).sprite == 13004);
+  timed.body_tick = int64_t(UINT32_MAX) + 7;
+  CHECK(provider.frame_for(timed).valid());
+  timed = {}; timed.type_id = 10; timed.anim_state = int(data::AnimState::Construct);
+  timed.hp = 34; timed.max_hp = 100;
+  CHECK(provider.frame_for(timed).sprite == 200001); // explicit state, even without progress glue
   ObjectState st; st.type_id = 0;
   auto parts = provider.parts(st);
   CHECK(parts.size() == 2 && parts[0].key.shadow && !parts[1].key.shadow);
@@ -135,4 +184,75 @@ static void ordering_controls() {
   CHECK(keys[0].id == 3 && keys[1].id == 4 && keys[2].id == 2 && keys[3].id == 1 && keys[4].id == 5);
   CHECK(!display_before(0, 0, -1, 10, 20, -1));
 }
-int main() { provider_controls(); grid_controls(); ordering_controls(); return failures ? 1 : 0; }
+// A real SceneRenderer check with invented raw RGB565 sprites. No game data is used.
+static void headless_controls() {
+  char path[] = "/tmp/aztec-animation-XXXXXX";
+  const auto* directory = mkdtemp(path); CHECK(directory != nullptr);
+  if (!directory) return;
+  namespace fs = std::filesystem;
+  fs::create_directory(fs::path(path) / "Res");
+  auto write = [&](const std::string& name, const Bytes& bytes) {
+    std::ofstream file(fs::path(path) / "Res" / (name + ".xbe"), std::ios::binary);
+    file.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+  };
+  // Body sprites 1 and 2, then animation 4 in a second group.
+  Bytes archive(36 + 2 * 4 + 1 * 4);
+  put(archive, 0, 2);
+  put(archive, 4, 0x44c); put(archive, 8, 36); put(archive, 12, 1); put(archive, 16, 3);
+  put(archive, 20, 0x515); put(archive, 24, 44); put(archive, 28, 4); put(archive, 32, 5);
+  for (int i = 0; i < 2; ++i) {
+    put(archive, 36 + 4 * i, uint32_t(archive.size()));
+    Bytes sprite(24 + 8 * 8 * 2);
+    put(sprite, 0, 0xe0ac0000); put(sprite, 4, 8 | (8 << 16));
+    put(sprite, 8, 0x11); put(sprite, 16, 8 | (8 << 16)); put(sprite, 20, 4 | (4 << 16));
+    uint16_t color = i == 0 ? 0xf800 : 0x07e0;
+    for (size_t p = 24; p < sprite.size(); p += 2) std::memcpy(sprite.data() + p, &color, 2);
+    archive.insert(archive.end(), sprite.begin(), sprite.end());
+  }
+  put(archive, 44, uint32_t(archive.size()));
+  auto anim = animation(4);
+  for (int slot = 0; slot < 128; ++slot) {
+    const size_t p = 0x208 + (slot * 4 + 1) * 32;
+    put(anim, p, 1); put(anim, p + 32, 2); put(anim, p + 32 + 28, 10);
+  }
+  archive.insert(archive.end(), anim.begin(), anim.end());
+  write("Units", archive);
+  for (const auto* name : {"Pal", "Tiles0", "Tiles1", "common", "fnts", "light"}) write(name, Bytes(4));
+  const int initialized = SDL_Init(SDL_INIT_VIDEO); CHECK(initialized == 0);
+  if (initialized != 0) { fs::remove_all(path); return; }
+  {
+    Window win; WindowOptions options; options.width = options.height = 64;
+    options.software = true; options.vsync = false;
+    const bool created = win.create(options); CHECK(created);
+    if (!created) { fs::remove_all(path); return; }
+    GameData assets; std::string error; CHECK(assets.open(path, error));
+    auto provider = std::make_shared<AnimSpriteProvider>();
+    CHECK(provider->open(std::string(path) + "/Res/Units.xbe"));
+    World world; Object unit; unit.type = 0; unit.id = 1;
+    unit.teleport(to_fixed(32), to_fixed(32)); unit.attack_tick = 0; unit.body_tick = 0;
+    unit.has_fired = true; world.objects.push_back(unit);
+    SceneRenderer scene(win, assets, world); scene.set_sprite_provider(provider);
+    scene.fog().set_enabled(false); scene.opts.labels = scene.opts.markers = false;
+    Camera camera; camera.view_w = camera.view_h = 64;
+    auto pixels = [&](float alpha) {
+      scene.draw(camera, alpha);
+      std::vector<uint32_t> result(64 * 64);
+      CHECK(SDL_RenderReadPixels(win.renderer(), nullptr, SDL_PIXELFORMAT_ARGB8888, result.data(), 64 * 4) == 0);
+      CHECK(scene.stats.sprites == 1);
+      return result;
+    };
+    auto first = pixels(0); CHECK((first[24 * 64 + 32] & 0xffffff) == 0xff0000);
+    world.objects[0].attack_tick = 9; // beyond the legacy eight-tick attack state
+    auto firing = pixels(1); CHECK((firing[24 * 64 + 32] & 0xffffff) == 0x00ff00);
+    for (int i = 0; i < 20; ++i) CHECK(pixels(float(i) / 20) == firing);
+    CHECK(world.objects[0].attack_tick == 9 && world.objects[0].body_tick == 0);
+    world.objects[0].attack_tick = 12;
+    CHECK(pixels(0) == first); // resource duration completes, returning to idle
+  }
+  SDL_Quit(); fs::remove_all(path);
+}
+int main(int argc, char** argv) {
+  if (argc > 1 && std::string(argv[1]) == "--headless") headless_controls();
+  else { provider_controls(); grid_controls(); ordering_controls(); }
+  return failures ? 1 : 0;
+}

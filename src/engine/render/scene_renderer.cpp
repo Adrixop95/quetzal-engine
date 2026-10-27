@@ -321,6 +321,7 @@ ObjectState SceneRenderer::object_state(const Object& o) const {
   st.facing = o.facing;
   st.anim_state = o.anim_state;
   st.anim_tick = o.anim_tick;
+  st.body_tick = o.body_tick; st.attack_tick = o.attack_tick;
   st.anim_variant = o.anim_variant;
   st.progress = o.progress;
   return st;

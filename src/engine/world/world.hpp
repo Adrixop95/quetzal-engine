@@ -42,6 +42,8 @@ struct Object {
   int transport_phase = 0, orientation = 0;
   bool construction_overlay = false;
   bool has_fired = false;
+  int64_t body_tick = -1, attack_tick = -1;  // independent visual clocks, advanced only by GameSim
+  bool body_moving = false;
   // --- simulation state (written only by the Simulation) ---
   int32_t hp_max = 0;
   int32_t secondary_hp = 0;    // Marine d4, independent of primary/max HP
