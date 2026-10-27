@@ -314,10 +314,7 @@ void GameSim::apply(World& w, const Command& c) {
       }
       break;
     }
-<<<<<<< ours
-    default: break;  // Garrison, RepairMode, AttackMode, SelectGroup, ...: recorded but not implemented
-=======
-    default: break;  // AttackMode, BuildMode, SelectGroup, ...: recorded but not implemented
+    default: break;  // AttackMode, SelectGroup, ...: recorded but not implemented
   }
 }
 
@@ -339,7 +336,6 @@ void GameSim::maintain_town_marks(World& w) {
     for (const Object& o : w.objects)
       if (rules_->type(o.type).kind == 2 && mark_eligible(o, town) &&
           std::find(town.marked.begin(), town.marked.end(), o.id) == town.marked.end()) town.marked.push_back(o.id);
->>>>>>> theirs
   }
 }
 

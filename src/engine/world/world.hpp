@@ -51,7 +51,6 @@ struct Object {
   int32_t dest_x = 0, dest_y = 0;  // order destination, world px
   int32_t cooldown = 0;        // ticks until the next shot
   int32_t corpse_ticks = 0;    // ticks since death
-  int32_t town = -1;           // [Town#] membership; -1 after extraction or when unattached
   bool town_hall = false;      // explicit hall identity, independent of its upgrade type
   int32_t tactic = -1;         // team (tactic) number for Team objects, changed by joinTactic
   int32_t scenario = -1;       // ScenarioID of defences / vessels (script references)
