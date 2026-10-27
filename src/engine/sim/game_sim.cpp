@@ -59,6 +59,7 @@ void GameSim::init(World& w) {
     const TypeRules& r = rules_->type(o.type);
     o.hp_max = r.hp_src == Src::Verified ? r.hp_max : std::max(seen[size_t(o.type)], r.structure ? r.hp_max : 1);
     if (o.hp <= 0) o.hp = o.hp_max;
+    o.secondary_hp = r.secondary_hp;
     o.progress = 1000;
     attach_agent(o);
     if (r.structure) {
@@ -85,6 +86,7 @@ uint32_t GameSim::spawn(World& w, int type, int side, int pxx, int pyy, int hp, 
   const TypeRules& r = rules_->type(type);
   o.hp_max = r.hp_max > 0 ? r.hp_max : std::max(hp, 1);
   o.hp = hp > 0 ? hp : o.hp_max;
+  o.secondary_hp = r.secondary_hp;
   o.anim_variant = next_rand();
   o.teleport(to_fixed(pxx), to_fixed(pyy));
   if (constructing) {
@@ -112,17 +114,21 @@ void GameSim::kill(World& w, Object& o) {
   o.corpse_ticks = 0;
   const TypeRules& r = rules_->type(o.type);
   if (r.kind == 1 || r.kind == 3 || r.kind == 4 || r.kind == 5 || r.kind == 6 || r.kind == 9) {
-    decoration(w, data::kVehicleExplosionAnim, int(next_rand() % 3), o.cur_x, o.cur_y, 0, o.side);
+    decoration(w, data::kVehicleExplosionAnim, int(next_rand() % 3), o.cur_x, o.cur_y, o.render_height, o.side);
     if (!r.flier) decoration(w, data::kVehicleDebrisAnim, int(next_rand() % 20), o.cur_x, o.cur_y, -1, o.side);
     o.removed = true;
   }
   if (r.structure) {
-    decoration(w, 116, int(next_rand() % 20), o.cur_x, o.cur_y, -1, o.side);
+    // Known-radius rubble is drawn by the object provider; retain the provisional
+    // small-rubble effect only when its radius is unavailable.
+    if (o.destruction_radius < 0 && o.progress >= 1000)
+      decoration(w, 116, int(next_rand() % 20), o.cur_x, o.cur_y, -1, o.side);
     int x0, y0, x1, y1;
     footprint(r, px(o.cur_x) / kTilePx, px(o.cur_y) / kTilePx, x0, y0, x1, y1);
     nav_.add_block(x0, y0, x1 - x0 + 1, y1 - y0 + 1, -1);
-    o.removed = true;  // replaced by the rubble effect
-    return;
+    // Keep known rubble visible for its resource lifetime; unknown radii and
+    // construction cancellations remain explicit missing visual inputs.
+    if (o.destruction_radius < 0 || o.progress < 1000) { o.removed = true; return; }
   }
   o.anim_state = kAnimDie;
   o.anim_tick = 0;
@@ -139,6 +145,8 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o, int radius
   int64_t bd = int64_t(radius_px) * radius_px;
   for (const Object& t : w.objects) {
     if (t.removed || !t.alive || t.type < 0 || !w.hostile(o.side, t.side) || t.progress < 1000) continue;
+    const auto shot = rules_->attack(o.type, t.type, !w.hostile(o.side, t.side));
+    if (!shot.damage_known || !shot.getters_known || shot.damage <= 0) continue;
     int64_t d = d2(o, t);
     if (d < bd || (d == bd && best && t.id < best->id)) { bd = d; best = &t; }
   }
@@ -333,12 +341,13 @@ void GameSim::run_orders(World& w) {
     Object& o = w.objects[i];
     if (o.removed || o.type < 0) continue;
     if (!o.alive) {
-      if (++o.corpse_ticks > kCorpseTicks) { o.removed = true; }
+      if (++o.corpse_ticks > (rules_->type(o.type).structure ? 249 : kCorpseTicks)) { o.removed = true; }
       continue;
     }
     const TypeRules& r = rules_->type(o.type);
     if (o.cooldown > 0) o.cooldown--;
     if (o.progress < 1000) continue;
+    o.hp = regenerated_hp(r, o.hp, o.regen_alternate);
     path::Agent* ag = o.mover >= 0 ? &mover_->agents_mut()[size_t(o.mover)] : nullptr;
     bool moving = ag && ag->state == path::AgentState::Moving;
 
@@ -386,18 +395,19 @@ void GameSim::run_orders(World& w) {
     }
     const TypeRules& tr = rules_->type(t->type);
     int treach = tr.structure ? std::max(tr.foot_w, tr.foot_h) * 24 : tr.radius_px;
-    int64_t reach = int64_t(r.range_px) + treach;
+    const auto shot = rules_->attack(o.type, t->type, !w.hostile(o.side, t->side));
+    if (!shot.damage_known || !shot.getters_known || shot.damage <= 0) continue;
+    int64_t reach = int64_t(shot.range_px) + treach;
     if (d2(o, *t) <= reach * reach) {
       if (ag && moving) mover_->stop(uint32_t(o.mover));
       int f = facing_from(px(t->cur_x) - px(o.cur_x), px(t->cur_y) - px(o.cur_y));
       if (f >= 0) o.facing = uint8_t(f);
       if (o.cooldown == 0) {
-        DuelEntry de;
-        int dmg = r.dmg, rel = r.reload;
-        if (rules_->has_duel(o.type, t->type, de)) { dmg = de.dmg; rel = de.interval; }
-        o.cooldown = std::max(1, rel);
+        // Descriptor damage/reload feed provisional projectile flight; direct weapons hit immediately.
+        o.cooldown = std::max(1, shot.reload + 1);
+        o.has_fired = true;
         o.anim_state = kAnimAttack; o.anim_tick = 0;
-        fire(w, o, *t, dmg);
+        fire(w, o, *t, shot.damage);
       }
     } else if (ag && ((tick_ + o.id) % 6 == 0 || !moving)) {
       uint32_t aid = uint32_t(o.mover);
@@ -612,8 +622,11 @@ uint64_t GameSim::state_hash(const World& w) const {
   for (const Object& o : w.objects) {
     mix(o.id); mix(uint32_t(o.type)); mix(uint32_t(o.side)); mix(uint32_t(o.hp)); mix(uint32_t(o.cur_x)); mix(uint32_t(o.cur_y));
     mix(o.order); mix(o.target); mix(uint32_t(o.cooldown)); mix(o.alive); mix(o.removed); mix(uint32_t(o.progress));
+    mix(uint32_t(o.render_height)); mix(uint32_t(o.destruction_radius));
+    mix(uint32_t(o.transport_phase)); mix(uint32_t(o.orientation)); mix(o.construction_overlay); mix(o.has_fired);
     mix(o.facing); mix(o.anim_state); mix(uint32_t(o.corpse_ticks));
     mix(uint32_t(o.dest_x)); mix(uint32_t(o.dest_y)); mix(o.resume); mix(uint32_t(o.build_elapsed)); mix(uint32_t(o.build_total));
+    mix(uint32_t(o.secondary_hp)); mix(o.regen_alternate);
     mix(uint32_t(o.hp_max)); mix(uint32_t(o.tactic)); mix(uint32_t(o.scenario)); mix(o.last_hit_by); mix(uint32_t(o.mover)); mix(o.anim_variant);
   }
   mix(w.effects.size());

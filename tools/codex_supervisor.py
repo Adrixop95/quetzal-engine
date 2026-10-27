@@ -101,6 +101,39 @@ def pending_merge():
     return {h[len("feature/codex-"):] for h in out if h.startswith("feature/codex-")}
 
 
+RESOLVED = set()
+
+
+def resolve_conflicts(num, head):
+    """Merge origin/develop into a PR branch inside the landing checkout and let Codex resolve the conflict markers."""
+    if num in RESOLVED:
+        return
+    RESOLVED.add(num)
+    ensure_land()
+    lrun("git reset -q --hard && git clean -qfd -e build_sup && git fetch -q origin")
+    lrun(f"git checkout -q -f -B {head} origin/{head}")
+    lrun("git merge --no-commit origin/develop")
+    prompt = ("This worktree is in the middle of a git merge of origin/develop into a feature branch and has conflict markers. "
+              "Resolve every conflict by preserving the intent of BOTH sides (the branch adds a feature, develop gained other features "
+              "in the same files). Remove all conflict markers, make the project build and the tests pass (cmake -S . -B build_sup "
+              "-DAZTEC_GEN_DIR= && cmake --build build_sup && ctest --test-dir build_sup), keep everything English. Do NOT run git "
+              "commit or any other git write command; leave the resolved files in the working tree and summarize.")
+    log("resolving conflicts of PR", num, run(f"codex exec -C {LAND} -s workspace-write {json.dumps(prompt)} 2>&1 | tail -5").stdout[-300:])
+    if lrun("grep -rlE '^(<<<<<<<|>>>>>>>) ' --include='*' . --exclude-dir=.git --exclude-dir=build_sup").stdout.strip():
+        log("conflict markers remain for PR", num)
+        lrun("git merge --abort; git reset -q --hard")
+        return
+    if lrun("cmake --build build_sup --parallel 8 >/dev/null 2>&1 && ctest --test-dir build_sup >/dev/null 2>&1").returncode != 0:
+        log("build/tests fail after resolving PR", num)
+        lrun("git merge --abort; git reset -q --hard")
+        return
+    lrun("git add -A -- . ':!build_sup'")
+    lrun(" ".join(GIT) + " commit -qm 'Merge develop into " + head + " (conflicts resolved by Codex)'")
+    lrun(f"git push -q origin {head}")
+    lrun("git checkout -q --detach origin/develop")
+    log("pushed conflict resolution for PR", num)
+
+
 def merge_green_prs():
     out = run("gh pr list --json number,headRefName --jq '.[]|\"\\(.number) \\(.headRefName)\"'").stdout.splitlines()
     for line in out:
@@ -110,6 +143,8 @@ def merge_green_prs():
             if c.strip() and "pending" not in c and "fail" not in c:
                 m = run(f"gh pr merge {num} --squash --delete-branch")
                 log("merged green PR", num, m.stderr.strip()[-100:])
+                if "conflict" in (m.stderr + m.stdout).lower():
+                    resolve_conflicts(num, head)
 
 
 def main():

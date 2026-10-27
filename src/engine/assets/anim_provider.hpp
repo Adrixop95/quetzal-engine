@@ -4,6 +4,7 @@
 #include <string>
 #include "engine/assets/sprite_provider.hpp"
 #include "engine/data/sprites.hpp"
+#include "engine/data/render_rules.hpp"
 
 namespace aztec::engine {
 
@@ -15,10 +16,18 @@ class AnimSpriteProvider : public SpriteProvider {
   bool pick_shadow(const ObjectState& st, SpriteDraw& out) const override { return make(st, out, true); }
   // Raw frame lookup (also used by tests/tools).
   data::SpriteRef frame_for(const ObjectState& st) const;
+  std::vector<SpriteDraw> parts(const ObjectState& st) const override;
+  std::vector<SpriteItem> items(const ObjectState& st) const override;
+  int light_mask(const ObjectState& st) const override { return frame_for(st).light; }
+  int vision_mask(const ObjectState& st) const override;
+  int height(const ObjectState& st) const override;
+  bool hides_missing(const ObjectState& st) const override;
+  bool load_visual_rules(const std::string& directory);
 
  private:
   bool make(const ObjectState& st, SpriteDraw& out, bool shadow) const;
   data::SpriteDb db_;
+  int vision_[90] = {};
 };
 
 }  // namespace aztec::engine
