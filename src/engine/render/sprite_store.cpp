@@ -27,7 +27,8 @@ const StoredSprite& SpriteStore::get(const SpriteKey& k) {
     // Flag 0x40: palette indexed RLE with optional per-pixel blend byte (core/sprite_alpha.hpp).
     AlphaSprite as;
     if (decode_alpha_sprite(item, as)) {
-      int pid = k.palette ? k.palette : as.palette;
+      int pid = k.palette ? k.palette : ((as.palette < 4 && k.archive == ArchiveId::Units)
+          ? as.palette + 0x10 + k.team * 4 : as.palette);
       const Palette* pal = palette(uint8_t(pid), k.shade);
       std::vector<uint32_t> px;
       if (k.shadow) {

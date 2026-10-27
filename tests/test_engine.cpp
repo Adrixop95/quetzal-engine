@@ -70,6 +70,17 @@ static void test_sprite_metadata() {
   CHECK(!anim.frame(0, 0).valid() && anim.loop_sound(0) == 0);
   CHECK(!AnimSet().ok() && !AnimSet({bytes.data(), 7}).frame(0, 0).valid());
   CHECK(!LightMask().ok() && LightMask().sample(0, 0) == -1);
+  std::vector<uint8_t> mask_bytes(404, 0);
+  mask_bytes[0] = mask_bytes[2] = 20;
+  mask_bytes[4] = 8; mask_bytes[5] = 24;
+  mask_bytes[24] = 40; mask_bytes[25] = 56;
+  LightMask mask({mask_bytes.data(), mask_bytes.size()});
+  CHECK(mask.sample_pixels(0, 0) == 8 && mask.sample_pixels(48, 48) == 56);
+  CHECK(mask.sample_pixels(24, 24) == 32);  // bilinear translation, not nearest mask texel
+  CHECK(mask.sample_pixels(-1, 0) == 0 && mask.sample_pixels(20 * 48, 0) == 0);
+  CHECK(LightMask().sample_pixels(24, 24) == 0);
+  CHECK(effect_lifetime(150, 0) == 11 && effect_lifetime(150, 2) == 10);
+  CHECK(effect_lifetime(113, 19) == 250 && effect_lifetime(105, 0) == 30);
 }
 
 static void test_sprite_assets(const std::string& dir) {
@@ -420,6 +431,118 @@ static void run_scenario(World& w, GameSim& sim, int ticks, bool commands) {
   }
 }
 
+// Synthetic combat checks run without installed assets, using the public rules tables.
+static void test_projectiles() {
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  CHECK(rules->type(27).weapon.anim == 112);
+  CHECK(rules->type(27).weapon.speed == 30 && rules->type(27).range_px == 160);
+  CHECK(rules->type(3).weapon.anim == 101);
+  CHECK(rules->type(4).weapon.anim == 100);
+  CHECK(rules->type(2).weapon.anim == 157);
+  for (int type : {27, 3, 4, 2}) {
+    World initial;
+    initial.terrain.w = initial.terrain.h = 40;
+    initial.terrain.cells.resize(1600);
+    for (int a = 0; a < 8; a++) for (int b = 0; b < 8; b++) initial.relation[a][b] = a == b ? kFriend : kEnemy;
+    Object shooter; shooter.id = 1; shooter.type = type; shooter.hp = 30000;
+    shooter.teleport(to_fixed(200), to_fixed(200));
+    Object target; target.id = 2; target.type = 10; target.side = 1; target.hp = 30000;
+    target.teleport(to_fixed(290), to_fixed(200));
+    initial.objects = {shooter, target};
+    World a = initial, b = initial;
+    GameSim sa(rules), sb(rules); sa.init(a); sb.init(b);
+    Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
+    sa.submit(attack); sb.submit(attack);
+    a.begin_tick(); sa.tick(a); b.begin_tick(); sb.tick(b);
+    const auto shot = rules->attack(type, target.type);
+    if (!shot.damage_known || !shot.getters_known) {
+      // Visual metadata alone must not enable invented damage or scheduling.
+      for (int tick = 0; tick < 8; tick++) {
+        CHECK(a.effects.empty() && !a.objects[0].has_fired && a.objects[1].hp == 30000);
+        CHECK(sa.state_hash(a) == sb.state_hash(b));
+        a.begin_tick(); sa.tick(a); b.begin_tick(); sb.tick(b);
+      }
+      continue;
+    }
+    CHECK(!a.effects.empty() && a.effects.front().flight);
+    CHECK(a.objects[0].cooldown == shot.reload + 1);
+
+    CHECK(a.objects[1].hp == 30000);  // firing does not apply damage early
+    CHECK(sa.state_hash(a) == sb.state_hash(b));
+    if (!a.effects.empty()) {
+      auto hash = sa.state_hash(a);
+      a.effects[0].end_x++;
+      CHECK(sa.state_hash(a) != hash);
+      a.effects[0].end_x--;
+      a.effects[0].age++;
+      CHECK(sa.state_hash(a) != hash);
+      a.effects[0].age--;
+    }
+    auto replay = GameSim::replay(initial, rules, sa.log(), 1);
+    CHECK(replay->state_hash(initial) == sa.state_hash(a));  // save while in flight
+    for (int tick = 0; tick < 8; tick++) {
+      a.begin_tick(); sa.tick(a); b.begin_tick(); sb.tick(b);
+      CHECK(sa.state_hash(a) == sb.state_hash(b));
+    }
+    CHECK(a.objects[1].hp == 30000 - shot.damage);
+    Command pause; pause.type = Pct::PauseOn;
+    sa.submit(pause); a.begin_tick(); sa.tick(a);
+    auto effects = a.effects;
+    a.begin_tick(); sa.tick(a);
+    CHECK(a.effects.size() == effects.size());
+    for (size_t i = 0; i < effects.size(); i++) CHECK(a.effects[i].x == effects[i].x && a.effects[i].age == effects[i].age);
+  }
+  // A splash hits hostile neighbours once, keeps allies safe, and retains its source id after death.
+  World w;
+  w.terrain.w = w.terrain.h = 20; w.terrain.cells.resize(400);
+  Object target; target.id = 1; target.type = 10; target.side = 1; target.hp = 10000;
+  target.teleport(to_fixed(200), to_fixed(200));
+  Object neighbour = target; neighbour.id = 2; neighbour.teleport(to_fixed(210), to_fixed(200));
+  Object ally = neighbour; ally.id = 3; ally.side = 0;
+  w.objects = {target, neighbour, ally}; w.relation[0][1] = kEnemy;
+  GameSim sim(rules); sim.init(w);
+  for (auto& o : w.objects) o.hp_max = 10000;
+  Effect e; e.flight = true; e.source = 99; e.target = 1; e.side = 0;
+  e.x = e.end_x = to_fixed(200); e.y = e.end_y = to_fixed(200);
+  e.speed = 256; e.damage = 1000; e.splash_px = 30; e.impact_anim = 150;
+  w.effects.push_back(e);
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.objects[0].hp == 9000 && w.objects[1].hp == 9000 && w.objects[2].hp == 10000);
+  CHECK(w.objects[1].last_hit_by == 99);
+  CHECK(!w.effects.empty() && !w.effects[0].flight && w.effects[0].anim == 150);
+  for (int i = 0; i < 12; i++) { w.begin_tick(); sim.tick(w); }
+  CHECK(w.objects[0].hp == 9000);  // effect lifetime never repeats damage
+  CHECK(w.effects.empty());
+  // Damage fires loop and disappear once a building is repaired.
+  w.objects[0].hp = 4000;
+  w.begin_tick(); sim.tick(w);
+  CHECK(!w.effects.empty() && w.effects.back().loop && w.effects.back().anim == 155);
+  w.objects[0].hp = w.objects[0].hp_max;
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.effects.empty());
+  // Known-radius rubble stays on the object; missing radii use one fallback effect.
+  for (int radius : {-1, 97, 145}) {
+    World rubble;
+    rubble.terrain.w = rubble.terrain.h = 20; rubble.terrain.cells.resize(400);
+    Object building; building.id = 1; building.type = 10; building.hp = 10000;
+    building.destruction_radius = radius; building.teleport(to_fixed(200), to_fixed(200));
+    rubble.objects = {building};
+    GameSim death(rules); death.init(rubble); death.script_kill(rubble, 1);
+    CHECK(!rubble.objects[0].alive && rubble.objects[0].removed == (radius < 0));
+    CHECK(rubble.effects.size() == (radius < 0 ? 1u : 0u));
+    for (int tick = 0; tick < 249; ++tick) { rubble.begin_tick(); death.tick(rubble); }
+    if (radius >= 0) CHECK(!rubble.objects[0].removed);
+    rubble.begin_tick(); death.tick(rubble);
+    CHECK(rubble.objects[0].removed && rubble.effects.empty());
+    rubble = World{};
+    rubble.terrain.w = rubble.terrain.h = 20; rubble.terrain.cells.resize(400);
+    building.progress = 100; rubble.objects = {building};
+    death.init(rubble); rubble.objects[0].progress = 100; death.script_kill(rubble, 1);
+    CHECK(rubble.objects[0].removed && rubble.effects.empty());
+  }
+}
+
 static void test_sim(const std::string& dir) {
   GameData data;
   std::string err;
@@ -633,10 +756,12 @@ static void test_descriptor_combat() {
   recovering.regen_alternate = true; recovering.teleport(to_fixed(800), to_fixed(800));
   fresh.objects.push_back(recovering);
   world = fresh; sim.init(world);
+  CHECK(!world.objects[0].has_fired);
   Command attack; attack.type = Pct::Attack; attack.side = 0; attack.ids = {1}; attack.a = 2;
   sim.submit(attack);
   for (int tick = 1; tick <= 24; ++tick) {
     world.begin_tick(); sim.tick(world);
+    CHECK(world.objects[0].has_fired);
     if (tick == 1 || tick == 11 || tick == 21) CHECK(world.objects[0].cooldown == 10);
     CHECK(world.objects[1].hp == 30000 - 150 * ((tick - 1) / 10 + 1));
     CHECK(world.objects[2].hp == 20044 && world.objects[2].secondary_hp == 36000);
@@ -687,6 +812,7 @@ static void test_audio_data(const std::string& dir) {
 int main(int argc, char** argv) {
   if (argc == 2 && std::string(argv[1]) == "--pure") {
     test_pure();
+    test_projectiles();
     test_descriptor_combat();
     test_sprite_metadata();
     test_audio_pure();

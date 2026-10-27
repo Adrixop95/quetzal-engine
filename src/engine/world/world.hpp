@@ -10,6 +10,7 @@
 #include "core/visfile.hpp"
 #include "engine/assets/game_data.hpp"
 #include "engine/assets/mission.hpp"
+#include "engine/sim/effects.hpp"
 
 namespace aztec::engine {
 
@@ -32,6 +33,11 @@ struct Object {
   uint16_t anim_state = 0;
   uint32_t anim_tick = 0;      // ticks since anim_state started; advanced by World::begin_tick()
   uint32_t anim_variant = 0;
+  // Render inputs whose producers are not yet modeled by the simulation.
+  int render_height = 0, destruction_radius = -1;
+  int transport_phase = 0, orientation = 0;
+  bool construction_overlay = false;
+  bool has_fired = false;
   // --- simulation state (written only by the Simulation) ---
   int32_t hp_max = 0;
   int32_t secondary_hp = 0;    // Marine d4, independent of primary/max HP
@@ -87,6 +93,7 @@ struct World {
   VisFile visibility;            // .vis per-side light layers, may be empty
   Sprite preview;                // .spr minimap preview; w == 0 if absent
   std::vector<Object> objects;
+  std::vector<Effect> effects;
   std::vector<SideState> side_state;   // indexed by side number
   uint8_t relation[8][8] = {};          // relation[a][b]: how side a regards side b (enemy / friend / neutral)
   uint8_t outcome = kRunning;           // mission result for the local side (scripts: side(local).victory / defeat)

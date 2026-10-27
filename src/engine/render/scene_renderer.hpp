@@ -9,9 +9,12 @@
 #include "engine/render/batch.hpp"
 #include "engine/render/font.hpp"
 #include "engine/render/fog.hpp"
+#include "engine/render/light_grid.hpp"
+#include "engine/data/terrain_sprites.hpp"
 #include "engine/render/sprite_store.hpp"
 #include "engine/world/camera.hpp"
 #include "engine/world/world.hpp"
+#include "engine/data/sprites.hpp"
 
 namespace aztec::engine {
 
@@ -22,6 +25,8 @@ struct SceneOptions {
   bool grid = false;          // tile grid
   bool passability = false;   // tint from .dat
   bool markers = true;        // draw placeholders for objects without a sprite
+  data::WindStrength wind = data::WindStrength::Still;
+  unsigned wind_counter = 0;  // supplied by unpaused view updates
   bool overlays = true;       // terrain overlay layer (high 16 bits of .map cells)
 };
 
@@ -35,7 +40,7 @@ class SceneRenderer {
   bool ok() const { return font_ok_; }
   void set_sprite_provider(std::shared_ptr<const SpriteProvider> p) { provider_ = std::move(p); }
   void draw(const Camera& cam, float alpha);
-  // Time-of-day light: tint + ambient shade (sprites are baked at shade 14 and modulated).
+  // Time-of-day light: tint and ambient brightness before dynamic masks.
   void set_light(const Light& l);
   SDL_Color light_tint() const { return mod_; }
 
@@ -48,6 +53,7 @@ class SceneRenderer {
 
  private:
   void draw_terrain(const Camera& cam);
+  data::SpriteRef effect_frame(const Effect& e) const;
   void draw_objects(const Camera& cam, float alpha);
   void blit(const Camera& cam, const StoredSprite& s, int frame, float wx, float wy, int& cur_page);
   int hp_max(int type) const;  // best known: highest hp of that type in the mission
@@ -66,8 +72,14 @@ class SceneRenderer {
   bool font_ok_ = false;
   std::shared_ptr<const SpriteProvider> provider_;
   SDL_Color mod_{255, 255, 255, 255};  // vertex colour for terrain/trees/objects
-  float gain_[20];
-  bool gain_init_ = false;
+  void update_lighting();
+  uint8_t shade_at(float x, float y) const;
+  LightGrid lighting_;
+  Light light_;
+  bool mask_lighting_ = false;
+  uint64_t lighting_tick_ = uint64_t(-1);
+  int lighting_side_ = -1;
+  bool lighting_vision_ = false;
   std::vector<QuadBatch> batches_;  // per atlas page
 };
 

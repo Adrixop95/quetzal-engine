@@ -3,9 +3,10 @@
 #include <algorithm>
 #include <cmath>
 
-#include "core/palette.hpp"
+#include "engine/data/animation_slots.hpp"
 #include "engine/render/colors.hpp"
 #include "engine/world/type_info.hpp"
+#include "engine/data/light_masks.hpp"
 
 namespace aztec::engine {
 
@@ -24,21 +25,54 @@ void SceneRenderer::queue(int page, float x0, float y0, float x1, float y1, cons
 }
 
 void SceneRenderer::set_light(const Light& l) {
-  if (!gain_init_) {  // brightness of palette level k relative to level 14 (natural), measured on terrain palette 4
-    gain_init_ = true;
-    double sum[20] = {};
-    for (int k = 0; k < 20; k++) {
-      Palette p{};
-      if (load_palette(data_.archive(ArchiveId::Pal), 4, uint32_t(k), p))
-        for (uint32_t c : p) sum[k] += ((c >> 16) & 255) * 0.3 + ((c >> 8) & 255) * 0.59 + (c & 255) * 0.11;
-    }
-    for (int k = 0; k < 20; k++) gain_[k] = sum[14] > 0 ? float(sum[k] / sum[14]) : 1.f;
-  }
-  float lv = std::clamp(l.level, 0.f, 19.f);
-  int k0 = int(lv), k1 = std::min(19, k0 + 1);
-  float g = gain_[k0] + (gain_[k1] - gain_[k0]) * (lv - k0);
-  auto ch = [&](float t) { return Uint8(std::clamp(t * g, 0.f, 1.f) * 255.f + 0.5f); };
+  if (light_.level != l.level) lighting_tick_ = uint64_t(-1);
+  light_ = l;
+  auto ch = [](float value) { return Uint8(std::clamp(value, 0.f, 1.f) * 255.f + 0.5f); };
   mod_ = {ch(l.rgb[0]), ch(l.rgb[1]), ch(l.rgb[2]), 255};
+}
+
+void SceneRenderer::update_lighting() {
+  mask_lighting_ = data::LightMask(data_.archive(ArchiveId::Light).get(data::kLightGroup, 1)).ok();
+  if (!mask_lighting_) return;
+  if (lighting_side_ != world_.local_side) {
+    lighting_ = LightGrid{};
+    lighting_side_ = world_.local_side;
+    lighting_tick_ = uint64_t(-1);
+  }
+  // Stamp at simulation positions, never projected body positions. Rebuilding at
+  // a view frame must not count as an additional persistent exploration tick.
+  if (lighting_tick_ == world_.tick && lighting_vision_ == fog_.enabled()) return;
+  lighting_vision_ = fog_.enabled();
+  lighting_tick_ = world_.tick;
+  lighting_.reset(world_.terrain.w, world_.terrain.h, int(std::clamp(light_.level, 0.f, 19.f) * 8));
+  for (const auto& o : world_.objects) {
+    if (o.removed || !provider_) continue;
+    const auto st = object_state(o);
+    const float x = o.cur_x / 256.f, y = o.cur_y / 256.f;
+    const auto& archive = data_.archive(ArchiveId::Light);
+    bool primary = true;
+    const bool simulated_fire = std::any_of(world_.effects.begin(), world_.effects.end(),
+        [&](const Effect& e) { return e.loop && e.source == o.id; });
+    for (const auto& item : provider_->items(st)) {
+      if (!primary && simulated_fire && o.alive) continue;
+      primary = false;
+      if (item.light >= data::kFirstGlowMask && item.light <= data::kLastGlowMask)
+        lighting_.stamp(data::LightMask(archive.get(data::kLightGroup, item.light)), x + item.dx, y + item.dy, false);
+    }
+    const int vision = provider_->vision_mask(st);
+    if (o.alive && o.side == world_.local_side && vision >= data::kFirstVisionMask && vision <= data::kLastVisionMask)
+      lighting_.stamp(data::LightMask(archive.get(data::kLightGroup, vision)), x, y, true);
+  }
+  for (const auto& e : world_.effects) {
+    const auto frame = effect_frame(e);
+    if (frame.light >= data::kFirstGlowMask && frame.light <= data::kLastGlowMask)
+      lighting_.stamp(data::LightMask(data_.archive(ArchiveId::Light).get(data::kLightGroup, frame.light)),
+                      e.x / 256.f, e.y / 256.f, false);
+  }
+  lighting_.combine(fog_.enabled());
+}
+uint8_t SceneRenderer::shade_at(float x, float y) const {
+  return uint8_t(mask_lighting_ ? data::palette_shade(int(lighting_.sample(x, y))) : opts.terrain_shade);
 }
 
 void SceneRenderer::flush(int page) {
@@ -53,7 +87,7 @@ void SceneRenderer::draw_terrain(const Camera& cam) {
   SDL_Renderer* r = win_.renderer();
   const TerrainMap& t = world_.terrain;
   ArchiveId arch = world_.mission.tileset == 1 ? ArchiveId::Tiles1 : ArchiveId::Tiles0;
-  uint8_t pal = uint8_t(default_palette()), shade = uint8_t(opts.terrain_shade);
+  uint8_t pal = uint8_t(default_palette());
 
   // Base tiles: only the exactly visible range.
   int bx0 = std::max(0, int(std::floor(cam.x / kTilePx))), by0 = std::max(0, int(std::floor(cam.y / kTilePx)));
@@ -61,7 +95,7 @@ void SceneRenderer::draw_terrain(const Camera& cam) {
   int by1 = std::min(t.h, int(std::ceil((cam.y + cam.visible_h()) / kTilePx)));
   for (int y = by0; y < by1; y++)
     for (int x = bx0; x < bx1; x++) {
-      const StoredSprite& s = store_.get({arch, 0x44c, t.base(x, y), pal, shade});
+      const StoredSprite& s = store_.get({arch, 0x44c, t.base(x, y), pal, shade_at(float(x * kTilePx + 24), float(y * kTilePx + 24))});
       if (!s.ok()) continue;
       int frame = s.frames > 1 ? int((world_.tick / 2) % uint64_t(s.frames)) : 0;  // water/shore animation
       stats.tiles++;
@@ -106,8 +140,8 @@ void SceneRenderer::blit(const Camera& cam, const StoredSprite& s, int frame, fl
 void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
   SDL_Renderer* r = win_.renderer();
   ArchiveId arch = world_.mission.tileset == 1 ? ArchiveId::Tiles1 : ArchiveId::Tiles0;
-  uint8_t pal = uint8_t(default_palette()), shade = uint8_t(opts.terrain_shade);
-  struct Item { float wx, wy; const Object* o; int tx, ty; uint16_t tree; };  // tree != 0: terrain overlay sprite
+  uint8_t pal = uint8_t(default_palette());
+  struct Item { float wx, wy; const Object* o; int height; uint16_t tree; std::vector<SpriteDraw> parts; bool primary = true; const Effect* effect = nullptr; };  // tree != 0: terrain overlay sprite
   std::vector<Item> items;
   items.reserve(world_.objects.size() + 256);
   float pad = 96;
@@ -116,7 +150,24 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
     Vec2f p = o.interpolated(alpha);
     if (p.x < cam.x - pad || p.y < cam.y - pad || p.x > cam.x + cam.visible_w() + pad || p.y > cam.y + cam.visible_h() + pad) continue;
     if (!visible_in_fog(o, p)) continue;
-    items.push_back({p.x, p.y, &o, 0, 0, 0});
+    if (provider_) {
+      const bool simulated_fire = std::any_of(world_.effects.begin(), world_.effects.end(),
+          [&](const Effect& e) { return e.loop && e.source == o.id; });
+      bool primary = true;
+      for (auto item : provider_->items(object_state(o))) {
+        if (!primary && simulated_fire && o.alive) continue;
+        items.push_back({p.x + item.dx, p.y + item.dy, &o, item.height, 0, std::move(item.parts), primary});
+        primary = false;
+      }
+    } else items.push_back({p.x, p.y, &o, 0, 0, {}});
+  }
+  for (const auto& e : world_.effects) {
+    float x = (e.prev_x + (e.x - e.prev_x) * alpha) / 256.f;
+    float y = (e.prev_y + (e.y - e.prev_y) * alpha) / 256.f;
+    if (fog_.enabled() && e.side != world_.local_side &&
+        (mask_lighting_ ? lighting_.sample(x, y) <= 32 : fog_.darkness(world_, int(x / kTilePx), int(y / kTilePx)) >= 120)) continue;
+    if (x < cam.x - pad || y < cam.y - pad || x > cam.x + cam.visible_w() + pad || y > cam.y + cam.visible_h() + pad) continue;
+    if (effect_frame(e).valid()) items.push_back({x, y, nullptr, e.height, 0, {}, false, &e});
   }
   if (opts.overlays) {  // terrain overlay layer = trees/rocks: body in 0x44c, shadow in 0x454, same id
     const TerrainMap& t = world_.terrain;
@@ -126,30 +177,16 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
     for (int y = y0; y < y1; y++)
       for (int x = x0; x < x1; x++)
         if (uint16_t ov = t.overlay(x, y))
-          items.push_back({float(x * kTilePx + kTilePx / 2), float(y * kTilePx + kTilePx / 2), nullptr, x, y, ov});
+          items.push_back({float(x * kTilePx + kTilePx / 2), float(y * kTilePx + kTilePx / 2), nullptr, 0, ov, {}});
   }
-  std::stable_sort(items.begin(), items.end(), [](const Item& a, const Item& b) { return a.wy < b.wy; });
+  std::stable_sort(items.begin(), items.end(), [](const Item& a, const Item& b) { return display_before(a.wx, a.wy, a.height, b.wx, b.wy, b.height); });
 
   int cur_page = -1;
-  // Pass 1: shadows (translucent, under every body).
   SDL_Color body_mod = mod_;
-  mod_ = {255, 255, 255, 255};
-  for (const Item& it : items) {
-    SpriteDraw sd;
-    if (it.tree) {
-      const StoredSprite& s = store_.get({arch, 0x454, it.tree, pal, shade, 0, 0, true});
-      if (s.ok()) { stats.overlays++; blit(cam, s, int(it.tx * 7 + it.ty * 13), it.wx, it.wy, cur_page); }
-    } else if (provider_ && provider_->pick_shadow(object_state(*it.o), sd)) {
-      const StoredSprite& s = store_.get(sd.key);
-      if (s.ok()) blit(cam, s, sd.key.frame, it.wx + sd.dx, it.wy + sd.dy, cur_page);
-    }
-  }
-  flush(cur_page);
-  cur_page = -1;
   // Selection rings go on the ground, under bodies.
   mod_ = {255, 255, 255, 255};
   for (const Item& it : items) {
-    if (it.tree || !world_.selection.contains(it.o->id)) continue;
+    if (it.effect || it.tree || !it.primary || !world_.selection.contains(it.o->id)) continue;
     const TypeInfo* ti = type_info(it.o->type);
     SpriteKey k;
     k.archive = ArchiveId::Common; k.group = 0x44c; k.shade = 0;
@@ -165,24 +202,53 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
   flush(cur_page);
   cur_page = -1;
   mod_ = body_mod;
-  // Pass 2: bodies and placeholders, back to front.
+  // Shared ordered list: finish every item before starting the next one.
   int scale = std::max(1, int(std::lround(cam.zoom)));
   for (const Item& it : items) {
+    uint8_t local_shade = shade_at(it.wx, it.wy);
+    auto draw_frame = [&](data::SpriteRef frame, bool shadow, int height, int side) {
+      if (!frame.valid()) return;
+      SpriteKey key;
+      key.archive = ArchiveId::Units; key.group = shadow ? 0x454 : 0x44c;
+      key.index = uint32_t(frame.sprite); key.team = uint8_t(world_.side_color(side) & 7);
+      key.shade = shadow ? uint8_t(data::kShadowShade) : local_shade; key.shadow = shadow;
+      mod_ = shadow ? SDL_Color{255, 255, 255, 255} : body_mod;
+      const auto& sprite = store_.get(key);
+      if (!sprite.ok()) return;
+      blit(cam, sprite, 0, it.wx, it.wy - (shadow ? 0 : height), cur_page);
+      stats.sprites++;
+    };
+    if (it.effect) {
+      const auto& e = *it.effect;
+      auto frame = effect_frame(e);
+      int height = e.kind == data::EffectClass::Axe ? frame.yoff : e.height;
+      draw_frame(frame, true, 0, e.side);
+      draw_frame(frame, false, height, e.side);
+      continue;
+    }
+
     if (it.tree) {
-      const StoredSprite& s = store_.get({arch, 0x44c, it.tree, pal, shade});
-      if (s.ok()) { stats.overlays++; blit(cam, s, int(it.tx * 7 + it.ty * 13), it.wx, it.wy, cur_page); }
+      for (bool shadow : {true, false}) {
+        const StoredSprite& s = store_.get({arch, uint16_t(shadow ? data::kShadowGroup : data::kBodyGroup),
+            it.tree, pal, shadow ? uint8_t(data::kShadowShade) : shade_at(it.wx, it.wy), 0, 0, shadow});
+        mod_ = shadow ? SDL_Color{255, 255, 255, 255} : body_mod;
+        if (s.ok()) { stats.overlays++; blit(cam, s, data::overlay_frame(opts.wind, opts.wind_counter), it.wx, it.wy, cur_page); }
+      }
       continue;
     }
     const Object& o = *it.o;
-    SpriteDraw sd;
-    if (provider_ && o.type >= 0 && provider_->pick(object_state(o), sd)) {
+    bool drawn = false;
+    const auto st = object_state(o);
+    for (auto sd : it.parts) {
+      if (!sd.key.shadow) sd.key.shade = shade_at(it.wx, it.wy);
+      mod_ = sd.key.shadow ? SDL_Color{255, 255, 255, 255} : body_mod;
       const StoredSprite& s = store_.get(sd.key);
       if (s.ok()) {
-        stats.sprites++;
+        drawn = true; stats.sprites++;
         blit(cam, s, sd.key.frame, it.wx + sd.dx, it.wy + sd.dy, cur_page);
-        continue;
       }
     }
+    if (drawn || !it.primary || (provider_ && provider_->hides_missing(st))) continue;
     if (!opts.markers) continue;
     flush(cur_page);
     cur_page = -1;
@@ -211,9 +277,10 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
     }
   }
   flush(cur_page);
+  mod_ = body_mod;
   // Health bars of selected objects.
   for (const Item& it : items) {
-    if (it.tree || !world_.selection.contains(it.o->id) || it.o->type < 0) continue;
+    if (it.effect || it.tree || !it.primary || !world_.selection.contains(it.o->id) || it.o->type < 0) continue;
     const TypeInfo* ti = type_info(it.o->type);
     bool structure = ti && ti->is_structure();
     int hpmax = hp_max(it.o->type);
@@ -240,6 +307,15 @@ int SceneRenderer::hp_max(int type) const {
 ObjectState SceneRenderer::object_state(const Object& o) const {
   ObjectState st;
   st.type_id = o.type;
+  if (o.type < 0 && o.source == ObjectSource::Boat) st.type_id = -2;
+  if (o.type < 0 && o.source == ObjectSource::Johnka) st.type_id = -3;
+  st.hp = o.hp; st.max_hp = o.hp_max;
+  st.moving = o.cur_x != o.prev_x || o.cur_y != o.prev_y;
+  st.initial_turret = !o.has_fired;
+  st.height = o.render_height;
+  st.destruction_radius = o.destruction_radius;
+  st.construction_overlay = o.construction_overlay;
+  st.transport_phase = o.transport_phase; st.orientation = o.orientation;
   st.side = o.side;
   st.side_color = world_.side_color(o.side);
   st.facing = o.facing;
@@ -252,7 +328,13 @@ ObjectState SceneRenderer::object_state(const Object& o) const {
 
 bool SceneRenderer::visible_in_fog(const Object& o, Vec2f p) const {
   if (!fog_.enabled() || o.side == world_.local_side) return true;
+  if (mask_lighting_) return lighting_.sample(p.x, p.y) > 32;
   return fog_.darkness(world_, int(p.x / kTilePx), int(p.y / kTilePx)) < 120;  // hide other sides' objects in the dark
+}
+
+data::SpriteRef SceneRenderer::effect_frame(const Effect& e) const {
+  data::AnimSet a(data_.archive(ArchiveId::Units).get(0x515, uint32_t(e.anim)));
+  return a.at_tick(e.slot, e.age, e.loop);
 }
 
 void SceneRenderer::draw(const Camera& cam, float alpha) {
@@ -260,6 +342,7 @@ void SceneRenderer::draw(const Camera& cam, float alpha) {
   SDL_Renderer* r = win_.renderer();
   SDL_SetRenderDrawColor(r, 8, 10, 14, 255);
   SDL_RenderClear(r);
+  update_lighting();
   draw_terrain(cam);
   // Start positions
   if (opts.markers) {
@@ -275,7 +358,7 @@ void SceneRenderer::draw(const Camera& cam, float alpha) {
   }
   draw_objects(cam, alpha);
   fog_.update(r, world_);
-  fog_.draw(r, cam, world_);
+  if (!mask_lighting_) fog_.draw(r, cam, world_);
 }
 
 }  // namespace aztec::engine
