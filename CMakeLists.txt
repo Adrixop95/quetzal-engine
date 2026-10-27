@@ -25,7 +25,7 @@ add_library(aztec_engine_lib
   src/engine/assets/game_data.cpp src/engine/assets/mission.cpp src/engine/assets/anim_provider.cpp src/engine/assets/daylight.cpp
   src/engine/platform/input.cpp src/engine/platform/window.cpp
   src/engine/world/world.cpp src/engine/world/camera.cpp src/engine/world/type_info.cpp
-  src/engine/sim/simulation.cpp src/engine/sim/commands.cpp src/engine/sim/savegame.cpp src/engine/sim/rules.cpp src/engine/sim/game_sim.cpp src/engine/sim/script_runner.cpp src/engine/sim/ai.cpp
+  src/engine/sim/simulation.cpp src/engine/sim/commands.cpp src/engine/sim/savegame.cpp src/engine/sim/rules.cpp src/engine/sim/game_sim.cpp src/engine/sim/script_runner.cpp src/engine/sim/ai.cpp src/engine/ai/planner.cpp
   src/engine/render/atlas.cpp src/engine/render/sprite_store.cpp src/engine/render/font.cpp
   src/engine/render/png.cpp src/engine/render/fog.cpp src/engine/render/scene_renderer.cpp
   src/engine/ui/cursor.cpp src/engine/ui/panel.cpp src/engine/ui/names.cpp src/engine/ui/selection_ui.cpp src/engine/ui/commands_ui.cpp src/engine/ui/frontend.cpp src/engine/ui/minimap.cpp src/engine/ui/hud.cpp
@@ -117,3 +117,14 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME zspr_tools COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_zspr_tools.py)
   set_tests_properties(zspr_tools PROPERTIES LABELS "unit")
 endif()
+
+# Synthetic deterministic AI checks; twenty simulated minutes without renderer or game assets.
+add_executable(test_ai tests/test_ai.cpp)
+target_link_libraries(test_ai aztec_engine_lib)
+target_compile_definitions(test_ai PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data"
+  AZTEC_AI_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/ai_orders.scn")
+add_test(NAME ai_unit COMMAND test_ai)
+add_test(NAME ai_skirmish COMMAND test_ai --smoke)
+set_tests_properties(ai_unit PROPERTIES LABELS "unit")
+set_tests_properties(ai_skirmish PROPERTIES LABELS "smoke" TIMEOUT 180
+  ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")

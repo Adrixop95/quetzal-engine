@@ -39,9 +39,14 @@ void GameSim::attach_agent(Object& o) {
 void GameSim::init(World& w) {
   tick_ = 0;
   w.day_clock = (w.mission.start_time % kDayTicks + kDayTicks) % kDayTicks;
+  w.ai_towns.assign(w.mission.towns.size(), {});
   w.town_speed.assign(w.mission.towns.size(), 1);
   w.repair_credits.assign(w.mission.towns.size(), 0);
   w.effects.clear();
+  // Reference computer intelligence starts with visibility value 24 (rules_ai.md).
+  for (const auto& side : w.mission.sides)
+    if (side.only_comp && !side.neutral && side.index >= 0 && side.index < int(w.visibility.sides.size()))
+      std::fill(w.visibility.sides[side.index].v.begin(), w.visibility.sides[side.index].v.end(), uint8_t(24));
   nav_ = path::NavGrid();
   if (w.passability.w == w.terrain.w && w.passability.h == w.terrain.h && !w.passability.v.empty())
     nav_.load_dat(w.passability.w, w.passability.h, w.passability.v.data());
@@ -249,11 +254,13 @@ void GameSim::apply(World& w, const Command& c) {
         if (c.b < 0 || c.c < 0 || c.b >= w.terrain.w || c.c >= w.terrain.h) break;
         if (!can_place(w, c.side, c.a, c.b, c.c, &why)) break;
         ss->money -= mi->price;
+        if (ti >= 0 && ti < int(w.ai_towns.size())) w.ai_towns[ti].spent += mi->price;
         uint32_t id = spawn(w, c.a, c.side, c.b * kTilePx + kTilePx / 2, c.c * kTilePx + kTilePx / 2, 0, true);
         w.find_mut(id)->town = ti;
         w.find_mut(id)->build_total = std::max(1, mi->time);
       } else if (ss->queue.size() < 8) {
         ss->money -= mi->price;
+        if (ti >= 0 && ti < int(w.ai_towns.size())) w.ai_towns[ti].spent += mi->price;
         ss->queue.push_back({c.a, std::max(1, mi->time), std::max(1, mi->time), ti, mi->price});
       }
       break;
@@ -292,7 +299,7 @@ std::vector<MenuItem> GameSim::menu(const World& w, int side, int town) const {
   const TownDef& t = w.mission.towns[size_t(ti)];
   for (const BuildItem& it : rules_->build_list(t.race, t.type)) {
     const TypeRules& r = rules_->type(it.type);
-    if (r.structure && !it.construct) continue;    // town upgrades: not implemented
+    if (r.structure && !it.construct && is_town_building(it.type)) continue; // hall upgrades await town-command support
     MenuItem m;
     bool computer = false, hostile_all = true, have_other = false;
     for (const auto& sd : w.mission.sides) {
@@ -301,7 +308,7 @@ std::vector<MenuItem> GameSim::menu(const World& w, int side, int town) const {
     }
     hostile_all = hostile_all && have_other;
     int speed = ti < int(w.town_speed.size()) ? w.town_speed[ti] : 1;
-    m.type = it.type; m.construct = it.construct;
+    m.type = it.type; m.construct = r.structure; // farms/mines/defences also require independent placement
     m.price = production_value(r.price, t.type, speed, computer, hostile_all, false);
     m.time = production_value(r.time, t.type, speed, computer, hostile_all, true);
     const char* why = "";
@@ -395,6 +402,7 @@ void GameSim::economy(World& w) {
         if (warehouse) gain = int(static_cast<long double>(gain) * 1.3333333730697632L);
       }
       w.side_state[o.side].money += gain;
+      if (o.town >= 0 && o.town < int(w.ai_towns.size())) w.ai_towns[o.town].harvested += gain;
       int repair_rate = int(((int64_t(h.repair_rate) * 65536 / 100) + 128) >> 8);
       int credits = harvest_tick(o.repair_harvest, repair_rate, w.day_clock, h.repair_period);
       if (o.town >= 0 && o.town < int(w.repair_credits.size())) w.repair_credits[o.town] += credits * 100;
@@ -688,6 +696,12 @@ uint64_t GameSim::state_hash(const World& w) const {
   uint64_t h = 1469598103934665603ull;
   auto mix = [&](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
   mix(w.day_clock);
+  mix(w.ai_towns.size());
+  for (const auto& s : w.ai_towns) {
+    mix(s.phase); mix(s.science_timer); mix(s.target_town); mix(s.remaining);
+    mix(s.defence_enabled); mix(s.elapsed); mix(s.harvested); mix(s.spent); mix(s.last_alert);
+    mix(s.known_towns.size()); for (int town : s.known_towns) mix(town);
+  }
   mix(w.town_speed.size()); for (int speed : w.town_speed) mix(speed);
   mix(w.repair_credits.size()); for (int credits : w.repair_credits) mix(credits);
   mix(tick_); mix(rng_); mix(paused_); mix(spawn_counter_); mix(w.objects.size());
