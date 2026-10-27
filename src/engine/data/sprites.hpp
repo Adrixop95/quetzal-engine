@@ -44,7 +44,7 @@ class AnimSet {
     return s && o + 4 <= n_ ? int32_t(u32(size_t(o))) : 0;
   }
   // Frame shown `tick` ticks after the sequence start (honours durations; loops when `loop`).
-  SpriteRef at_tick(int slot, int tick, bool loop) const {
+  SpriteRef at_tick(int slot, int64_t tick, bool loop) const {
     if (tick < 0) return {};
     int64_t total = 0, elapsed = tick;
     int n = frame_count(slot);
@@ -89,7 +89,7 @@ class SpriteDb {
     return sprite_for_sequence(a, sequence, tick);
   }
   // Full-angle callers can select body/turret/transport sequences explicitly.
-  static SpriteRef sprite_for_sequence(const AnimSet& a, AnimSequence sequence, int tick) {
+  static SpriteRef sprite_for_sequence(const AnimSet& a, AnimSequence sequence, int64_t tick) {
     if (!a.ok() || !sequence.valid()) return {};
     return sequence.frame >= 0 ? a.frame(sequence.slot, sequence.frame)
                                : a.at_tick(sequence.slot, tick, sequence.loop);
