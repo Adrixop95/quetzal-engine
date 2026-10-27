@@ -1,0 +1,13 @@
+# Run from the repository root with the synthetic effects.mp mission:
+# SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy build/aztec_engine --game /path/to/game tests/playtest/effects.mp --rules-dir docs/data --script tests/playtest/effects.txt --no-fog --no-audio --size 1000x700 --cam 34,40 --zoom 1
+# Screenshots stay in the ignored build directory.
+run 4
+shot build/effects-flight.png
+run 3
+shot build/effects-impact.png
+run 35
+shot build/effects-combat.png
+expect units 1 < 6
+expect units 0 >= 4
+print
+quit

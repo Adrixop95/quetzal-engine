@@ -14,6 +14,7 @@
 #include "engine/render/sprite_store.hpp"
 #include "engine/world/camera.hpp"
 #include "engine/world/world.hpp"
+#include "engine/data/sprites.hpp"
 
 namespace aztec::engine {
 
@@ -52,6 +53,7 @@ class SceneRenderer {
 
  private:
   void draw_terrain(const Camera& cam);
+  data::SpriteRef effect_frame(const Effect& e) const;
   void draw_objects(const Camera& cam, float alpha);
   void blit(const Camera& cam, const StoredSprite& s, int frame, float wx, float wy, int& cur_page);
   int hp_max(int type) const;  // best known: highest hp of that type in the mission

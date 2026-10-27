@@ -8,7 +8,7 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Rule | Status | Source / notes |
 |---|---|---|
 | 12 Hz step, 24.8 fixed-point positions, state hash after every tick, replay from the command log | V (construction) | no comparison with the original yet; the engine hash differs from the recompilation's hash |
-| State hash covers objects (incl. secondary HP, regeneration selector, destinations, orders, construction timers), sides (money, queues, groups, build pause), spawn counter, relations, script state and the full movement system (agents, orders, slots, steering caches) | engine | collection sizes are mixed in |
+| State hash covers objects (incl. secondary HP, regeneration selector, destinations, orders, construction timers), sides (money, queues, groups, build pause), spawn counter, transient projectiles/effects (flight endpoints, payloads and animation clocks), relations, script state and the full movement system (agents, orders, slots, steering caches) | engine | collection sizes are mixed in |
 | Command types (PCT_FRAME_*) and their numbers | V | `docs/object_types.md`. Implemented: PAUSEON/OFF, CREATEGROUP, ADDTOGROUP, MOVE, ATTACK, BUILD, DESTROYHERE, QUEUEKILL, PAUSEBUILD. Logged only: SELECTGROUP, GARRISON, REPAIRMODE, ATTACKMODE, BUILDMODE, SELECTBYNO, FOLLOWTEAM |
 | Stop (0x50) and AttackMove (0x51) | P | engine extensions; the original has no such packets |
 | Command coordinates / tiles from packets | engine | clamped into the map before any fixed-point conversion; invalid tiles are ignored |
@@ -28,11 +28,11 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Side `DisabledID` blocks menu entries | V | `docs/formats.md` |
 | Weapon damage | V documented arithmetic / engine synthetic checks | Marine d7 and Defence d59 select weapon IDs. Classes 1/2/13 apply each matching 8.8 multiplier in sequence, then armor term; arrow zero-air suppresses armor. Classes 4/5/6/10 constants implemented; 8 delegates and 12 sums known child damage. Historical duel entries are diagnostics only. Other descriptor weapon mappings/armor retain placeholders |
 | Weapon reload getters and cooldown | V Marine reload+1 / P other scheduling | Classes 1/2/13/4/5/6/10 use documented reload/range. Simulation schedules reload+1; this is verified only for Marine cooldown, not universal hit intervals. Composite scheduling remains unresolved |
-| Projectile and unresolved weapon behavior | P / unresolved | Projectile speed is distinct metadata, not added to reload. Hits remain immediate: animation/flight delay is not implemented. Classes 0/3/7/9/11, complete burn behavior and composite scheduling are unavailable calculations; known unresolved descriptor weapons do not silently fire generic damage |
+| Projectile and unresolved weapon behavior | P / unresolved | Projectile speed is distinct metadata, not added to reload. Descriptor damage feeds provisional straight projectile flight and impact timing; direct weapons hit immediately. Reference flight/animation timing remains unverified. Classes 0/3/7/9/11, complete burn behavior and composite scheduling are unavailable calculations; known unresolved descriptor weapons do not silently fire generic damage |
 | Weapon range | V getters / P geometry and fallback | Established weapon getters replace generic ranges; Euclidean centre distance plus placeholder target radius/footprint remains. Types without loaded weapon descriptors retain 56/288/336 px placeholders |
 | Sight range (target acquisition, fog) | P | Rewrite: 288 px (6 tiles), buildings 8 tiles. Reference: per-type interpolated light-mask IDs, daylight and brightness >32; separate tactic scan and weapon checks |
 | Auto-attack of enemies in sight (idle and attack-moving units) | P | nearest enemy, ties = lower id; hostility from the relation matrix |
-| Death and corpses | P | death animation from `Units.xbe`, corpse for 480 ticks, then removed; buildings vanish at once |
+| Death and corpses | P / V effect metadata | Marine corpses remain 480 ticks; vehicles spawn 152 and ground debris 113, known-radius structures select rubble 116/115/114 for 250 ticks; unknown radii retain provisional rubble 116. Airborne altitude remains open |
 | Fog of war: tiles in sight = lit, previously seen = 96 | P | values 0 / 96 / 152 from `.vis`, updated every 4 ticks |
 | Building construction: placement on free tiles, progress = build time, stages = animation slot 0 | V (stages), P (time, no builders) | whether the original needs workers / resources is unknown |
 | Building footprint in tiles | P | desc d4/d5 (px) rounded up, centred on the clicked tile |
@@ -40,6 +40,41 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Income: mine +4 / farm +1 every 12 ticks | P | Reference cycle now decoded: resource-map rate, periodic/scheduled day-clock events, farms-only warehouse multiplier; see `rules_types.md` |
 | Starting money = side `StartMoney` | V | `.mp` |
 | Garrison, repair, attack modes, population limits, difficulty levels | not done | Reference garrison extracts town troops; repair/destroy use marked building lists and repair credits. Universal population cap and other difficulty bonuses remain open |
+
+## Projectiles and effects
+
+| Rule | Status | Source / notes |
+|---|---|---|
+| Projectile objects at 12 Hz, integer fixed-point flight, previous/current render interpolation, hash/replay coverage | engine | Arrow, Axe, BallExpl and FireThrow objects carry source/target ids, snapshot endpoint, speed, payload and animation age. No renderer writes simulation state |
+| Type-to-weapon dispatch | V Marine/Defence / P Spider/Headtruck | Marine d7, Defence d59, Spider/Headtruck d9; CSV class/parameter lookup. Composite class 12 retains both visual components but cannot fire until scheduling and damage are known; class 8 delegates its visual to its child. Composite damage provisionally splits the existing total equally (integer remainder to the first child). Bird/Truck/Cannon/Zeppelin weapon fields are not guessed |
+| Arrow speed/reload/range | V table / P firing schedule | Arrow d1/d2/d3; descriptor reload+1 schedules shots, without duel overrides. Shots start at the combat event, not the animation fire marker. Flight timing parity remains open |
+| Ball/Axe speed/reload/range | P | d1/d2/d3 interpreted as flight speed, reload and range; zero speed falls back to 1 px/tick. These getters/trajectory semantics need reference measurement |
+| Flame and splash behavior | P | class 7 uses anim 157, 24 px/tick, range 96, reload 12. Child class 7 d0 selects 150/151; d6 is provisionally a splash radius. Full burn sequencing, armor/category damage, friendly splash, falloff and secondary weapon damage are unresolved. Known descriptor damage is applied once at impact. Class 7 and other unresolved damage/scheduling remain disabled; visual defaults do not enable a shot |
+| Projectile trajectory and collision | P | straight flight toward the launch-time target position; no gravity, homing, terrain collision or interception. The original target receives the hit even after moving; splash additionally hits living hostile objects inside the radius. Source death does not cancel flight |
+| Effect animation ids, slots, durations and hotspots | V resource metadata | `effects.hpp`, `AnimSet`, `sprites_mapping.md`; effects read frame/light timelines from installed Units.xbe. 150/151/152 last 11 ticks in slot 0 and 10 in slots 1/2; debris/rubble 250; shockwave 105 lasts 30. Arrow/Axe/Ball use dir32 looping slots, flame uses a one-shot slot |
+| Damage fire | V selection / P HP inputs | built structures at <=75/50/25% HP use 154/155/156 at ground position +(0,1), looping; repair/death removes the fire. HP maxima retain the pre-existing uncertainties |
+| Explosions, debris, muzzle and beam | V selection metadata / P spawn timing | vehicle death 152, ground debris 113; Arrow d13=105 creates shockwave; immediate descriptor d10/d11 enables muzzle 106 at +20 px, beam 107 at approximately 30-px steps, impact 110. No extra turret muzzle sprite is invented |
+| Smoke and unknown owners | open | smoke contained in known animation frames renders through the same effect path. Standalone anims 104/153 remain unassigned: their owners/spawn conditions are unverified, so no smoke spawning rule is invented |
+| Height and displacement | P flight altitude | Axe uses frame height, debris/rubble height -1; vehicle explosions retain explicit render height; other transient heights default to zero. Ball light reduction with altitude, altitude production and per-frame simulation displacement remain unresolved |
+| Draw order | V contract / engine integration | effects share the unit/terrain overlay list: underlays first, ascending ground Y then descending X; each shadow precedes its body, then turret shadow/body. No separate air pass. Alpha uses the existing SDL approximation, not reference-exact background compositing |
+| Effect glow | V masks / P final shading | light.xbe 0x455 ids 1..16 are additive brightness, saturated at 152; translated bilinearly onto the (width+1)x(height+2) 48-pixel grid at ground position minus nine tiles. Body frames supply unit light; turret frame light is not separately queried. Palette shade uses (brightness+4)/8. Per-tile sampling, daylight tint and existing fog remain approximations; vision masks are not glow masks |
+
+Validation after merge: synthetic `engine_unit` cases cover projectile metadata
+for all four families, descriptor-gated firing for unresolved weapons, known
+arrow damage and reload through flight/impact, command-log replay in flight,
+hash sensitivity to endpoint/age, paused effects, single splash damage, ally
+exclusion, stale source ids, transient expiry, repaired fire cleanup, known-radius
+rubble retention and missing-radius fallback without duplicate rubble. Both
+descriptor combat and projectile suites run in the pure-test entry point.
+`tests/playtest/effects.mp` is an independently authored placement fixture using
+the user's mission_1 terrain. Run its companion script with both SDL dummy
+drivers and the command in `tests/playtest/effects.txt`. Screenshots stay in
+ignored `build/effects-*.png`; no original assets are included. This is an engine
+smoke test, not a synchronized reference screenshot comparison or a parity claim.
+Historical branch validation: Release build, all eight CTest entries (including installed-data checks), the
+headless fixture and pre-commit gates passed on 2026-10-26. Cached hook
+environments were copied into the worktree to run pre-commit without network
+access. The fixture asserts vehicle losses and writes flight/impact/combat shots.
 
 ## Mission scripts (`.scn`, `sim/script_runner.*`)
 `side(local)` means the mission's human side (`World::script_side`: the first side that is neither `OnlyComp` nor neutral), identical for every peer; the viewing side (`World::local_side`) never influences the simulation.

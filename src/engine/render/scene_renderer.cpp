@@ -6,6 +6,7 @@
 #include "engine/data/animation_slots.hpp"
 #include "engine/render/colors.hpp"
 #include "engine/world/type_info.hpp"
+#include "engine/data/light_masks.hpp"
 
 namespace aztec::engine {
 
@@ -49,12 +50,24 @@ void SceneRenderer::update_lighting() {
     const auto st = object_state(o);
     const float x = o.cur_x / 256.f, y = o.cur_y / 256.f;
     const auto& archive = data_.archive(ArchiveId::Light);
-    for (const auto& item : provider_->items(st))
+    bool primary = true;
+    const bool simulated_fire = std::any_of(world_.effects.begin(), world_.effects.end(),
+        [&](const Effect& e) { return e.loop && e.source == o.id; });
+    for (const auto& item : provider_->items(st)) {
+      if (!primary && simulated_fire && o.alive) continue;
+      primary = false;
       if (item.light >= data::kFirstGlowMask && item.light <= data::kLastGlowMask)
         lighting_.stamp(data::LightMask(archive.get(data::kLightGroup, item.light)), x + item.dx, y + item.dy, false);
+    }
     const int vision = provider_->vision_mask(st);
     if (o.alive && o.side == world_.local_side && vision >= data::kFirstVisionMask && vision <= data::kLastVisionMask)
       lighting_.stamp(data::LightMask(archive.get(data::kLightGroup, vision)), x, y, true);
+  }
+  for (const auto& e : world_.effects) {
+    const auto frame = effect_frame(e);
+    if (frame.light >= data::kFirstGlowMask && frame.light <= data::kLastGlowMask)
+      lighting_.stamp(data::LightMask(data_.archive(ArchiveId::Light).get(data::kLightGroup, frame.light)),
+                      e.x / 256.f, e.y / 256.f, false);
   }
   lighting_.combine(fog_.enabled());
 }
@@ -128,7 +141,7 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
   SDL_Renderer* r = win_.renderer();
   ArchiveId arch = world_.mission.tileset == 1 ? ArchiveId::Tiles1 : ArchiveId::Tiles0;
   uint8_t pal = uint8_t(default_palette());
-  struct Item { float wx, wy; const Object* o; int height; uint16_t tree; std::vector<SpriteDraw> parts; bool primary = true; };  // tree != 0: terrain overlay sprite
+  struct Item { float wx, wy; const Object* o; int height; uint16_t tree; std::vector<SpriteDraw> parts; bool primary = true; const Effect* effect = nullptr; };  // tree != 0: terrain overlay sprite
   std::vector<Item> items;
   items.reserve(world_.objects.size() + 256);
   float pad = 96;
@@ -138,12 +151,23 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
     if (p.x < cam.x - pad || p.y < cam.y - pad || p.x > cam.x + cam.visible_w() + pad || p.y > cam.y + cam.visible_h() + pad) continue;
     if (!visible_in_fog(o, p)) continue;
     if (provider_) {
+      const bool simulated_fire = std::any_of(world_.effects.begin(), world_.effects.end(),
+          [&](const Effect& e) { return e.loop && e.source == o.id; });
       bool primary = true;
       for (auto item : provider_->items(object_state(o))) {
+        if (!primary && simulated_fire && o.alive) continue;
         items.push_back({p.x + item.dx, p.y + item.dy, &o, item.height, 0, std::move(item.parts), primary});
         primary = false;
       }
     } else items.push_back({p.x, p.y, &o, 0, 0, {}});
+  }
+  for (const auto& e : world_.effects) {
+    float x = (e.prev_x + (e.x - e.prev_x) * alpha) / 256.f;
+    float y = (e.prev_y + (e.y - e.prev_y) * alpha) / 256.f;
+    if (fog_.enabled() && e.side != world_.local_side &&
+        (mask_lighting_ ? lighting_.sample(x, y) <= 32 : fog_.darkness(world_, int(x / kTilePx), int(y / kTilePx)) >= 120)) continue;
+    if (x < cam.x - pad || y < cam.y - pad || x > cam.x + cam.visible_w() + pad || y > cam.y + cam.visible_h() + pad) continue;
+    if (effect_frame(e).valid()) items.push_back({x, y, nullptr, e.height, 0, {}, false, &e});
   }
   if (opts.overlays) {  // terrain overlay layer = trees/rocks: body in 0x44c, shadow in 0x454, same id
     const TerrainMap& t = world_.terrain;
@@ -162,7 +186,7 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
   // Selection rings go on the ground, under bodies.
   mod_ = {255, 255, 255, 255};
   for (const Item& it : items) {
-    if (it.tree || !it.primary || !world_.selection.contains(it.o->id)) continue;
+    if (it.effect || it.tree || !it.primary || !world_.selection.contains(it.o->id)) continue;
     const TypeInfo* ti = type_info(it.o->type);
     SpriteKey k;
     k.archive = ArchiveId::Common; k.group = 0x44c; k.shade = 0;
@@ -181,6 +205,28 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
   // Shared ordered list: finish every item before starting the next one.
   int scale = std::max(1, int(std::lround(cam.zoom)));
   for (const Item& it : items) {
+    uint8_t local_shade = shade_at(it.wx, it.wy);
+    auto draw_frame = [&](data::SpriteRef frame, bool shadow, int height, int side) {
+      if (!frame.valid()) return;
+      SpriteKey key;
+      key.archive = ArchiveId::Units; key.group = shadow ? 0x454 : 0x44c;
+      key.index = uint32_t(frame.sprite); key.team = uint8_t(world_.side_color(side) & 7);
+      key.shade = shadow ? uint8_t(data::kShadowShade) : local_shade; key.shadow = shadow;
+      mod_ = shadow ? SDL_Color{255, 255, 255, 255} : body_mod;
+      const auto& sprite = store_.get(key);
+      if (!sprite.ok()) return;
+      blit(cam, sprite, 0, it.wx, it.wy - (shadow ? 0 : height), cur_page);
+      stats.sprites++;
+    };
+    if (it.effect) {
+      const auto& e = *it.effect;
+      auto frame = effect_frame(e);
+      int height = e.kind == data::EffectClass::Axe ? frame.yoff : e.height;
+      draw_frame(frame, true, 0, e.side);
+      draw_frame(frame, false, height, e.side);
+      continue;
+    }
+
     if (it.tree) {
       for (bool shadow : {true, false}) {
         const StoredSprite& s = store_.get({arch, uint16_t(shadow ? data::kShadowGroup : data::kBodyGroup),
@@ -234,7 +280,7 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
   mod_ = body_mod;
   // Health bars of selected objects.
   for (const Item& it : items) {
-    if (it.tree || !it.primary || !world_.selection.contains(it.o->id) || it.o->type < 0) continue;
+    if (it.effect || it.tree || !it.primary || !world_.selection.contains(it.o->id) || it.o->type < 0) continue;
     const TypeInfo* ti = type_info(it.o->type);
     bool structure = ti && ti->is_structure();
     int hpmax = hp_max(it.o->type);
@@ -284,6 +330,11 @@ bool SceneRenderer::visible_in_fog(const Object& o, Vec2f p) const {
   if (!fog_.enabled() || o.side == world_.local_side) return true;
   if (mask_lighting_) return lighting_.sample(p.x, p.y) > 32;
   return fog_.darkness(world_, int(p.x / kTilePx), int(p.y / kTilePx)) < 120;  // hide other sides' objects in the dark
+}
+
+data::SpriteRef SceneRenderer::effect_frame(const Effect& e) const {
+  data::AnimSet a(data_.archive(ArchiveId::Units).get(0x515, uint32_t(e.anim)));
+  return a.at_tick(e.slot, e.age, e.loop);
 }
 
 void SceneRenderer::draw(const Camera& cam, float alpha) {
