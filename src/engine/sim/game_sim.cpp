@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <limits>
 
 #include "engine/world/type_info.hpp"
 
@@ -42,6 +43,15 @@ void GameSim::init(World& w) {
   w.town_speed.assign(w.mission.towns.size(), 1);
   w.repair_credits.assign(w.mission.towns.size(), 0);
   w.effects.clear();
+  w.town_state.clear();
+  for (const TownDef& t : w.mission.towns) {
+    TownState state;
+    state.index = t.index; state.side = t.side;
+    for (const Object& o : w.objects)
+      if (o.town_hall && o.town == t.index && o.side == t.side) { state.hall = o.id; break; }
+    w.town_state.push_back(state);
+  }
+  for (SideState& s : w.side_state) s.selected_tactic = -1;
   nav_ = path::NavGrid();
   if (w.passability.w == w.terrain.w && w.passability.h == w.terrain.h && !w.passability.v.empty())
     nav_.load_dat(w.passability.w, w.passability.h, w.passability.v.data());
@@ -204,9 +214,55 @@ void GameSim::apply(World& w, const Command& c) {
         if (o->mover >= 0) mover_->stop(uint32_t(o->mover));
       }
       break;
-    case Pct::DestroyHere:
-      for (Object* o : own_ids(false)) kill(w, *o);
+    case Pct::Garrison:
+    case Pct::RepairMode:
+    case Pct::DestroyHere: {
+      if (!ss) break;
+      auto ti = std::find_if(w.town_state.begin(), w.town_state.end(), [&](const TownState& t) {
+        return t.index == c.b && t.side == c.side;
+      });
+      if (ti == w.town_state.end()) break;
+      TownState& town = *ti;
+      const Object* hall = w.find(town.hall);
+      if (!hall || !hall->alive || hall->removed || hall->side != c.side) break;
+      if (c.type == Pct::RepairMode) {
+        if (c.a < 0 || c.a > 2) break;
+        const auto mode = RepairMode(c.a);
+        if (town.repair_mode != mode) { town.marked.clear(); town.repair_mode = mode; }
+      } else if (c.type == Pct::DestroyHere) {
+        if (town.repair_mode == RepairMode::Off) break;
+        // A duplicated id in one packet is one toggle, just like a selection set.
+        std::vector<uint32_t> seen;
+        for (Object* o : own_ids(false)) {
+          if (std::find(seen.begin(), seen.end(), o->id) != seen.end()) continue;
+          seen.push_back(o->id);
+          auto mark = std::find(town.marked.begin(), town.marked.end(), o->id);
+          if (mark != town.marked.end()) town.marked.erase(mark);
+          else if (mark_eligible(*o, town)) town.marked.push_back(o->id);
+        }
+      } else {
+        // Allocate independently of object iteration order and avoid existing script tactic ids.
+        int32_t tactic = 0;
+        for (const Object& o : w.objects) {
+          if (o.tactic == std::numeric_limits<int32_t>::max()) { tactic = -1; break; }
+          tactic = std::max(tactic, o.tactic + 1);
+        }
+        if (tactic < 0) break;
+        std::vector<uint32_t> extracted;
+        for (Object& o : w.objects) {
+          const TypeRules& r = rules_->type(o.type);
+          if (o.town != town.index || o.side != c.side || !o.alive || o.removed || o.hp <= 0 ||
+              r.structure || !(r.mobile || r.flier)) continue;
+          o.town = -1; o.tactic = tactic;
+          extracted.push_back(o.id);
+        }
+        if (!extracted.empty()) {
+          ss->selected_tactic = tactic;
+          if (w.local_side == c.side) w.selection.ids = std::move(extracted);
+        }
+      }
       break;
+    }
     case Pct::CreateGroup:
     case Pct::AddToGroup:
       if (ss && c.a >= 0 && c.a < 10) {
@@ -258,7 +314,32 @@ void GameSim::apply(World& w, const Command& c) {
       }
       break;
     }
+<<<<<<< ours
     default: break;  // Garrison, RepairMode, AttackMode, SelectGroup, ...: recorded but not implemented
+=======
+    default: break;  // AttackMode, BuildMode, SelectGroup, ...: recorded but not implemented
+  }
+}
+
+bool GameSim::mark_eligible(const Object& o, const TownState& town) const {
+  if (o.removed || !o.alive || o.hp <= 0 || o.side != town.side || o.town != town.index ||
+      o.town_hall || o.id == town.hall || o.progress < 1000 || !rules_->type(o.type).structure) return false;
+  return town.repair_mode == RepairMode::Destroy || o.hp < o.hp_max;
+}
+
+void GameSim::maintain_town_marks(World& w) {
+  for (TownState& town : w.town_state) {
+    const Object* hall = w.find(town.hall);
+    if (!hall || !hall->alive || hall->removed || hall->side != town.side) { town.marked.clear(); continue; }
+    town.marked.erase(std::remove_if(town.marked.begin(), town.marked.end(), [&](uint32_t id) {
+      const Object* o = w.find(id);
+      return !o || !mark_eligible(*o, town);
+    }), town.marked.end());
+    if (town.repair_mode != RepairMode::Off) continue;
+    for (const Object& o : w.objects)
+      if (rules_->type(o.type).kind == 2 && mark_eligible(o, town) &&
+          std::find(town.marked.begin(), town.marked.end(), o.id) == town.marked.end()) town.marked.push_back(o.id);
+>>>>>>> theirs
   }
 }
 
@@ -647,6 +728,7 @@ void GameSim::tick(World& w) {
   run_ai(w);
   advance_effects(w);
   run_orders(w);
+  maintain_town_marks(w);
   mover_->tick();
   sync_movement(w);
   if (tick_ % 4 == 0) update_fog(w);
@@ -700,6 +782,7 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(uint32_t(o.transport_phase)); mix(uint32_t(o.orientation)); mix(o.construction_overlay); mix(o.has_fired);
     mix(o.facing); mix(o.anim_state); mix(uint32_t(o.corpse_ticks));
     mix(uint32_t(o.dest_x)); mix(uint32_t(o.dest_y)); mix(o.resume); mix(uint32_t(o.build_elapsed)); mix(uint32_t(o.build_total));
+    mix(uint32_t(o.town)); mix(o.town_hall);
     mix(uint32_t(o.secondary_hp)); mix(o.regen_alternate);
     mix(uint32_t(o.hp_max)); mix(uint32_t(o.tactic)); mix(uint32_t(o.scenario)); mix(o.last_hit_by); mix(uint32_t(o.mover)); mix(o.anim_variant);
   }
@@ -711,7 +794,14 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(e.age); mix(e.lifetime); mix(e.speed); mix(e.damage); mix(e.splash_px);
     mix(e.impact_anim); mix(e.shockwave); mix(e.flight); mix(e.loop);
   }
+  mix(w.town_state.size());
+  for (const TownState& t : w.town_state) {
+    mix(uint32_t(t.index)); mix(uint32_t(t.side)); mix(t.hall); mix(uint8_t(t.repair_mode)); mix(t.marked.size());
+    for (uint32_t id : t.marked) mix(id);
+  }
+  mix(w.side_state.size());
   for (const SideState& s : w.side_state) {
+    mix(uint32_t(s.selected_tactic));
     mix(uint32_t(s.money)); mix(s.build_paused); mix(s.queue.size());
     for (const QueueItem& q : s.queue) { mix(uint32_t(q.type)); mix(uint32_t(q.remaining)); mix(uint32_t(q.total)); mix(uint32_t(q.town)); mix(uint32_t(q.paid)); }
     for (const auto& g : s.groups) { mix(g.size()); for (uint32_t id : g) mix(id); }
