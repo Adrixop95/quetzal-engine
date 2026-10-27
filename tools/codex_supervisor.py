@@ -246,6 +246,8 @@ def main():
     threading.Thread(target=queue_loop, daemon=True).start()
     while True:
         try:
+            if run("git branch --show-current").stdout.strip() == "develop":
+                run("git fetch -q origin && git merge -q --ff-only origin/develop")   # pick up new queue files
             st = status()
             running = [n for n, s in st.items() if s == "running"]
             for n, s in st.items():
