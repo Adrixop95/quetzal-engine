@@ -92,7 +92,11 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
     if (!provider && o.sprites) {
       auto ap = std::make_shared<AnimSpriteProvider>();
       std::string up = find_file_ci(o.game_dir + "/Res", "Units.xbe");
-      if (!up.empty() && ap->open(up)) provider = ap;
+      if (!up.empty() && ap->open(up)) {
+        for (const std::string& rp : {o.rules_dir, o.game_dir + "/../docs/data", std::string("docs/data")})
+          if (!rp.empty() && ap->load_visual_rules(rp)) break;
+        provider = ap;
+      }
       else std::fprintf(stderr, "warning: cannot load Units.xbe, using placeholders\n");
     }
     scene.set_sprite_provider(provider);

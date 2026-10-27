@@ -32,6 +32,11 @@ struct Object {
   uint16_t anim_state = 0;
   uint32_t anim_tick = 0;      // ticks since anim_state started; advanced by World::begin_tick()
   uint32_t anim_variant = 0;
+  // Render inputs whose producers are not yet modeled by the simulation.
+  int render_height = 0, destruction_radius = -1;
+  int transport_phase = 0, orientation = 0;
+  bool construction_overlay = false;
+  bool has_fired = false;
   // --- simulation state (written only by the Simulation) ---
   int32_t hp_max = 0;
   int32_t secondary_hp = 0;    // Marine d4, independent of primary/max HP

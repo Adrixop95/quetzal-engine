@@ -85,6 +85,19 @@ Controlled sides are those with `OnlyComp=1` that are not neutral (a mission pro
 | Engine save: mission + tick + hash + camera + hash of the `.scn` + full command log; loading replays deterministically on a fresh world and verifies the hash | engine | `Saves/engine_slot1.azs`, Ctrl+S / Ctrl+L and the pause menu; a different script file is refused |
 | Original `*.sav` format | not done | waiting for the savegame documentation |
 
+## Sprite and lighting integration
+
+The current [renderer integration inventory](render_integration.md) separates
+R/C/T/P reference evidence from independent implementation and synthetic checks.
+Kind-specific body/secondary layers, HP construction boundaries, damage fires,
+height projection, common Y/X/underlay sorting and user-resource light/vision
+mask grids are integrated. This does not change simulation AI sight or establish
+pixel parity. Aircraft altitude, structure destruction-radius and overlay
+producers, transport phases, wind, per-pixel gradients and exact alpha/shadow
+blending remain open. Owners 104/153 remain unknown. New attack/death, overlap and
+night probes are **pending** because private prerequisites are missing; no new P
+label was assigned. Existing simulation placeholder labels above still apply.
+
 ## Descriptor combat validation (2026-10-26)
 
 **Engine construction checks:** synthetic structure/nonorganic and airborne/organic

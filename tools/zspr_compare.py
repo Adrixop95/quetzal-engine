@@ -6,7 +6,8 @@ Usage: zspr_compare.py GAME RUN [--objects objs.txt] [--shot shot_02.ppm]
 
 Reports exact RGB565 matches on opaque body pixels, without searching for a
 better frame, position, shade or direction. Occlusion, light gradients and
-movement between objscan and shot can reduce scores. Alpha pixels are excluded.
+movement between objscan and shot can reduce scores. Alpha pixels require an
+explicit background capture; the compositing model is reported separately.
 The input files are read-only; the optional report contains ids/counts only.
 """
 import argparse
@@ -21,18 +22,58 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sprmap
 import sprite
 import xbe
-from PIL import Image
 
 
 def signed(value):
     return value - 0x100000000 if value & 0x80000000 else value
 
 
+def pixel_match(observed, expected, tolerance):
+    exact = observed == expected
+    close = (abs((observed >> 11) - (expected >> 11)) * 8 <= tolerance and
+             abs(((observed >> 5) & 63) - ((expected >> 5) & 63)) * 4 <= tolerance and
+             abs((observed & 31) - (expected & 31)) * 8 <= tolerance)
+    return exact, close
+
+
+def composite565(value, alpha, background):
+    """Straight alpha over a registered RGB background, then quantize to RGB565.
+
+    This is an explicit comparison model; a passing control does not establish
+    the original alpha blitter's rounding convention.
+    """
+    source = (((value >> 11) & 31) * 255 // 31,
+              ((value >> 5) & 63) * 255 // 63, (value & 31) * 255 // 31)
+    rgb = tuple((s * alpha + b * (255 - alpha)) // 255 for s, b in zip(source, background))
+    return ((rgb[0] >> 3) << 11) | ((rgb[1] >> 2) << 5) | (rgb[2] >> 3)
+
+
+def stable_capture(before, after):
+    """A bracket is stable only if both raw and dereferenced dumps agree."""
+    if before.resolve() == after.resolve():
+        raise ValueError('Stability requires two distinct snapshots')
+    for suffix in ('', '.deref'):
+        first = before.with_name(before.name + suffix).read_bytes()
+        second = after.with_name(after.name + suffix).read_bytes()
+        if not first or first != second:
+            return False
+    return True
+
+
 def compare(args):
+    from PIL import Image
     run = Path(args.run)
     objects = run / args.objects
+    stable = None
+    if args.after_objects:
+        stable = stable_capture(objects, run / args.after_objects)
+    if args.require_stable and stable is not True:
+        raise ValueError('Capture is not bracket-stable; synchronized pixel evidence is pending')
     items = sprmap.load_units(args.game)
     screenshot = Image.open(run / args.shot).convert('RGB')
+    background = Image.open(args.background).convert('RGB') if args.background else None
+    if background and background.size != screenshot.size:
+        raise ValueError('Background and screenshot dimensions must agree')
     if args.origin is None:
         start = next(line.split()[2:4] for line in (run / 'placed.txt').read_text().splitlines()
                      if line.startswith('# start'))
@@ -117,31 +158,38 @@ def compare(args):
             palette = palettes[palette_id]
             shade = min(args.shade, len(palette) // 512 - 1)
             palette = struct.unpack_from('<256H', palette, shade * 512)
-            matched = count = close = 0
+            matched = count = close = alpha_count = alpha_skipped = 0
             for py, row in enumerate(rows):
                 for px, value in enumerate(row):
                     if value is None:
                         continue
+                    alpha = 255
                     if flags & 0x40:
                         value, alpha = value
-                        if alpha != 255:
+                        if alpha != 255 and background is None:
+                            alpha_skipped += 1
                             continue
                     sx, sy = x - ox - origin[0] + px, y - h - oy - origin[1] + py
                     if not (0 <= sx < min(598, screenshot.width) and 0 <= sy < screenshot.height):
                         continue
                     r, g, b = screenshot.getpixel((sx, sy))
                     observed = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)
-                    count += 1
-                    matched += observed == palette[value]
                     expected = palette[value]
-                    close += (abs((observed >> 11) - (expected >> 11)) * 8 <= args.tolerance and
-                              abs(((observed >> 5) & 63) - ((expected >> 5) & 63)) * 4 <= args.tolerance and
-                              abs((observed & 31) - (expected & 31)) * 8 <= args.tolerance)
+                    if alpha != 255:
+                        expected = composite565(expected, alpha, background.getpixel((sx, sy)))
+                        alpha_count += 1
+                    count += 1
+                    exact, tolerant = pixel_match(observed, expected, args.tolerance)
+                    matched += exact
+                    close += tolerant
             slots = sprmap.parse_anim(resource)
             start = (sequence_header - data - 0x208) // 32 + 1
             slot = next((s for s, seq in slots.items() if seq['start'] == start), None)
             result.append(dict(object=f'{address:08x}', kind=name, component=hex(offset), anim=aid,
                                slot=slot, frame=(frame_offset - 0x208) // 32 - start,
+                               bracket_stable=stable, alpha_pixels=alpha_count,
+                               alpha_skipped=alpha_skipped,
+                               compositing_model='straight-alpha-floor-rgb565' if background else None,
                                tick=tick, sprite=frame[0], height=h, pixels=count, matched=matched,
                                score=matched / count if count else None,
                                tolerance=args.tolerance, within_tolerance=close,
@@ -159,6 +207,9 @@ if __name__ == '__main__':
     parser.add_argument('--shade', type=int, choices=range(20), default=10)
     parser.add_argument('--origin', type=int, nargs=2)
     parser.add_argument('--report')
+    parser.add_argument('--after-objects', help='post-shot objscan for a stability bracket')
+    parser.add_argument('--require-stable', action='store_true')
+    parser.add_argument('--background', help='registered background image without this effect')
     parser.add_argument('--tolerance', type=int, choices=range(256), default=0)
     args = parser.parse_args()
     result = compare(args)

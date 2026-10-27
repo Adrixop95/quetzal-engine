@@ -633,10 +633,12 @@ static void test_descriptor_combat() {
   recovering.regen_alternate = true; recovering.teleport(to_fixed(800), to_fixed(800));
   fresh.objects.push_back(recovering);
   world = fresh; sim.init(world);
+  CHECK(!world.objects[0].has_fired);
   Command attack; attack.type = Pct::Attack; attack.side = 0; attack.ids = {1}; attack.a = 2;
   sim.submit(attack);
   for (int tick = 1; tick <= 24; ++tick) {
     world.begin_tick(); sim.tick(world);
+    CHECK(world.objects[0].has_fired);
     if (tick == 1 || tick == 11 || tick == 21) CHECK(world.objects[0].cooldown == 10);
     CHECK(world.objects[1].hp == 30000 - 150 * ((tick - 1) / 10 + 1));
     CHECK(world.objects[2].hp == 20044 && world.objects[2].secondary_hp == 36000);
