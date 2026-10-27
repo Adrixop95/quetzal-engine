@@ -9,7 +9,7 @@ Generate `docs/data/rules.json` with `python3 -I tools/build_rules.py`. Numeric 
 | Price and time branches | V | Outposts use separate factors; developed towns use BuildSpeed arrays. Computer discount 0.8 unless hostile to everyone. Original conversion truncates after adding 0.5; `0x45c5b0`, `0x45c690` |
 | AI footman 161 gold / 56 ticks puzzle | V | Fast developed town uses price x2 and time x2/3. Original price is 160. Lifted runtime conversion can produce 161; no second training charge in BuildThink. Exact original spawn interval remains O |
 | Marine / vehicle movement speeds | V | Marine d5; Headtruck/Spider d7; Zeppelin/Truck d5; historical `speed_measured.csv` includes rounding/steering effects |
-| Marine HP fields | V | Primary initial/max HP d1; d4 is the secondary value used by Hypno kill-time estimates. Earlier max-HP annotation corrected; engine still reads d4 |
+| Marine HP fields | V | Primary initial/max HP d1; d4 is the secondary value used by Hypno kill-time estimates. Engine now loads primary d1 and independent secondary d4; see engine status for remaining behavior gaps |
 | Marine regeneration | V | d2 each active tick below the state-dependent d1/d3 threshold |
 | Weapon damage and category multiplication | V | Sequential 8.8 multipliers; Building/Defence are both nonorganic and structure; Bird/Zeppelin are airborne but organic |
 | Weapon class 7 / complete burn behavior | O | Distance-dependent weapon and FireThrow still lack a complete behavioral spec |

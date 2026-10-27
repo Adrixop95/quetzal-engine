@@ -34,6 +34,8 @@ struct Object {
   uint32_t anim_variant = 0;
   // --- simulation state (written only by the Simulation) ---
   int32_t hp_max = 0;
+  int32_t secondary_hp = 0;    // Marine d4, independent of primary/max HP
+  bool regen_alternate = false; // explicit selector; reference state transition mapping is unresolved
   uint8_t order = 0;           // sim::Order
   uint32_t target = 0;         // object id for attack orders (0 = none)
   int32_t dest_x = 0, dest_y = 0;  // order destination, world px
