@@ -8,9 +8,6 @@
 namespace aztec::engine {
 
 namespace {
-constexpr int kAiBuyEvery = 56;      // observed: the AI spends on a new unit every 56 ticks
-constexpr int kAiIncomeEvery = 300;  // observed: passive income +60 per 300 ticks
-constexpr int kAiIncome = 60;
 constexpr int kAiMaxUnits = 80;      // placeholder population cap
 constexpr int kAlertRadius = 10 * kTilePx;  // placeholder
 }  // namespace
@@ -20,10 +17,9 @@ void GameSim::run_ai(World& w) {
     int side = sd.index;
     if (!sd.only_comp || sd.neutral || side < 0 || side >= int(w.side_state.size())) continue;
     SideState& ss = w.side_state[size_t(side)];
-    if (tick_ % kAiIncomeEvery == 0) ss.money += kAiIncome;
 
     // Production: round-robin over the affordable units of the town's build list.
-    if (tick_ % kAiBuyEvery == 0 && ss.queue.empty()) {
+    if (ss.queue.empty()) {
       int units = 0;
       for (const Object& o : w.objects) if (!o.removed && o.alive && o.side == side && o.type >= 0 && !rules_->type(o.type).structure) units++;
       if (units < kAiMaxUnits) {

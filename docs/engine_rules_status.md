@@ -1,6 +1,6 @@
 # Engine: status of the simulation rules (verified / measured / placeholder)
 
-Simulation: `src/engine/sim/game_sim.*` (12 Hz, integers only, driven by the command queue in `commands.hpp`). Data comes from `docs/data/*.csv`, loaded at run time (`rules.*`). The reference specification is [rules_summary.md](rules_summary.md) with details in [rules_types.md](rules_types.md) and [rules_ai.md](rules_ai.md). New reference findings below do not imply engine implementation changes.
+Simulation: `src/engine/sim/game_sim.*` (12 Hz, fixed-point harvests and original float32 price factors, driven by the command queue in `commands.hpp`). Data comes from `docs/data/*.csv`, loaded at run time (`rules.*`). The reference specification is [rules_summary.md](rules_summary.md) with details in [rules_types.md](rules_types.md) and [rules_ai.md](rules_ai.md). New reference findings below do not imply engine implementation changes.
 Movement and pathfinding: `src/engine/sim/path/` (movement agents; the interface is swappable: `GameSim` only uses `MoveSystem`).
 Legend: **V** = verified against the original (code or screenshot), **M** = measured on the recompiled original, **P** = placeholder (invented, to be replaced).
 
@@ -8,8 +8,8 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Rule | Status | Source / notes |
 |---|---|---|
 | 12 Hz step, 24.8 fixed-point positions, state hash after every tick, replay from the command log | V (construction) | no comparison with the original yet; the engine hash differs from the recompilation's hash |
-| State hash covers objects (incl. secondary HP, regeneration selector, destinations, orders, construction timers), sides (money, queues, groups, build pause), spawn counter, transient projectiles/effects (flight endpoints, payloads and animation clocks), relations, script state and the full movement system (agents, orders, slots, steering caches) | engine | collection sizes are mixed in |
-| Command types (PCT_FRAME_*) and their numbers | V | `docs/object_types.md`. Implemented: PAUSEON/OFF, CREATEGROUP, ADDTOGROUP, MOVE, ATTACK, BUILD, DESTROYHERE, QUEUEKILL, PAUSEBUILD. Logged only: SELECTGROUP, GARRISON, REPAIRMODE, ATTACKMODE, BUILDMODE, SELECTBYNO, FOLLOWTEAM |
+| State hash covers objects (incl. secondary HP, regeneration selector, destinations, orders, construction timers), sides (money, queues including paid costs/town ownership, groups, build pause), day clock, town speeds, repair credits and harvest accumulators/cursors, spawn counter, transient projectiles/effects (flight endpoints, payloads and animation clocks), relations, script state and the full movement system (agents, orders, slots, steering caches) | engine | collection sizes are mixed in |
+| Command types (PCT_FRAME_*) and their numbers | V | `docs/object_types.md`. Implemented: PAUSEON/OFF, CREATEGROUP, ADDTOGROUP, MOVE, ATTACK, BUILD, BUILDMODE, DESTROYHERE, QUEUEKILL, PAUSEBUILD. Logged only: SELECTGROUP, GARRISON, REPAIRMODE, ATTACKMODE, SELECTBYNO, FOLLOWTEAM |
 | Stop (0x50) and AttackMove (0x51) | P | engine extensions; the original has no such packets |
 | Command coordinates / tiles from packets | engine | clamped into the map before any fixed-point conversion; invalid tiles are ignored |
 | Command order inside a tick: ascending side, then submission order | P | original: per-side queues in `0x4577b0` (order not verified) |
@@ -21,10 +21,10 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Speed of fliers, boats, unknown types | P | 8 px/tick; fliers move in straight lines, boats stand still |
 | Unit radius (collision disc) | P | 14 px, large 20 px |
 | Movement class small / large (`.dat` 1 = small only) | V (meaning of `.dat`), P (type assignment) | large: trucks, bear, elephant |
-| Price and build time | V tables / P behavior | Base `types.csv`; reference uses hall-level, speed and computer-side branches. The computer strategist chooses speed even though the map BuildSpeed key is ignored. See `rules_types.md` |
-| Unit of the "Time" value | P | assumed 1 unit = 1 tick (footman 100 ticks = 8.3 s) |
-| Build tree (who can build what, prerequisites) | V | `buildtree.csv`; "A" entries (building of another race) are treated as ordinary prerequisites |
-| Town upgrades (building entries with flag 0) | not done | skipped in the menu |
+| Price and build time | V formula / synthetic checks | `types.csv` with outpost/developed hall, runtime speed, hostile-to-everyone and computer branches. Float32 factors evaluated before truncation after +0.5; developed fast computer 100 -> 160 gold / 53 time units. No lifted 161 rounding |
+| Production countdown | engine / O parity | Computed time units drive tick countdowns; one payment at acceptance, none at spawn. Exact original start/completion tick ordering is unverified |
+| Build tree (who can build what, prerequisites) | V | `buildtree.csv`; ordinary prerequisites require completed objects in the producing town, A entries use side-wide counts. Completed/in-progress/queued structures prevent duplicates in that town; DisabledID and adjusted affordability are checked |
+| Town upgrades and non-map structure production | not done | Structure entries with flag 0 (including farms/mines) remain skipped by the existing menu; preplaced farms/mines use the new income rules |
 | Side `DisabledID` blocks menu entries | V | `docs/formats.md` |
 | Weapon damage | V documented arithmetic / engine synthetic checks | Marine d7 and Defence d59 select weapon IDs. Classes 1/2/13 apply each matching 8.8 multiplier in sequence, then armor term; arrow zero-air suppresses armor. Classes 4/5/6/10 constants implemented; 8 delegates and 12 sums known child damage. Historical duel entries are diagnostics only. Other descriptor weapon mappings/armor retain placeholders |
 | Weapon reload getters and cooldown | V Marine reload+1 / P other scheduling | Classes 1/2/13/4/5/6/10 use documented reload/range. Simulation schedules reload+1; this is verified only for Marine cooldown, not universal hit intervals. Composite scheduling remains unresolved |
@@ -34,10 +34,10 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Auto-attack of enemies in sight (idle and attack-moving units) | P | nearest enemy, ties = lower id; hostility from the relation matrix |
 | Death and corpses | P / V effect metadata | Marine corpses remain 480 ticks; vehicles spawn 152 and ground debris 113, known-radius structures select rubble 116/115/114 for 250 ticks; unknown radii retain provisional rubble 116. Airborne altitude remains open |
 | Fog of war: tiles in sight = lit, previously seen = 96 | P | values 0 / 96 / 152 from `.vis`, updated every 4 ticks |
-| Building construction: placement on free tiles, progress = build time, stages = animation slot 0 | V (stages), P (time, no builders) | whether the original needs workers / resources is unknown |
+| Building construction: placement on free tiles, progress = adjusted build time, stages = animation slot 0 | V formula/stages, engine placement | Hall/speed/computer time applies to placed construction. Original placement/worker and exact completion semantics remain open |
 | Building footprint in tiles | P | desc d4/d5 (px) rounded up, centred on the clicked tile |
-| Unit training: queue (max 8), first item progresses, 100 % refund on cancel | P | spawn point: below the town building |
-| Income: mine +4 / farm +1 every 12 ticks | P | Reference cycle now decoded: resource-map rate, periodic/scheduled day-clock events, farms-only warehouse multiplier; see `rules_types.md` |
+| Unit training: side queue (max 8), first item progresses, 100 % refund on cancel | P queue/refund policy | Items retain producing town and actual payment; cancellation refunds that payment even after speed changes. Spawn below that town hall. Independent simultaneous town queues remain unimplemented |
+| Building income and repair supply | V formulas / synthetic checks | Descriptor occupancy cells equal to 2 weight resource channels A/B with d60/d61; periodic/scheduled 7200-tick clock from StartTime. Gold and d62/d320 repair supplies have separate accumulators. Completed same-town warehouse applies once to farms only. Missing resource map contributes zero terrain bytes |
 | Starting money = side `StartMoney` | V | `.mp` |
 | Garrison, repair, attack modes, population limits, difficulty levels | not done | Reference garrison extracts town troops; repair/destroy use marked building lists and repair credits. Universal population cap and other difficulty bonuses remain open |
 
@@ -99,8 +99,8 @@ Controlled sides are those with `OnlyComp=1` that are not neutral (a mission pro
 
 | Rule | Status | Notes |
 |---|---|---|
-| Passive income +60 every 300 ticks | M | `docs/rules_types.md` (observation on `zeco1`) |
-| Buys a unit every 56 ticks when its queue is empty (random affordable entry, deterministic RNG) | M (oracle period) / P (choice) | Reference developed town fast mode explains doubled price and reduced time; lifted rounding explains 161 versus original 160. No universal 56-tick AI scheduler |
+| Passive income | V formula / synthetic checks | Supplied by active completed buildings, including halls; removed the extra computer-side +60/300 grant |
+| Buys an affordable unit when its queue is empty (deterministic random choice) | P planner | Removed the invented universal 56-tick gate. Runtime town speed and original price/time formulas apply; automatic strategist speed selection remains unimplemented |
 | Unit cap 80 | P | |
 | Defence: a hit building sends idle units within 10 tiles (attack-move) to the attacker | P | |
 | Attack waves | P, scripts only in rewrite | Reference town states 1/2 autonomously prepare/activate offensive plans in addition to mission scripts; planner scoring still open |
@@ -119,6 +119,36 @@ Controlled sides are those with `OnlyComp=1` that are not neutral (a mission pro
 |---|---|---|
 | Engine save: mission + tick + hash + camera + hash of the `.scn` + full command log; loading replays deterministically on a fresh world and verifies the hash | engine | `Saves/engine_slot1.azs`, Ctrl+S / Ctrl+L and the pause menu; a different script file is refused |
 | Original `*.sav` format | not done | waiting for the savegame documentation |
+
+## Resource and production validation (2026-10-26)
+
+**V specification / synthetic implementation checks:** `test_engine --pure` uses
+invented maps and objects plus public numeric descriptor tables. It checks an
+asymmetric mine mask (16 gold/100 active ticks), a channel-A-only Rus farm
+(363 gold at clock 1000), the once-only warehouse payout (484), mixed A/B
+rounding (367), repair credits without cash, StartTime 1200 partial cycles,
+periodic wraparound, Chinese-style date-zero cursor reset, local versus side-wide
+prerequisites, duplicate structures, insufficient funds, speed-dependent costs,
+single payment at spawn, cancellation and serialized command replay over a day.
+These are engine/formula checks, not measured reference equivalence.
+
+**Engine conventions / O:** each unpaused tick advances the clock before building
+updates; newly active accumulators use the preceding clock as their creation
+phase. An exhausted schedule resets on a separate tick with clock <= first date.
+`Build`/`BuildMode` may select a town through `ids[0]` (an owned live town member),
+with the first owned town as the default. This is an engine command convention,
+not a claim about original packet fields. Human and computer towns initialize at
+normal speed; the AI strategist, active-building suspension semantics, non-map
+structure placement, concurrent town queues and exact original spawn ticks still
+need integration/evidence. Repair credits are exposed per town for the current
+tick; spending them belongs to the separate repair-service task.
+
+**M differential evidence:** none added. This worktree has no local game assets,
+reference executable/lift or task 01 normalized economy/training comparison tool.
+Mine/farm and training reference comparisons could not be run. Historical lifted
+161/56 observations remain separate from original conversion facts and synthetic
+checks. Resource channels retain A/B names; their natural-resource labels remain
+unresolved in `formats.md`.
 
 ## Sprite and lighting integration
 
