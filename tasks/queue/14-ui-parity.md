@@ -1,0 +1,2 @@
+Task: UI parity of in-game panels.
+Compare the engine HUD (minimap, command card, selection panel, resource bar, tooltips, message log) with the original layout recovered in docs/ (see docs/engine_rules_status.md and docs/EXPERIMENTS.md for screenshot capture of the reference). Fix layout, fonts, icons and hotkeys in the engine UI files; add headless screenshot tests with tolerant comparison on synthetic or locally available data only. Never commit screenshots of the game.
