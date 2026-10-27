@@ -86,15 +86,15 @@ Weapon IDs map through `0x494d30` to class and parameter; prototypes live in `0x
 | +0x18..+0xd8 | 7x7 occupancy mask; cells equal to 2 are occupied |
 | +0xdc / d55 | Sight mask ID |
 | byte +0xed | Whether gold rate is terrain dependent |
-| +0xf0 / d60 | Gold constant/grass coefficient |
-| +0xf4 / d61 | Stone coefficient |
+| +0xf0 / d60 | Gold constant/channel A coefficient |
+| +0xf4 / d61 | Channel B coefficient |
 | +0xf8 / d62 | Repair-credit rate; not passive gold |
 | +0xfc / d63 | Gold uses an explicit day-clock schedule |
 | +0x100 / d64 | Gold schedule count or periodic interval; -1 disables it |
 | +0x104 onward | Day-clock schedule entries |
 | +0x500 / d320 | Periodic interval for repair-credit supply |
 
-Constant gold rate in 8.8 units is `(floor((d60<<16)/100)+128)>>8`. Terrain rate (`0x42acd0`, `0x42b040`) averages the map's grass/stone bytes over occupancy cells equal to 2. For each coefficient form `C=((floor((coefficient<<16)/100)*2)+256)>>8`; sum `2*grass*Cg + 2*stone*Cs`, divide by occupied count, then shift right 8. This yields the per-tick accumulator increment. Mines are therefore location dependent.
+Constant gold rate in 8.8 units is `(floor((d60<<16)/100)+128)>>8`. Terrain rate (`0x42acd0`, `0x42b040`) averages the map's channel A/B bytes over occupancy cells equal to 2. Channel A/B resource names remain unresolved (see `formats.md`). For each coefficient form `C=((floor((coefficient<<16)/100)*2)+256)>>8`; sum `2*A*Ca + 2*B*Cb`, divide by occupied count, then shift right 8. This yields the per-tick accumulator increment. Mines are therefore location dependent.
 
 Harvest (`0x42b180`, `0x42b1e0`, `0x42b200`) starts accumulator A at zero and adds its increment every active building tick. On an event, return `(A+128)>>8`; reset A only if that value is nonzero. Gold payout (`0x4111af`) is original truncation of this integer times the warehouse factor, with no further +0.5.
 

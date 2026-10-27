@@ -557,6 +557,176 @@ static void test_script(const std::string& dir) {
   CHECK(sa.state_hash(a) == sb.state_hash(b));
 }
 
+static World production_world() {
+  World w;
+  w.terrain.w = w.terrain.h = 40;
+  w.terrain.cells.resize(1600);
+  w.resources = {40, 40, std::vector<uint16_t>(1600, 65)};
+  SideDef sd; w.mission.sides.push_back(sd);
+  sd.index = 1; w.mission.sides.push_back(sd);
+  w.relation[0][1] = kFriend;
+  TownDef town; town.type = 1; w.mission.towns.push_back(town);
+  town.index = 1; town.x = 25; w.mission.towns.push_back(town);
+  return w;
+}
+
+static void production_object(World& w, int type, int town, int x, int y) {
+  Object o; o.id = uint32_t(w.objects.size() + 1); o.type = type; o.town = town;
+  o.teleport(tile_center_fixed(x), tile_center_fixed(y));
+  w.objects.push_back(o);
+}
+
+static void production_steps(GameSim& sim, World& w, int ticks) {
+  for (int t = 0; t < ticks; ++t) { w.begin_tick(); sim.tick(w); }
+}
+
+static void test_production() {
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  CHECK(rules->type(12).harvest.terrain && rules->type(12).harvest.dates.size() == 6);
+  CHECK(rules->type(13).harvest.rate_b == 16);
+  CHECK(production_value(100, 1, 2, true, false, false) == 160);
+  CHECK(production_value(100, 1, 2, true, false, true) == 53);
+  CHECK(production_value(100, 0, 2, true, false, false) == 80);
+  CHECK(production_value(100, 0, 2, true, false, true) == 120);
+  CHECK(production_value(100, 1, 2, true, true, false) == 67);
+  CHECK(production_value(100, 1, 2, true, true, true) == 200);
+  CHECK(production_value(100, 1, 0, false, false, false) == 67);
+  CHECK(production_value(100, 1, 1, false, false, true) == 100);
+
+  HarvestState periodic; periodic.last_clock = 7198;
+  CHECK(harvest_tick(periodic, 64, 7199, 2) == 0);
+  CHECK(harvest_tick(periodic, 64, 0, 2) == 1);
+  CHECK(periodic.accumulated == 0 && periodic.last_clock == 0);
+  HarvestState residue;
+  CHECK(harvest_tick(residue, 40, 1, 1) == 0 && residue.accumulated == 40);
+  CHECK(harvest_tick(residue, 40, 2, 1) == 0 && residue.accumulated == 80);
+  CHECK(harvest_tick(residue, 40, 3, 1) == 0 && residue.accumulated == 120);
+  CHECK(harvest_tick(residue, 40, 4, 1) == 1 && residue.accumulated == 0);
+  HarvestState schedule;
+  std::vector<int> dates{0, 900};
+  CHECK(harvest_tick(schedule, 256, 1200, -1, &dates) == 1 && schedule.cursor == 1);
+  CHECK(harvest_tick(schedule, 256, 1201, -1, &dates) == 1 && schedule.cursor == 2);
+  CHECK(harvest_tick(schedule, 256, 7199, -1, &dates) == 0);
+  CHECK(harvest_tick(schedule, 256, 0, -1, &dates) == 0 && schedule.cursor == 0);
+  CHECK(harvest_tick(schedule, 256, 1, -1, &dates) == 3);
+
+  World mine = production_world();
+  production_object(mine, 13, 0, 10, 10);
+  // Occupied mine cells are (-1,0),(0,0). Ignore a high resource outside the mask.
+  mine.resources.v.assign(1600, 0);
+  mine.resources.v[10 * 40 + 9] = uint16_t(65 << 8);
+  mine.resources.v[10 * 40 + 10] = uint16_t(65 << 8);
+  mine.resources.v[9 * 40 + 10] = 65535;
+  mine.mission.start_time = 7150;
+  GameSim ms(rules); ms.init(mine);
+  production_steps(ms, mine, 99); CHECK(mine.side_state[0].money == 0);
+  production_steps(ms, mine, 1); CHECK(mine.side_state[0].money == 16 && mine.day_clock == 50);
+
+  World farm = production_world();
+  production_object(farm, 12, 0, 10, 10);
+  production_object(farm, 18, 1, 24, 24); // another town never multiplies this farm
+  World farm_fresh = farm;
+  GameSim fs(rules); fs.init(farm);
+  production_steps(fs, farm, 1000); CHECK(farm.side_state[0].money == 363);
+  for (int warehouses : {1, 2}) {
+    World w = farm_fresh;
+    for (int i = 0; i < warehouses; ++i) production_object(w, i ? 70 : 18, 0, 20 + i * 4, 20);
+    GameSim sim(rules); sim.init(w);
+    production_steps(sim, w, 1000); CHECK(w.side_state[0].money == 484);
+  }
+  World mixed_channels = farm_fresh;
+  mixed_channels.resources.v.assign(1600, uint16_t(65 | (65 << 8)));
+  GameSim cs(rules); cs.init(mixed_channels);
+  production_steps(cs, mixed_channels, 1000); CHECK(mixed_channels.side_state[0].money == 367);
+  World mine_warehouse = mine; mine_warehouse.side_state[0].money = 0;
+  production_object(mine_warehouse, 70, 0, 20, 20);
+  GameSim mw(rules); mw.init(mine_warehouse);
+  production_steps(mw, mine_warehouse, 100); CHECK(mine_warehouse.side_state[0].money == 16);
+  World unfinished = farm_fresh;
+  production_object(unfinished, 18, 0, 20, 20);
+  GameSim us(rules); us.init(unfinished);
+  unfinished.objects.back().progress = 0; unfinished.objects.back().build_total = 2000;
+  production_steps(us, unfinished, 1000); CHECK(unfinished.side_state[0].money == 363);
+  World hall = production_world(); production_object(hall, 11, 0, 10, 10);
+  GameSim hs(rules); hs.init(hall);
+  production_steps(hs, hall, 20);
+  CHECK(hall.side_state[0].money == 0 && hall.repair_credits[0] == 400);
+  production_steps(hs, hall, 280); CHECK(hall.side_state[0].money == 60);
+
+  // At StartTime 1200, consume the first date immediately, without a full-cycle payout.
+  for (auto pair : {std::pair{12, 850}, std::pair{39, 150}}) {
+    World w = production_world(); w.mission.start_time = 1200;
+    production_object(w, pair.first, 0, 10, 10);
+    GameSim sim(rules); sim.init(w);
+    production_steps(sim, w, 1); CHECK(w.side_state[0].money == 0 && w.objects[0].gold_harvest.cursor == 1);
+    production_steps(sim, w, pair.second - 2); CHECK(w.side_state[0].money == 0);
+    production_steps(sim, w, 1); CHECK(w.side_state[0].money > 0);
+  }
+  World w = production_world();
+  production_object(w, 11, 0, 5, 5); production_object(w, 11, 1, 25, 25);
+  production_object(w, 14, 1, 22, 25); production_object(w, 22, 1, 28, 25);
+  GameSim sim(rules); sim.init(w); w.side_state[0].money = 2000;
+  auto item = [&](int town, int type) {
+    for (const auto& m : sim.menu(w, 0, town)) if (m.type == type) return m;
+    return MenuItem{};
+  };
+  CHECK(!item(0, 1).enabled && item(1, 1).enabled); // local barracks
+  production_object(w, 14, 0, 8, 5);
+  CHECK(item(0, 2).enabled); // local barracks, side-wide type 22
+  CHECK(!item(0, 14).enabled); // completed duplicate
+  Command fast; fast.type = Pct::BuildMode; fast.a = 2; fast.ids = {2};
+  sim.submit(fast); production_steps(sim, w, 1);
+  CHECK(item(0, 0).price == 100 && item(1, 0).price == 200 && item(1, 0).time == 67);
+  w.side_state[0].money = 199;
+  Command buy; buy.type = Pct::Build; buy.a = 0; buy.ids = {2};
+  sim.submit(buy); production_steps(sim, w, 1);
+  CHECK(w.side_state[0].queue.empty() && w.side_state[0].money == 199);
+  w.side_state[0].money = 200;
+  sim.submit(buy); production_steps(sim, w, 1);
+  CHECK(w.side_state[0].money == 0 && w.side_state[0].queue.front().town == 1);
+  production_steps(sim, w, 66);
+  CHECK(w.side_state[0].queue.empty() && w.objects.back().type == 0 && w.objects.back().town == 1);
+  CHECK(w.side_state[0].money == 0); // no second charge at spawn
+
+  sim.submit(buy); production_steps(sim, w, 1);
+  CHECK(w.side_state[0].queue.empty()); // still cannot afford another unit
+  w.side_state[0].money = 200;
+  sim.submit(buy); production_steps(sim, w, 1);
+  fast.a = 0; sim.submit(fast);
+  Command cancel; cancel.type = Pct::QueueKill; sim.submit(cancel);
+  production_steps(sim, w, 1);
+  CHECK(w.side_state[0].money == 200 && w.side_state[0].queue.empty()); // refund the paid price
+  fast.a = 2;
+
+  World construction = production_world();
+  GameSim bs(rules); bs.init(construction); construction.side_state[0].money = 5000;
+  Command build; build.type = Pct::Build; build.a = 14; build.b = 15; build.c = 15;
+  bs.submit(fast); production_steps(bs, construction, 1); // invalid member is ignored
+  Command speed; speed.type = Pct::BuildMode; speed.a = 2; bs.submit(speed);
+  production_steps(bs, construction, 1);
+  MenuItem barracks;
+  for (const auto& m : bs.menu(construction, 0)) if (m.type == 14) barracks = m;
+  bs.submit(build); production_steps(bs, construction, 1);
+  CHECK(construction.objects.size() == 1 && construction.objects[0].town == 0);
+  CHECK(construction.objects[0].build_total == barracks.time && construction.side_state[0].money == 5000 - barracks.price);
+  int cash = construction.side_state[0].money;
+  bs.submit(build); production_steps(bs, construction, 1);
+  CHECK(construction.objects.size() == 1 && construction.side_state[0].money == cash);
+
+  // Synthetic command-log roundtrip across a full day, including price selection and harvest cursors.
+  World replay_world = farm_fresh; replay_world.side_state.resize(8); replay_world.side_state[0].money = 1000;
+  World original = replay_world;
+  GameSim rs(rules); rs.init(original);
+  fast.ids = {1}; rs.submit(fast);
+  buy.ids = {1}; rs.submit(buy);
+  production_steps(rs, original, 7210);
+  std::vector<LoggedCommand> log;
+  CHECK(deserialize_log(serialize_log(rs.log()), log));
+  auto replay = GameSim::replay(replay_world, rules, log, rs.tick_count());
+  CHECK(replay->state_hash(replay_world) == rs.state_hash(original));
+}
+
 static void test_audio_pure() {
   // pure rules: no attenuation near the centre, silent far away, pan favours the near ear
   Positional c = positional_gain(0, 0);
@@ -594,6 +764,7 @@ static void test_audio_data(const std::string& dir) {
 int main(int argc, char** argv) {
   if (argc == 2 && std::string(argv[1]) == "--pure") {
     test_pure();
+    test_production();
     test_sprite_metadata();
     test_audio_pure();
     test_commands_ui();
