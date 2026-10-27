@@ -182,3 +182,48 @@ Task 01 is still queued; no normalized combat comparison runner is present.
 No private game installation, generated lift or reference executable is available
 in this worktree, so no isolated reference duel or record/replay was run. Historical
 duel intervals remain M observations, never universal reload rules.
+
+## Whole-mission parity audit (2026-10-27)
+
+The [mission parity runner](parity.md) found two prerequisites still missing:
+engine CLI replay of oracle packets with audited object-ID mapping, and a
+normalized reference observer aligned before command processing. Existing pool
+hashes cannot identify semantic fields, and historical unit-log side/max-HP slots
+are insufficient. Task `01-oracle-parity` remains a dependency; the mission runner
+and strict normalized comparator are available independently of that work.
+
+**Experiment result:** all nine supplied mission recordings were attempted in
+private game copies with the required namespace isolation. Loopback setup failed
+with a denied netlink socket in every attempt, before the reference executable
+launched. No cross-engine divergence tick, object or rule was measured. Failure
+reports remain private under `work/parity/mission-audit`; no rule status above is
+promoted by this audit.
+
+Prioritized gaps for the next permitted mission comparison:
+
+1. **Measurement blockers (observed):** complete task 01 packet decoding,
+   canonical object identity, tick alignment and normalized field coverage;
+   rerun on a host permitting the documented network namespace setup. Establish
+   reference repeatability before attributing mismatches to engine rules.
+2. **Command semantics (existing P / incomplete):** verify side/tick ordering,
+   group selection, town selection and currently logged-only commands. Reject
+   unsupported corpus packets explicitly so later rule findings remain valid.
+3. **Initialization and movement (existing P):** compare object presence,
+   ownership and primary/secondary HP first, then speed, collision radii,
+   movement-class assignment and path decisions. Identity errors must be fixed
+   before treating position mismatches as movement-rule evidence.
+4. **Combat (existing P / unresolved):** validate acquisition/visibility,
+   range geometry, regeneration state selection, projectile timing and unresolved
+   weapon scheduling using the earliest normalized differences.
+5. **Economy and production (existing O / incomplete):** measure clock phase,
+   active-building behavior, simultaneous town queues, training/spawn ticks,
+   non-map structures, upgrades and refund policy against the reference.
+6. **Mission scripts and AI (existing P / incomplete):** verify trigger/timer
+   timing, unsupported transport/build commands, strategist speed selection,
+   purchase planning and autonomous attack waves over the recorded horizon.
+
+Items 2 through 6 are a dependency-oriented investigation order based on the
+existing inventory, **not a ranking inferred from measured mission divergences**.
+The next successful report should replace this provisional order with counts and
+reproducible first-field findings; agreement over an input interval still does
+not establish whole-game parity or mission completion.
