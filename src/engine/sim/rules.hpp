@@ -1,6 +1,7 @@
 // Static gameplay data for the simulation, loaded at run time from the rules agent's CSV dumps (docs/data/*.csv).
 // Every value carries a provenance tag; docs/engine_rules_status.md lists which rules are verified.
 #pragma once
+#include <array>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -9,6 +10,27 @@
 namespace aztec::engine {
 
 enum class Src : uint8_t { Verified, Measured, Placeholder };
+
+constexpr int kDayTicks = 7200;
+
+struct HarvestRule {
+  int rate_a = 0, rate_b = 0;  // descriptor d60/d61; resource channel names remain unresolved
+  bool terrain = false, scheduled = false;
+  int period = -1, repair_rate = 0, repair_period = -1;
+  std::array<int, 49> occupancy{};  // descriptor cells equal to 2 contribute
+  std::vector<int> dates;
+};
+
+struct HarvestState {
+  int64_t accumulated = 0;
+  int last_clock = 0;
+  size_t cursor = 0;
+};
+
+// Accumulate each active tick; an event harvests rounded 8.8 units, retaining sub-half residue.
+int harvest_tick(HarvestState& state, int rate, int clock, int period,
+                 const std::vector<int>* dates = nullptr);
+int production_value(int base, int hall_level, int speed, bool computer, bool hostile_all, bool time);
 
 struct WeaponRules {
   int klass = -1, parameter = 0, anim = 0;
@@ -19,6 +41,7 @@ struct WeaponRules {
 };
 
 struct TypeRules {
+  HarvestRule harvest;
   WeaponRules weapon;
   int kind = -1;                 // class kind (type_info)
   bool structure = false, mobile = false, flier = false, armed = false, large = false;
@@ -36,10 +59,12 @@ struct TypeRules {
   int foot_w = 1, foot_h = 1; Src foot_src = Src::Placeholder; // footprint in tiles (Building desc d4/d5 px, rounded up)
 };
 
+struct Prerequisite { int type = 0; bool side_wide = false; };
+
 struct BuildItem {
   int type = 0;
   bool construct = false;        // true: building placed on the map, false: unit trained
-  std::vector<int> prereq;       // finished buildings of the side required (any race for the 'A' entries)
+  std::vector<Prerequisite> prereq;  // A suffix selects side-wide completed counts
 };
 
 // Unresolved calculations never silently become a generic shot.

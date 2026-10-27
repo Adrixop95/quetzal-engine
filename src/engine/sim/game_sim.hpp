@@ -1,4 +1,4 @@
-// Deterministic game simulation: fixed 12 Hz, integer / fixed-point only, command driven.
+// Deterministic game simulation: fixed 12 Hz, fixed-point state, command driven.
 // See docs/engine_rules_status.md for which rules are verified against the original and which are placeholders.
 #pragma once
 #include <memory>
@@ -40,7 +40,7 @@ class GameSim : public Simulation {
   uint64_t state_hash(const World& w) const;
 
   // Queries for the UI.
-  std::vector<MenuItem> menu(const World& w, int side) const;
+  std::vector<MenuItem> menu(const World& w, int side, int town = -1) const;
   bool can_place(const World& w, int side, int type, int tx, int ty, const char** why = nullptr) const;
   const RulesData& rules() const { return *rules_; }
   // Footprint rectangle (tiles) of a structure type centred on tile (tx, ty).
@@ -74,7 +74,7 @@ class GameSim : public Simulation {
   void kill(World& w, Object& o);
   uint32_t spawn(World& w, int type, int side, int px, int py, int hp, bool constructing);
   void attach_agent(Object& o);
-  bool menu_ok(const World& w, int side, const BuildItem& it, const char** why) const;
+  bool menu_ok(const World& w, int side, const BuildItem& it, int town, const char** why) const;
   const Object* nearest_enemy(const World& w, const Object& o, int radius_px) const;
   int town_index(const World& w, int side) const;
   uint32_t next_rand() { rng_ = rng_ * 1664525u + 1013904223u; return rng_ >> 8; }
@@ -92,6 +92,5 @@ class GameSim : public Simulation {
 };
 
 constexpr int kCorpseTicks = 480;   // placeholder: a corpse stays 40 s
-constexpr int kIncomeEvery = 12;    // placeholder income period (ticks)
 
 }  // namespace aztec::engine

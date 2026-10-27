@@ -64,8 +64,42 @@ bool is_melee(int t) {
 
 int parse_fixed256(const std::string& t) { return parse_fixed256_impl(t); }
 
+int harvest_tick(HarvestState& s, int rate, int clock, int period, const std::vector<int>* dates) {
+  s.accumulated += rate;
+  bool due = false;
+  if (dates) {
+    if (dates->empty()) return 0;
+    if (s.cursor == dates->size()) {
+      if (clock <= dates->front()) s.cursor = 0;
+    } else if (clock >= (*dates)[s.cursor]) {
+      ++s.cursor;
+      due = true;
+    }
+  } else if (period >= 0 && (clock - s.last_clock + kDayTicks) % kDayTicks >= period) {
+    s.last_clock = clock;
+    due = true;
+  }
+  if (!due) return 0;
+  int value = int((s.accumulated + 128) >> 8);
+  if (value != 0) s.accumulated = 0;
+  return value;
+}
+
+int production_value(int base, int hall, int speed, bool computer, bool hostile_all, bool time) {
+  // Preserve float32 constants, then evaluate the x87 expression before truncation.
+  constexpr float price_k[] = {2.f / 3.f, 1.f, 2.f};
+  constexpr float time_k[] = {2.f, 1.f, 2.f / 3.f};
+  int index = hostile_all ? 0 : std::clamp(speed, 0, 2);
+  float k = hall == 0 ? (time ? 1.5f : 1.f) : (time ? time_k[index] : price_k[index]);
+  float f = computer && !hostile_all ? 0.8f : 1.f;
+  return int(static_cast<long double>(base) * k * f + 0.5L);
+}
+
 void RulesData::init_defaults() {
-  loaded_ = false; weapons_.clear(); duel_.clear(); tree_.clear();
+  loaded_ = false;
+  tree_.clear();
+  duel_.clear();
+  weapons_.clear();
   types_.assign(kNumTypes, TypeRules{});
   for (int t = 0; t < kNumTypes; t++) {
     TypeRules& r = types_[t];
@@ -125,6 +159,14 @@ bool RulesData::load_dir(const std::string& dir) {
       for (auto& r : building)
         if (num(r, 0) == param) {
           t.hp_max = num(r, 2); t.hp_src = Src::Verified;
+          auto& harvest = t.harvest;
+          for (int cell = 0; cell < 49; ++cell) harvest.occupancy[cell] = num(r, 7 + cell);
+          harvest.terrain = (uint32_t(num(r, 60)) & 0xff00u) != 0;  // byte +0xed within d59
+          harvest.rate_a = num(r, 61); harvest.rate_b = num(r, 62);
+          harvest.repair_rate = num(r, 63); harvest.scheduled = num(r, 64) != 0;
+          harvest.period = num(r, 65, -1); harvest.repair_period = num(r, 321, -1);
+          if (harvest.scheduled)
+            for (int i = 0; i < std::clamp(harvest.period, 0, 255); ++i) harvest.dates.push_back(num(r, 66 + i));
           int w = num(r, 5), h = num(r, 6);  // d4, d5 (px)
           if (w > 0 && h > 0) { t.foot_w = std::max(1, (w + 47) / 48); t.foot_h = std::max(1, (h + 47) / 48); t.foot_src = Src::Placeholder; }
         }
@@ -249,7 +291,7 @@ bool RulesData::load_dir(const std::string& dir) {
     it.construct = num(r, 4) != 0;
     std::stringstream ss(r.size() > 5 ? r[5] : "");
     std::string tok;
-    while (ss >> tok) it.prereq.push_back(std::atoi(tok.c_str()));
+    while (ss >> tok) it.prereq.push_back({std::atoi(tok.c_str()), tok.back() == 'A'});
     tree_[{num(r, 0), num(r, 1)}].push_back(it);
   }
   return true;

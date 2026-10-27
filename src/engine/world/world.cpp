@@ -27,6 +27,9 @@ bool load_world(const GameData& data, const std::string& spec, World& w, std::st
     o.type = p.type;
     o.source = p.source;
     o.side = p.side;
+    if (p.source == ObjectSource::Town)
+      for (size_t i = 0; i < w.mission.towns.size(); ++i)
+        if (w.mission.towns[i].index == p.group) o.town = int(i);
     o.hp = p.hp;
     o.facing = 6;  // south
     o.hp_max = p.hp;
@@ -46,6 +49,7 @@ bool load_world(const GameData& data, const std::string& spec, World& w, std::st
     o.type = kTownBuilding[t.type][t.race];
     o.source = ObjectSource::Town;
     o.side = t.side;
+    o.town = int(&t - w.mission.towns.data());
     o.scenario = t.scenario_id;
     o.teleport(tile_center_fixed(t.x), tile_center_fixed(t.y));
     w.objects.push_back(o);

@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include "core/map.hpp"
+#include "engine/sim/rules.hpp"
 #include "core/mapfiles.hpp"
 #include "core/visfile.hpp"
 #include "engine/assets/game_data.hpp"
@@ -25,6 +26,9 @@ struct Object {
   uint32_t id = 0;
   int type = -1;         // UGI id, -1 = marker without a type
   ObjectSource source = ObjectSource::Team;
+  int town = -1;         // index into mission.towns, independent of side
+  HarvestState gold_harvest, repair_harvest;
+  bool harvest_ready = false;
   int side = 0;
   int hp = 0;
   Fixed prev_x = 0, prev_y = 0;  // position at the previous tick (world px * 256)
@@ -64,7 +68,7 @@ struct Object {
   void teleport(Fixed x, Fixed y) { prev_x = cur_x = x; prev_y = cur_y = y; }
 };
 
-struct QueueItem { int type = 0; int remaining = 0; int total = 0; };
+struct QueueItem { int type = 0; int remaining = 0; int total = 0; int town = -1; int paid = 0; };
 
 // Per-side economy and command state.
 struct SideState {
@@ -103,6 +107,9 @@ struct World {
   int center_x = 0, center_y = 0;       // world px
   uint32_t center_serial = 0;
   Selection selection;           // local player's selected objects (UI state, not simulation state)
+  std::vector<int> town_speed;    // runtime speed selection; mission BuildSpeed is ignored
+  std::vector<int> repair_credits; // current tick supply by town, separate from cash
+  int day_clock = 0;
   uint64_t tick = 0;
   int script_side = 0;           // what `side(local)` means in mission scripts: the mission's human side (shared by all peers)
   int local_side = 0;            // side whose fog layer is shown / whose objects are always visible

@@ -23,6 +23,8 @@ enum class Pct : uint8_t {
 //   Move/AttackMove: ids, a,b = world px.   Attack: ids, a = target object id.   Stop/DestroyHere: ids.
 //   CreateGroup/AddToGroup/SelectGroup/SelectByNo: a = group number 0..9 (+ ids for Create/Add).
 //   Build: a = item type (UGI); for buildings b,c = tile x,y of the footprint centre; units ignore b,c.
+//   Build/BuildMode: optional ids[0] selects an owned town member; absent = first owned town (engine convention).
+//   BuildMode: a = runtime speed 0 slow / 1 normal / 2 fast.
 //   QueueKill: a = queue index to cancel (refund).  PauseBuild: a = 1 pause / 0 resume.  Pause*: global.
 struct Command {
   Pct type = Pct::Nothing;
