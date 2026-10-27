@@ -10,7 +10,16 @@ namespace aztec::engine {
 
 enum class Src : uint8_t { Verified, Measured, Placeholder };
 
+struct WeaponRules {
+  int klass = -1, parameter = 0, anim = 0;
+  int speed = 0, range = 0, reload = 0;
+  int impact_anim = 0, splash_px = 0, shockwave = 0;
+  bool muzzle = false;
+  std::vector<WeaponRules> components;  // class 12 sums both child weapons
+};
+
 struct TypeRules {
+  WeaponRules weapon;
   int kind = -1;                 // class kind (type_info)
   bool structure = false, mobile = false, flier = false, armed = false, large = false;
   int hp_max = 0;     Src hp_src = Src::Placeholder;      // Marine desc d4 (verified), else largest mission hp

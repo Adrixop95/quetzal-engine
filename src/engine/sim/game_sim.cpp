@@ -38,6 +38,7 @@ void GameSim::attach_agent(Object& o) {
 
 void GameSim::init(World& w) {
   tick_ = 0;
+  w.effects.clear();
   nav_ = path::NavGrid();
   if (w.passability.w == w.terrain.w && w.passability.h == w.terrain.h && !w.passability.v.empty())
     nav_.load_dat(w.passability.w, w.passability.h, w.passability.v.data());
@@ -103,7 +104,6 @@ uint32_t GameSim::spawn(World& w, int type, int side, int pxx, int pyy, int hp, 
 }
 
 void GameSim::kill(World& w, Object& o) {
-  (void)w;
   if (!o.alive) return;
   o.alive = false;
   o.hp = 0;
@@ -111,11 +111,17 @@ void GameSim::kill(World& w, Object& o) {
   o.target = 0;
   o.corpse_ticks = 0;
   const TypeRules& r = rules_->type(o.type);
+  if (r.kind == 1 || r.kind == 3 || r.kind == 4 || r.kind == 5 || r.kind == 6 || r.kind == 9) {
+    decoration(w, data::kVehicleExplosionAnim, int(next_rand() % 3), o.cur_x, o.cur_y, 0, o.side);
+    if (!r.flier) decoration(w, data::kVehicleDebrisAnim, int(next_rand() % 20), o.cur_x, o.cur_y, -1, o.side);
+    o.removed = true;
+  }
   if (r.structure) {
+    decoration(w, 116, int(next_rand() % 20), o.cur_x, o.cur_y, -1, o.side);
     int x0, y0, x1, y1;
     footprint(r, px(o.cur_x) / kTilePx, px(o.cur_y) / kTilePx, x0, y0, x1, y1);
     nav_.add_block(x0, y0, x1 - x0 + 1, y1 - y0 + 1, -1);
-    o.removed = true;  // no destruction animation yet
+    o.removed = true;  // replaced by the rubble effect
     return;
   }
   o.anim_state = kAnimDie;
@@ -391,13 +397,117 @@ void GameSim::run_orders(World& w) {
         if (rules_->has_duel(o.type, t->type, de)) { dmg = de.dmg; rel = de.interval; }
         o.cooldown = std::max(1, rel);
         o.anim_state = kAnimAttack; o.anim_tick = 0;
-        t->hp -= dmg;
-        t->last_hit_by = o.id;
-        if (t->hp <= 0) kill(w, *t);
+        fire(w, o, *t, dmg);
       }
     } else if (ag && ((tick_ + o.id) % 6 == 0 || !moving)) {
       uint32_t aid = uint32_t(o.mover);
       mover_->order_move(&aid, 1, {t->cur_x, t->cur_y});
+    }
+  }
+}
+
+void GameSim::decoration(World& w, int anim, int slot, Fixed x, Fixed y, int height, int side, uint32_t source) {
+  Effect e;
+  e.anim = anim; e.slot = slot; e.x = e.prev_x = x; e.y = e.prev_y = y;
+  e.height = height; e.side = side; e.source = source;
+  e.lifetime = data::effect_lifetime(anim, slot);
+  for (const auto& info : data::kEffectAnims) if (info.id == anim) e.kind = info.owner;
+  if (e.lifetime > 0) w.effects.push_back(e);
+}
+
+void GameSim::fire(World& w, const Object& source, Object& target, int damage) {
+  fire_weapon(w, rules_->type(source.type).weapon, source, target, damage);
+}
+
+void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& source, Object& target, int damage) {
+  if (!weapon.components.empty()) {
+    // Preserve the measured/default total while per-component damage is unresolved.
+    int count = int(weapon.components.size());
+    for (int i = 0; i < count; i++)
+      fire_weapon(w, weapon.components[size_t(i)], source, target, damage / count + (i < damage % count ? 1 : 0));
+    return;
+  }
+  int dx = target.cur_x - source.cur_x, dy = target.cur_y - source.cur_y;
+  int angle = (256 - path::angle_of(dx, dy)) & 255;
+  if (weapon.muzzle) {
+    auto offset = path::with_length({dx, dy}, 20 * 256);
+    decoration(w, data::kBeamMuzzleAnim, 0, source.cur_x + offset.x, source.cur_y + offset.y, 0, source.side);
+    int count = path::length({dx, dy}) / (30 * 256);
+    for (int i = 1; i <= count; i++)
+      decoration(w, data::kBeamSegmentAnim, data::direction32_from_angle(angle),
+                 source.cur_x + int(int64_t(dx) * i / (count + 1)),
+                 source.cur_y + int(int64_t(dy) * i / (count + 1)), 0, source.side);
+    decoration(w, data::kBeamImpactAnim, 0, target.cur_x, target.cur_y, 0, source.side);
+  }
+  if (weapon.anim == 0) {
+    target.hp -= damage; target.last_hit_by = source.id;
+    if (target.hp <= 0) kill(w, target);
+    return;
+  }
+  Effect e;
+  e.kind = weapon.klass == 0 ? data::EffectClass::BallExpl : weapon.klass == 3 ? data::EffectClass::Axe :
+           weapon.klass == 7 ? data::EffectClass::FireThrow : data::EffectClass::Arrow;
+  e.source = source.id; e.target = target.id; e.side = source.side;
+  e.anim = weapon.anim; e.angle = angle;
+  auto sequence = data::projectile_sequence(e.kind, angle);
+  e.slot = sequence.slot; e.loop = sequence.loop;
+  e.x = e.prev_x = source.cur_x; e.y = e.prev_y = source.cur_y;
+  e.end_x = target.cur_x; e.end_y = target.cur_y;
+  // Snapshot aim and straight flight are provisional; no floating point enters the simulation.
+  e.speed = std::max(1, weapon.speed) * 256;
+  e.damage = damage; e.flight = true;
+  e.impact_anim = weapon.impact_anim; e.splash_px = weapon.splash_px; e.shockwave = weapon.shockwave;
+  w.effects.push_back(e);
+}
+
+void GameSim::advance_effects(World& w) {
+  // Move the old list aside: impacts/deaths may append new decorations without invalidating iteration.
+  auto effects = std::move(w.effects);
+  w.effects.clear();
+  for (auto e : effects) {
+    e.prev_x = e.x; e.prev_y = e.y;
+    if (!e.flight) {
+      if (e.source && e.loop) {
+        const auto* o = w.find(e.source);
+        if (!o || !o->alive || o->removed || o->hp_max <= 0 || int64_t(o->hp) * 4 > int64_t(o->hp_max) * 3) continue;
+        int stage = 3 - int((int64_t(4) * o->hp - 1) / o->hp_max);
+        e.anim = 153 + stage;
+        e.x = o->cur_x; e.y = o->cur_y + 256;
+      }
+      ++e.age;
+      if (e.loop) e.age %= std::max(1, e.lifetime);
+      if (e.age < e.lifetime || e.loop) w.effects.push_back(e);
+      continue;
+    }
+    path::Vec2 delta{e.end_x - e.x, e.end_y - e.y};
+    if (path::len2(delta) > int64_t(e.speed) * e.speed) {
+      auto step = path::with_length(delta, e.speed);
+      e.x += step.x; e.y += step.y; e.age++;
+      w.effects.push_back(e);
+      continue;
+    }
+    e.x = e.end_x; e.y = e.end_y;
+    if (e.impact_anim) decoration(w, e.impact_anim, int(next_rand() % 3), e.x, e.y, 0, e.side);
+    if (e.shockwave == data::kShockwaveAnim) decoration(w, e.shockwave, 0, e.x, e.y, 0, e.side);
+    for (auto& o : w.objects) {
+      if (!o.alive || o.removed) continue;
+      int64_t dx = int64_t(o.cur_x) - e.x, dy = int64_t(o.cur_y) - e.y;
+      bool splash = e.splash_px > 0 && w.hostile(e.side, o.side) &&
+                    dx * dx + dy * dy <= int64_t(e.splash_px * 256) * (e.splash_px * 256);
+      if (o.id != e.target && !splash) continue;
+      o.hp -= e.damage; o.last_hit_by = e.source;
+      if (o.hp <= 0) kill(w, o);
+    }
+  }
+  for (const auto& o : w.objects) {
+    if (!o.alive || o.removed || o.progress < 1000 || !rules_->type(o.type).structure || o.hp_max <= 0 ||
+        int64_t(o.hp) * 4 > int64_t(o.hp_max) * 3) continue;
+    bool exists = false;
+    for (const auto& e : w.effects) if (e.loop && e.source == o.id) { exists = true; break; }
+    if (!exists) {
+      int stage = 3 - int((int64_t(4) * o.hp - 1) / o.hp_max);
+      decoration(w, 153 + stage, 0, o.cur_x, o.cur_y + 256, 0, o.side, o.id);
+      w.effects.back().loop = true;
     }
   }
 }
@@ -456,6 +566,7 @@ void GameSim::tick(World& w) {
   if (script_.loaded()) script_.tick(*this, w);
   economy(w);
   run_ai(w);
+  advance_effects(w);
   run_orders(w);
   mover_->tick();
   sync_movement(w);
@@ -504,6 +615,14 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(o.facing); mix(o.anim_state); mix(uint32_t(o.corpse_ticks));
     mix(uint32_t(o.dest_x)); mix(uint32_t(o.dest_y)); mix(o.resume); mix(uint32_t(o.build_elapsed)); mix(uint32_t(o.build_total));
     mix(uint32_t(o.hp_max)); mix(uint32_t(o.tactic)); mix(uint32_t(o.scenario)); mix(o.last_hit_by); mix(uint32_t(o.mover)); mix(o.anim_variant);
+  }
+  mix(w.effects.size());
+  for (const auto& e : w.effects) {
+    mix(uint32_t(e.kind)); mix(e.source); mix(e.target); mix(uint32_t(e.side));
+    mix(e.anim); mix(e.slot); mix(e.angle); mix(uint32_t(e.x)); mix(uint32_t(e.y));
+    mix(uint32_t(e.end_x)); mix(uint32_t(e.end_y)); mix(uint32_t(e.height));
+    mix(e.age); mix(e.lifetime); mix(e.speed); mix(e.damage); mix(e.splash_px);
+    mix(e.impact_anim); mix(e.shockwave); mix(e.flight); mix(e.loop);
   }
   for (const SideState& s : w.side_state) {
     mix(uint32_t(s.money)); mix(s.build_paused); mix(s.queue.size());

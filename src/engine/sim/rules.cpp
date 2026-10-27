@@ -7,6 +7,7 @@
 #include <sstream>
 
 #include "engine/world/type_info.hpp"
+#include <functional>
 
 namespace aztec::engine {
 
@@ -119,6 +120,68 @@ bool RulesData::load_dir(const std::string& dir) {
           if (w > 0 && h > 0) { t.foot_w = std::max(1, (w + 47) / 48); t.foot_h = std::max(1, (h + 47) / 48); t.foot_src = Src::Placeholder; }
         }
     }
+  }
+  // Descriptor weapon fields: Marine d7, Headtruck/Spider d9, Defence d59.
+  // Composite dispatch and unannotated flight fields remain provisional.
+  auto ids = read_csv(dir + "/weapons_ids.csv");
+  auto arrows = read_csv(dir + "/weapon_class_arrow1.csv");
+  auto axes = read_csv(dir + "/weapon_class_axe3.csv");
+  auto balls = read_csv(dir + "/weapon_class_ball0.csv");
+  auto flames = read_csv(dir + "/weapon_class_w7.csv");
+  auto direct = read_csv(dir + "/weapon_class_w2_13.csv");
+  auto pairs = read_csv(dir + "/weapon_class_w12.csv");
+  auto throws = read_csv(dir + "/weapon_class_w8.csv");
+  auto row = [](const auto& rows, int param) -> std::vector<std::string> {
+    for (const auto& r : rows) if (num(r, 0, -1) == param) return r;
+    return {};
+  };
+  std::function<WeaponRules(int, int)> weapon = [&](int id, int depth) -> WeaponRules {
+    WeaponRules w;
+    if (depth > 8) return w;
+    auto ir = row(ids, id);
+    if (ir.empty()) return w;
+    w.klass = num(ir, 1, -1); w.parameter = num(ir, 2);
+    if (w.klass == 12) {
+      auto pair = row(pairs, w.parameter);
+      auto first = weapon(num(pair, 1, -1), depth + 1);
+      auto second = weapon(num(pair, 2, -1), depth + 1);
+      w = first;
+      w.components = {first, second};
+      return w;
+    }
+    if (w.klass == 8) return weapon(num(row(throws, w.parameter), 1, -1), depth + 1);
+    if (w.klass == 0 || w.klass == 1 || w.klass == 3) {
+      auto r = row(w.klass == 0 ? balls : w.klass == 1 ? arrows : axes, w.parameter);
+      if (r.empty()) return w;
+      w.anim = num(r, 1); w.speed = num(r, 2); w.reload = num(r, 3); w.range = num(r, 4);
+      if (w.klass == 1) w.shockwave = num(r, 14);
+      int secondary_id = w.klass == 0 ? num(r, 5, -1) : w.klass == 1 ? num(r, 13, -1) : num(r, 6, -1);
+      auto secondary = row(ids, secondary_id);
+      if (num(secondary, 1, -1) == 7) {
+        auto splash = row(flames, num(secondary, 2));
+        w.impact_anim = num(splash, 1); w.splash_px = num(splash, 7);
+      }
+    } else if (w.klass == 7) {
+      w.anim = 157; w.speed = 24; w.range = 96; w.reload = 12;
+      w.impact_anim = num(row(flames, w.parameter), 1);
+      w.splash_px = num(row(flames, w.parameter), 7);
+    } else if (w.klass == 2 || w.klass == 13) {
+      auto r = row(direct, w.parameter);
+      w.range = num(r, 5); w.reload = num(r, 1);
+      w.muzzle = num(r, 11) == 106;
+    }
+    return w;
+  };
+  const char* descriptors[] = {"marine", "spider", "", "", "", "", "headtruck", "defence"};
+  for (int id = 0; id < kNumTypes; id++) {
+    auto& t = types_[id];
+    if (t.kind != 0 && t.kind != 1 && t.kind != 6 && t.kind != 7) continue;
+    auto r = row(read_csv(dir + "/desc_" + descriptors[t.kind] + ".csv"), kind_param[id].second);
+    int field = t.kind == 0 ? 7 : t.kind == 7 ? 59 : 9;
+    if (r.size() <= size_t(field + 1)) continue;
+    t.weapon = weapon(num(r, field + 1, -1), 0);
+    if (t.weapon.range > 0) { t.range_px = t.weapon.range; t.range_src = t.weapon.klass == 1 ? Src::Verified : Src::Placeholder; }
+    if (t.weapon.reload > 0) t.reload = t.weapon.reload;
   }
   for (auto& r : speeds) {
     int id = num(r, 0);

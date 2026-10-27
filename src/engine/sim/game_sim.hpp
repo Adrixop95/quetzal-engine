@@ -64,6 +64,10 @@ class GameSim : public Simulation {
   void apply(World& w, const Command& c);
   void economy(World& w);
   void run_orders(World& w);
+  void advance_effects(World& w);
+  void fire(World& w, const Object& source, Object& target, int damage);
+  void fire_weapon(World& w, const WeaponRules& weapon, const Object& source, Object& target, int damage);
+  void decoration(World& w, int anim, int slot, Fixed x, Fixed y, int height, int side, uint32_t source = 0);
   void sync_movement(World& w);
   void update_fog(World& w);
   void run_ai(World& w);   // sim/ai.cpp

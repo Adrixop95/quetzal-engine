@@ -10,6 +10,7 @@
 #include "core/visfile.hpp"
 #include "engine/assets/game_data.hpp"
 #include "engine/assets/mission.hpp"
+#include "engine/sim/effects.hpp"
 
 namespace aztec::engine {
 
@@ -85,6 +86,7 @@ struct World {
   VisFile visibility;            // .vis per-side light layers, may be empty
   Sprite preview;                // .spr minimap preview; w == 0 if absent
   std::vector<Object> objects;
+  std::vector<Effect> effects;
   std::vector<SideState> side_state;   // indexed by side number
   uint8_t relation[8][8] = {};          // relation[a][b]: how side a regards side b (enemy / friend / neutral)
   uint8_t outcome = kRunning;           // mission result for the local side (scripts: side(local).victory / defeat)
