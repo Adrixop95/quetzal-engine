@@ -3,6 +3,8 @@
 // previous and current tick position so the renderer can interpolate between 12 Hz ticks.
 #pragma once
 #include <cstdint>
+#include <memory>
+#include "core/savegame.hpp"
 #include <string>
 #include <vector>
 #include "core/map.hpp"
@@ -101,6 +103,9 @@ struct Selection {
 };
 
 struct World {
+  // Retains unresolved original research, script and pool state without inventing semantics.
+  std::shared_ptr<const SaveGame> original_save;
+  std::vector<uint32_t> original_unit_ids; // imported engine ID minus one -> sparse original pool ID
   MissionDef mission;
   TerrainMap terrain;
   Grid<uint8_t> passability;     // may be empty
