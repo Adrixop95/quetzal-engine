@@ -234,8 +234,9 @@ of the comparator's sign, so reading that sign alone gives the wrong direction.
   single global first pass.
 - Terrain overlays participate in the same ordering with height zero. Render
   groups and object field offsets for each unit/projectile/effect class are in
-  `render_rules.hpp`. Existing engine renderer integration is outside this
-  metadata change and still uses its own passes.
+  `render_rules.hpp`. The renderer now consumes this ordering; see the current
+  [integration inventory](render_integration.md) for synthetic checks and pending
+  reference validation.
 
 ## Reproducing probes and remaining work
 
@@ -257,11 +258,16 @@ python3 -B tools/zspr_compare.py /path/to/game work/zprobe \
 
 The new comparator uses the active Anim frame from the dereferenced dump, the
 class's position/height fields, and the requested team/shade/origin. It reports
-exact RGB565 pixel counts, excludes alpha pixels, and does not search for a better
+exact RGB565 pixel counts, skips partial alpha without an explicit background,
+and does not search for a better
 frame/position/shade. `--tolerance 40` adds a separately named tolerant score.
 Occlusion, team colour, lighting, gamma and a tick between scan/shot can reduce
 scores; a low score must not be called verification. Alpha effects need a separate
-background-composited comparison. `zspr_scan.py` remains an exploratory candidate
+background-composited comparison (`--background` supplies a registered image;
+the assumed model is named in the report). `--after-objects` and
+`--require-stable` validate pre/post-shot scan brackets; these are not atomic
+render/tick snapshots. See [render_integration.md](render_integration.md).
+`zspr_scan.py` remains an exploratory candidate
 search, not a proof of current animation state.
 
 This worktree reran comparisons against the saved `work/zspr/fB` reference capture

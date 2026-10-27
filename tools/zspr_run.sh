@@ -41,11 +41,15 @@ cp "$VTABLES" "$O/vtables.txt"
   echo "click 150 ${4:-318}"; echo 'wait 800'; echo 'click 160 543'
   echo "wait ${5:-7000}"; echo shot; echo 'wait 1000'; echo shot
   echo "objscan $O/vtables.txt $O/objs.txt"; echo "heapdump $O/heap.bin"
+  if [ -n "${PROBE_SCRIPT:-}" ]; then cat "$PROBE_SCRIPT"; fi
   i=0
   while [ "$i" -lt "${SAMPLES:-0}" ]; do
     if [ -n "${POKE_FILE:-}" ]; then awk -v n="$i" '$1==n{print "poke " $2 " " $3}' "$POKE_FILE"; fi
     echo "objscan $O/vtables.txt $O/s_$i.txt"
-    if [ "${SAMPLE_SHOTS:-0}" = 1 ]; then echo shot; fi
+    if [ "${SAMPLE_SHOTS:-0}" = 1 ]; then
+      echo shot
+      echo "objscan $O/vtables.txt $O/s_$i.after.txt"
+    fi
     echo "wait ${SAMPLE_MS:-100}"
     i=$((i+1))
   done
@@ -56,7 +60,7 @@ cp "$VTABLES" "$O/vtables.txt"
 i=0
 while [ "$i" -lt "${SAMPLES:-0}" ]; do
   if [ "${SAMPLE_SHOTS:-0}" = 1 ]; then
-    printf '%s\tshot_%02d.ppm\n' "s_$i.txt" "$((i+4))" >> "$O/samples.tsv"
+    printf '%s\tshot_%02d.ppm\t%s\n' "s_$i.txt" "$((i+4))" "s_$i.after.txt" >> "$O/samples.tsv"
   fi
   i=$((i+1))
 done

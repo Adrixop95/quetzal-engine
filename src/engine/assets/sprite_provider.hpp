@@ -34,21 +34,34 @@ struct SpriteKeyHash {
 
 // What the provider is asked about. All fields come from the simulation, never from the renderer.
 struct ObjectState {
-  int type_id = -1;       // UGI id 0..89 (docs/object_types.md)
+  int type_id = -1;       // UGI id 0..89; -2 Boat, -3 Johnka (render-only transport ids)
   int side = 0;
   int side_color = 0;     // [SideN] Color, for team-colour palettes
-  int facing = 0;         // 0..7 (8 directions), meaning of 0 to be confirmed
+  int facing = 0;         // 0..7: east=0, counter-clockwise
   int anim_state = 0;     // data::AnimState (0 idle, 1 move, 2 attack, 3 die, 4 fidget, 5 icon)
   uint32_t anim_tick = 0; // simulation ticks since the animation started
   uint32_t anim_variant = 0;  // stable per-object random value (death/fidget sequence choice)
+  int angle = -1, secondary_angle = -1;  // full 0..255 angles; -1 uses facing * 32
+  bool cycle_ready = true, initial_turret = true, moving = false;
+  int height = 0;             // object altitude in pixels for Bird/Zeppelin
+  int hp = 0, max_hp = 0;
+  int destruction_radius = -1;  // unknown until supplied by the object producer
+  bool construction_overlay = false;
+  int transport_phase = 0, orientation = 0;
   int progress = 1000;        // construction 0..1000 (anim_state 6 = under construction)
 };
 
 struct SpriteDraw {
   SpriteKey key;
   int dx = 0, dy = 0;     // extra pixel offset on top of the sprite's own hotspot (ox, oy)
-  bool shadow = false;    // draw as a dark translucent shadow (not yet used by the renderer)
-  int layer = 0;          // 0 = ground object, higher = drawn later within the same row
+  bool shadow = false;    // optional semantic tag; SpriteKey::shadow controls the stored image
+  int layer = 0;          // reserved for custom providers; common ordering uses SpriteItem height
+};
+
+struct SpriteItem {
+  int dx = 0, dy = 0, height = 0;
+  std::vector<SpriteDraw> parts;
+  int light = 0;
 };
 
 class SpriteProvider {
@@ -58,6 +71,21 @@ class SpriteProvider {
   virtual bool pick(const ObjectState& st, SpriteDraw& out) const = 0;
   // Optional shadow, drawn before the body (translucent). Default: none.
   virtual bool pick_shadow(const ObjectState& /*st*/, SpriteDraw& /*out*/) const { return false; }
+  // Ordered per-item layers. An empty result may intentionally hide an object.
+  virtual std::vector<SpriteDraw> parts(const ObjectState& st) const {
+    std::vector<SpriteDraw> result;
+    SpriteDraw d;
+    if (pick_shadow(st, d)) result.push_back(d);
+    if (pick(st, d)) result.push_back(d);
+    return result;
+  }
+  virtual std::vector<SpriteItem> items(const ObjectState& st) const {
+    return {{0, 0, height(st), parts(st), light_mask(st)}};
+  }
+  virtual int light_mask(const ObjectState&) const { return 0; }
+  virtual int vision_mask(const ObjectState&) const { return 0; }
+  virtual int height(const ObjectState&) const { return 0; }
+  virtual bool hides_missing(const ObjectState&) const { return false; }
 };
 
 // Simplest provider: fixed sprite per type id (ignores facing/animation).
@@ -91,6 +119,35 @@ class ChainSpriteProvider : public SpriteProvider {
     return false;
   }
 
+  std::vector<SpriteDraw> parts(const ObjectState& st) const override {
+    for (const auto& p : chain_) {
+      auto result = p->parts(st);
+      if (!result.empty() || p->hides_missing(st)) return result;
+    }
+    return {};
+  }
+  std::vector<SpriteItem> items(const ObjectState& st) const override {
+    for (const auto& p : chain_) {
+      if (!p->parts(st).empty() || p->hides_missing(st)) return p->items(st);
+    }
+    return {};
+  }
+  int light_mask(const ObjectState& st) const override {
+    for (const auto& p : chain_) if (int id = p->light_mask(st)) return id;
+    return 0;
+  }
+  int vision_mask(const ObjectState& st) const override {
+    for (const auto& p : chain_) if (int id = p->vision_mask(st)) return id;
+    return 0;
+  }
+  int height(const ObjectState& st) const override {
+    for (const auto& p : chain_) if (p->hides_missing(st)) return p->height(st);
+    return 0;
+  }
+  bool hides_missing(const ObjectState& st) const override {
+    for (const auto& p : chain_) if (p->hides_missing(st)) return true;
+    return false;
+  }
  private:
   std::vector<std::shared_ptr<const SpriteProvider>> chain_;
 };
