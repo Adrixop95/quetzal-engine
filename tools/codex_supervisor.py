@@ -148,7 +148,7 @@ def sync_with_develop(num, head, hint=""):
     with LAND_LOCK:
         ensure_land()
         lrun("git merge --abort >/dev/null 2>&1; git reset -q --hard && git clean -qfd -e build_sup && git fetch -q origin")
-        lrun(f"git checkout -q -f -B {head} origin/{head}")
+        lrun(f"git checkout -q -f --detach origin/{head}")
         lrun(" ".join(GIT) + " merge --no-commit --no-ff origin/develop")
         conflicted = lrun("git diff --name-only --diff-filter=U").stdout.split()
         try:
@@ -180,7 +180,7 @@ def fix_ci(num, head):
     with LAND_LOCK:
         ensure_land()
         lrun("git merge --abort >/dev/null 2>&1; git reset -q --hard && git clean -qfd -e build_sup && git fetch -q origin")
-        lrun(f"git checkout -q -f -B {head} origin/{head}")
+        lrun(f"git checkout -q -f --detach origin/{head}")
         try:
             codex_in_land("CI fails on this branch. Fix the cause with minimal changes, keep everything English, verify build, ctest and "
                           "pre-commit locally, do NOT run git write commands. Failing log tail:\n" + logs[-3500:])
