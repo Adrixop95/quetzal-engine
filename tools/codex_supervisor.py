@@ -6,9 +6,11 @@ Loop: resume tasks stopped by the Codex usage limit (retrying every 20 minutes),
 build + ctest, commit, push, open a PR into develop, wait for green CI and squash-merge it (never --admin).
 Run:  nohup tools/codex_supervisor.py > work/codex/supervisor.log 2>&1 &
 """
+import json
 import os
 import subprocess
 import sys
+import threading
 import time
 
 from codex_orch import queue_files
@@ -101,63 +103,156 @@ def pending_merge():
     return {h[len("feature/codex-"):] for h in out if h.startswith("feature/codex-")}
 
 
-RESOLVED = set()
+LAND_LOCK = threading.Lock()   # LAND is one checkout: landing tasks and the merge queue take turns
+ATTEMPTS = {}                  # (pr number, kind) -> tries; reset when the PR makes progress
+MAX_ATTEMPTS = 3
+STUCK = set()
 
 
-def resolve_conflicts(num, head):
-    """Merge origin/develop into a PR branch inside the landing checkout and let Codex resolve the conflict markers."""
-    if num in RESOLVED:
-        return
-    RESOLVED.add(num)
-    ensure_land()
-    lrun("git reset -q --hard && git clean -qfd -e build_sup && git fetch -q origin")
-    lrun(f"git checkout -q -f -B {head} origin/{head}")
-    lrun("git merge --no-commit origin/develop")
-    prompt = ("This worktree is in the middle of a git merge of origin/develop into a feature branch and has conflict markers. "
-              "Resolve every conflict by preserving the intent of BOTH sides (the branch adds a feature, develop gained other features "
-              "in the same files). Remove all conflict markers, make the project build and the tests pass (cmake -S . -B build_sup "
-              "-DAZTEC_GEN_DIR= && cmake --build build_sup && ctest --test-dir build_sup), keep everything English. Do NOT run git "
-              "commit or any other git write command; leave the resolved files in the working tree and summarize.")
-    log("resolving conflicts of PR", num, run(f"codex exec -C {LAND} -s workspace-write {json.dumps(prompt)} 2>&1 | tail -5").stdout[-300:])
-    if lrun("grep -rlE '^(<<<<<<<|>>>>>>>) ' --include='*' . --exclude-dir=.git --exclude-dir=build_sup").stdout.strip():
-        log("conflict markers remain for PR", num)
-        lrun("git merge --abort; git reset -q --hard")
-        return
-    if lrun("cmake --build build_sup --parallel 8 >/dev/null 2>&1 && ctest --test-dir build_sup >/dev/null 2>&1").returncode != 0:
-        log("build/tests fail after resolving PR", num)
-        lrun("git merge --abort; git reset -q --hard")
-        return
+def codex_in_land(prompt, timeout=3000):
+    r = subprocess.run(["codex", "exec", "-C", LAND, "-s", "workspace-write", prompt],
+                       text=True, capture_output=True, timeout=timeout)
+    return (r.stdout + r.stderr)[-400:]
+
+
+def verify_land(files):
+    """Gate for a resolved merge: no markers in the touched files, build and tests pass."""
+    if files and lrun("grep -lE '^(<<<<<<<|>>>>>>>) ' -- " + " ".join(files)).stdout.strip():
+        return "conflict markers remain in " + lrun("grep -lE '^(<<<<<<<|>>>>>>>) ' -- " + " ".join(files)).stdout
+    if lrun("cmake -S . -B build_sup -DAZTEC_GEN_DIR= -DCMAKE_BUILD_TYPE=Release >/dev/null 2>&1").returncode:
+        return "cmake configure failed"
+    b = lrun("cmake --build build_sup --parallel 12 2>&1")
+    if b.returncode:
+        return "build failed: " + b.stdout[-600:]
+    t = lrun("ctest --test-dir build_sup --output-on-failure 2>&1 | tail -30")
+    if "100% tests passed" not in t.stdout:
+        return "tests failed: " + t.stdout[-600:]
+    return ""
+
+
+def push_land(head, message):
     lrun("git add -A -- . ':!build_sup'")
-    lrun(" ".join(GIT) + " commit -qm 'Merge develop into " + head + " (conflicts resolved by Codex)'")
-    lrun(f"git push -q origin {head}")
-    lrun("git checkout -q --detach origin/develop")
-    log("pushed conflict resolution for PR", num)
+    for _ in range(3):   # pre-commit hooks may rewrite files: re-add and retry
+        c = lrun(" ".join(GIT) + " commit -qm " + json.dumps(message))
+        if c.returncode == 0:
+            break
+        lrun("git add -A -- . ':!build_sup'")
+    else:
+        return "commit failed: " + (c.stdout + c.stderr)[-300:]
+    p = lrun(f"git push -q origin HEAD:{head}")
+    return "push failed: " + p.stderr[-300:] if p.returncode else ""
 
 
-def merge_green_prs():
+def sync_with_develop(num, head, hint=""):
+    """Merge origin/develop into the PR branch; Codex resolves conflicts. Returns "" on success, else a reason."""
+    with LAND_LOCK:
+        ensure_land()
+        lrun("git merge --abort >/dev/null 2>&1; git reset -q --hard && git clean -qfd -e build_sup && git fetch -q origin")
+        lrun(f"git checkout -q -f --detach origin/{head}")
+        lrun(" ".join(GIT) + " merge --no-commit --no-ff origin/develop")
+        conflicted = lrun("git diff --name-only --diff-filter=U").stdout.split()
+        try:
+            if conflicted:
+                log("PR", num, "conflicts:", " ".join(conflicted))
+                codex_in_land(
+                    "This worktree is in the middle of a git merge of origin/develop into a feature branch and has conflict markers in: "
+                    + " ".join(conflicted) + ". Resolve every conflict preserving the intent of BOTH sides (the branch adds a feature, "
+                    "develop gained other features in the same files; keep both behaviours, merge tests of both). Remove all markers, make "
+                    "the project build and tests pass (cmake -S . -B build_sup -DAZTEC_GEN_DIR= && cmake --build build_sup && ctest "
+                    "--test-dir build_sup), keep everything English. Do NOT run git commit or other git write commands; leave resolved files "
+                    "in the working tree. " + hint)
+            bad = verify_land(conflicted) if conflicted else ""
+            if not bad:
+                bad = push_land(head, f"Merge develop into {head}" + (" (conflicts resolved by Codex)" if conflicted else ""))
+            return bad
+        finally:
+            lrun("git merge --abort >/dev/null 2>&1; git reset -q --hard; git checkout -q --detach origin/develop")
+
+
+def fix_ci(num, head):
+    """Ask Codex to fix a failing CI check on the PR branch."""
+    rows = [l.split("\t") for l in run(f"gh pr checks {num}").stdout.splitlines() if "\tfail" in l]
+    logs = ""
+    for r in rows[:2]:
+        rid = r[-1].split("/runs/")[-1].split("/")[0] if "/runs/" in r[-1] else ""
+        if rid:
+            logs += run(f"gh run view {rid} --log-failed 2>&1 | tail -60").stdout
+    with LAND_LOCK:
+        ensure_land()
+        lrun("git merge --abort >/dev/null 2>&1; git reset -q --hard && git clean -qfd -e build_sup && git fetch -q origin")
+        lrun(f"git checkout -q -f --detach origin/{head}")
+        try:
+            codex_in_land("CI fails on this branch. Fix the cause with minimal changes, keep everything English, verify build, ctest and "
+                          "pre-commit locally, do NOT run git write commands. Failing log tail:\n" + logs[-3500:])
+            bad = verify_land([])
+            return bad or push_land(head, "Fix CI (by Codex)")
+        finally:
+            lrun("git reset -q --hard; git checkout -q --detach origin/develop")
+
+
+def attempt(num, kind):
+    ATTEMPTS[(num, kind)] = ATTEMPTS.get((num, kind), 0) + 1
+    return ATTEMPTS[(num, kind)] <= MAX_ATTEMPTS
+
+
+def queue_step():
+    """One step of the serial merge queue: the oldest open codex PR is synced, fixed or merged; the rest wait their turn."""
     out = run("gh pr list --json number,headRefName --jq '.[]|\"\\(.number) \\(.headRefName)\"'").stdout.splitlines()
-    for line in out:
-        num, head = (line.split() + ["", ""])[:2]
-        if head.startswith("feature/codex-"):
-            c = run(f"gh pr checks {num}").stdout
-            if c.strip() and "pending" not in c and "fail" not in c:
-                m = run(f"gh pr merge {num} --squash --delete-branch")
-                log("merged green PR", num, m.stderr.strip()[-100:])
-                if "conflict" in (m.stderr + m.stdout).lower():
-                    resolve_conflicts(num, head)
+    prs = sorted((int(l.split()[0]), l.split()[1]) for l in out if len(l.split()) == 2 and l.split()[1].startswith("feature/codex-"))
+    for num, head in prs:
+        if num in STUCK:
+            continue
+        v = json.loads(run(f"gh pr view {num} --json mergeStateStatus,mergeable").stdout or "{}")
+        state, mergeable = v.get("mergeStateStatus"), v.get("mergeable")
+        checks = run(f"gh pr checks {num}").stdout
+        failed, pending = "\tfail" in checks, "\tpending" in checks
+        if mergeable == "UNKNOWN":
+            return
+        if mergeable == "CONFLICTING" or state in ("BEHIND", "DIRTY"):
+            if not attempt(num, "sync"):
+                STUCK.add(num)
+                log("STUCK: PR", num, "cannot be synced with develop after", MAX_ATTEMPTS, "tries")
+                continue
+            bad = sync_with_develop(num, head, "Previous attempt failed: " + str(ATTEMPTS.get((num, "last"), "")))
+            ATTEMPTS[(num, "last")] = bad
+            log("PR", num, "synced with develop" if not bad else "sync FAILED: " + bad)
+            return
+        if failed:
+            if not attempt(num, "ci"):
+                STUCK.add(num)
+                log("STUCK: PR", num, "CI keeps failing after", MAX_ATTEMPTS, "fixes")
+                continue
+            bad = fix_ci(num, head)
+            log("PR", num, "CI fix pushed" if not bad else "CI fix FAILED: " + bad)
+            return
+        if pending or not checks.strip():
+            return   # wait for CI; the queue is serial so nothing else merges meanwhile
+        m = run(f"gh pr merge {num} --squash --delete-branch")
+        log("merged PR", num, (m.stdout + m.stderr).strip()[-150:])
+        return
+
+
+def queue_loop():
+    while True:
+        try:
+            queue_step()
+        except Exception as e:
+            log("queue error", e)
+        time.sleep(45)
 
 
 def main():
     last_resume = 0
+    threading.Thread(target=queue_loop, daemon=True).start()
     while True:
         try:
-            merge_green_prs()
             st = status()
             running = [n for n, s in st.items() if s == "running"]
             for n, s in st.items():
                 if s == "done":
                     log("landing", n)
-                    land(n)
+                    with LAND_LOCK:
+                        land(n)
             if time.time() - last_resume > 1200 and any(s in ("limited", "stopped") for s in st.values()):
                 last_resume = time.time()
                 log("resume attempt", run(f"python3 {ORCH} resume all").stdout.strip())
