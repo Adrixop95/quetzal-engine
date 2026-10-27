@@ -63,6 +63,8 @@ class GameSim : public Simulation {
  private:
   void apply(World& w, const Command& c);
   void economy(World& w);
+  void maintain_town_marks(World& w);
+  bool mark_eligible(const Object& o, const TownState& town) const;
   void run_orders(World& w);
   void advance_effects(World& w);
   void fire(World& w, const Object& source, Object& target, int damage);
