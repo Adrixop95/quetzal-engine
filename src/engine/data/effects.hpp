@@ -92,4 +92,12 @@ inline constexpr EffectAnimInfo kEffectAnims[] = {
   {158, EffectClass::Arrow, 32, 0, 31, 6, 6, 6, 6},
 };
 
+// Resource duration for transient decorations. Random explosion slots 1/2
+// are ten ticks; slot 0 is eleven. Sprite pixels still come from Units.xbe.
+constexpr int effect_lifetime(int anim, int slot) {
+  for (const auto& info : kEffectAnims)
+    if (info.id == anim) return slot == 0 ? info.max_ticks : info.min_ticks;
+  return 0;
+}
+
 }  // namespace aztec::data

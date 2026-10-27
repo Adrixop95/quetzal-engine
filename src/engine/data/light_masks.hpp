@@ -19,6 +19,16 @@ class LightMask {
     const int value = item_.data[kLightMaskHeaderBytes + y * kLightMaskWidth + x];
     return value <= kMaxLightValue ? value : -1;
   }
+  // Sample a translated mask at a world-grid vertex, relative to its origin.
+  // Samples outside the 19x19-cell extent contribute no glow.
+  int sample_pixels(int dx, int dy) const {
+    constexpr int cell = kTilePixels;
+    if (dx < 0 || dy < 0 || dx > 19 * cell || dy > 19 * cell) return 0;
+    int x = dx / cell, y = dy / cell, rx = dx % cell, ry = dy % cell;
+    auto value = [&](int sx, int sy) { int v = sample(sx, sy); return v < 0 ? 0 : v; };
+    return (value(x, y) * (cell - rx) * (cell - ry) + value(x + 1, y) * rx * (cell - ry) +
+            value(x, y + 1) * (cell - rx) * ry + value(x + 1, y + 1) * rx * ry) / (cell * cell);
+  }
  private:
   Item item_;
 };

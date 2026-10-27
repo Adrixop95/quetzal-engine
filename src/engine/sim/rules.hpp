@@ -32,8 +32,17 @@ int harvest_tick(HarvestState& state, int rate, int clock, int period,
                  const std::vector<int>* dates = nullptr);
 int production_value(int base, int hall_level, int speed, bool computer, bool hostile_all, bool time);
 
+struct WeaponRules {
+  int klass = -1, parameter = 0, anim = 0;
+  int speed = 0, range = 0, reload = 0;
+  int impact_anim = 0, splash_px = 0, shockwave = 0;
+  bool muzzle = false;
+  std::vector<WeaponRules> components;  // class 12 sums both child weapons
+};
+
 struct TypeRules {
   HarvestRule harvest;
+  WeaponRules weapon;
   int kind = -1;                 // class kind (type_info)
   bool structure = false, mobile = false, flier = false, armed = false, large = false;
   int hp_max = 0;     Src hp_src = Src::Placeholder;      // Marine desc d1 (verified), else largest mission hp
