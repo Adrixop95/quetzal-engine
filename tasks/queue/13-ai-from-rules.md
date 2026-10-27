@@ -1,0 +1,2 @@
+Task: computer player behaviour from docs/rules_ai.md.
+Implement AI behaviours (build orders, resource gathering, attack waves, defence reactions) in src/engine/ai/ as pure deterministic functions of world state producing commands, matching what docs/rules_ai.md and the .scn scripts describe. Add unit tests with synthetic worlds and a headless 20-minute skirmish smoke test checking determinism (state hash equal across two runs).

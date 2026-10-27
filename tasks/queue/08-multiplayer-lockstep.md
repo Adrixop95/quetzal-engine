@@ -1,0 +1,2 @@
+Task: multiplayer lockstep networking for the new engine.
+Implement a deterministic lockstep layer in new files under src/engine/net/ (UDP via SDL_net-free plain sockets, command exchange per 12 Hz tick, input delay, state-hash exchange for desync detection). Provide a loopback test with two simulated peers and a headless two-process test over 127.0.0.1 in tests/. Do not change the simulation rules. Document the protocol in docs/multiplayer.md. Original IPX/UDP wire compatibility is out of scope; note what is known from the reference runtime Winsock shims.
