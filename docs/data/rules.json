@@ -21656,7 +21656,7 @@
     "BIZON_primary_hp": 13000,
     "BIZON_secondary_initial": 23000
    },
-   "engine_status": "The rewrite still reads primary maximum HP from CSV d4. Correcting the JSON annotation does not change that engine implementation."
+   "engine_status": "The engine loads primary/max HP from d1 and independent secondary HP from d4. Marine regeneration supports explicit d1/d3 threshold selection; reference state transitions and overshoot remain unresolved. See docs/engine_rules_status.md."
   }
  },
  "economy": {

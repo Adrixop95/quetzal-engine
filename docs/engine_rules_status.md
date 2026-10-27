@@ -8,13 +8,14 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Rule | Status | Source / notes |
 |---|---|---|
 | 12 Hz step, 24.8 fixed-point positions, state hash after every tick, replay from the command log | V (construction) | no comparison with the original yet; the engine hash differs from the recompilation's hash |
-| State hash covers objects (incl. destinations, orders, construction timers), sides (money, queues, groups, build pause), spawn counter, relations, script state and the full movement system (agents, orders, slots, steering caches) | engine | collection sizes are mixed in |
+| State hash covers objects (incl. secondary HP, regeneration selector, destinations, orders, construction timers), sides (money, queues, groups, build pause), spawn counter, relations, script state and the full movement system (agents, orders, slots, steering caches) | engine | collection sizes are mixed in |
 | Command types (PCT_FRAME_*) and their numbers | V | `docs/object_types.md`. Implemented: PAUSEON/OFF, CREATEGROUP, ADDTOGROUP, MOVE, ATTACK, BUILD, DESTROYHERE, QUEUEKILL, PAUSEBUILD. Logged only: SELECTGROUP, GARRISON, REPAIRMODE, ATTACKMODE, BUILDMODE, SELECTBYNO, FOLLOWTEAM |
 | Stop (0x50) and AttackMove (0x51) | P | engine extensions; the original has no such packets |
 | Command coordinates / tiles from packets | engine | clamped into the map before any fixed-point conversion; invalid tiles are ignored |
 | Command order inside a tick: ascending side, then submission order | P | original: per-side queues in `0x4577b0` (order not verified) |
-| Max hp of Marine = desc d4; building = desc d1 | P Marine / V Building | Reference Marine virtual max HP is d1; d4 initializes secondary HP used by Hypno. JSON annotation corrected; engine CSV reader still needs correction |
-| Max hp of other types | P | highest hp of that type in the mission |
+| Marine primary/max HP = d1; separate secondary HP = d4 | V fields / engine replay | CSV loader, initial objects and trained spawns retain distinct values; primary mission HP is preserved when supplied. Hypno kill-time assignment is not implemented |
+| Marine regeneration | V threshold facts / P state integration | Active living Marines add d2 when below selected d1/d3 threshold; no extrapolation to other kinds. Explicit hashed `regen_alternate` selector defaults to d1. The supplied specification does not identify the reference state transition selecting d3 or establish clamp/overshoot behavior; current pre-add threshold behavior is a construction choice pending reference evidence |
+| Primary HP of other types | V descriptor fields / P elsewhere | Building d1, Defence d3, Bird/Zeppelin d1, Headtruck/Spider d3 loaded. Headtruck/Spider initial and max fields agree in current tables. Other types retain highest mission HP fallback |
 | Marine speed = desc d5 px/tick | V | `desc_marine.csv`; overridden by `speed_measured.csv` when present (parsed with integer arithmetic, locale independent) |
 | Measured speed (all types with a measurement) | M | `speed_measured.csv` (mean mid-run speed) |
 | Speed of fliers, boats, unknown types | P | 8 px/tick; fliers move in straight lines, boats stand still |
@@ -25,8 +26,10 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Build tree (who can build what, prerequisites) | V | `buildtree.csv`; "A" entries (building of another race) are treated as ordinary prerequisites |
 | Town upgrades (building entries with flag 0) | not done | skipped in the menu |
 | Side `DisabledID` blocks menu entries | V | `docs/formats.md` |
-| Damage and shot interval | M for pairs in `duel_damage.csv`, P otherwise (500 dmg / 12 ticks) | |
-| Weapon range | P | melee 56 px, ranged 288 px, towers 336 px; melee type list in `rules.cpp` |
+| Weapon damage | V documented arithmetic / engine synthetic checks | Marine d7 and Defence d59 select weapon IDs. Classes 1/2/13 apply each matching 8.8 multiplier in sequence, then armor term; arrow zero-air suppresses armor. Classes 4/5/6/10 constants implemented; 8 delegates and 12 sums known child damage. Historical duel entries are diagnostics only. Other descriptor weapon mappings/armor retain placeholders |
+| Weapon reload getters and cooldown | V Marine reload+1 / P other scheduling | Classes 1/2/13/4/5/6/10 use documented reload/range. Simulation schedules reload+1; this is verified only for Marine cooldown, not universal hit intervals. Composite scheduling remains unresolved |
+| Projectile and unresolved weapon behavior | P / unresolved | Projectile speed is distinct metadata, not added to reload. Hits remain immediate: animation/flight delay is not implemented. Classes 0/3/7/9/11, complete burn behavior and composite scheduling are unavailable calculations; known unresolved descriptor weapons do not silently fire generic damage |
+| Weapon range | V getters / P geometry and fallback | Established weapon getters replace generic ranges; Euclidean centre distance plus placeholder target radius/footprint remains. Types without loaded weapon descriptors retain 56/288/336 px placeholders |
 | Sight range (target acquisition, fog) | P | Rewrite: 288 px (6 tiles), buildings 8 tiles. Reference: per-type interpolated light-mask IDs, daylight and brightness >32; separate tactic scan and weapon checks |
 | Auto-attack of enemies in sight (idle and attack-moving units) | P | nearest enemy, ties = lower id; hostility from the relation matrix |
 | Death and corpses | P | death animation from `Units.xbe`, corpse for 480 ticks, then removed; buildings vanish at once |
@@ -94,3 +97,23 @@ producers, transport phases, wind, per-pixel gradients and exact alpha/shadow
 blending remain open. Owners 104/153 remain unknown. New attack/death, overlap and
 night probes are **pending** because private prerequisites are missing; no new P
 label was assigned. Existing simulation placeholder labels above still apply.
+
+## Descriptor combat validation (2026-10-26)
+
+**Engine construction checks:** synthetic structure/nonorganic and airborne/organic
+combinations, Marine d1/d4 differences (Bear/Bizon), strict threshold boundaries,
+sequential rounding, armor rounding and zero-air suppression, special constant
+weapons, unavailable/delegated weapons, reload+1 hits against a stationary
+structure, and replay hashes at every tick of a 24-tick duel. Hash sensitivity
+covers secondary HP and the explicit regeneration selector. Old engine saves
+with previously computed hashes are not hash-compatible with this correction.
+
+**Evidence boundary:** V arithmetic refers to documented reference facts, not a
+new runtime observation. The d11 byte-1 polarity (nonzero selects e8, zero f4)
+is an engine interpretation of the documented complementary flags, pending a
+reference check. Regeneration selector transitions and threshold overshoot need
+a more precise specification. These are not promoted to verified parity.
+Task 01 is still queued; no normalized combat comparison runner is present.
+No private game installation, generated lift or reference executable is available
+in this worktree, so no isolated reference duel or record/replay was run. Historical
+duel intervals remain M observations, never universal reload rules.
