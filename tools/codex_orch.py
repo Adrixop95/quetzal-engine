@@ -21,12 +21,19 @@ import time
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 STATE = os.path.join(ROOT, "work/codex/state")
+PRIVATE = (
+    "Private local resources (read-only, never commit): game files in %s/game, the reference runtime binary %s/build/aztec_recomp, "
+    "derived data in %s/work (work/gen lifted code, work/decomp/all.c Ghidra decompilation). Run the game headless with "
+    "SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy inside `unshare -rn` using a PRIVATE copy of the game directory (symlinks), see docs/EXPERIMENTS.md. "
+    "If a task depends on another task that is not yet in your checkout, do the parts that do not depend on it and say so explicitly."
+)
 PREAMBLE = (
     "Repository rules: everything you write (code comments, docs, UI text, commit messages) must be in ENGLISH. "
     "Never add game assets, Aztec.exe or anything derived from the executable's code to the repo; never edit files outside "
     "the scope of the task; use a build directory inside your worktree; the git directory is read-only for you, so leave "
     "your changes uncommitted in the worktree and list the changed files in your final message. Verify build and tests first."
 )
+PREAMBLE = PREAMBLE + " " + PRIVATE % (ROOT, ROOT, ROOT)
 RESUME_PROMPT = (
     "You were interrupted (usage limit or crash). Continue the task from where you stopped: inspect the current state of the "
     "worktree (git status, your notes, partial files), finish the remaining items of the original task, verify, and end with a "
@@ -142,8 +149,9 @@ def harvest(name, branch, title):
         return
     pf = os.path.join(ROOT, "work/codex", name + ".patch")
     open(pf, "w").write(patch)
-    os.chdir(ROOT)
-    r = sh("git fetch -q origin && git checkout -q -b %s origin/develop && git apply --3way %s" % (branch, pf))
+    land = os.environ.get("LAND_ROOT", ROOT)
+    os.chdir(land)
+    r = sh("git fetch -q origin && git checkout -q -f -b %s origin/develop && git apply --3way %s" % (branch, pf))
     print(r.stdout, r.stderr)
     print("Branch", branch, "prepared with the patch applied; review, build, test, then commit and open the PR "
           "(git add the files; git commit; git push -u origin %s; gh pr create --base develop --title '%s')" % (branch, title))

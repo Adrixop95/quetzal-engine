@@ -1,3 +1,4 @@
+Depends: 01-oracle-parity,03-economy-production
 # Implement verified town commands and upgrades
 
 Read CLAUDE.md, docs/HANDOFF.md and docs/engine_rules_status.md first. This is a
