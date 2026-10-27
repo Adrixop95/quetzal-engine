@@ -557,6 +557,99 @@ static void test_script(const std::string& dir) {
   CHECK(sa.state_hash(a) == sb.state_hash(b));
 }
 
+static void test_descriptor_combat() {
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  CHECK(rules->type(5).hp_max == 40000 && rules->type(5).secondary_hp == 36000);
+  CHECK(rules->type(32).hp_max == 13000 && rules->type(32).secondary_hp == 23000);
+  CHECK(rules->type(17).hp_max == 20000);
+  CHECK(rules->type(7).hp_max == 9000 && !rules->type(7).nonorganic);
+  CHECK(rules->type(33).hp_max == 13000 && !rules->type(33).nonorganic);
+  for (int target : {14, 17}) {
+    CHECK(rules->attack(0, target).damage == 150);
+    CHECK(rules->attack(27, target).damage == 300);
+    CHECK(rules->attack(1, target).damage == 1600);
+  }
+  for (int target : {7, 33}) {
+    CHECK(rules->attack(0, target).damage == 0);
+    CHECK(rules->attack(27, target).damage == 800);
+    CHECK(rules->attack(1, target).damage == 2000);
+  }
+  CHECK(category_damage(2, {192, 192}) == 0); // combining factors first would give 1
+  CHECK(category_damage(255, {256, 128}) == 127);
+  CHECK(category_damage(256, {256, 128}) == 128);
+  TypeRules target;
+  target.physical_armor = 65;
+  CHECK(rules->weapon(31, target).damage == 1777); // armor term rounds independently
+  target.flier = true;
+  CHECK(rules->weapon(31, target).damage == 0); // zero air suppresses armor too
+  TypeRules ground;
+  CHECK(rules->weapon(8, ground).damage == 3000);
+  CHECK(rules->weapon(8, ground, true).damage == 0);
+  ground.nonorganic = ground.structure = true;
+  CHECK(rules->weapon(8, ground).damage == 1500); // OR predicate applies once
+  CHECK(rules->weapon(16, ground).damage == 9000);
+  CHECK(rules->weapon(11, ground).damage == 1125);
+  ground = TypeRules{}; ground.category_e8 = true;
+  CHECK(rules->weapon(11, ground).damage == 2250);
+  CHECK(rules->weapon(16, ground).damage == 18000);
+  CHECK(!rules->weapon(7, ground).damage_known); // unresolved composite children
+  CHECK(!rules->weapon(19, ground).damage_known); // delegated class 7
+  CHECK(!rules->weapon(3, target).damage_known); // class 7
+  CHECK(!rules->weapon(34, target).damage_known); // burn
+  CHECK(!rules->weapon(999, target).damage_known);
+  CHECK(rules->attack(0, 0).reload == 9 && rules->attack(0, 0).range_px == 10);
+  CHECK(rules->attack(27, 0).reload == 12 && rules->attack(27, 0).projectile_speed == 30);
+  const auto& bear = rules->type(5);
+  CHECK(regenerated_hp(bear, 19999, true) == 20044);
+  CHECK(regenerated_hp(bear, 20000, true) == 20000);
+  CHECK(regenerated_hp(bear, 20000, false) == 20045);
+  CHECK(regenerated_hp(bear, 40000, false) == 40000);
+  CHECK(regenerated_hp(bear, 0, false) == 0);
+  CHECK(regenerated_hp(rules->type(33), 100, false) == 100);
+
+  World fresh;
+  fresh.terrain.w = fresh.terrain.h = 20;
+  fresh.terrain.cells.resize(400);
+  fresh.relation[0][1] = fresh.relation[1][0] = kEnemy;
+  Object a; a.id = 1; a.type = 0; a.teleport(to_fixed(200), to_fixed(200));
+  Object b; b.id = 2; b.type = 32; b.side = 1; b.hp = 5000;
+  b.teleport(to_fixed(220), to_fixed(200));
+  fresh.objects = {a, b};
+  World world = fresh;
+  GameSim sim(rules); sim.init(world);
+  CHECK(world.objects[1].hp == 5000 && world.objects[1].hp_max == 13000);
+  CHECK(world.objects[1].secondary_hp == 23000);
+  auto hash = sim.state_hash(world);
+  world.objects[1].secondary_hp++;
+  CHECK(sim.state_hash(world) != hash);
+  world.objects[1].secondary_hp--;
+  world.objects[1].regen_alternate = true;
+  CHECK(sim.state_hash(world) != hash);
+  world.objects[1].regen_alternate = false;
+  // A stationary, unarmed structure isolates cooldown from collision and retaliation.
+  fresh.objects[1].type = 14; fresh.objects[1].hp = 30000;
+  Object recovering; recovering.id = 3; recovering.type = 5; recovering.hp = 19999;
+  recovering.regen_alternate = true; recovering.teleport(to_fixed(800), to_fixed(800));
+  fresh.objects.push_back(recovering);
+  world = fresh; sim.init(world);
+  Command attack; attack.type = Pct::Attack; attack.side = 0; attack.ids = {1}; attack.a = 2;
+  sim.submit(attack);
+  for (int tick = 1; tick <= 24; ++tick) {
+    world.begin_tick(); sim.tick(world);
+    if (tick == 1 || tick == 11 || tick == 21) CHECK(world.objects[0].cooldown == 10);
+    CHECK(world.objects[1].hp == 30000 - 150 * ((tick - 1) / 10 + 1));
+    CHECK(world.objects[2].hp == 20044 && world.objects[2].secondary_hp == 36000);
+    if (tick == 10) CHECK(world.objects[0].cooldown == 1);
+    World replay_world = fresh;
+    auto replay = GameSim::replay(replay_world, rules, sim.log(), tick);
+    CHECK(replay->state_hash(replay_world) == sim.state_hash(world));
+  }
+  // Reusing a loader must not retain measurements, weapons or build trees.
+  rules->init_defaults();
+  CHECK(!rules->loaded() && !rules->weapon(4, target).damage_known);
+}
+
 static void test_audio_pure() {
   // pure rules: no attenuation near the centre, silent far away, pan favours the near ear
   Positional c = positional_gain(0, 0);
@@ -594,6 +687,7 @@ static void test_audio_data(const std::string& dir) {
 int main(int argc, char** argv) {
   if (argc == 2 && std::string(argv[1]) == "--pure") {
     test_pure();
+    test_descriptor_combat();
     test_sprite_metadata();
     test_audio_pure();
     test_commands_ui();

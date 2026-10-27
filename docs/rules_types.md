@@ -40,7 +40,7 @@ This resolves the doubled footman cost: a developed computer town in fast mode c
 
 The **historical oracle observation** was 161 every 56 ticks. The lifted FISTP path rounds with host `nearbyintl` before truncation, whereas original `__ftol` (`0x4810e4`) selects rounding toward zero. Float32 0.8 makes many half-integer expressions slightly larger than one half; the oracle can therefore return one more than the original. Do not promote the oracle's `0.8*P+1` to an original rule. Exact original spawn tick parity remains **O**.
 
-**V:** Marine primary initial and virtual maximum HP are descriptor d1 (`0x433190`, `0x45fe50`). Descriptor d4 initializes the separate object +0x3c value, exposed through virtual +0x78 for Hypno kill-time estimates (`0x4028c0`, `0x46fac0`). It was previously mislabeled primary max HP. Bear is 40000 primary /36000 secondary; Bizon 13000/23000. The JSON labels and duel generator now distinguish them; the engine CSV reader still uses d4 and requires a separate implementation fix.
+**V:** Marine primary initial and virtual maximum HP are descriptor d1 (`0x433190`, `0x45fe50`). Descriptor d4 initializes the separate object +0x3c value, exposed through virtual +0x78 for Hypno kill-time estimates (`0x4028c0`, `0x46fac0`). It was previously mislabeled primary max HP. Bear is 40000 primary /36000 secondary; Bizon 13000/23000. The JSON labels, duel generator and engine CSV reader now distinguish them. The engine hashes secondary HP separately; Hypno assignment remains unimplemented.
 
 ## Sight and target acquisition
 
