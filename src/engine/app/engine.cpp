@@ -22,6 +22,7 @@
 #include "engine/ui/panel.hpp"
 #include "engine/sim/game_sim.hpp"
 #include "engine/sim/savegame.hpp"
+#include "engine/save_import.hpp"
 #include "engine/ui/commands_ui.hpp"
 #include "engine/ui/selection_ui.hpp"
 #include "core/strbase.hpp"
@@ -81,7 +82,9 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
                              std::unique_ptr<Simulation> sim, const std::string& spec, bool& playtest_failed, int& rc) {
   std::string err;
   World world;
-  if (!load_world(data, spec, world, err)) { std::fprintf(stderr, "%s\n", err.c_str()); rc = 1; return PlayExit::Quit; }
+  bool loaded = o.original_save.empty() ? load_world(data, spec, world, err)
+                                       : load_original_save(data, o.original_save, world, err);
+  if (!loaded) { std::fprintf(stderr, "%s\n", err.c_str()); rc = 1; return PlayExit::Quit; }
   win.set_title("Aztec Empire - " + (world.mission.title.empty() ? world.mission.file_name : world.mission.title));
   PlayExit exit_reason = PlayExit::Quit;
   {
@@ -125,11 +128,13 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
     std::vector<KeyBinding> bindings;
     const std::string keys_path = find_file_ci(o.game_dir, "Keys.ini");
     if (!keys_path.empty() && load_keys_ini(keys_path, bindings)) cmdui.set_bindings(std::move(bindings));
-    if (game) {
+    if (game && !world.original_save) {
       std::string scn = data.map_file(world.mission.file_name, "scn");
       if (!scn.empty() && !game->attach_script(scn)) std::fprintf(stderr, "warning: cannot parse %s\n", scn.c_str());
     }
     sim->init(world);
+    if (world.original_save)
+      std::fprintf(stderr, "Original save imported with partial resume: orders, research execution and script state are unsupported; see docs/savegame.md\n");
 
     StrBase strings;
     std::string sb = find_file_ci(o.game_dir + "/Res", "strbase.bds");
@@ -146,6 +151,8 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
     cam.zoom = o.zoom > 0 ? o.zoom : (oh >= 1800 ? 2.f : 1.f);
     if (o.has_cam) {
       cam.center_on((o.cam_tx + 0.5f) * kTilePx, (o.cam_ty + 0.5f) * kTilePx);
+    } else if (world.original_save) {
+      cam.x = float(world.original_save->view_x); cam.y = float(world.original_save->view_y);
     } else if (!world.mission.sides.empty()) {
       const SideDef& s = world.mission.sides[0];
       cam.center_on((s.start_x + 0.5f) * kTilePx, (s.start_y + 0.5f) * kTilePx);
@@ -247,7 +254,9 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
         if (pa == PauseMenu::Action::Resume) pause.open = false;
         bool do_save = pa == PauseMenu::Action::Save || (in.ctrl && in.hit(SDL_SCANCODE_S));
         bool do_load = pa == PauseMenu::Action::Load || (in.ctrl && in.hit(SDL_SCANCODE_L));
-        if (game && do_save) {
+        if (game && do_save && world.original_save)
+          std::fprintf(stderr, "Saving imported worlds as command replay is unsupported\n");
+        if (game && do_save && !world.original_save) {
           SaveData sd;
           sd.mission = spec; sd.tick = game->tick_count(); sd.hash = game->state_hash(world);
           sd.script_hash = file_hash(data.map_file(world.mission.file_name, "scn"));
@@ -258,7 +267,9 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
           std::printf(write_save(dir + "/engine_slot1.azs", sd) ? "saved game (tick %llu)\n" : "save failed (tick %llu)\n", (unsigned long long)sd.tick);
           if (pa == PauseMenu::Action::Save) pause.open = false;
         }
-        if (game && do_load) {
+        if (game && do_load && world.original_save)
+          std::fprintf(stderr, "Loading an engine replay into an imported world is unsupported\n");
+        if (game && do_load && !world.original_save) {
           SaveData sd;
           std::string path = data.root() + "/Saves/engine_slot1.azs";
           World fresh;
@@ -514,7 +525,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       PlayExit pe = play_mission(win, data, opts, audio_ptr, provider, std::move(sim), spec, playtest_failed, rc);
       sim.reset();
       if (pe == PlayExit::Quit || rc != 0) break;
-      if (pe == PlayExit::ToMenu) { menu = true; continue; }
+      if (pe == PlayExit::ToMenu) { opts.original_save.clear(); menu = true; continue; }
       if (pe == PlayExit::Restart) continue;
       if (pe == PlayExit::Next) {
         std::string lo = spec;

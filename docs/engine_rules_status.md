@@ -8,8 +8,8 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Rule | Status | Source / notes |
 |---|---|---|
 | 12 Hz step, 24.8 fixed-point positions, state hash after every tick, replay from the command log | V (construction) | no comparison with the original yet; the engine hash differs from the recompilation's hash |
-| State hash covers objects (incl. secondary HP, regeneration selector, destinations, orders, construction timers), sides (money, queues including paid costs/town ownership, groups, build pause), day clock, town speeds, repair credits and harvest accumulators/cursors, spawn counter, transient projectiles/effects (flight endpoints, payloads and animation clocks), relations, script state and the full movement system (agents, orders, slots, steering caches) | engine | collection sizes are mixed in |
-| Command types (PCT_FRAME_*) and their numbers | V | `docs/object_types.md`. Implemented: PAUSEON/OFF, CREATEGROUP, ADDTOGROUP, MOVE, ATTACK, BUILD, BUILDMODE, DESTROYHERE, QUEUEKILL, PAUSEBUILD. Logged only: SELECTGROUP, GARRISON, REPAIRMODE, ATTACKMODE, SELECTBYNO, FOLLOWTEAM |
+| State hash covers objects (incl. secondary HP, regeneration selector, destinations, orders, construction timers, town membership/hall identity and harvest accumulators/cursors), sides (money, queues including paid costs/town ownership, groups, selected tactic, build pause), day clock, town speeds, repair credits, repairer modes/lists, spawn counter, transient projectiles/effects (flight endpoints, payloads and animation clocks), relations, script state and the full movement system (agents, orders, slots, steering caches) | engine | collection sizes are mixed in |
+| Command types (PCT_FRAME_*) and their numbers | V | `docs/object_types.md`. Implemented: PAUSEON/OFF, CREATEGROUP, ADDTOGROUP, MOVE, ATTACK, BUILD, BUILDMODE, DESTROYHERE (list toggle), GARRISON, REPAIRMODE, QUEUEKILL, PAUSEBUILD. Logged only: SELECTGROUP, ATTACKMODE, SELECTBYNO, FOLLOWTEAM |
 | Stop (0x50) and AttackMove (0x51) | P | engine extensions; the original has no such packets |
 | Command coordinates / tiles from packets | engine | clamped into the map before any fixed-point conversion; invalid tiles are ignored |
 | Command order inside a tick: ascending side, then submission order | P | original: per-side queues in `0x4577b0` (order not verified) |
@@ -39,7 +39,9 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Unit training: side queue (max 8), first item progresses, 100 % refund on cancel | P queue/refund policy | Items retain producing town and actual payment; cancellation refunds that payment even after speed changes. Spawn below that town hall. Independent simultaneous town queues remain unimplemented |
 | Building income and repair supply | V formulas / synthetic checks | Descriptor occupancy cells equal to 2 weight resource channels A/B with d60/d61; periodic/scheduled 7200-tick clock from StartTime. Gold and d62/d320 repair supplies have separate accumulators. Completed same-town warehouse applies once to farms only. Missing resource map contributes zero terrain bytes |
 | Starting money = side `StartMoney` | V | `.mp` |
-| Garrison, repair, attack modes, population limits, difficulty levels | not done | Reference garrison extracts town troops; repair/destroy use marked building lists and repair credits. Universal population cap and other difficulty bonuses remain open |
+| Garrison | engine / V semantic fact | Extracts live mobile town members into a fresh tactic and selects it. Explicit mission town membership and hall identity, invalid-owner checks, empty/repeated extraction, hash and save/replay checks. Reference packet field layout and live comparison remain unverified |
+| Repair/destroy mode and list commands | engine / partial | Modes 0/1/2; mode changes clear lists, same-mode commands preserve them. Eligible completed town structures toggle membership; halls, mobile units, foreign-town targets and construction are rejected. Off mode collects damaged ordinary buildings. Dead, repaired or reassigned targets are pruned. Commands do not delete or change HP. Repair credits are harvested, but service allocation and destruction damage remain unimplemented |
+| Attack modes, population limits, difficulty levels | not done | Universal population cap and other difficulty bonuses remain open |
 
 ## Projectiles and effects
 
@@ -182,3 +184,107 @@ Task 01 is still queued; no normalized combat comparison runner is present.
 No private game installation, generated lift or reference executable is available
 in this worktree, so no isolated reference duel or record/replay was run. Historical
 duel intervals remain M observations, never universal reload rules.
+
+## Whole-mission parity audit (2026-10-27)
+
+The [mission parity runner](parity.md) found two prerequisites still missing:
+engine CLI replay of oracle packets with audited object-ID mapping, and a
+normalized reference observer aligned before command processing. Existing pool
+hashes cannot identify semantic fields, and historical unit-log side/max-HP slots
+are insufficient. Task `01-oracle-parity` remains a dependency; the mission runner
+and strict normalized comparator are available independently of that work.
+
+**Experiment result:** all nine supplied mission recordings were attempted in
+private game copies with the required namespace isolation. Loopback setup failed
+with a denied netlink socket in every attempt, before the reference executable
+launched. No cross-engine divergence tick, object or rule was measured. Failure
+reports remain private under `work/parity/mission-audit`; no rule status above is
+promoted by this audit.
+
+Prioritized gaps for the next permitted mission comparison:
+
+1. **Measurement blockers (observed):** complete task 01 packet decoding,
+   canonical object identity, tick alignment and normalized field coverage;
+   rerun on a host permitting the documented network namespace setup. Establish
+   reference repeatability before attributing mismatches to engine rules.
+2. **Command semantics (existing P / incomplete):** verify side/tick ordering,
+   group selection, town selection and currently logged-only commands. Reject
+   unsupported corpus packets explicitly so later rule findings remain valid.
+3. **Initialization and movement (existing P):** compare object presence,
+   ownership and primary/secondary HP first, then speed, collision radii,
+   movement-class assignment and path decisions. Identity errors must be fixed
+   before treating position mismatches as movement-rule evidence.
+4. **Combat (existing P / unresolved):** validate acquisition/visibility,
+   range geometry, regeneration state selection, projectile timing and unresolved
+   weapon scheduling using the earliest normalized differences.
+5. **Economy and production (existing O / incomplete):** measure clock phase,
+   active-building behavior, simultaneous town queues, training/spawn ticks,
+   non-map structures, upgrades and refund policy against the reference.
+6. **Mission scripts and AI (existing P / incomplete):** verify trigger/timer
+   timing, unsupported transport/build commands, strategist speed selection,
+   purchase planning and autonomous attack waves over the recorded horizon.
+
+Items 2 through 6 are a dependency-oriented investigation order based on the
+existing inventory, **not a ranking inferred from measured mission divergences**.
+The next successful report should replace this provisional order with counts and
+reproducible first-field findings; agreement over an input interval still does
+not establish whole-game parity or mission completion.
+
+## Town command implementation (2026-10-27, partial task 05)
+
+**Reference facts (existing V):** the garrison, repairer and hall-upgrade rules in
+[rules_types.md](rules_types.md) remain the specification. No new M observation
+or reference-parity claim is made here.
+
+**Independent implementation:** mission `[Town#]` membership survives loading,
+including mobile members and hall identity. Side defences without explicit town
+membership remain unattached; no nearest-town association is guessed. Garrison
+extracts eligible members, clears their town attachment and assigns a fresh
+nonnegative tactic number above existing object tactics. Empty extraction leaves
+the previous selected tactic intact. The selected tactic is deterministic side
+state; only the viewing side's UI selection changes. The garrison panel button
+and configured key submit this command for a selected hall.
+
+Engine command fields use `b` as the mission town section number for Garrison,
+RepairMode and DestroyHere; RepairMode uses `a` for 0/1/2, and DestroyHere uses
+`ids` for targets. These conventions are independent of the reference wire
+payload. Duplicate target IDs in one packet count once. DestroyHere toggles the
+active repairer list; off-mode manual toggles are ignored. The UI only allows
+eligible list targets when a mode is active and routes them to their own town.
+Repair controls remain disabled pending repair-service integration; credit
+production is available separately.
+
+**Engine construction checks:** synthetic invalid town/side/target, multiple-town
+extraction, repeated empty extraction, duplicate/repeated toggles, mode-change
+clearing, same-mode preservation, full-HP repair rejection versus destroy
+acceptance, hall/mobile/construction exclusions, off-mode collection, stale-target
+cleanup, hash sensitivity and serialized save/command-log replay pass. Tests do
+not establish reference tactic numbering, off-mode service timing or packet
+compatibility. Hash changes mean older saves with recorded hashes are incompatible.
+
+**Dependency boundary after merge:** resource-based income, per-tick repair-credit
+harvesting, town-local prerequisites and producing-town attachment for new spawns
+are implemented by the economy work described above. Production queues remain
+side-wide. Damage-priority groups, repair-budget allocation, destruction damage,
+hall-upgrade completion/build-tree changes and upgrade save/replay scenarios
+remain pending. Available credits do not yet drive repair service. The mission
+parity runner and strict normalized comparator are present, while task 01's packet
+replay, audited object-ID mapping and aligned reference observer remain prerequisites
+for a normalized reference comparison.
+
+**Observation blocked:** the supplied private game and runtime are available,
+but isolated setup fails at `ip link set lo up` with `Cannot open netlink socket:
+Operation not permitted`. No reference command was observed and no fallback
+outside `unshare -rn` was used. Private setup/run logs stay under ignored
+`work/town-commands/`. Original instruction evidence and historical measurements
+retain their existing labels.
+
+**Historical town-command validation:** Release configure/build and the default
+CTest run passed (eight checks passed, two game-data checks skipped). The final
+full CTest run passed all ten checks with `GAME_DIR` set to the
+supplied external installation and both SDL dummy drivers; these are independent
+engine/format tests, not reference-runtime observations. All pre-commit hooks
+pass using cached hook environments copied into `build/pre-commit/` because
+network access is unavailable. Synthetic replay hashes agree after every command
+and across different viewing sides. Loader checks retain town membership and
+exclude standalone side defences from inferred town attachment.
