@@ -1,0 +1,2 @@
+Task: load original Aztec Empire save games in the new engine.
+Use docs/savegame.md and src/core/savegame.* (read-only decoding already exists). Add an engine-side importer in src/engine/ (new files, e.g. src/engine/save_import.*) that maps a decoded original save to the engine World state (objects, resources, tech, fog, mission), a CLI flag or menu entry to load it, and tests with synthetic saves (no real game data committed). Verify against a real save from the private game directory when present, skipping gracefully otherwise. Document gaps in docs/savegame.md.

@@ -1,0 +1,2 @@
+Task: remaining unit animation states in the new renderer.
+Using docs/sprites_mapping.md and the Anim format loader, make sure every unit and building plays the correct animation per state (idle, walk, attack, die, build, gather, cast) with the original frame timing, driven by simulation state only, deterministic. Add tests on synthetic data and a headless render check. Touch rendering files and minimal glue only.
