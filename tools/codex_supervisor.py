@@ -6,6 +6,7 @@ Loop: resume tasks stopped by the Codex usage limit (retrying every 20 minutes),
 build + ctest, commit, push, open a PR into develop, wait for green CI and squash-merge it (never --admin).
 Run:  nohup tools/codex_supervisor.py > work/codex/supervisor.log 2>&1 &
 """
+import json
 import os
 import subprocess
 import sys
