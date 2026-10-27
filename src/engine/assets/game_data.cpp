@@ -13,14 +13,28 @@ static std::string lower(std::string s) {
   return s;
 }
 
-std::string find_file_ci(const std::string& dir, const std::string& file) {
+// Resolve every component so a lower-case installation also works on case-sensitive hosts.
+static fs::path resolve_ci(const fs::path& path) {
   std::error_code ec;
-  std::string want = lower(file);
-  std::string exact = dir + "/" + file;
-  if (fs::exists(exact, ec)) return exact;
-  for (const auto& e : fs::directory_iterator(dir, ec))
-    if (lower(e.path().filename().string()) == want) return e.path().string();
-  return {};
+  if (fs::exists(path, ec)) return path;
+  if (path.empty() || path == path.parent_path()) return {};
+  fs::path parent = path.has_parent_path() ? resolve_ci(path.parent_path()) : fs::path(".");
+  if (parent.empty()) return {};
+  std::string want = lower(path.filename().string());
+  fs::path match;
+  fs::directory_iterator it(parent, ec), end;
+  while (!ec && it != end) {
+    const auto candidate = it->path();
+    if (lower(candidate.filename().string()) == want &&
+        (match.empty() || candidate < match)) match = candidate;
+    it.increment(ec);
+  }
+  return match;
+}
+
+std::string find_file_ci(const std::string& dir, const std::string& file) {
+  if (dir.empty() || file.empty()) return {};
+  return resolve_ci(fs::path(dir) / fs::path(file)).string();
 }
 
 bool GameData::open(const std::string& game_dir, std::string& err) {
@@ -46,6 +60,8 @@ const Archive& GameData::archive(ArchiveId id) const {
   }
   return pal_;
 }
+
+std::string GameData::maps_dir() const { return find_file_ci(root_, "Maps"); }
 
 std::string GameData::map_file(const std::string& name, const std::string& ext) const {
   return find_file_ci(maps_dir(), name + "." + ext);

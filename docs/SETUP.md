@@ -7,7 +7,8 @@ A clean clone builds and tests without any of those private inputs.
 
 ## Dependencies and independent build
 
-Linux is the verified development/CI path. Install CMake >=3.16, GCC/g++ with
+Linux is the primary local development path. CI also builds the independent
+engine with MSVC, MinGW (UCRT64), and Apple Clang and runs synthetic tests. Install CMake >=3.16, GCC/g++ with
 C++20 support, a build tool (Make or Ninja), SDL2 development files >=2.0.18
 (`SDL_RenderGeometry`), Python 3, git, binutils (`objdump`), pkg-config and
 pre-commit. ffmpeg enables intro video playback; it is not needed for compilation.
@@ -38,6 +39,73 @@ skip without an installation. Skipping is not game-data verification. See
 [CONTRIBUTING.md](../CONTRIBUTING.md) for GAME_DIR precedence and test labels.
 Run pre-commit on all tracked files before a PR; use `--files PATH...` as well for
 new untracked files while working with read-only git metadata.
+
+## Windows and macOS independent builds
+
+These builds cover `src/core/`, the independent engine, tools and synthetic tests.
+Keep `AZTEC_GEN_DIR` empty: the private reference runtime has a separate Linux
+workflow and is not ported by this setup. Use a recent compiler with C++20
+support (Visual Studio 2022, current MinGW-w64 GCC, or current Xcode Clang).
+CMake prefers SDL2's config package (>=2.0.18) and falls back to pkg-config.
+SDL2 include paths and libraries come from its imported target; threads and
+compiler warning flags are selected for the host. ffmpeg on PATH is optional
+for intro playback. Windows video playback declines paths containing quotes,
+percent signs or exclamation marks because the pipe uses cmd.exe.
+
+For MSVC, install Visual Studio 2022 with Desktop development with C++, CMake,
+Python 3, and vcpkg. From PowerShell at the repository root, with
+`VCPKG_ROOT` set to your vcpkg installation:
+
+```powershell
+& "$env:VCPKG_ROOT/vcpkg.exe" install sdl2:x64-windows
+cmake -S . -B build_msvc -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows -DAZTEC_GEN_DIR= -DGAME_DIR=
+cmake --build build_msvc --config Release --parallel 2
+ctest --test-dir build_msvc -C Release -L unit --output-on-failure
+```
+
+The vcpkg CMake integration copies SDL2.dll beside the executables. When using a
+standalone SDL2 SDK instead, set `SDL2_DIR` to its CMake package directory and
+put the matching SDL2.dll beside the executables or on PATH.
+
+For MinGW, use the MSYS2 **UCRT64** shell and keep all dependencies in that
+prefix; do not mix MSVC libraries or MSYS libraries with MinGW libraries:
+
+```sh
+pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake \
+  mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-python
+cmake -S . -B build_mingw -G Ninja -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR= -DGAME_DIR=
+cmake --build build_mingw --parallel 2
+ctest --test-dir build_mingw -L unit --output-on-failure
+```
+
+For macOS, install Xcode command line tools (`xcode-select --install`), Homebrew,
+CMake, SDL2, Ninja and Python 3:
+
+```sh
+brew install cmake sdl2 ninja python
+cmake -S . -B build_macos -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH="$(brew --prefix sdl2)" -DAZTEC_GEN_DIR= -DGAME_DIR=
+cmake --build build_macos --parallel 2
+ctest --test-dir build_macos -L unit --output-on-failure
+```
+
+CTest's `unit` label selects all synthetic checks, including malformed inputs,
+case-insensitive resource lookup, unaligned samples and explicit little-endian
+serialization. Python 3 must be discoverable to register the Python checks.
+For headless checks set `SDL_VIDEODRIVER=dummy` and `SDL_AUDIODRIVER=dummy`.
+Use `-C Release` with multi-configuration generators such as Visual Studio.
+The CI matrix in `.github/workflows/build.yml` exercises all three setups;
+local Linux checks alone do not verify native Windows or macOS behavior.
+Run pre-commit separately as described above before submitting a PR.
+
+Game paths may contain spaces. The engine resolves resource directory and file
+components ignoring case, including `Res`, `Maps`, `Music` and `Video`, so a
+case-sensitive macOS volume can read installations with different capitalization.
+Prefer exact names if multiple entries differ only by case. Binary resources and
+engine saves use explicit little-endian scalar access; WAV music is decoded into
+aligned native samples before mixing. Existing little-endian engine saves retain
+their format. These checks do not establish gameplay parity or exercise native
+audio/video devices. Private game-data tests still need your own installation.
 
 ## Your own game files
 

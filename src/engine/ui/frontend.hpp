@@ -1,7 +1,7 @@
 // Front-end screens (main menu, campaign, custom maps, briefing, options) and the in-game pause menu,
 // drawn with original backgrounds from Res/common.xbe and text from the original fonts.
 #pragma once
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include <string>
 #include <vector>
 #include "engine/app/options.hpp"

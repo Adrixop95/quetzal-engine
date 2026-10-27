@@ -217,7 +217,7 @@ static void save_png(SDL_Renderer* r, const std::string& path) {
   int w, h;
   SDL_GetRendererOutputSize(r, &w, &h);
   std::vector<uint8_t> px(size_t(w) * h * 4);
-  if (SDL_RenderReadPixels(r, nullptr, SDL_PIXELFORMAT_ABGR8888, px.data(), w * 4) != 0) return;
+  if (SDL_RenderReadPixels(r, nullptr, SDL_PIXELFORMAT_RGBA32, px.data(), w * 4) != 0) return;
   for (size_t i = 3; i < px.size(); i += 4) px[i] = 255;
   write_png(path, w, h, px);
 }
@@ -361,9 +361,24 @@ bool run_frontend(Window& win, GameData& data, Options& opts, FrontendResult& ou
 // ---------------------------------------------------------------------------------------------------------------------
 
 bool play_video(Window& win, const std::string& path) {
-  if (std::system("command -v ffmpeg >/dev/null 2>&1") != 0) return false;
-  std::string cmd = "ffmpeg -loglevel quiet -i '" + path + "' -vf scale=640:480 -r 25 -f rawvideo -pix_fmt rgb24 - 2>/dev/null";
+#ifdef _WIN32
+  // cmd.exe expands these even inside quotes. Decline such paths rather than interpreting them.
+  if (path.find_first_of("\"%!\r\n") != std::string::npos) return false;
+  std::string input = "\"" + path + "\"";
+  const char* redirect = " 2>NUL";
+#else
+  std::string input = "'";
+  for (char c : path) input += c == '\'' ? "'\\''" : std::string(1, c);
+  input += "'";
+  const char* redirect = " 2>/dev/null";
+#endif
+  std::string cmd = "ffmpeg -loglevel quiet -i " + input +
+      " -vf scale=640:480 -r 25 -f rawvideo -pix_fmt rgb24 -" + redirect;
+#ifdef _WIN32
+  FILE* p = _popen(cmd.c_str(), "rb");  // Binary mode preserves raw pixel bytes.
+#else
   FILE* p = popen(cmd.c_str(), "r");
+#endif
   if (!p) return false;
   SDL_Renderer* r = win.renderer();
   SDL_Texture* tex = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, 640, 480);
@@ -386,7 +401,11 @@ bool play_video(Window& win, const std::string& path) {
     SDL_Delay(36);
   }
   SDL_DestroyTexture(tex);
+#ifdef _WIN32
+  _pclose(p);
+#else
   pclose(p);
+#endif
   return any;
 }
 

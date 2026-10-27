@@ -22,3 +22,64 @@ jobs:
         run: cmake --build build_ci --parallel 2
       - name: Run tests (game-data tests skip without a local installation)
         run: ctest --test-dir build_ci --output-on-failure
+
+  portable:
+    name: ${{ matrix.compiler }} synthetic tests
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            compiler: MSVC
+            shell: pwsh
+          - os: windows-latest
+            compiler: MinGW
+            shell: msys2 {0}
+          - os: macos-latest
+            compiler: AppleClang
+            shell: bash
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SDL2 for MSVC
+        if: matrix.compiler == 'MSVC'
+        run: '& "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install sdl2:x64-windows'
+      - name: Install MinGW dependencies
+        if: matrix.compiler == 'MinGW'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-SDL2
+            mingw-w64-ucrt-x86_64-python
+      - name: Install SDL2 on macOS
+        if: matrix.compiler == 'AppleClang'
+        run: brew install sdl2 ninja
+      - name: Configure MSVC without private inputs
+        if: matrix.compiler == 'MSVC'
+        run: >-
+          cmake -S . -B build_ci -A x64
+          "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows -DAZTEC_GEN_DIR= -DGAME_DIR=
+      - name: Configure MinGW without private inputs
+        if: matrix.compiler == 'MinGW'
+        run: cmake -S . -B build_ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR= -DGAME_DIR=
+      - name: Configure macOS without private inputs
+        if: matrix.compiler == 'AppleClang'
+        run: >-
+          cmake -S . -B build_ci -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH="$(brew --prefix sdl2)" -DAZTEC_GEN_DIR= -DGAME_DIR=
+      - name: Build core, engine, tools, and tests
+        run: cmake --build build_ci --config Release --parallel 2
+      - name: Run synthetic tests
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: ctest --test-dir build_ci -C Release -L unit --output-on-failure

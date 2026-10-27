@@ -1,6 +1,6 @@
 // Collects textured/coloured quads and submits them with SDL_RenderGeometry (one call per texture).
 #pragma once
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include <vector>
 #include "engine/render/atlas.hpp"
 

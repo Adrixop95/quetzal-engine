@@ -1,6 +1,6 @@
 // Per-frame input snapshot. Pump once per frame, then read.
 #pragma once
-#include <SDL2/SDL.h>
+#include <SDL.h>
 
 namespace aztec::engine {
 

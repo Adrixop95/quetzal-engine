@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cmath>
 
 #include "engine/assets/game_data.hpp"
 
@@ -101,8 +102,11 @@ void AudioSystem::pick_and_play_music() {
     if (!read_music_track(music_files_[t.second.first], t.second.second, *buf)) continue;
     WavInfo w;
     if (!parse_wav(buf->data(), buf->size(), w) || w.channels != 2 || w.bits != 16 || w.rate != kMixRate) continue;
+    // WAV bytes may start at an odd address and are always little-endian.
+    auto pcm = to_stereo_44k(w);
+    if (!pcm) continue;
     std::lock_guard<std::mutex> lock(mu_);
-    mixer_.play_music(buf, reinterpret_cast<const int16_t*>(w.pcm), w.pcm_bytes / 4);
+    mixer_.play_music(pcm, pcm->data(), pcm->size() / 2);
     track_ = n;
     return;
   }

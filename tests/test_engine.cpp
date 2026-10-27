@@ -20,6 +20,7 @@
 #include "engine/platform/clock.hpp"
 #include "engine/sim/game_sim.hpp"
 #include "engine/sim/savegame.hpp"
+#include "core/endian.hpp"
 #include "engine/sim/simulation.hpp"
 #include "engine/world/camera.hpp"
 #include "engine/world/type_info.hpp"
@@ -56,7 +57,7 @@ static void test_sprite_metadata() {
 
   // A timed prefix must play before a later hold frame, also when looping.
   std::vector<uint8_t> bytes(0x208 + 4 * 32, 0);
-  auto put = [&](size_t offset, uint32_t value) { std::memcpy(bytes.data() + offset, &value, 4); };
+  auto put = [&](size_t offset, uint32_t value) { aztec::write_le(bytes.data() + offset, value); };
   std::memcpy(bytes.data(), "Anim", 4); put(4, 3); put(8, 1);
   put(0x208 + 32, 123); put(0x208 + 32 + 28, 2);
   put(0x208 + 64, 456);

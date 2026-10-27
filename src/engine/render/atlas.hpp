@@ -1,7 +1,7 @@
 // Texture atlas: shelf-packed pages of ARGB8888, filled lazily. Lets the renderer draw thousands of
 // tiles/sprites with a handful of SDL_RenderGeometry calls (one per page).
 #pragma once
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include <cstdint>
 #include <vector>
 

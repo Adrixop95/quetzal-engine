@@ -1,6 +1,6 @@
 // Original right-hand panel (Res/common.xbe sprite 292, 204 px wide) with the minimap window, menu bar and gold.
 #pragma once
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include <string>
 #include <vector>
 #include "engine/render/font.hpp"

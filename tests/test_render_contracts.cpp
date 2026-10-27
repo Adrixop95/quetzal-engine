@@ -5,7 +5,8 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
-#include <unistd.h>
+#include "temp_dir.hpp"
+#include "core/endian.hpp"
 #include "engine/assets/anim_provider.hpp"
 #include "engine/render/light_grid.hpp"
 
@@ -14,7 +15,7 @@ using namespace aztec::engine;
 static int failures = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAIL %d: %s\n", __LINE__, #c); ++failures; } } while (0)
 using Bytes = std::vector<uint8_t>;
-static void put(Bytes& b, size_t pos, uint32_t value) { std::memcpy(b.data() + pos, &value, 4); }
+static void put(Bytes& b, size_t pos, uint32_t value) { write_le(b.data() + pos, value); }
 static Bytes animation(int id) {
   Bytes bytes(0x208 + 128 * 4 * 32);
   std::memcpy(bytes.data(), "Anim", 4); put(bytes, 4, 3);
@@ -43,11 +44,10 @@ static void provider_controls() {
       auto bytes = animation(id); archive.insert(archive.end(), bytes.begin(), bytes.end());
     }
   }
-  char path[] = "/tmp/aztec-render-XXXXXX";
-  int fd = mkstemp(path); CHECK(fd >= 0); if (fd < 0) return;
-  close(fd);
+  TempDir directory;
+  std::string path = (directory.path() / "animations.xbe").string();
   { std::ofstream file(path, std::ios::binary); file.write(reinterpret_cast<const char*>(archive.data()), archive.size()); }
-  AnimSpriteProvider provider; CHECK(provider.open(path)); unlink(path);
+  AnimSpriteProvider provider; CHECK(provider.open(path));
   ObjectState st; st.type_id = 0;
   auto parts = provider.parts(st);
   CHECK(parts.size() == 2 && parts[0].key.shadow && !parts[1].key.shadow);

@@ -21,7 +21,7 @@
 #include <filesystem>
 #include <functional>
 #include <string>
-#include <unistd.h>
+#include "temp_dir.hpp"
 
 using namespace aztec;
 using Bytes = std::vector<uint8_t>;
@@ -47,12 +47,8 @@ static void mutate(const Bytes& seed, const std::function<void(const Bytes&)>& r
   }
 }
 struct Temp {
-  std::string path;
-  Temp() {
-    char name[] = "/tmp/aztec-fuzz-XXXXXX";
-    int fd = mkstemp(name); CHECK(fd >= 0); close(fd); path = name;
-  }
-  ~Temp() { std::filesystem::remove(path); }
+  TempDir directory;
+  std::string path = (directory.path() / "input").string();
   void put(const Bytes& d) {
     FILE* f = std::fopen(path.c_str(), "wb"); CHECK(f);
     CHECK(d.empty() || std::fwrite(d.data(), 1, d.size(), f) == d.size());

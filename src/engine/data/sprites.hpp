@@ -5,6 +5,7 @@
 #include <cstring>
 #include <map>
 #include "core/archive.hpp"
+#include "core/endian.hpp"
 #include "type_anims.hpp"
 #include "animation_slots.hpp"
 
@@ -63,7 +64,7 @@ class AnimSet {
     return {};
   }
  private:
-  uint32_t u32(size_t o) const { uint32_t v; std::memcpy(&v, d_ + o, 4); return v; }
+  uint32_t u32(size_t o) const { return read_le<uint32_t>(d_ + o); }
   const uint8_t* d_; size_t n_;
 };
 

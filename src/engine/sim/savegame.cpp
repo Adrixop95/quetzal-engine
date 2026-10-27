@@ -4,13 +4,17 @@
 #include <cstring>
 
 #include "core/mapfiles.hpp"
+#include "core/endian.hpp"
 
 namespace aztec::engine {
 
 static void put(std::vector<uint8_t>& v, const void* p, size_t n) { const uint8_t* b = static_cast<const uint8_t*>(p); v.insert(v.end(), b, b + n); }
+template <class T> static void scalar(std::vector<uint8_t>& v, T x) {
+  size_t o = v.size(); v.resize(o + sizeof(T)); write_le(v.data() + o, x);
+}
 template <class T> static bool get(const std::vector<uint8_t>& v, size_t& o, T& x) {
   if (o + sizeof(T) > v.size()) return false;
-  std::memcpy(&x, v.data() + o, sizeof(T));
+  x = read_le<T>(v.data() + o);
   o += sizeof(T);
   return true;
 }
@@ -19,15 +23,15 @@ std::vector<uint8_t> serialize_save(const SaveData& s) {
   std::vector<uint8_t> v;
   put(v, "AZS2", 4);
   uint32_t n = uint32_t(s.mission.size());
-  put(v, &n, 4);
+  scalar(v, n);
   put(v, s.mission.data(), n);
-  put(v, &s.tick, 8);
-  put(v, &s.hash, 8);
-  put(v, &s.script_hash, 8);
-  put(v, &s.cam_x, 4); put(v, &s.cam_y, 4); put(v, &s.cam_zoom, 4);
+  scalar(v, s.tick);
+  scalar(v, s.hash);
+  scalar(v, s.script_hash);
+  scalar(v, s.cam_x); scalar(v, s.cam_y); scalar(v, s.cam_zoom);
   std::vector<uint8_t> log = serialize_log(s.log);
   uint32_t ln = uint32_t(log.size());
-  put(v, &ln, 4);
+  scalar(v, ln);
   put(v, log.data(), log.size());
   return v;
 }

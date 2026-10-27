@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <cstdio>
 #include <filesystem>
 
@@ -37,7 +38,7 @@ static bool save_screenshot(SDL_Renderer* r, const std::string& path) {
   int w, h;
   SDL_GetRendererOutputSize(r, &w, &h);
   std::vector<uint8_t> px(size_t(w) * h * 4);
-  if (SDL_RenderReadPixels(r, nullptr, SDL_PIXELFORMAT_ABGR8888, px.data(), w * 4) != 0) return false;  // bytes R,G,B,A
+  if (SDL_RenderReadPixels(r, nullptr, SDL_PIXELFORMAT_RGBA32, px.data(), w * 4) != 0) return false;  // bytes R,G,B,A
   for (size_t i = 3; i < px.size(); i += 4) px[i] = 255;
   return write_png(path, w, h, px);
 }
@@ -45,8 +46,11 @@ static bool save_screenshot(SDL_Renderer* r, const std::string& path) {
 static int list_missions(const std::string& dir) {
   std::vector<std::string> names;
   std::error_code ec;
-  for (const auto& e : fs::directory_iterator(dir + "/Maps", ec))
-    if (e.path().extension() == ".mp" || e.path().extension() == ".MP") names.push_back(e.path().stem().string());
+  for (const auto& e : fs::directory_iterator(find_file_ci(dir, "Maps"), ec)) {
+    std::string ext = e.path().extension().string();
+    for (char& c : ext) c = char(std::tolower(static_cast<unsigned char>(c)));
+    if (ext == ".mp") names.push_back(e.path().stem().string());
+  }
   std::sort(names.begin(), names.end());
   for (auto& n : names) std::printf("%s\n", n.c_str());
   return names.empty() ? 1 : 0;
@@ -487,6 +491,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
   GameData data;
   std::string err;
   if (!data.open(o.game_dir, err)) { std::fprintf(stderr, "%s\n", err.c_str()); return 1; }
+  SDL_SetMainReady();
   if (SDL_Init(SDL_INIT_VIDEO) != 0) { std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
   int rc = 0;
   bool playtest_failed = false;
