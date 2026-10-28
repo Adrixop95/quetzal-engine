@@ -64,9 +64,10 @@ struct Object {
   bool defence = false;        // explicitly placed [SideN] Defence#, separate from team scenario IDs
   bool town_hall = false;      // explicit hall identity, independent of its upgrade type
   int32_t tactic = -1;         // team (tactic) number for Team objects, changed by joinTactic
+  int32_t follow_tactic = -1;  // side-local leader tactic, independent of combat target
   int32_t scenario = -1;       // ScenarioID of defences / vessels (script references)
   uint32_t last_hit_by = 0;    // id of the last attacker (script condition tactic(N).attacked)
-  uint8_t resume = 0;          // interrupted movement: 1 = attack-move, 2 = move, 0 = idle
+  uint8_t resume = 0;          // interrupted movement: 1 = attack-move, 2 = move, 3 = follow, 0 = idle
   int32_t build_elapsed = 0, build_total = 0;  // construction timer (ticks)
   int32_t progress = 1000;     // construction 0..1000 (1000 = finished); buildings only
   int32_t mover = -1;          // agent index in the movement system, -1 = does not walk
@@ -86,6 +87,7 @@ struct QueueItem { int type = 0; int remaining = 0; int total = 0; int town = -1
 struct SideState {
   int money = 0;
   int32_t selected_tactic = -1; // deterministic command selection; separate from local UI selection
+  std::vector<uint32_t> selected_ids; // command selection; local viewing side does not affect it
   bool build_paused = false;
   std::vector<QueueItem> queue;         // training / construction queue (production time in ticks)
   std::vector<uint32_t> groups[10];     // control groups 0..9
