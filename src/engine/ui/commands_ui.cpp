@@ -13,6 +13,31 @@ namespace {
 bool contains(const SDL_Rect& r, int x, int y) {
   return r.w > 0 && r.h > 0 && x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
 }
+int production_town(const World& w) {
+  for (uint32_t id : w.selection.ids) {
+    const Object* o = w.find(id);
+    if (!o || !o->alive || o->removed || o->side != w.local_side) continue;
+    for (size_t i = 0; i < w.mission.towns.size(); ++i)
+      if (w.mission.towns[i].side == w.local_side && w.mission.towns[i].index == o->town) return int(i);
+  }
+  for (size_t i = 0; i < w.mission.towns.size(); ++i)
+    if (w.mission.towns[i].side == w.local_side) return int(i);
+  return -1;
+}
+uint32_t production_member(const World& w, int town) {
+  if (town < 0) return 0;
+  for (const Object& o : w.objects)
+    if (o.alive && !o.removed && o.side == w.local_side && o.town == w.mission.towns[size_t(town)].index)
+      return o.id;
+  return 0;
+}
+std::vector<size_t> production_queue(const World& w, int town) {
+  std::vector<size_t> indices;
+  if (w.local_side < 0 || w.local_side >= int(w.side_state.size())) return indices;
+  const auto& queue = w.side_state[w.local_side].queue;
+  for (size_t i = 0; i < queue.size(); ++i) if (queue[i].town == town) indices.push_back(i);
+  return indices;
+}
 const char* const kLabels[] = {"Move", "Attack", "Stop", "Repair", "Garrison", "Destroy"};
 // Contact sheets: common:257,268,269,275,288,301. Frame 0 is the face-on button.
 constexpr int kButtons[] = {275, 257, 268, 301, 288, 269};
@@ -126,12 +151,11 @@ CommandPanelLayout CommandsUi::layout(const SDL_Rect& p, int sc) {
 }
 
 bool CommandsUi::action_enabled(PanelAction action, const World& w, const RulesData* rules) {
-  if (action == PanelAction::Repair) return false;
   for (uint32_t id : w.selection.ids) {
     const Object* o = w.find(id);
     if (!o || !o->alive || o->removed || o->side != w.local_side || o->type < 0) continue;
     const TypeInfo* ti = type_info(o->type);
-    if (action == PanelAction::Garrison) {
+    if (action == PanelAction::Garrison || action == PanelAction::Repair) {
       if (o->town_hall && o->town >= 0) return true;
       continue;
     }
@@ -202,11 +226,15 @@ void CommandsUi::activate(PanelAction action, const World& w) {
   cancel_mode();
   if (action == PanelAction::Move) mode_ = TargetMode::Move;
   else if (action == PanelAction::Attack) mode_ = TargetMode::Attack;
-  else if (action == PanelAction::Garrison) {
+  else if (action == PanelAction::Garrison || action == PanelAction::Repair) {
     for (uint32_t id : w.selection.ids) {
       const Object* o = w.find(id);
       if (!o || !o->town_hall || !o->alive || o->removed || o->side != w.local_side) continue;
-      Command c; c.type = Pct::Garrison; c.side = uint8_t(w.local_side); c.b = o->town;
+      Command c; c.type = action == PanelAction::Garrison ? Pct::Garrison : Pct::RepairMode;
+      c.side = uint8_t(w.local_side); c.b = o->town;
+      if (action == PanelAction::Repair)
+        for (const TownState& town : w.town_state)
+          if (town.index == o->town && town.side == o->side) c.a = (int(town.repair_mode) + 1) % 3;
       sim_->submit(c); break;
     }
   } else { Command c; c.type = action == PanelAction::Stop ? Pct::Stop : Pct::DestroyHere; issue_to_selection(w, c); }
@@ -222,6 +250,7 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
   if (bound_hit(in, SDL_SCANCODE_H)) activate(PanelAction::Stop, w);
   if (bound_hit(in, SDL_SCANCODE_M)) activate(PanelAction::Move, w);
   if (bound_hit(in, SDL_SCANCODE_X)) activate(PanelAction::Attack, w);
+  if (!in.ctrl && !in.alt && action_hit(in, "Repair")) activate(PanelAction::Repair, w);
   if (!in.ctrl && !in.alt && action_hit(in, "Garrison")) activate(PanelAction::Garrison, w);
   if (!in.ctrl && !in.alt && action_hit(in, "Destroy")) activate(PanelAction::Destroy, w);
   for (int k = 0; k < 10; k++) {
@@ -268,7 +297,9 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
   if (in_world && placing_ >= 0) {
     int tx = int(std::floor(cam.to_world_x(float(in.mx)) / kTilePx)), ty = int(std::floor(cam.to_world_y(float(in.my)) / kTilePx));
     if (sim_->can_place(w, w.local_side, placing_, tx, ty)) {
-      Command c; c.type = Pct::Build; c.side = uint8_t(w.local_side); c.a = placing_; c.b = tx; c.c = ty; sim_->submit(c);
+      Command c; c.type = Pct::Build; c.side = uint8_t(w.local_side); c.a = placing_; c.b = tx; c.c = ty;
+      if (placing_member_) c.ids = {placing_member_};
+      sim_->submit(c);
       if (!in.shift && !action_down(in, "Add")) placing_ = -1;
     }
     return true;
@@ -278,7 +309,9 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
       !contains(in_game_panel_layout(panel, scale).card, in.mx, in.my))) return false;
   auto l = layout(panel, scale);
   for (size_t i = 0; i < l.commands.size(); i++) if (contains(l.commands[i], in.mx, in.my)) activate(PanelAction(i), w);
-  auto items = sim_->menu(w, w.local_side);
+  int town = production_town(w);
+  auto queue = production_queue(w, town);
+  auto items = sim_->menu(w, w.local_side, town);
   int count = int(l.production.size()), pages = std::max(1, (int(items.size()) + count - 1) / count);
   page_ = std::clamp(page_, 0, pages - 1);
   if (contains(l.previous, in.mx, in.my)) page_ = (page_ + pages - 1) % pages;
@@ -286,10 +319,14 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
   for (int i = 0; i < count && page_ * count + i < int(items.size()); i++) {
     const auto& m = items[size_t(page_ * count + i)];
     if (contains(l.production[size_t(i)], in.mx, in.my) && m.enabled &&
-        (m.construct || (w.local_side >= 0 && w.local_side < int(w.side_state.size()) && w.side_state[w.local_side].queue.size() < 8))) {
+        (m.construct || queue.size() < 8)) {
       cancel_mode();
-      if (m.construct) placing_ = m.type;
-      else { Command c; c.type = Pct::Build; c.side = uint8_t(w.local_side); c.a = m.type; sim_->submit(c); }
+      if (m.construct) { placing_ = m.type; placing_member_ = production_member(w, town); }
+      else {
+        Command c; c.type = Pct::Build; c.side = uint8_t(w.local_side); c.a = m.type;
+        if (uint32_t id = production_member(w, town)) c.ids = {id};
+        sim_->submit(c);
+      }
     }
   }
   if (w.local_side >= 0 && w.local_side < int(w.side_state.size())) {
@@ -297,8 +334,8 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
     if (!ss.queue.empty() && contains(l.pause, in.mx, in.my)) {
       Command c; c.type = Pct::PauseBuild; c.side = uint8_t(w.local_side); c.a = !ss.build_paused; sim_->submit(c);
     }
-    for (size_t i = 0; i < ss.queue.size() && i < l.queue.size(); i++) if (contains(l.queue[i], in.mx, in.my)) {
-      Command c; c.type = Pct::QueueKill; c.side = uint8_t(w.local_side); c.a = int(i); sim_->submit(c);
+    for (size_t i = 0; i < queue.size() && i < l.queue.size(); i++) if (contains(l.queue[i], in.mx, in.my)) {
+      Command c; c.type = Pct::QueueKill; c.side = uint8_t(w.local_side); c.a = int(queue[i]); sim_->submit(c);
     }
   }
   return true;
@@ -347,17 +384,28 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
         SDL_Scancode shortcut = i == 0 ? SDL_SCANCODE_M : i == 1 ? SDL_SCANCODE_X : SDL_SCANCODE_H;
         if (!key_bound(shortcut)) tip += std::string(" (") + SDL_GetScancodeName(shortcut) + ")";
       }
-      if (i == 3) tip += "\nRepair is unavailable";
+      if (i == 3) {
+        tip += "\nCycle town service: automatic, marked repair, marked destruction";
+        int selected = production_town(w);
+        if (selected >= 0 && selected < int(w.town_state.size())) {
+          const char* modes[] = {"Automatic", "Marked repair", "Marked destruction"};
+          tip += std::string("\nCurrent service: ") + modes[int(w.town_state[size_t(selected)].repair_mode)];
+        }
+      }
       else if (i == 4) tip += "\nExtract the selected town's troops";
       else if (i == 5) tip += "\nToggle buildings in the town's active repairer list";
       else if (!enabled) tip += "\nSelect an owned unit";
       else if (i == 1) tip += "\nClick an enemy to attack, or terrain to attack-move";
     }
   }
-  auto items = sim_->menu(w, w.local_side);
+  int town = production_town(w);
+  auto queue = production_queue(w, town);
+  auto items = sim_->menu(w, w.local_side, town);
   int count = int(l.production.size()), pages = std::max(1, (int(items.size()) + count - 1) / count);
   int page = std::clamp(page_, 0, pages - 1);
   font.draw(r, l.previous.x, l.previous.y, "<", ts, {240, 220, 170, 255});
+  std::string town_title = "Town " + (town < 0 ? std::string("?") : std::to_string(w.mission.towns[size_t(town)].index));
+  font.draw(r, l.previous.x, l.previous.y - 16 * sc, town_title, ts, {240, 220, 170, 255});
   std::string title = std::to_string(page + 1) + "/" + std::to_string(pages);
   font.draw(r, l.previous.x, l.previous.y + 20 * sc, title, ts, {240, 220, 170, 255});
   font.draw(r, l.next.x, l.next.y, ">", ts, {240, 220, 170, 255});
@@ -365,7 +413,7 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
   for (int i = 0; i < count && page * count + i < int(items.size()); i++) {
     const MenuItem& m = items[size_t(page * count + i)];
     const SDL_Rect& rect = l.production[size_t(i)];
-    bool full = !m.construct && ss && ss->queue.size() >= 8;
+    bool full = !m.construct && queue.size() >= 8;
     bool enabled = m.enabled && !full;
     draw_icon(m.type, false, rect, enabled);
     border(r, rect, (enabled && contains(rect, mx, my)) || placing_ == m.type);
@@ -378,17 +426,17 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
     }
   }
   if (ss) {
-    font.draw(r, l.pause.x, l.pause.y, ss->queue.empty() ? "Queue empty" : ss->build_paused ? "Resume production" : "Pause production", ts, {220, 225, 185, 255});
-    if (!ss->queue.empty() && contains(l.pause, mx, my)) tip = ss->build_paused ? "Resume production" : "Pause production";
-    for (size_t i = 0; i < ss->queue.size() && i < l.queue.size(); i++) {
-      const QueueItem& q = ss->queue[i];
+    font.draw(r, l.pause.x, l.pause.y, ss->queue.empty() ? "Queue empty" : ss->build_paused ? "Resume all towns" : "Pause all towns", ts, {220, 225, 185, 255});
+    if (!ss->queue.empty() && contains(l.pause, mx, my)) tip = ss->build_paused ? "Resume all towns" : "Pause all towns";
+    for (size_t i = 0; i < queue.size() && i < l.queue.size(); i++) {
+      const QueueItem& q = ss->queue[queue[i]];
       const SDL_Rect& rect = l.queue[i];
       draw_icon(q.type, false, rect);
       int pct = std::clamp(100 - q.remaining * 100 / std::max(1, q.total), 0, 100);
       SDL_Rect bar{rect.x, rect.y + rect.h - 3 * sc, rect.w * pct / 100, 3 * sc};
       SDL_SetRenderDrawColor(r, 90, 210, 90, 255); SDL_RenderFillRect(r, &bar);
       border(r, rect, contains(rect, mx, my));
-      if (contains(rect, mx, my)) tip = type_display_name(strings, q.type) + " " + std::to_string(pct) + "%\nTime remaining: " + std::to_string(q.remaining) + "\nClick to cancel; refund: " + std::to_string(sim_->rules().type(q.type).price);
+      if (contains(rect, mx, my)) tip = type_display_name(strings, q.type) + " " + std::to_string(pct) + "%\nTime remaining: " + std::to_string(q.remaining) + "\nClick to cancel; refund: " + std::to_string(q.paid);
     }
   }
   if (wants_left_click() && tip.empty()) tip = placing_ >= 0 ? "Place building: click terrain\nRight-click or Escape cancels" : mode_ == TargetMode::Move ? "Move: click a destination\nRight-click or Escape cancels" : "Attack: click enemy or terrain\nRight-click or Escape cancels";

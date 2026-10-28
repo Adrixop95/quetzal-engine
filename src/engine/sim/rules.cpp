@@ -240,6 +240,7 @@ bool RulesData::load_dir(const std::string& dir) {
           t.hp_max = num(r, 2); t.hp_src = Src::Verified;
           auto& harvest = t.harvest;
           for (int cell = 0; cell < 49; ++cell) harvest.occupancy[cell] = num(r, 7 + cell);
+          t.service_damage_protected = (uint32_t(num(r, 60)) & 255u) != 0;
           harvest.terrain = (uint32_t(num(r, 60)) & 0xff00u) != 0;  // byte +0xed within d59
           harvest.rate_a = num(r, 61); harvest.rate_b = num(r, 62);
           harvest.repair_rate = num(r, 63); harvest.scheduled = num(r, 64) != 0;

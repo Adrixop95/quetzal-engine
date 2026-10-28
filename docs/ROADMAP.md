@@ -91,6 +91,21 @@ estimates. Reference-dependent work may grow when evidence changes.
 | V11 | Implement deterministic town planning, strategist speed selection, defence reactions and autonomous attack waves. Exercise economy/build orders and sustained opposition in mission scenarios and a repeated 20-minute run. | XL | Tasks [06](../tasks/queue/06-ai-mission-behavior.md), [13](../tasks/queue/13-ai-from-rules.md); current AI is a purchase skeleton. V05-V10. |
 | V12 | Audit every campaign script condition/action and implement required boat/Johnka/submarine, build/move and camera commands. Verify trigger enablement/order, timers, paths, alliances, gifts, defence identity and victory/defeat against mission objectives. Require zero unsupported required actions. | XL | `script_unit` now covers trigger order/timers, all condition kinds, paths, gifts, identities and replay. [Campaign audit](campaign_scripts.md): all 15 scripts parse; 19 transport action sites remain unsupported. Camera semantics and objective/reference validation remain open; V02/V05/V10/V11 adapters are incomplete. |
 
+V08/V09 implementation update (2026-10-28):
+
+- [x] Independent town production progression and selected-town production UI,
+  with synthetic simultaneous training and cancellation checks.
+- [x] Harvested-credit repair/destruction allocation, priority boundaries and
+  save/replay through service completion, verified by synthetic checks against
+  inspected allocation facts. Existing hall upgrades and build-tree checks pass.
+- [ ] V08 acceptance: measured clock phase, activation/suspension, placement,
+  training/spawn ticks, reference queue semantics and refunds. V02 adapters and
+  V04 HP parity remain dependencies; namespace loopback setup denied the private
+  reference attempt before launch.
+- [ ] V09 acceptance: reference-aligned service timing, complete protection/HP
+  transitions, hall upgrade/non-map placement and completion comparisons through
+  saves. V08 remains incomplete. See the [evidence inventory](engine_rules_status.md#v08v09-economy-and-town-service-update-2026-10-28-partial).
+
 ### Make the campaign usable and resumable
 
 | ID | Task and completion evidence | Size | Existing basis / dependencies |

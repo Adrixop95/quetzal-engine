@@ -1238,7 +1238,7 @@ static void test_production() {
   World hall = production_world(); production_object(hall, 11, 0, 10, 10);
   GameSim hs(rules); hs.init(hall);
   production_steps(hs, hall, 20);
-  CHECK(hall.side_state[0].money == 0 && hall.repair_credits[0] == 400);
+  CHECK(hall.side_state[0].money == 0 && hall.repair_credits[0] == 0);
   production_steps(hs, hall, 280); CHECK(hall.side_state[0].money == 60);
 
   // At StartTime 1200, consume the first date immediately, without a full-cycle payout.
@@ -1301,6 +1301,16 @@ static void test_production() {
   bs.submit(build); production_steps(bs, construction, 1);
   CHECK(construction.objects.size() == 1 && construction.side_state[0].money == cash);
 
+  // Construction completes on its final countdown tick; harvest starts on the following tick.
+  int elapsed = construction.objects[0].build_elapsed;
+  production_steps(bs, construction, barracks.time - elapsed - 1);
+  CHECK(construction.objects[0].progress < 1000 && !construction.objects[0].harvest_ready);
+  production_steps(bs, construction, 1);
+  CHECK(construction.objects[0].progress == 1000 && construction.objects[0].hp == construction.objects[0].hp_max);
+  CHECK(!construction.objects[0].harvest_ready);
+  production_steps(bs, construction, 1);
+  CHECK(construction.objects[0].harvest_ready);
+
   // Synthetic command-log roundtrip across a full day, including price selection and harvest cursors.
   World replay_world = farm_fresh; replay_world.side_state.resize(8); replay_world.side_state[0].money = 1000;
   World original = replay_world;
@@ -1346,6 +1356,14 @@ static void test_town_production() {
     Command pause; pause.type = Pct::PauseBuild; pause.a = 1; sim.submit(pause);
     production_steps(sim, w, 3);
     CHECK(w.side_state[0].queue[0].remaining == upgrade.time - 1);
+    SaveData midpoint; midpoint.mission = "synthetic-upgrade-midpoint";
+    midpoint.tick = sim.tick_count(); midpoint.hash = sim.state_hash(w); midpoint.log = sim.log();
+    SaveData loaded_midpoint; CHECK(deserialize_save(serialize_save(midpoint), loaded_midpoint));
+    World continued = fresh;
+    auto continuation = GameSim::replay(continued, rules, loaded_midpoint.log, loaded_midpoint.tick);
+    CHECK(continuation->state_hash(continued) == loaded_midpoint.hash);
+    pause.a = 0; continuation->submit(pause);
+    production_steps(*continuation, continued, upgrade.time - 1);
     pause.a = 0; sim.submit(pause);
     production_steps(sim, w, upgrade.time - 2);
     CHECK(w.mission.towns[0].type == 0);
@@ -1354,6 +1372,7 @@ static void test_town_production() {
     CHECK(w.objects.size() == 1 && w.objects[0].id == 1 && w.objects[0].type == target);
     CHECK(w.objects[0].town == 4 && w.objects[0].town_hall && w.town_state[0].hall == 1);
     CHECK(w.objects[0].hp == rules->type(target).hp_max && w.side_state[0].queue.empty());
+    CHECK(continuation->state_hash(continued) == sim.state_hash(w));
     CHECK(item(sim, w, 0, race == 0 ? 14 : race == 1 ? 41 : 67).enabled);
     CHECK(!sim.can_place(w, 0, target, 10, 10)); // upgraded footprint remains blocked
     auto hash = sim.state_hash(w); w.mission.towns[0].type = 0;
@@ -1440,12 +1459,175 @@ static void test_town_production() {
   sim.submit(buy); production_steps(sim, w, 1); CHECK(w.side_state[0].queue.empty());
   buy.ids = {1}; sim.submit(buy); production_steps(sim, w, 1);
   int paid = w.side_state[0].queue[0].paid;
-  // A dead hall holds completed production without spawning at an unrelated side start.
+  // A dead hall suspends its timer without spawning at an unrelated side start.
+  int remaining = w.side_state[0].queue[0].remaining;
   sim.script_kill(w, 1); production_steps(sim, w, 200);
-  CHECK(w.objects.size() == 1 && w.side_state[0].queue[0].remaining == 0);
+  CHECK(w.objects.size() == 1 && w.side_state[0].queue[0].remaining == remaining);
   int money = w.side_state[0].money;
   Command cancel; cancel.type = Pct::QueueKill; sim.submit(cancel); production_steps(sim, w, 1);
   CHECK(w.side_state[0].queue.empty() && w.side_state[0].money == money + paid);
+}
+
+static void test_town_service() {
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  auto base = [] {
+    World w = production_world();
+    production_object(w, 11, 0, 5, 5); w.objects.back().town_hall = true;
+    production_object(w, 11, 1, 30, 30); w.objects.back().town_hall = true;
+    return w;
+  };
+  World w = base();
+  for (int i = 0; i < 4; ++i) production_object(w, 12, 0, 10 + i * 4, 10);
+  production_object(w, 17, 0, 10, 20);
+  production_object(w, 12, 1, 25, 30);
+  GameSim sim(rules); sim.init(w);
+  for (size_t i = 2; i < w.objects.size(); ++i) w.objects[i].hp_max = 1200;
+  w.objects[2].hp = 300; w.objects[3].hp = 301;
+  w.objects[4].hp = 400; w.objects[5].hp = 401;
+  w.objects[6].hp = 1190; w.objects[7].hp = 300;
+  Command mode; mode.type = Pct::RepairMode; mode.a = 1; sim.submit(mode);
+  Command mark; mark.type = Pct::DestroyHere; mark.ids = {3, 4, 5, 6, 7}; sim.submit(mark);
+  production_steps(sim, w, 19);
+  CHECK(w.objects[2].hp == 300 && w.objects[6].hp == 1190);
+  production_steps(sim, w, 1);
+  CHECK(w.objects[6].hp == 1200 && w.objects[2].hp == 690);
+  CHECK(w.objects[3].hp == 301 && w.objects[4].hp == 400 && w.objects[5].hp == 401);
+  CHECK(w.objects[7].hp == 700); // second town spends only its own supply in automatic mode
+  CHECK(w.repair_credits == std::vector<int>({0, 0}) && w.side_state[0].money == 0);
+  production_steps(sim, w, 20);
+  CHECK(w.objects[3].hp == 501 && w.objects[4].hp == 600);
+  CHECK(w.objects[2].hp == 690 && w.objects[5].hp == 401);
+
+  // Fixed shares are not recomputed after a capped target; residue flows to the next group.
+  World capped = base();
+  for (int i = 0; i < 3; ++i) production_object(capped, 12, 0, 10 + i * 4, 10);
+  GameSim cs(rules); cs.init(capped);
+  capped.objects[2].hp_max = 100; capped.objects[2].hp = 25;
+  capped.objects[3].hp_max = 1200; capped.objects[3].hp = 100;
+  capped.objects[4].hp_max = 1200; capped.objects[4].hp = 400;
+  production_steps(cs, capped, 20);
+  CHECK(capped.objects[2].hp == 100 && capped.objects[3].hp == 300 && capped.objects[4].hp == 525);
+  production_steps(cs, capped, 1);
+  CHECK(capped.objects[3].hp == 300); // unused budget never carries to another tick
+
+  // Destruction spends tripled work, applies three damage per work unit and serves Defence last.
+  World destroyed = base();
+  production_object(destroyed, 12, 0, 10, 10);
+  production_object(destroyed, 17, 0, 10, 20);
+  GameSim ds(rules); ds.init(destroyed);
+  destroyed.objects[2].hp_max = 1200; destroyed.objects[2].hp = 1000;
+  destroyed.objects[3].hp_max = 2000; destroyed.objects[3].hp = 2000;
+  mode.a = 2; ds.submit(mode); mark.ids = {4, 3}; ds.submit(mark);
+  production_steps(ds, destroyed, 20);
+  CHECK(!destroyed.objects[2].alive && destroyed.objects[2].removed);
+  CHECK(destroyed.objects[3].hp == 1406 && destroyed.objects[3].last_hit_by == 4);
+  CHECK(ds.can_place(destroyed, 0, 12, 10, 10));
+  CHECK(destroyed.side_state[0].money == 0 && destroyed.repair_credits[0] == 0);
+
+  // An integer share of zero unmarks that group; its budget reaches the next priority.
+  World small_share = base();
+  for (int i = 0; i < 3; ++i) production_object(small_share, 12, 0, 10 + i * 4, 10);
+  production_object(small_share, 17, 0, 10, 20);
+  GameSim zs(rules); zs.init(small_share);
+  for (size_t i = 2; i < 5; ++i) {
+    small_share.objects[i].hp_max = 1200; small_share.objects[i].hp = 300;
+  }
+  small_share.objects[4].hp = 400;
+  small_share.objects[5].hp_max = 1000; small_share.objects[5].hp = 601;
+  mode.a = 1; zs.submit(mode); mark.ids = {3, 4, 5, 6};
+  zs.submit(mark); production_steps(zs, small_share, 20);
+  CHECK(small_share.objects[2].hp == 300 && small_share.objects[3].hp == 300);
+  CHECK(small_share.objects[4].hp == 401 && small_share.objects[5].hp == 1000);
+  CHECK(small_share.town_state[0].marked == std::vector<uint32_t>({5, 6}));
+  mode.a = 2;
+
+  // Protected ordinary structures consume work without taking service damage.
+  World protected_world = base(); production_object(protected_world, 10, 0, 15, 15);
+  GameSim ps(rules); ps.init(protected_world);
+  int hp = protected_world.objects[2].hp;
+  ps.submit(mode); mark.ids = {3}; ps.submit(mark);
+  production_steps(ps, protected_world, 20);
+  CHECK(rules->type(10).service_damage_protected && protected_world.objects[2].hp == hp);
+
+  // Commands and earned credits reproduce service through completion from an engine save.
+  World initial = base(); production_object(initial, 12, 0, 10, 10);
+  initial.objects[2].hp = 1000;
+  World live = initial; GameSim ls(rules); ls.init(live);
+  ls.submit(mode); mark.ids = {3}; ls.submit(mark);
+  production_steps(ls, live, 19);
+  SaveData save; save.mission = "synthetic-service"; save.tick = ls.tick_count();
+  save.hash = ls.state_hash(live); save.log = ls.log();
+  SaveData loaded; CHECK(deserialize_save(serialize_save(save), loaded));
+  auto replay = GameSim::replay(initial, rules, loaded.log, loaded.tick);
+  CHECK(replay->state_hash(initial) == loaded.hash && initial.objects[2].alive);
+  production_steps(ls, live, 1); production_steps(*replay, initial, 1);
+  CHECK(!live.objects[2].alive && !initial.objects[2].alive);
+  production_steps(ls, live, 25); production_steps(*replay, initial, 25);
+  CHECK(replay->state_hash(initial) == ls.state_hash(live));
+
+  // The hall service button cycles all modes using logged commands only.
+  live.selection.ids = {1}; CommandsUi ui(&ls);
+  CHECK(CommandsUi::action_enabled(PanelAction::Repair, live));
+  Input input; input.key_hit[SDL_SCANCODE_W] = true;
+  Camera camera; Minimap minimap; SDL_Rect panel{0, 0, 204, 700};
+  ui.update(input, live, camera, 1, minimap, false, panel);
+  CHECK(live.town_state[0].repair_mode == RepairMode::Destroy);
+  production_steps(ls, live, 1);
+  CHECK(live.town_state[0].repair_mode == RepairMode::Off);
+}
+
+static void test_parallel_town_production() {
+  auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  World fresh = production_world();
+  production_object(fresh, 11, 0, 5, 5); fresh.objects.back().town_hall = true;
+  production_object(fresh, 11, 1, 30, 30); fresh.objects.back().town_hall = true;
+  fresh.side_state.resize(8); fresh.side_state[0].money = 10000;
+  World w = fresh; GameSim sim(rules); sim.init(w);
+  Command buy; buy.type = Pct::Build; buy.a = 0; buy.ids = {1};
+  sim.submit(buy); sim.submit(buy); buy.ids = {2}; sim.submit(buy);
+  production_steps(sim, w, 1);
+  CHECK(w.side_state[0].queue.size() == 3);
+  CHECK(w.side_state[0].queue[0].remaining == 99 && w.side_state[0].queue[1].remaining == 100);
+  CHECK(w.side_state[0].queue[2].remaining == 99);
+  Command pause; pause.type = Pct::PauseOn; sim.submit(pause);
+  int clock = w.day_clock; production_steps(sim, w, 3);
+  CHECK(w.day_clock == clock && w.side_state[0].queue[0].remaining == 99);
+  pause.type = Pct::PauseOff; sim.submit(pause);
+  production_steps(sim, w, 99);
+  CHECK(w.objects.size() == 4 && w.objects[2].town == 0 && w.objects[3].town == 1);
+  CHECK(w.side_state[0].queue.size() == 1 && w.side_state[0].queue[0].remaining == 100);
+  production_steps(sim, w, 99); CHECK(w.objects.size() == 4);
+  production_steps(sim, w, 1); CHECK(w.objects.size() == 5 && w.objects.back().town == 0);
+  auto replay = GameSim::replay(fresh, rules, sim.log(), sim.tick_count());
+  CHECK(replay->state_hash(fresh) == sim.state_hash(w));
+
+  World capacity = production_world();
+  production_object(capacity, 11, 0, 5, 5); capacity.objects.back().town_hall = true;
+  production_object(capacity, 11, 1, 30, 30); capacity.objects.back().town_hall = true;
+  GameSim capacity_sim(rules); capacity_sim.init(capacity); capacity.side_state[0].money = 10000;
+  buy.ids = {1}; for (int i = 0; i < 9; ++i) capacity_sim.submit(buy);
+  buy.ids = {2}; capacity_sim.submit(buy);
+  production_steps(capacity_sim, capacity, 1);
+  CHECK(capacity.side_state[0].queue.size() == 9 && capacity.side_state[0].money == 9100);
+  CHECK(capacity.side_state[0].queue.back().town == 1 && capacity.side_state[0].queue.back().remaining == 99);
+
+  World ui_world = production_world();
+  production_object(ui_world, 11, 0, 5, 5); ui_world.objects.back().town_hall = true;
+  production_object(ui_world, 11, 1, 30, 30); ui_world.objects.back().town_hall = true;
+  GameSim ui_sim(rules); ui_sim.init(ui_world); ui_world.side_state[0].money = 10000;
+  buy.ids = {1}; ui_sim.submit(buy); buy.ids = {2}; ui_sim.submit(buy);
+  production_steps(ui_sim, ui_world, 1);
+  ui_world.selection.ids = {2}; CommandsUi ui(&ui_sim);
+  Camera camera; Minimap minimap; SDL_Rect panel{0, 0, 204, 700};
+  auto layout = CommandsUi::layout(panel, 1);
+  Input click; click.pressed[SDL_BUTTON_LEFT] = true;
+  click.mx = layout.queue[0].x + 1; click.my = layout.queue[0].y + 1;
+  ui.update(click, ui_world, camera, 1, minimap, false, panel);
+  production_steps(ui_sim, ui_world, 1);
+  CHECK(ui_sim.log().back().cmd.type == Pct::QueueKill && ui_sim.log().back().cmd.a == 1);
+  CHECK(ui_world.side_state[0].queue.size() == 1 && ui_world.side_state[0].queue[0].town == 0);
+
 }
 
 static void test_descriptor_combat() {
@@ -1722,6 +1904,8 @@ int main(int argc, char** argv) {
     test_sight();
     test_production();
     test_town_production();
+    test_town_service();
+    test_parallel_town_production();
     test_projectiles();
     test_descriptor_combat();
     test_script_animation_clocks();
