@@ -98,7 +98,7 @@ find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
   add_test(NAME lockstep_processes COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_lockstep_processes.py $<TARGET_FILE:lockstep_peer>)
-  set_tests_properties(lockstep_processes PROPERTIES LABELS "network" TIMEOUT 25)
+  set_tests_properties(lockstep_processes PROPERTIES LABELS "network" TIMEOUT 25 SKIP_RETURN_CODE 77)
   add_test(NAME map_viewer COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_map_viewer.py $<TARGET_FILE:aztec_map_viewer>)
   set_tests_properties(map_viewer PROPERTIES LABELS "unit" TIMEOUT 20)
   add_test(NAME zpath_tools COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_zpath_tools.py $<TARGET_FILE:path_bench>)

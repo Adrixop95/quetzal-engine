@@ -118,9 +118,9 @@ def start(name, prompt_file):
     print("started", name)
 
 
-def resume(name):
+def resume(name, prompt=None):
     t = refresh(load(name))
-    if t["status"] in ("running", "done", "harvested"):
+    if prompt is None and t["status"] in ("running", "done", "harvested"):
         print(name, "is", t["status"], "- not resuming")
         return
     if "session" not in t or "workdir" not in t:
@@ -132,7 +132,7 @@ def resume(name):
         os.remove(last)
     subprocess.Popen(
         ["codex", "exec", "resume", t["session"], "-c", 'sandbox_mode="workspace-write"', "-o", last,
-         RESUME_PROMPT],
+         prompt or RESUME_PROMPT],
         cwd=t["workdir"], stdout=open(log, "a"), stderr=subprocess.STDOUT, start_new_session=True)
     print("resumed", name, t["session"])
 
@@ -172,6 +172,11 @@ def main():
     elif a[0] == "resume":
         for n in (names() if a[1] == "all" else [a[1]]):
             resume(n)
+    elif a[0] == "feedback":   # resume a finished task with a new instruction (e.g. landing failed)
+        t = load(a[1])
+        t["harvested"] = False
+        save(t)
+        resume(a[1], " ".join(a[2:]))
     elif a[0] == "harvest":
         harvest(a[1], a[2], a[3] if len(a) > 3 else a[2])
     elif a[0] == "log":

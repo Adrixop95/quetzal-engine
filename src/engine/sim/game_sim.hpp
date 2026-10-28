@@ -19,7 +19,7 @@ constexpr int kAnimConstruct = 6;
 
 struct MenuItem {
   int type = 0;
-  bool construct = false;     // place on the map (true) or train a unit (false)
+  bool construct = false;     // place on the map (true) or queue production (false)
   int price = 0, time = 0;
   bool enabled = false;       // prerequisites + money + not disabled
   const char* why_not = "";
@@ -79,6 +79,10 @@ class GameSim : public Simulation {
   bool menu_ok(const World& w, int side, const BuildItem& it, int town, const char** why) const;
   const Object* nearest_enemy(const World& w, const Object& o, int radius_px) const;
   int town_index(const World& w, int side) const;
+  int producing_town(const World& w, int side, const std::vector<uint32_t>& ids) const;
+  const Object* town_hall(const World& w, int town) const;
+  int upgrade_level(int race, int type) const;
+  bool finish_structure(World& w, int side, const QueueItem& item);
   uint32_t next_rand() { rng_ = rng_ * 1664525u + 1013904223u; return rng_ >> 8; }
 
   std::shared_ptr<const RulesData> rules_;
