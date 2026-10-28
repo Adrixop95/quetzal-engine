@@ -68,10 +68,10 @@ void Minimap::layout(int out_w, int out_h, int ui_scale) {
   rect_ = {margin, out_h - margin - h, w, h};
 }
 
-void Minimap::layout_in(const SDL_Rect& a) {
+void Minimap::layout_in(const SDL_Rect& a, int ui_scale) {
   if (!world_) return;
   float aspect = float(world_->terrain.w) / world_->terrain.h;
-  int w = a.w, h = int(a.w / aspect);
+  int w = std::min(a.w, world_->terrain.w * std::max(1, ui_scale)), h = int(w / aspect);
   if (h > a.h) { h = a.h; w = int(a.h * aspect); }
   rect_ = {a.x + (a.w - w) / 2, a.y + (a.h - h) / 2, w, h};
 }

@@ -211,3 +211,12 @@ add_executable(test_audio tests/test_audio.cpp)
 target_link_libraries(test_audio aztec_engine_lib)
 add_test(NAME audio_events COMMAND test_audio)
 set_tests_properties(audio_events PROPERTIES LABELS "unit;audio")
+
+# Synthetic UI captures stay in the build tree; no original screenshots are fixtures.
+add_executable(test_ui_screenshots tests/test_ui_screenshots.cpp)
+target_link_libraries(test_ui_screenshots PRIVATE aztec_engine_lib)
+target_compile_definitions(test_ui_screenshots PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data")
+aztec_warnings(test_ui_screenshots)
+add_test(NAME ui_screenshots COMMAND test_ui_screenshots ${CMAKE_CURRENT_BINARY_DIR}/ui-screenshots)
+set_tests_properties(ui_screenshots PROPERTIES LABELS "unit" TIMEOUT 30
+  ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")

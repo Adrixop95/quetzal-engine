@@ -117,3 +117,29 @@ ordering, burn schedules and per-victim damage calculations replace the engine
 placeholders. Add synthetic boundary and command-replay tests for each measured
 rule, including state-hash coverage for any new flight or burn state. Keep
 unmeasured weapon families explicitly unresolved.
+
+## UI capture controls
+
+`ctest --test-dir build -R ui_screenshots --output-on-failure` needs no game
+installation. It writes only synthetic captures into `build/ui-screenshots/`;
+its region comparisons and tolerances are described in engine_rules_status.md.
+
+For local visual review, prepare a private game directory as above, then run:
+
+```sh
+timeout -s KILL 30 unshare -rn env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+  build/aztec_engine --game "$PWD/work/ui-game" --rules-dir "$PWD/docs/data" \
+  --size 800x600 --software --no-audio --no-hud --no-light --no-sim \
+  --screenshot "$PWD/work/ui-probe/engine.png" 4
+```
+
+The independent engine does not need the reference runtime's namespace network
+interface setup. A successful engine capture does not resolve a failed reference
+capture. For the reference use the setup and navigation documented above, with
+`RT_RESOLUTION=800x600`, a private `RT_SCRIPT` and `RT_DUMP_DIR`. The 2026-10-28
+UI attempt failed at namespace loopback configuration with a netlink permission
+error before the game launched. No reference UI observations were obtained.
+Keep every capture containing original assets in ignored `work/`; never commit
+it. For a future differential comparison, align mission, camera, selection,
+gold, UI scale, cursor, tooltip delay and message state before measuring each UI
+region separately. Report exact agreement and tolerant mismatch rates separately.

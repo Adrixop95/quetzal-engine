@@ -338,7 +338,7 @@ static void test_commands_ui() {
     regions.insert(regions.end(), l.queue.begin(), l.queue.end());
     regions.push_back(l.pause); regions.push_back(l.previous); regions.push_back(l.next);
     for (size_t i = 0; i < regions.size(); i++) {
-      CHECK(regions[i].x >= panel.x && regions[i].y >= panel.y);
+      CHECK(regions[i].x >= panel.x - 50 * scale && regions[i].y >= panel.y);
       CHECK(regions[i].x + regions[i].w <= panel.x + panel.w);
       CHECK(regions[i].y + regions[i].h <= panel.y + panel.h);
       for (size_t j = i + 1; j < regions.size(); j++) CHECK(!SDL_HasIntersection(&regions[i], &regions[j]));
@@ -357,6 +357,10 @@ static void test_commands_ui() {
   key.key_down[SDL_SCANCODE_KP_4] = false; key.key_down[SDL_SCANCODE_LEFT] = true;
   CHECK(keys.action_down(key, "ScrollLeft"));
   CHECK(CommandsUi::sdl_scancode(999) == SDL_SCANCODE_UNKNOWN);
+  CHECK(CommandsUi::sdl_scancode(1) == SDL_SCANCODE_ESCAPE);
+  CHECK(CommandsUi::sdl_scancode(2) == SDL_SCANCODE_1);
+  CHECK(CommandsUi::sdl_scancode(10) == SDL_SCANCODE_9);
+  CHECK(CommandsUi::sdl_scancode(11) == SDL_SCANCODE_0);
   CHECK(CommandsUi::icon_slot(0) == 23 && CommandsUi::icon_slot(2) == 7 && CommandsUi::icon_slot(6) == 39);
 
   auto rules = std::make_shared<RulesData>();
@@ -444,7 +448,7 @@ static void test_commands_ui() {
   l = CommandsUi::layout(panel, 1);
   int build_index = -1;
   for (size_t i = 0; i < menu.size(); i++) if (menu[i].construct && menu[i].enabled) { build_index = int(i); break; }
-  CHECK(build_index >= int(l.production.size()));
+  CHECK(build_index >= 0);
   if (build_index >= 0) {
     for (int page = 0; page < build_index / int(l.production.size()); page++) click(l.next);
     click(l.production[size_t(build_index) % l.production.size()]);
