@@ -1,5 +1,6 @@
 #include "engine/ui/hud.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -17,6 +18,29 @@ const Object* pick_object(const World& w, float wx, float wy, float alpha, float
     if (d <= bd) { bd = d; best = &o; }
   }
   return best;
+}
+
+void draw_messages(SDL_Renderer* r, const Font& font, const std::vector<Message>& messages, const SDL_Rect& area, int scale) {
+  const int ts = font.ui_scale(scale), line_height = font.height(ts) + 3 * scale;
+  if (area.w <= 0 || area.h < line_height) return;
+  std::vector<std::string> lines;
+  for (const auto& message : messages) {
+    auto wrapped = font.wrap(message.text, ts, area.w - 2 * scale);
+    lines.insert(lines.end(), wrapped.begin(), wrapped.end());
+  }
+  const size_t count = size_t(area.h / line_height);
+  const size_t first = lines.size() > count ? lines.size() - count : 0;
+  SDL_Rect previous{}; const bool clipped = SDL_RenderIsClipEnabled(r);
+  SDL_RenderGetClipRect(r, &previous);
+  SDL_Rect clip = area;
+  if (clipped) SDL_IntersectRect(&area, &previous, &clip);
+  SDL_RenderSetClipRect(r, &clip);
+  int y = area.y;
+  for (size_t i = first; i < lines.size(); ++i) {
+    font.draw(r, area.x + (area.w - font.width(lines[i], ts)) / 2, y, lines[i], ts, {255, 255, 200, 255});
+    y += line_height;
+  }
+  SDL_RenderSetClipRect(r, clipped ? &previous : nullptr);
 }
 
 void draw_hud(SDL_Renderer* r, const Font& font, const World& w, const Camera& cam, const HudInfo& in, int scale) {

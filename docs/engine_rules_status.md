@@ -535,3 +535,55 @@ read-only game installation and SDL dummy drivers passes 15 of 16 checks,
 including all three private-data checks. `lockstep_processes` fails at UDP socket
 creation with `Operation not permitted`, matching the pre-change baseline.
 All pre-commit gates pass using cached hook environments inside this worktree.
+
+## In-game UI layout (2026-10-28, partial task 14)
+
+**Existing reference evidence (V):** [formats.md](formats.md#cursors-and-interface-selection-of-sprites-from-commonxbe)
+records the 800x600 mission 4 layout: Menu at x=598, a 120x90 minimap at
+(638,70), portraits near x=722, and a 254x208 command card at (546,392).
+Local resource inspection confirms common:282 is a 60x22 two-frame Menu button,
+292 is the 204x493 side background, and 297 is a 254x208 command background.
+These are resource dimensions and historical coordinates, not a new live capture.
+
+**Independent implementation:** shared geometry anchors the minimap/selection
+strip to the right and the command card to the bottom. Menu uses its original
+resource and its actual 60x22 hit region. Maps smaller than the minimap opening
+retain one pixel per tile at UI scale 1; larger maps fit the opening. The first
+selected object's portrait occupies the right column and uses its owner's team
+palette. Command/production controls follow the five-column card cells, with
+paging and all eight queue hit regions retained. This particular allocation of
+commands, production and queue controls is engine presentation (P), pending live
+comparison. The scale is constrained by both window dimensions so a 900-pixel
+window height alone cannot double the panel beyond the available width.
+
+Resource text, selection labels, tooltips and messages now use physical integer
+UI scaling for both installed and fallback fonts. Long text wraps at UTF-8
+character boundaries; tooltips wrap long tokens and cap their height. Messages
+wrap within the visible world area, use font-derived line spacing and keep the
+latest lines when full. Hiding the panel restores the full width for messages
+and mission banners. DirectInput translation includes digit keys and Escape;
+existing configured bindings still suppress conflicting M/X/H engine shortcuts.
+Unsupported gameplay modes remain unavailable.
+
+**Synthetic verification:** `ui_screenshots` renders invented RGB565 panel,
+button and glyph resources through SDL's software renderer with dummy drivers.
+It saves eight synthetic PNGs under the build directory, covering 800x493,
+800x600, 1024x768 and 1600x1200 with installed-font-shaped fixtures and the
+fallback font. It compares independently specified panel silhouettes, Menu and
+command-icon regions, and message glyph rasters with per-channel tolerance 3
+and at most 0.2% differing pixels in each region. A deliberately displaced card
+edge must fail comparison. Geometry assertions cover minimap/portrait anchors;
+long-tooltip bounds and the existing command/replay tests cover additional
+regressions. These checks verify independent rendering contracts, not original
+pixel parity. No game screenshots or pixels are test fixtures.
+
+**Live limitation:** the isolated reference attempt failed at `ip link set lo up`
+with `Cannot open netlink socket: Operation not permitted`, before launch. The
+script and failure log remain in ignored `work/ui-probe/`; isolation was not
+bypassed. Independent-engine static and selected-unit captures succeeded using
+dummy SDL inside `unshare -rn` with a private installation copy. Their visual
+review establishes readability only. Full command icon semantics, font choice,
+selection/group presentation, resource decoration, tooltip timing/appearance,
+message-log history and synchronized reference comparison remain open (P).
+Repair and hall-upgrade UI acceptance also depend on the incomplete town-command
+work described above; this task does not invent those gameplay semantics.

@@ -16,8 +16,8 @@ class Minimap {
   bool init(SDL_Renderer* r, const GameData& data, const World& world, int palette, int shade);
   // Places the minimap in the bottom-left corner, at most `max_frac` of the window's smaller side.
   void layout(int out_w, int out_h, int ui_scale);
-  // Fits the minimap (map aspect ratio) into `area`, centred.
-  void layout_in(const SDL_Rect& area);
+  // Fits the map into `area`, centred, at at most one pixel per tile per UI scale.
+  void layout_in(const SDL_Rect& area, int ui_scale = 1);
   SDL_Rect rect() const { return rect_; }
   bool contains(int x, int y) const { return x >= rect_.x && y >= rect_.y && x < rect_.x + rect_.w && y < rect_.y + rect_.h; }
   void set_tint(SDL_Color tint) { tint_ = tint; }
