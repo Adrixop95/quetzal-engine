@@ -129,6 +129,7 @@ bool RulesData::load_dir(const std::string& dir) {
     int id = num(r, 0);
     if (id < 0 || id >= kNumTypes) continue;
     TypeRules& t = types_[id];
+    t.dev_level = num(r, 6);
     t.price = num(r, 4);
     t.time = num(r, 5);
     t.cost_src = Src::Verified;
