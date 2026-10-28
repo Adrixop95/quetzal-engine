@@ -1,0 +1,2 @@
+Task: implement roadmap item V05 from docs/ROADMAP.md (read the row, its evidence rules and dependencies first). Focus: movement classes, boat/air movement, speeds, radii, footprints, collisions and path decisions measured against the reference oracle.
+Follow CLAUDE.md: public repo, English only, no game assets or executable-derived code, deterministic engine code, tests with synthetic data (private-data tests must skip when absent), update docs/engine_rules_status.md and tick the matching ROADMAP row only for what is actually evidenced.

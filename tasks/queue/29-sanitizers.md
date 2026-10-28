@@ -1,0 +1,2 @@
+Task: implement roadmap item V20 (sanitizer and malformed-input part only) from docs/ROADMAP.md (read the row, its evidence rules and dependencies first). Focus: add ASan/UBSan CI job and malformed-input tests over every loader; fix every finding.
+Follow CLAUDE.md: public repo, English only, no game assets or executable-derived code, deterministic engine code, tests with synthetic data (private-data tests must skip when absent), update docs/engine_rules_status.md and tick the matching ROADMAP row only for what is actually evidenced.

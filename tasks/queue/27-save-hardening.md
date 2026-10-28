@@ -1,0 +1,2 @@
+Task: implement roadmap item V16 from docs/ROADMAP.md (read the row, its evidence rules and dependencies first). Focus: own save/load format hardening: versioning, bounded parsing, safe atomic writes, refusal on replay hash mismatch, fuzz tests.
+Follow CLAUDE.md: public repo, English only, no game assets or executable-derived code, deterministic engine code, tests with synthetic data (private-data tests must skip when absent), update docs/engine_rules_status.md and tick the matching ROADMAP row only for what is actually evidenced.
