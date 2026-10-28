@@ -28,7 +28,11 @@ enum class Pct : uint8_t {
 //   RepairMode: a = 0 off / 1 repair / 2 destroy, b = town section number.
 //   DestroyHere: b = town section number, ids = buildings to toggle in its current repairer list.
 //   These are engine field conventions, not a claim about the reference packet payload layout.
-//   CreateGroup/AddToGroup/SelectGroup/SelectByNo: a = group number 0..9 (+ ids for Create/Add).
+//   CreateGroup/AddToGroup/SelectGroup: a = engine control group 0..9 (+ ids for Create/Add).
+//   SelectByNo: a = owned tactic identity. Selection commands require b = 0.
+//   FollowTeam: a = owned leader tactic, ids = followers (expanded to their mobile tactic members).
+//     b = 0 follows; attachment/modifier branches remain unresolved and are rejected.
+//   Empty ids on unit orders use the side's deterministic command selection.
 //   Build: a = item type (UGI); flag-1 construction uses b,c = footprint centre tile.
 //   Flag-0 entries ignore b,c: queue a unit, automatically placed structure, or in-place hall upgrade.
 //   Build/BuildMode: optional ids[0] selects an owned town member; absent = first owned town (engine convention).

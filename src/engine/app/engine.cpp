@@ -131,6 +131,8 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
     for (const std::string& rp : {o.rules_dir, o.game_dir + "/../docs/data", std::string("docs/data")})
       if (!rp.empty() && (rules_ok = rules->load_dir(rp))) { loaded_rules_dir = rp; break; }
     if (!rules_ok) { rules->init_defaults(); std::fprintf(stderr, "note: docs/data not found, using placeholder rules\n"); }
+    for (Object& object : world.objects)
+      if (object.type >= 0) object.initialize_health(rules->type(object.type), bool(world.original_save));
     GameSim* game = nullptr;
     if (!sim) {
       if (o.wander) sim = std::make_unique<WanderSimulation>();

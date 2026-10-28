@@ -303,29 +303,33 @@ bool RulesData::load_dir(const std::string& dir) {
     }
     return w;
   };
-  const char* descriptors[] = {"marine", "spider", "", "", "", "", "headtruck", "defence"};
-  for (int id = 0; id < kNumTypes; id++) {
-    auto& t = types_[id];
-    if (t.kind != 0 && t.kind != 1 && t.kind != 6 && t.kind != 7) continue;
-    auto r = row(read_csv(dir + "/desc_" + descriptors[t.kind] + ".csv"), kind_param[id].second);
-    int field = t.kind == 0 ? 7 : t.kind == 7 ? 59 : 9;
-    if (r.size() <= size_t(field + 1)) continue;
-    t.weapon = visual_weapon(num(r, field + 1, -1), 0);
-    if (t.kind == 1 || t.kind == 6) t.weapon_id = num(r, field + 1, -1);
-  }
-  // Documented primary HP and Defence weapon fields; visual metadata above
-  // does not supply fallback damage for unresolved weapons.
-  for (const auto& family : std::vector<std::pair<int, std::string>>{{7, "defence"}, {3, "zeppelin"}, {5, "bird"}, {6, "headtruck"}, {1, "spider"}}) {
-    auto rows = read_csv(dir + "/desc_" + family.second + ".csv");
+  // Field indices are descriptor dwords (CSV column 0 is the parameter).
+  struct Fields { int kind; const char* family; int hp, secondary, regen, threshold, armor, weapon; };
+  for (const auto& f : std::vector<Fields>{
+      {0, "marine", 1, 4, 2, 3, 13, 7}, {1, "spider", 3, 6, 4, 5, 15, 9},
+      {2, "building", 1, -1, -1, -1, 57, -1}, {3, "zeppelin", 1, 4, 2, 3, 13, 8},
+      {4, "truck", 1, 4, 2, 3, 12, 7}, {5, "bird", 1, 4, 2, 3, 15, 9},
+      {6, "headtruck", 3, 6, 4, 5, 15, 9}, {7, "defence", 3, -1, -1, -1, 65, 59},
+      {9, "cannon", 2, 5, 3, 4, 12, 7}}) {
+    const auto rows = read_csv(dir + "/desc_" + f.family + ".csv");
     for (int id = 0; id < kNumTypes; ++id) {
       auto& t = types_[id];
-      if (t.kind != family.first) continue;
-      for (const auto& r : rows) if (num(r, 0) == kind_param[id].second) {
-        t.hp_max = num(r, (t.kind == 7 || t.kind == 6 || t.kind == 1) ? 4 : 2);
-        t.hp_src = Src::Verified;
-        if (t.kind == 7) { t.weapon_id = num(r, 60, -1); t.armed = t.weapon_id >= 0; }
-      }
+      if (t.kind != f.kind) continue;
+      const auto r = row(rows, kind_param[id].second);
+      if (r.size() <= size_t(f.hp + 1)) continue;
+      t.hp_max = num(r, f.hp + 1); t.hp_src = Src::Verified;
+      t.secondary_hp = f.secondary >= 0 ? num(r, f.secondary + 1) : 0;
+      t.regen = f.regen >= 0 ? num(r, f.regen + 1) : 0;
+      t.regen_alt_threshold = f.threshold >= 0 ? num(r, f.threshold + 1) : 0;
+      t.physical_armor = num(r, f.armor + 1);
+      t.weapon_id = f.weapon >= 0 ? num(r, f.weapon + 1, -1) : -1;
+      t.armed = t.weapon_id >= 0;
+      t.weapon = visual_weapon(t.weapon_id, 0);
     }
+  }
+  // Scripted vessels and cameras have a zero maximum getter, not inferred health.
+  for (auto& t : types_) if (t.kind == 8 || t.kind == 10 || t.kind == 11) {
+    t.hp_max = 0; t.hp_src = Src::Verified;
   }
   std::map<int, std::map<int, std::vector<int>>> tables;
   for (const auto& entry : std::vector<std::pair<int, std::string>>{
@@ -385,11 +389,19 @@ int category_damage(int base, const std::vector<int>& multipliers) {
   return int(value);
 }
 
-int regenerated_hp(const TypeRules& type, int hp, bool alternate_state) {
-  if (type.kind != 0 || hp <= 0) return hp;
-  const int threshold = alternate_state ? type.regen_alt_threshold : type.hp_max;
-  // Check before addition; overshoot is an explicit construction choice pending reference evidence.
-  return hp < threshold ? hp + type.regen : hp;
+int regenerated_hp(const TypeRules& type, int hp, bool serviced) {
+  if (hp <= 0 || type.regen <= 0) return hp;
+  const int threshold = serviced ? type.hp_max : type.regen_alt_threshold;
+  if (hp >= threshold) return hp;
+  // The reference checks before addition and allows overshoot. Bound malformed metadata safely.
+  return int(std::min(int64_t(hp) + type.regen, int64_t(INT_MAX)));
+}
+
+int estimated_kill_time(const TypeRules& attacker, int hp, int secondary_hp, const WeaponResult& shot) {
+  if (!shot.damage_known || !shot.getters_known || shot.damage <= 0 || shot.reload < 0) return -1;
+  const int health = attacker.hypno ? secondary_hp : hp;
+  const int64_t hits = std::max(int64_t(1), (int64_t(health) + shot.damage - 1) / shot.damage);
+  return int(std::min(hits * shot.reload, int64_t(INT_MAX)));
 }
 
 WeaponResult RulesData::weapon(int id, const TypeRules& target, bool allied) const {

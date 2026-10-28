@@ -2,7 +2,6 @@
 // texture atlases: a full-screen terrain is a few SDL_RenderGeometry calls.
 #pragma once
 #include <memory>
-#include <unordered_map>
 #include <vector>
 #include "engine/assets/daylight.hpp"
 #include "engine/platform/window.hpp"
@@ -57,8 +56,6 @@ class SceneRenderer {
   data::SpriteRef effect_frame(const Effect& e) const;
   void draw_objects(const Camera& cam, float alpha);
   void blit(const Camera& cam, const StoredSprite& s, int frame, float wx, float wy, int& cur_page);
-  int hp_max(int type) const;  // best known: highest hp of that type in the mission
-  mutable std::unordered_map<int, int> hp_max_;
   ObjectState object_state(const Object& o) const;
 
   void flush(int page);

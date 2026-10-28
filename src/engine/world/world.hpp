@@ -32,7 +32,7 @@ struct Object {
   uint32_t id = 0;
   int type = -1;         // UGI id, -1 = marker without a type
   ObjectSource source = ObjectSource::Team;
-  int town = -1;         // index into mission.towns, independent of side
+  int town = -1;         // mission town section number, independent of vector position and side
   HarvestState gold_harvest, repair_harvest;
   bool harvest_ready = false;
   int side = 0;
@@ -53,8 +53,8 @@ struct Object {
   bool body_moving = false;
   // --- simulation state (written only by the Simulation) ---
   int32_t hp_max = 0;
-  int32_t secondary_hp = 0;    // Marine d4, independent of primary/max HP
-  bool regen_alternate = false; // explicit selector; reference state transition mapping is unresolved
+  int32_t secondary_hp = 0;    // independent descriptor state, used by Hypno estimates
+  int32_t regen_service_ticks = 0; // positive selects full-HP regeneration, zero selects the natural threshold
   AttackMode attack_mode = AttackMode::Balanced;
   uint8_t order = 0;           // sim::Order
   uint32_t target = 0;         // object id for attack orders (0 = none)
@@ -64,14 +64,22 @@ struct Object {
   bool defence = false;        // explicitly placed [SideN] Defence#, separate from team scenario IDs
   bool town_hall = false;      // explicit hall identity, independent of its upgrade type
   int32_t tactic = -1;         // team (tactic) number for Team objects, changed by joinTactic
+  int32_t follow_tactic = -1;  // side-local leader tactic, independent of combat target
   int32_t scenario = -1;       // ScenarioID of defences / vessels (script references)
   uint32_t last_hit_by = 0;    // id of the last attacker (script condition tactic(N).attacked)
-  uint8_t resume = 0;          // interrupted movement: 1 = attack-move, 2 = move, 0 = idle
+  uint8_t resume = 0;          // interrupted movement: 1 = attack-move, 2 = move, 3 = follow, 0 = idle
   int32_t build_elapsed = 0, build_total = 0;  // construction timer (ticks)
   int32_t progress = 1000;     // construction 0..1000 (1000 = finished); buildings only
   int32_t mover = -1;          // agent index in the movement system, -1 = does not walk
   bool alive = true;
   bool removed = false;        // gone (not drawn, not simulated); ids stay stable
+
+  void initialize_health(const TypeRules& rules, bool preserve_saved_state = false) {
+    hp_max = rules.hp_max;
+    if (preserve_saved_state) return;
+    if (hp <= 0) hp = hp_max;
+    secondary_hp = rules.secondary_hp;
+  }
 
   Vec2f interpolated(float alpha) const {
     return {(prev_x + (cur_x - prev_x) * alpha) / 256.f, (prev_y + (cur_y - prev_y) * alpha) / 256.f};
@@ -86,6 +94,7 @@ struct QueueItem { int type = 0; int remaining = 0; int total = 0; int town = -1
 struct SideState {
   int money = 0;
   int32_t selected_tactic = -1; // deterministic command selection; separate from local UI selection
+  std::vector<uint32_t> selected_ids; // command selection; local viewing side does not affect it
   bool build_paused = false;
   std::vector<QueueItem> queue;         // training / construction queue (production time in ticks)
   std::vector<uint32_t> groups[10];     // control groups 0..9
@@ -160,6 +169,8 @@ struct World {
 };
 
 // Loads map + side files and spawns objects from the mission. Fills `err` on failure.
+// Materialize parsed placement identities; GameSim installs descriptor health separately.
+void place_mission_objects(World& w);
 bool load_world(const GameData& data, const std::string& mission_spec, World& out, std::string& err);
 
 }  // namespace aztec::engine

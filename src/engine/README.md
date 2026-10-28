@@ -59,7 +59,7 @@ F10 HUD, Space pause (view, only if unbound in `Keys.ini`), P pause (simulation)
   about 1.3x too bright. The +1 level and the missing per-tile light map are approximations. `--no-light`, `--time T`.
 - Fonts: `fnts.xbe` base 1200 (small, anti-aliased, palette 53), glyph = base + cp1250 byte; the built-in 3x5 font remains as a fallback and for placeholder labels.
 - `core/strbase.*` parses `strbase.bds` (UTF-8); `ui/names.*` maps type ids to display names (ordinals 166-210, matched by name).
-- Selection: click or left-drag a box (own units only, Shift adds), animated selection ring (common 309 / 314), health bar (maximum = highest hp of that type in the mission),
+- Selection: click or left-drag a box (own units only, Shift adds), animated selection ring (common 309 / 314), health bar (descriptor maximum from object state),
   panel summary, hover tooltip ("Name\nPrice: %i Time: %i" when `docs/data` is available). `--select X0,Y0,X1,Y1` selects in screenshot mode.
 
 ## Simulation

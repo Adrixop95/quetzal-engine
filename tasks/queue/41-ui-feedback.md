@@ -1,0 +1,3 @@
+Task: UI interaction feedback parity.
+Observed by the user when playing mission 1 with build/aztec_engine (a real game session): Some UI is not faithful to the original: no pressed-button animation when clicking, missing or wrong highlighting of hovered and selected buttons, command-card and build-menu states. Match the original look and timing using the recovered UI assets.
+Reproduce the symptom with a deterministic synthetic scenario or headless test first, fix the cause in the new engine (src/engine, not runtime/), and keep behaviour matching the original game. Follow CLAUDE.md: public repo, English only, no game assets or executable-derived code, deterministic simulation, update docs/engine_rules_status.md for rules you change.

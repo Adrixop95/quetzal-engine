@@ -44,6 +44,7 @@ struct Fixture {
       word(b, uint32_t(i == 0 ? 10 : 0)); p = b.size(); b.resize(p + lengths[i] * 4);
       put(b, p + 8 * 4, i == 0 ? 0x80000007 : 17);
       put(b, p + 10 * 4, i == 2 ? 0 : 6000); put(b, p + 11 * 4, 7000);
+      put(b, p + 17 * 4, 2);
       put(b, p + 5 * 4, 24); put(b, p + 6 * 4, 72);
       if (i > 0) { put(b, p + 25 * 4, 25 * 256 + 64); put(b, p + 26 * 4, 74 * 256 + 128); }
     }
@@ -70,7 +71,7 @@ static void synthetic() {
   CHECK(w.find(1)->type == 10 && w.find(1)->town == 0 && w.find(1)->side == 0);
   CHECK(w.find(2)->id == 2 && w.find(2)->side == 1 && w.find(2)->town == -1);
   CHECK(w.find(2)->cur_x == 25 * 256 + 64 && w.find(2)->prev_y == 74 * 256 + 128);
-  CHECK(w.find(1)->cur_y == 72 * 256 && w.find(1)->hp == 6000 && w.find(1)->hp_max == 7000);
+  CHECK(w.find(1)->cur_y == 72 * 256 && w.find(1)->hp == 6000 && w.find(1)->secondary_hp == 7000);
   CHECK(!w.find(3)->alive && w.find(3)->hp == 0);
   CHECK(w.side_state[0].money == 1234 && w.side_state[1].money == 1235);
   CHECK(w.mission.sides[1].disabled == std::vector<int>{5});
@@ -98,7 +99,8 @@ static void synthetic() {
   CHECK(w.town_state.size() == w.mission.towns.size());
   CHECK(sim.tick_count() == 123 && w.day_clock == 7199);
   CHECK(w.visibility.sides[0].v == Bytes({0, 96, 152, 0}));
-  CHECK(w.find(1)->hp_max == 7000 && !w.find(3)->alive && w.find(3)->hp == 0);
+  CHECK(w.find(1)->secondary_hp == 7000 && w.find(1)->hp_max == rules->type(10).hp_max);
+  CHECK(w.find(2)->regen_service_ticks == 2 && !w.find(3)->alive && w.find(3)->hp == 0);
   CHECK(w.visibility.sides[1].v == Bytes({0, 96, 152, 1}));
   w.begin_tick(); sim.tick(w); CHECK(w.tick == 124 && sim.tick_count() == 124);
   // Failed imports must preserve the previous world, including its retained snapshot.
@@ -163,7 +165,7 @@ static int private_saves(int argc, char** argv) {
       const auto& r = records[i]; const auto& o = w.objects[i];
       CHECK(w.find(o.id) == &o && o.type == int(r.type));
       CHECK(w.original_unit_ids[i] == r.id);
-      CHECK(uint32_t(o.hp) == r.field(0x38)->value && uint32_t(o.hp_max) == r.field(0x3c)->value);
+      CHECK(uint32_t(o.hp) == r.field(0x38)->value && uint32_t(o.secondary_hp) == r.field(0x3c)->value);
       if (r.kind == 0) {
         CHECK(uint32_t(o.cur_x) == r.field(0x6c)->value && uint32_t(o.cur_y) == r.field(0x70)->value);
       } else {

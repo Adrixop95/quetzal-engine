@@ -1167,6 +1167,133 @@ static void test_population_difficulty_modes() {
   }
 }
 
+static void test_group_follow_commands() {
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  World initial = production_world();
+  initial.mission.file_name = "synthetic-follow";
+  for (int i = 0; i < 5; ++i) production_object(initial, 0, -1, 6 + i * 4, 10);
+  initial.objects[0].tactic = initial.objects[1].tactic = 10;
+  initial.objects[2].tactic = 20;
+  initial.objects[3].tactic = 30;
+  initial.objects[4].side = 1; initial.objects[4].tactic = 20;
+  World w = initial; GameSim sim(rules); sim.init(w);
+  auto send = [&](Pct type, int a, std::vector<uint32_t> ids = {}, int b = 0) {
+    Command c; c.type = type; c.a = a; c.b = b; c.ids = std::move(ids);
+    sim.submit(c); production_steps(sim, w, 1);
+  };
+  send(Pct::CreateGroup, 2, {1, 1, 5, 999});
+  CHECK(w.side_state[0].groups[2] == std::vector<uint32_t>{1});
+  send(Pct::AddToGroup, 2, {2, 1});
+  CHECK(w.side_state[0].groups[2] == (std::vector<uint32_t>{1, 2}));
+  send(Pct::SelectGroup, 2);
+  CHECK(w.selection.ids == (std::vector<uint32_t>{1, 2}));
+  CHECK(w.side_state[0].selected_tactic == 10);
+  Command recall; recall.type = Pct::SelectGroup; recall.a = 2; sim.submit(recall);
+  Command selected_move; selected_move.type = Pct::Move; selected_move.a = 700; selected_move.b = 500;
+  sim.submit(selected_move); production_steps(sim, w, 1);
+  CHECK(w.objects[0].dest_x == 700 && w.objects[1].dest_x == 700);
+  CHECK(w.objects[2].order == uint8_t(Order::Idle));
+  send(Pct::Stop, 0);
+  send(Pct::AttackMode, 0); // empty ids use deterministic command selection
+  CHECK(w.objects[0].attack_mode == AttackMode::Direct && w.objects[1].attack_mode == AttackMode::Direct);
+  CHECK(w.objects[2].attack_mode == AttackMode::Balanced);
+  send(Pct::SelectByNo, 20);
+  CHECK(w.side_state[0].selected_ids == std::vector<uint32_t>{3});
+  CHECK(w.selection.ids == std::vector<uint32_t>{3}); // foreign tactic 20 is excluded
+  send(Pct::SelectByNo, 999);
+  send(Pct::SelectByNo, 10, {}, 1); // unresolved modifier branch is rejected
+  CHECK(w.side_state[0].selected_ids == std::vector<uint32_t>{3});
+  send(Pct::FollowTeam, 10); // tactic 20 follows tactic 10
+  CHECK(w.objects[2].follow_tactic == 10 && w.objects[2].order == uint8_t(Order::Follow));
+  send(Pct::FollowTeam, 20, {1}); // would introduce a cycle
+  CHECK(w.objects[0].follow_tactic == -1 && w.objects[1].follow_tactic == -1);
+  send(Pct::FollowTeam, 20); // self-follow
+  send(Pct::FollowTeam, 999);
+  send(Pct::FollowTeam, 30, {}, 1);
+  CHECK(w.objects[2].follow_tactic == 10);
+  Command move; move.type = Pct::Move; move.ids = {1, 2}; move.a = 1000; move.b = 900;
+  sim.submit(move); production_steps(sim, w, 45);
+  CHECK(w.objects[2].dest_y > 10 * 48 + 24);
+  CHECK(w.objects[2].cur_y > initial.objects[2].cur_y);
+  CHECK(w.objects[2].follow_tactic == 10);
+
+  SaveData save; save.mission = initial.mission.file_name; save.tick = sim.tick_count();
+  save.hash = sim.state_hash(w); save.log = sim.log(); save.content_hash = 123;
+  SaveData decoded; CHECK(deserialize_save(serialize_save(save), decoded));
+  World fresh = initial; fresh.local_side = 1;
+  std::string error;
+  auto replay = replay_save(decoded, fresh, rules, 123, "", error);
+  CHECK(replay != nullptr);
+  if (replay) {
+    CHECK(replay->state_hash(fresh) == sim.state_hash(w));
+    CHECK(fresh.selection.ids.empty()); // viewing side changes only local presentation
+    for (int i = 0; i < 80; ++i) {
+      production_steps(sim, w, 1); production_steps(*replay, fresh, 1);
+      CHECK(replay->state_hash(fresh) == sim.state_hash(w));
+    }
+  }
+  auto hash = sim.state_hash(w);
+  w.objects[2].follow_tactic = 30;
+  CHECK(hash != sim.state_hash(w)); w.objects[2].follow_tactic = 10;
+  w.side_state[0].selected_ids.clear();
+  CHECK(hash != sim.state_hash(w)); w.side_state[0].selected_ids = {3};
+  send(Pct::Stop, 0); CHECK(w.objects[2].follow_tactic == -1);
+  send(Pct::FollowTeam, 10);
+  sim.script_kill(w, 1); sim.script_kill(w, 2); production_steps(sim, w, 1);
+  CHECK(w.objects[2].follow_tactic == -1 && w.objects[2].order == uint8_t(Order::Idle));
+  send(Pct::SelectGroup, 2); CHECK(w.selection.ids.empty()); // dead stored members are filtered
+  CHECK(w.side_state[0].selected_ids.empty() && w.side_state[0].selected_tactic == -1);
+
+  // Ground combat respects stance gates and resumes following; air followers also move.
+  for (int type : {0, 33}) for (int mode = 0; mode < 4; ++mode) {
+    World fight = initial;
+    fight.objects[0].type = type;
+    fight.objects[1].tactic = 11; // follow expands only the source tactic
+    fight.objects[4].teleport(fight.objects[0].cur_x + to_fixed(60), fight.objects[0].cur_y);
+    fight.relation[0][1] = kEnemy;
+    GameSim fs(rules); fs.init(fight);
+    Command stance; stance.type = Pct::AttackMode; stance.a = mode; stance.ids = {1}; fs.submit(stance);
+    Command follow; follow.type = Pct::FollowTeam; follow.a = 20; follow.ids = {1}; fs.submit(follow);
+    production_steps(fs, fight, 4);
+    const bool engages = rules->type(type).armed && mode >= 2;
+    CHECK(fight.objects[0].order == uint8_t(engages ? Order::Attack : Order::Follow));
+    if (type == 33) CHECK(fight.objects[0].cur_x > initial.objects[0].cur_x);
+    if (engages) {
+      CHECK(fight.objects[0].resume == 3);
+      if (mode == 2) {
+        stance.a = 1; fs.submit(stance); production_steps(fs, fight, 1);
+        CHECK(fight.objects[0].order == uint8_t(Order::Follow) && fight.objects[0].target == 0);
+      }
+      fs.script_kill(fight, 5); production_steps(fs, fight, 1);
+      CHECK(fight.objects[0].order == uint8_t(Order::Follow));
+    }
+    CHECK(fight.objects[0].follow_tactic == 20);
+    Command move_order; move_order.type = Pct::Move; move_order.ids = {1}; move_order.a = 1200; move_order.b = 800;
+    fs.submit(move_order); production_steps(fs, fight, 1);
+    CHECK(fight.objects[0].follow_tactic == -1);
+  }
+
+  // Queue capacity is a town-local production constraint, never a side population cap.
+  World queue = production_world(); queue.side_state.resize(8); queue.side_state[0].money = 100000;
+  production_object(queue, 11, 0, 4, 4);
+  production_object(queue, 11, 1, 30, 30);
+  GameSim qs(rules); qs.init(queue);
+  Command pause; pause.type = Pct::PauseBuild; pause.a = 1; qs.submit(pause);
+  Command buy; buy.type = Pct::Build; buy.a = 0; buy.ids = {1};
+  for (int i = 0; i < 51; ++i) qs.submit(buy);
+  production_steps(qs, queue, 1);
+  CHECK(queue.side_state[0].queue.size() == 50);
+  buy.ids = {2};
+  for (int i = 0; i < 51; ++i) qs.submit(buy);
+  production_steps(qs, queue, 1);
+  CHECK(queue.side_state[0].queue.size() == 100);
+  CHECK(std::count_if(queue.side_state[0].queue.begin(), queue.side_state[0].queue.end(),
+                     [](const QueueItem& q) { return q.town == 0; }) == 50);
+  int paid = 0; for (const auto& q : queue.side_state[0].queue) paid += q.paid;
+  CHECK(queue.side_state[0].money == 100000 - paid);
+}
+
 static void test_production() {
   auto rules = std::make_shared<RulesData>();
   CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
@@ -1609,7 +1736,7 @@ static void test_parallel_town_production() {
   buy.ids = {1}; for (int i = 0; i < 9; ++i) capacity_sim.submit(buy);
   buy.ids = {2}; capacity_sim.submit(buy);
   production_steps(capacity_sim, capacity, 1);
-  CHECK(capacity.side_state[0].queue.size() == 9 && capacity.side_state[0].money == 9100);
+  CHECK(capacity.side_state[0].queue.size() == 10 && capacity.side_state[0].money == 9000);
   CHECK(capacity.side_state[0].queue.back().town == 1 && capacity.side_state[0].queue.back().remaining == 99);
 
   World ui_world = production_world();
@@ -1628,6 +1755,134 @@ static void test_parallel_town_production() {
   CHECK(ui_sim.log().back().cmd.type == Pct::QueueKill && ui_sim.log().back().cmd.a == 1);
   CHECK(ui_world.side_state[0].queue.size() == 1 && ui_world.side_state[0].queue[0].town == 0);
 
+}
+
+static void test_campaign_initialization(const std::string& dir) {
+  GameData data; std::string error;
+  CHECK(data.open(dir, error));
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  for (int mission = 1; mission <= 15; ++mission) {
+    World w;
+    if (!load_world(data, std::to_string(mission), w, error)) {
+      CHECK(false); std::printf("%s\n", error.c_str()); continue;
+    }
+    GameSim sim(rules); sim.init(w);
+    for (size_t i = 0; i < w.mission.objects.size(); ++i) {
+      const auto& p = w.mission.objects[i]; const auto& o = w.objects[i];
+      CHECK(o.side == p.side && o.source == p.source && o.scenario == p.scenario_id);
+      CHECK(o.town == (p.source == ObjectSource::Town && !p.defence ? p.group : -1));
+      CHECK(o.tactic == (p.source == ObjectSource::Team ? p.scenario_id : -1));
+      if (o.type < 0) continue; // Submarine remains an unsupported marker.
+      const auto& r = rules->type(o.type);
+      CHECK(r.hp_src == Src::Verified && o.hp_max == r.hp_max && o.secondary_hp == r.secondary_hp);
+      CHECK(o.hp == (p.hp > 0 ? p.hp : r.hp_max));
+    }
+    for (size_t i = 0; i < w.mission.towns.size(); ++i) {
+      const auto& t = w.mission.towns[i];
+      const Object* hall = w.find(w.town_state[i].hall);
+      CHECK(hall && hall->town_hall && hall->town == t.index && hall->side == t.side);
+    }
+  }
+}
+
+static void test_object_initialization() {
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  World initial;
+  initial.terrain.w = initial.terrain.h = 100;
+  initial.terrain.cells.resize(10000);
+  initial.mission.towns = {{4, 3, 5, 5, 0, 0, 42}, {9, 7, 90, 90, 1, 2, 42}};
+  // Every public type, with deliberately colliding scenario IDs and sparse town numbers.
+  for (int id = 0; id < kNumTypes; ++id) {
+    PlacedObject p;
+    p.type = id; p.side = id % 2 ? 7 : 3;
+    p.x = 10 + (id % 10) * 7; p.y = 10 + (id / 10) * 7;
+    p.hp = 123; p.group = id % 2 ? 9 : 4; p.scenario_id = 42;
+    p.source = rules->type(id).structure ? ObjectSource::Town : ObjectSource::Team;
+    if (id == 17) p.defence = true;
+    if (id == 84) p.source = ObjectSource::Boat;
+    if (id == 88) p.source = ObjectSource::Johnka;
+    initial.mission.objects.push_back(p);
+  }
+  place_mission_objects(initial);
+  CHECK(initial.objects.size() == kNumTypes + 2);
+  World world = initial;
+  GameSim sim(rules); sim.init(world);
+  for (int id = 0; id < kNumTypes; ++id) {
+    const auto& p = initial.mission.objects[id];
+    const auto& o = world.objects[id];
+    const auto& r = rules->type(id);
+    CHECK(r.hp_src == Src::Verified);
+    CHECK(o.id == uint32_t(id + 1) && o.type == id && o.side == p.side);
+    CHECK(o.source == p.source && o.scenario == 42 && o.defence == p.defence);
+    CHECK(o.town == (p.source == ObjectSource::Town && !p.defence ? p.group : -1));
+    CHECK(o.tactic == (p.source == ObjectSource::Team ? 42 : -1));
+    CHECK(o.hp == 123 && o.hp_max == r.hp_max && o.secondary_hp == r.secondary_hp);
+    CHECK(o.cur_x == tile_center_fixed(p.x) && o.cur_y == tile_center_fixed(p.y));
+  }
+  CHECK(world.objects[90].town_hall && world.objects[90].town == 4 && world.objects[90].side == 3);
+  CHECK(world.objects[91].town_hall && world.objects[91].town == 9 && world.objects[91].side == 7);
+  CHECK(world.town_state[0].hall == 91 && world.town_state[1].hall == 92);
+  CHECK(world.objects[90].hp == rules->type(10).hp_max);
+  CHECK(world.objects[91].hp == rules->type(64).hp_max);
+  CHECK(rules->type(83).hp_max == 10000 && rules->type(83).secondary_hp == 3000);
+  CHECK(rules->type(87).hp_max == 28000 && rules->type(87).secondary_hp == 28000);
+  CHECK(rules->type(7).secondary_hp == 3000 && rules->type(33).secondary_hp == 8000);
+  for (int id : {84, 88, 89}) CHECK(rules->type(id).hp_max == 0);
+  for (int id : {0, 7, 83, 33, 3, 30, 87}) CHECK(rules->type(id).physical_armor == 256);
+  CHECK(rules->type(17).physical_armor == 0 && rules->type(14).physical_armor == 0);
+  CHECK(rules->type(85).weapon_id == 44 && rules->type(34).weapon_id == 35);
+  CHECK(rules->type(83).weapon_id == 32 && rules->type(87).weapon_id == 2);
+  CHECK(rules->type(54).hypno && rules->type(54).weapon_id == 56);
+  WeaponResult shot; shot.damage_known = shot.getters_known = true; shot.damage = 3000; shot.reload = 19;
+  CHECK(estimated_kill_time(rules->type(54), 40000, 36000, shot) == 228);
+  CHECK(estimated_kill_time(rules->type(0), 40000, 36000, shot) == 266);
+  shot.damage_known = false;
+  CHECK(estimated_kill_time(rules->type(54), 40000, 36000, shot) == -1);
+
+  // A damaged mission instance and an unrelated over-max instance never define each other's maximum.
+  initial.objects[83].hp = 1;
+  Object duplicate = initial.objects[83]; duplicate.id = 93; duplicate.hp = 999999;
+  initial.objects.push_back(duplicate);
+  sim.init(initial);
+  CHECK(initial.objects[83].hp == 1 && initial.objects[83].hp_max == 10000);
+  CHECK(initial.objects.back().hp == 999999 && initial.objects.back().hp_max == 10000);
+
+  // Exercise threshold overshoot, service expiration and replay in every regenerating family.
+  for (int id : {5, 7, 83, 34, 3, 30, 87}) {
+    const auto& r = rules->type(id);
+    CHECK(r.regen > 0);
+    CHECK(regenerated_hp(r, r.regen_alt_threshold - 1, false) == r.regen_alt_threshold - 1 + r.regen);
+    CHECK(regenerated_hp(r, r.regen_alt_threshold, false) == r.regen_alt_threshold);
+    CHECK(regenerated_hp(r, r.hp_max - 1, true) == r.hp_max - 1 + r.regen);
+    CHECK(regenerated_hp(r, r.hp_max, true) == r.hp_max);
+    World fresh; fresh.terrain.w = fresh.terrain.h = 20; fresh.terrain.cells.resize(400);
+    Object o; o.id = 1; o.type = id; o.hp = r.regen_alt_threshold;
+    o.regen_service_ticks = 2; o.teleport(tile_center_fixed(10), tile_center_fixed(10));
+    fresh.objects = {o};
+    World live = fresh; GameSim game(rules); game.init(live);
+    Command pause; pause.type = Pct::PauseOn; game.submit(pause);
+    live.begin_tick(); game.tick(live);
+    CHECK(live.objects[0].hp == o.hp && live.objects[0].regen_service_ticks == 2);
+    pause.type = Pct::PauseOff; game.submit(pause);
+    for (int tick = 0; tick < 5; ++tick) {
+      live.begin_tick(); game.tick(live);
+      CHECK(live.objects[0].regen_service_ticks == std::max(0, 1 - tick));
+      CHECK(live.objects[0].hp == o.hp + std::min(tick + 1, 2) * r.regen);
+      CHECK(live.objects[0].secondary_hp == r.secondary_hp);
+      SaveData save; save.mission = "synthetic-regeneration"; save.tick = game.tick_count();
+      save.hash = game.state_hash(live); save.log = game.log();
+      SaveData decoded; CHECK(deserialize_save(serialize_save(save), decoded));
+      World replay = fresh;
+      auto restored = GameSim::replay(replay, rules, decoded.log, decoded.tick);
+      CHECK(restored->state_hash(replay) == decoded.hash);
+    }
+    live.objects[0].alive = false;
+    live.objects[0].hp = 0; live.objects[0].regen_service_ticks = 2;
+    live.begin_tick(); game.tick(live);
+    CHECK(live.objects[0].hp == 0 && live.objects[0].regen_service_ticks == 1);
+  }
 }
 
 static void test_descriptor_combat() {
@@ -1674,12 +1929,12 @@ static void test_descriptor_combat() {
   CHECK(rules->attack(0, 0).reload == 9 && rules->attack(0, 0).range_px == 10);
   CHECK(rules->attack(27, 0).reload == 12 && rules->attack(27, 0).projectile_speed == 30);
   const auto& bear = rules->type(5);
-  CHECK(regenerated_hp(bear, 19999, true) == 20044);
-  CHECK(regenerated_hp(bear, 20000, true) == 20000);
-  CHECK(regenerated_hp(bear, 20000, false) == 20045);
+  CHECK(regenerated_hp(bear, 19999, false) == 20044);
+  CHECK(regenerated_hp(bear, 20000, false) == 20000);
+  CHECK(regenerated_hp(bear, 20000, true) == 20045);
   CHECK(regenerated_hp(bear, 40000, false) == 40000);
   CHECK(regenerated_hp(bear, 0, false) == 0);
-  CHECK(regenerated_hp(rules->type(33), 100, false) == 100);
+  CHECK(regenerated_hp(rules->type(33), 100, false) == 115);
 
   World fresh;
   fresh.terrain.w = fresh.terrain.h = 20;
@@ -1697,13 +1952,13 @@ static void test_descriptor_combat() {
   world.objects[1].secondary_hp++;
   CHECK(sim.state_hash(world) != hash);
   world.objects[1].secondary_hp--;
-  world.objects[1].regen_alternate = true;
+  world.objects[1].regen_service_ticks = 1;
   CHECK(sim.state_hash(world) != hash);
-  world.objects[1].regen_alternate = false;
+  world.objects[1].regen_service_ticks = 0;
   // A stationary, unarmed structure isolates cooldown from collision and retaliation.
   fresh.objects[1].type = 14; fresh.objects[1].hp = 30000;
   Object recovering; recovering.id = 3; recovering.type = 5; recovering.hp = 19999;
-  recovering.regen_alternate = true; recovering.teleport(to_fixed(800), to_fixed(800));
+  recovering.teleport(to_fixed(800), to_fixed(800));
   fresh.objects.push_back(recovering);
   world = fresh; sim.init(world);
   CHECK(!world.objects[0].has_fired);
@@ -1907,6 +2162,7 @@ int main(int argc, char** argv) {
     test_town_service();
     test_parallel_town_production();
     test_projectiles();
+    test_object_initialization();
     test_descriptor_combat();
     test_script_animation_clocks();
     test_animation_producers();
@@ -1916,9 +2172,11 @@ int main(int argc, char** argv) {
     test_audio_pure();
     test_commands_ui();
     test_population_difficulty_modes();
+    test_group_follow_commands();
   } else {
     std::string dir = test_game_dir(argc, argv);
     if (!test_game_dir_exists(dir)) return 77;
+    test_campaign_initialization(dir);
     test_data(dir); test_sim(dir); test_script(dir); test_audio_data(dir);
     test_sprite_assets(dir);
   }
