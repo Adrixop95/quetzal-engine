@@ -9,7 +9,7 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 |---|---|---|
 | 12 Hz step, 24.8 fixed-point positions, state hash after every tick, replay from the command log | V (construction) | no comparison with the original yet; the engine hash differs from the recompilation's hash |
 | State hash contract 2 covers future-affecting mutable state under identical immutable rules/sight inputs | engine construction | Includes queued commands, object/effect previous positions and source, world/script-side identity, town/side/path/resource inputs, per-side outcomes, script program and collection lengths, navigation blocker counts/configuration/cached field costs. Local presentation and diagnostics are excluded; see [audit and limits](determinism.md). This is not a content-compatibility digest or reference hash |
-| Command types (PCT_FRAME_*) and their numbers | V | `docs/object_types.md`. Implemented: PAUSEON/OFF, CREATEGROUP, ADDTOGROUP, MOVE, ATTACK, BUILD, BUILDMODE, DESTROYHERE (list toggle), GARRISON, REPAIRMODE, QUEUEKILL, PAUSEBUILD. Logged only: SELECTGROUP, ATTACKMODE, SELECTBYNO, FOLLOWTEAM |
+| Command types (PCT_FRAME_*) and their numbers | V | `docs/object_types.md`. Implemented: PAUSEON/OFF, CREATEGROUP, ADDTOGROUP, MOVE, ATTACK, BUILD, BUILDMODE, DESTROYHERE (list toggle), GARRISON, REPAIRMODE, QUEUEKILL, PAUSEBUILD. Partial engine conventions: SELECTGROUP, ATTACKMODE, SELECTBYNO, FOLLOWTEAM (see V10 update) |
 | Stop (0x50) and AttackMove (0x51) | P | engine extensions; the original has no such packets |
 | Command coordinates / tiles from packets | engine | clamped into the map before any fixed-point conversion; invalid tiles are ignored |
 | Command order inside a tick: ascending side, then submission order | P | original: per-side queues in `0x4577b0` (order not verified) |
@@ -40,12 +40,13 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Simulation fog brightness and exploration | V formulas / synthetic checks | Every active tick: global daylight plus saturated glow (maximum 152), minimum side vision darkness, nonnegative difference; previous exploration capped at 32. Raw brightness replaces invented 0/96/152 states. Renderer integration remains separate |
 | Building construction: placement on free tiles, progress = adjusted build time, stages = animation slot 0 | V formula/stages, engine placement | Hall/speed/computer time applies to placed construction. Original placement/worker and exact completion semantics remain open |
 | Building footprint in tiles | P | desc d4/d5 (px) rounded up, centred on the clicked tile |
-| Town production: first item per town progresses independently, one completion per town per tick | engine / P capacity, pause, refund and spawn policies | Shared insertion-ordered storage retains town ownership and actual payment. Eight pending items per town; side-wide pause and full paid-cost cancellation remain provisional. Missing/incomplete halls suspend timers. See V08/V09 validation below |
+| Town production: first item per town progresses independently, one completion per town per tick | engine / V capacity, P pause, refund and spawn policies | Shared insertion-ordered storage retains town ownership and actual payment. Capacity 50 per town; side-wide pause and full paid-cost cancellation remain provisional. Missing/incomplete halls suspend timers. See V08/V09 validation below |
 | Building income and repair supply | V formulas / synthetic checks | Descriptor occupancy cells equal to 2 weight resource channels A/B with d60/d61; periodic/scheduled 7200-tick clock from StartTime. Gold and d62/d320 repair supplies have separate accumulators. Completed same-town warehouse applies once to farms only. Missing resource map contributes zero terrain bytes |
 | Starting money = side `StartMoney` | V | `.mp` |
 | Garrison | engine / V semantic fact | Extracts live mobile town members into a fresh tactic and selects it. Explicit mission town membership and hall identity, invalid-owner checks, empty/repeated extraction, hash and save/replay checks. Reference packet field layout and live comparison remain unverified |
 | Repair/destroy mode and list commands | engine / partial | Modes 0/1/2; mode changes clear lists, same-mode commands preserve them. Eligible completed town structures toggle membership; halls, mobile units, foreign-town targets and construction are rejected. Off mode collects damaged ordinary buildings. Dead, repaired or reassigned targets are pruned. Commands do not delete or change HP. Harvested credits now drive priority-group repair/destruction and are cleared after service; exact tick alignment remains unverified |
-| Attack modes | V numeric modes / partial engine | Direct 0, defensive 1, aggressive 2, balanced 3 (default). Command, ownership/tactic propagation, direct range-only engagement, movement gates and replay/hash state implemented. Group distance limits, attached-tactic graph and full assignment remain pending; see investigation below |
+| Attack modes | V numeric modes / partial engine | Direct 0, defensive 1, aggressive 2, balanced 3 (default). Command, ownership/tactic propagation, direct range-only engagement, movement/follow gates and replay/hash state implemented. Group distance limits, attached-tactic graph and full assignment remain pending; see investigation below |
+| Selection and follow commands | partial engine / P formation | Deterministic control-group recall and side-local tactic selection, persistent ground/air follow, ownership/cycle checks and save continuation; engine payload conventions and centroid tracking are not reference packet/formation parity. See V10 update |
 | Universal population cap | O reference / engine correction | Task 13 removes the unsupported AI-only cap 80 in develop. Synthetic human/AI production above 110 units passes. Queue 50 and assignment arrays 100 do not establish a side cap; no live population measurement succeeded |
 | Difficulty bonuses | V map-key exclusion / O other effects | Map Difficulty stays editor metadata; synthetic 0/100 inputs produce identical simulation hashes. No HP, damage, income or price bonus is invented. Global difficulty effects remain unverified |
 
@@ -522,8 +523,8 @@ available. Hall
 upgrades require a free replacement footprint and assign the new descriptor's
 full HP on completion. Original HP transitions, active-building suspension and
 exact start/completion ticks remain open. Queues now progress independently per
-town, with eight entries per town; capacity, side-wide pause and full
-cancellation refund remain placeholders. Map construction
+town. V10 replaces the eight-entry policy with capacity 50 per town; side-wide
+pause and full cancellation refund remain placeholders. Map construction
 continues to use the build-tree construction flag; flag-0 commands ignore map
 coordinates. These engine command conventions do not establish packet parity.
 Town levels are now hashed, so older saves with stored hashes are incompatible.
@@ -768,8 +769,8 @@ indices. Completing an item does not advance that town's next item on the same
 tick. Missing/incomplete halls suspend queued timers; they never spawn units at
 an unrelated side start. UI production menus and queue cancellation follow the
 selected object's town, and placement remembers the producing town. Cancellation
-feedback shows the actual payment. The eight-entry limit is now per town; it is
-still a P UI policy, not the reference's documented 50-entry queue. Production
+feedback shows the actual payment. V10 replaces the earlier eight-entry policy with the inspected 50-entry
+capacity per town; the panel still displays only the first eight entries. Production
 pause remains side-wide, and full refunds remain P pending measurements.
 
 Repair service consumes each town's harvested credits after orders/mark maintenance
@@ -824,3 +825,74 @@ stored hashes may no longer match; the save format was not changed.
 three game-data entries and restricted UDP process test skip. All pre-commit
 hooks pass using a copy of the local hook cache under ignored build output.
 Private-data/reference runs are not verified by these skipped checks.
+
+
+## V10 command integration (2026-10-28, partial)
+
+**Reference facts and boundary:** read-only inspection of `0x448520`, `0x448f60`
+and `0x448210` confirms distinct point-selection, tactic-identity selection and
+follow/attachment dispatch. `0x447ba0` resolves tactic identities rather than
+control-group digits. The unmodified follow branch invokes tactic virtual +0xf0;
+the private vtable resolves that to `0x451440`, which records a leader link.
+Modifier bits select different attachment/position branches. This establishes
+neither the engine's control-group payload layout nor its centroid tracking
+policy. No executable-derived source or data was added to the repository.
+
+**Independent implementation / synthetic checks:** the existing engine numbered
+control-group slots remain engine conventions. Create/add filter ownership,
+liveness and duplicate IDs. SelectGroup recalls the live owned members; an empty
+slot clears command selection. SelectByNo selects the live owned members of a
+side-local tactic identity; absent identities and unsupported modifiers preserve
+selection. Number-key recall submits a command. Command selection is hashed
+separately from viewing-side UI selection. Empty unit-order ID lists resolve
+that command selection, so selection and orders in the same tick replay together.
+Explicit IDs continue to determine ordinary UI orders.
+
+FollowTeam expands selected mobile members to their owned source tactics and
+records a separate leader tactic. It rejects missing leaders, self-follow,
+cycles and unsupported modifiers. The engine follows the live mobile leader
+centroid, refreshing destinations every six ticks; this is P formation policy.
+Ground and air followers retain the order at arrival. Defensive/direct modes
+preserve the follow path; aggressive/balanced modes can interrupt it for combat
+and resume it afterward. Mode changes also resume interrupted follow orders.
+Stop, explicit move/attack and script orders cancel following; loss of all leader
+members clears it. Follow state and command selection participate in hashes and
+AZS3 replay/save continuation. Replay compatibility is now version 2: earlier
+saves are refused before replay because the state and command semantics changed.
+
+The unsupported AI-only cap 80 was already absent in this checkout. The remaining
+invented eight-entry town production cutoff is replaced by the inspected queue
+capacity 50. Synthetic checks cover admission through 50, refusal of entry 51
+without payment, and production with over 110 existing units for both human and
+computer sides. These limits apply to production queues, never total population.
+The panel currently exposes only its first eight queue entries. No universal
+population cap or global difficulty bonus is inferred. Existing parsed Difficulty
+0/100 hash-equivalence checks still apply only to the engine and the inspected
+map-loader/price-time exclusions; other difficulty effects remain O.
+
+**Dependencies and failed observation:** V02's audited object/command adapters and
+aligned reference observer, V04 initialization/HP parity and V08 measured production
+semantics remain incomplete. Work above does not depend on those missing parts.
+A fresh private game copy was prepared under ignored `work/v10-game/`, with
+read-only asset symlinks and ordinary Maps/Saves. A 110-footman population control
+was attempted using `zstat_run.sh` and the supplied read-only runtime, with dummy
+SDL inside `unshare -rn`. It failed before game launch at loopback setup:
+`Cannot open netlink socket: Operation not permitted`. Private inputs/failure
+output remain in `work/v10-probe/`; there is no new live measurement.
+
+V10 remains open for campaign acceptance, reference follow/selection modifiers,
+attached-tactic propagation, formation anchors and mode distances 4/8/8/6,
+assignment/target eligibility, join/spawn mode inheritance, population observations
+and difficulty effects outside the inspected paths. Synthetic replay establishes
+internal determinism only, not reference or campaign parity.
+
+**Validation:** bootstrap `--no-hooks`, worktree-local Release build with
+`AZTEC_GEN_DIR=`, and all pre-commit hooks passed before and after changes.
+The full final CTest run passed 26 entries and skipped five (four private-data
+checks and restricted UDP). A separate bounded dummy-SDL run inside `unshare -rn`
+with the private installation copy passed `formats`, `engine` and
+`script_campaign_inventory`; `save_import_private` skipped because its original
+save fixture was absent. These installed-data checks do not establish live
+reference gameplay. A read-only recount of the 15 `mission_N.mp` files found
+49 Difficulty keys: 46 zero, two 75 and one 100, consistent with retaining the
+key as metadata rather than deriving a bonus table. Changes remain uncommitted.

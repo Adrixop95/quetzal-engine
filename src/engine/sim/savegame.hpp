@@ -13,7 +13,7 @@ struct World;
 
 inline constexpr uint32_t kSaveFormatVersion = 3;
 // Bump whenever simulation semantics or state hashing change incompatibly.
-inline constexpr uint32_t kSaveReplayVersion = 1;
+inline constexpr uint32_t kSaveReplayVersion = 2;
 inline constexpr size_t kMaxSaveBytes = kMaxLogBytes + 512;
 inline constexpr uint64_t kMaxSaveTicks = 12 * 60 * 60 * 24; // 24 simulation hours
 
