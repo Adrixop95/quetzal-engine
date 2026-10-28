@@ -8,7 +8,7 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Rule | Status | Source / notes |
 |---|---|---|
 | 12 Hz step, 24.8 fixed-point positions, state hash after every tick, replay from the command log | V (construction) | no comparison with the original yet; the engine hash differs from the recompilation's hash |
-| State hash covers town race/level and objects (incl. secondary HP, regeneration selector, destinations, orders, construction timers, town membership/hall identity and harvest accumulators/cursors), sides (money, queues including paid costs/town ownership, groups, selected tactic, build pause), day clock, town speeds, repair credits, repairer modes/lists, spawn counter, transient projectiles/effects (flight endpoints, payloads and animation clocks), relations, per-town AI states/known towns/harvest and spending totals, script state and the full movement system (agents, orders, slots, steering caches) | engine | collection sizes are mixed in |
+| State hash contract 2 covers future-affecting mutable state under identical immutable rules/sight inputs | engine construction | Includes queued commands, object/effect previous positions and source, world/script-side identity, town/side/path/resource inputs, per-side outcomes, script program and collection lengths, navigation blocker counts/configuration/cached field costs. Local presentation and diagnostics are excluded; see [audit and limits](determinism.md). This is not a content-compatibility digest or reference hash |
 | Command types (PCT_FRAME_*) and their numbers | V | `docs/object_types.md`. Implemented: PAUSEON/OFF, CREATEGROUP, ADDTOGROUP, MOVE, ATTACK, BUILD, BUILDMODE, DESTROYHERE (list toggle), GARRISON, REPAIRMODE, QUEUEKILL, PAUSEBUILD. Logged only: SELECTGROUP, ATTACKMODE, SELECTBYNO, FOLLOWTEAM |
 | Stop (0x50) and AttackMove (0x51) | P | engine extensions; the original has no such packets |
 | Command coordinates / tiles from packets | engine | clamped into the map before any fixed-point conversion; invalid tiles are ignored |
@@ -535,3 +535,44 @@ read-only game installation and SDL dummy drivers passes 15 of 16 checks,
 including all three private-data checks. `lockstep_processes` fails at UDP socket
 creation with `Operation not permitted`, matching the pre-change baseline.
 All pre-commit gates pass using cached hook environments inside this worktree.
+
+
+## V02/V03 replay and determinism progress (2026-10-28)
+
+**Engine construction / synthetic evidence:** the oracle text parser fails closed
+on malformed or unordered packets and missing input/output files. Injected
+non-NOTHING packets are logged for exact readback checks. The mission runner
+retains all raw pool differences and, when adapters exist, compares normalized
+observations from both reference repeats before comparing engines. The optional
+engine replay observer exposes the before-command boundary without inventing an
+oracle object mapping. `oracle_packets`, `parity_controls` and
+`determinism_state` cover these contracts; see [parity method](parity.md).
+
+The state audit fixed hash omissions, made script timers explicitly 64-bit,
+reset command history on reinitialization and removed host `long double` from
+production/warehouse arithmetic using the same exact binary32 coefficients.
+Hash contract 2 invalidates older saved hashes; the UI refuses a replay mismatch
+before replacing the active world. This is not full V16 save hardening.
+The 14,400-tick synthetic process scenario includes training/RNG spawns,
+movement/combat, command-log replay and fresh-process continuation from tick
+7,201, with viewing/presentation variations. The workflow now compares complete
+synthetic transcripts across GCC, MSVC, MinGW and AppleClang; remote results and
+native Windows validation are still required. See [determinism audit](determinism.md).
+
+**Reference evidence unavailable:** nine isolated corpus attempts failed during
+loopback setup before the reference executable launched. Private outputs are in
+`work/parity/v02-isolated/`. No transient-pool cause, original-versus-lifted
+arithmetic diagnosis, audited reference object/ownership/max-HP observer, packet
+translator or first semantic mismatch was obtained. Tasks 01/11 remain partial;
+the changes above do not depend on those missing adapters. V02 and V03 remain
+open, including reference ordering/RNG and full campaign/platform evidence.
+
+Local validation: GCC 16.2.1 Release build and all 21 runnable CTest entries
+passed; three private-data entries and the UDP process check skipped. Clang
+22.1.8 passed the five focused path/oracle/determinism/tooling checks, with an
+identical 14,400-tick transcript and movement golden digest. All pre-commit hooks
+passed using a copied local cache, including explicit checks of new files.
+The reference wrapper passed a C11 syntax check; no lifted runtime was linked or
+launched here. Open-PR refresh could not reach the GitHub API, so no unmerged
+dependency is assumed present. These results do not establish native Windows,
+remote CI, live rendering/audio or campaign determinism.
