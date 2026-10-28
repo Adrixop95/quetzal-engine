@@ -643,16 +643,18 @@ void GameSim::run_orders(World& w) {
     path::Agent* ag = o.mover >= 0 ? &mover_->agents_mut()[size_t(o.mover)] : nullptr;
     bool moving = ag && ag->state == path::AgentState::Moving;
 
-    if (o.order == uint8_t(Order::Move) && !moving) {
+    if ((o.order == uint8_t(Order::Move) || (r.flier && o.order == uint8_t(Order::AttackMove))) && !moving) {
       if (r.flier) {
-        int dx = o.dest_x - px(o.cur_x), dy = o.dest_y - px(o.cur_y);
-        int64_t dist2 = int64_t(dx) * dx + int64_t(dy) * dy;
-        int step = std::max(1, r.speed >> 8);
-        if (dist2 <= int64_t(step) * step) { o.cur_x = to_fixed(o.dest_x); o.cur_y = to_fixed(o.dest_y); o.order = uint8_t(Order::Idle); }
+        path::Vec2 delta{to_fixed(o.dest_x) - o.cur_x, to_fixed(o.dest_y) - o.cur_y};
+        int step = std::max(1, r.speed);
+        if (path::len2(delta) <= int64_t(step) * step) {
+          o.cur_x = to_fixed(o.dest_x); o.cur_y = to_fixed(o.dest_y);
+          o.order = uint8_t(Order::Idle); o.set_anim(kAnimIdle);
+        }
         else {
-          path::Vec2 v = path::with_length({dx * 256, dy * 256}, r.speed);
+          path::Vec2 v = path::with_length(delta, step);
           o.cur_x += v.x; o.cur_y += v.y;
-          int f = facing_from(dx, dy); if (f >= 0) o.facing = uint8_t(f);
+          int f = facing_from(delta.x, delta.y); if (f >= 0) o.facing = uint8_t(f);
           o.set_anim(kAnimMove);
         }
       } else {
