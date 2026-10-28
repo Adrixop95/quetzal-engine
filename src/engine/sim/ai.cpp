@@ -24,7 +24,7 @@ void GameSim::run_ai(World& w) {
       for (const Object& o : w.objects) if (!o.removed && o.alive && o.side == side && o.type >= 0 && !rules_->type(o.type).structure) units++;
       if (units < kAiMaxUnits) {
         std::vector<int> cand;
-        for (const MenuItem& m : menu(w, side)) if (m.enabled && !m.construct) cand.push_back(m.type);
+        for (const MenuItem& m : menu(w, side)) if (m.enabled && !m.construct && !rules_->type(m.type).structure) cand.push_back(m.type);
         if (!cand.empty()) {
           Command c;
           c.type = Pct::Build; c.side = uint8_t(side); c.a = cand[next_rand() % cand.size()];

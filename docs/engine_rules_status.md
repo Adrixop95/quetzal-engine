@@ -8,7 +8,7 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Rule | Status | Source / notes |
 |---|---|---|
 | 12 Hz step, 24.8 fixed-point positions, state hash after every tick, replay from the command log | V (construction) | no comparison with the original yet; the engine hash differs from the recompilation's hash |
-| State hash covers objects (incl. secondary HP, regeneration selector, destinations, orders, construction timers, town membership/hall identity and harvest accumulators/cursors), sides (money, queues including paid costs/town ownership, groups, selected tactic, build pause), day clock, town speeds, repair credits, repairer modes/lists, spawn counter, transient projectiles/effects (flight endpoints, payloads and animation clocks), relations, script state and the full movement system (agents, orders, slots, steering caches) | engine | collection sizes are mixed in |
+| State hash covers town race/level and objects (incl. secondary HP, regeneration selector, destinations, orders, construction timers, town membership/hall identity and harvest accumulators/cursors), sides (money, queues including paid costs/town ownership, groups, selected tactic, build pause), day clock, town speeds, repair credits, repairer modes/lists, spawn counter, transient projectiles/effects (flight endpoints, payloads and animation clocks), relations, script state and the full movement system (agents, orders, slots, steering caches) | engine | collection sizes are mixed in |
 | Command types (PCT_FRAME_*) and their numbers | V | `docs/object_types.md`. Implemented: PAUSEON/OFF, CREATEGROUP, ADDTOGROUP, MOVE, ATTACK, BUILD, BUILDMODE, DESTROYHERE (list toggle), GARRISON, REPAIRMODE, QUEUEKILL, PAUSEBUILD. Logged only: SELECTGROUP, ATTACKMODE, SELECTBYNO, FOLLOWTEAM |
 | Stop (0x50) and AttackMove (0x51) | P | engine extensions; the original has no such packets |
 | Command coordinates / tiles from packets | engine | clamped into the map before any fixed-point conversion; invalid tiles are ignored |
@@ -24,7 +24,7 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Price and build time | V formula / synthetic checks | `types.csv` with outpost/developed hall, runtime speed, hostile-to-everyone and computer branches. Float32 factors evaluated before truncation after +0.5; developed fast computer 100 -> 160 gold / 53 time units. No lifted 161 rounding |
 | Production countdown | engine / O parity | Computed time units drive tick countdowns; one payment at acceptance, none at spawn. Exact original start/completion tick ordering is unverified |
 | Build tree (who can build what, prerequisites) | V | `buildtree.csv`; ordinary prerequisites require completed objects in the producing town, A entries use side-wide counts. Completed/in-progress/queued structures prevent duplicates in that town; DisabledID and adjusted affordability are checked |
-| Town upgrades and non-map structure production | not done | Structure entries with flag 0 (including farms/mines) remain skipped by the existing menu; preplaced farms/mines use the new income rules |
+| Town upgrades and non-map structure production | engine / V tables, P placement | Flag-0 structures use adjusted costs/timers and the production queue. Hall completion preserves identity and installs its race/level tree; farms/mines/defences are automatically placed on free tiles and activate descriptor effects. Exact reference placement, HP transition and completion ticks remain unverified; see validation below |
 | Side `DisabledID` blocks menu entries | V | `docs/formats.md` |
 | Weapon damage | V documented arithmetic / engine synthetic checks | Marine d7 and Defence d59 select weapon IDs. Classes 1/2/13 apply each matching 8.8 multiplier in sequence, then armor term; arrow zero-air suppresses armor. Classes 4/5/6/10 constants implemented; 8 delegates and 12 sums known child damage. Historical duel entries are diagnostics only. Other descriptor weapon mappings/armor retain placeholders |
 | Weapon reload getters and cooldown | V Marine reload+1 / P other scheduling | Classes 1/2/13/4/5/6/10 use documented reload/range. Simulation schedules reload+1; this is verified only for Marine cooldown, not universal hit intervals. Composite scheduling remains unresolved |
@@ -265,9 +265,9 @@ compatibility. Hash changes mean older saves with recorded hashes are incompatib
 **Dependency boundary after merge:** resource-based income, per-tick repair-credit
 harvesting, town-local prerequisites and producing-town attachment for new spawns
 are implemented by the economy work described above. Production queues remain
-side-wide. Damage-priority groups, repair-budget allocation, destruction damage,
-hall-upgrade completion/build-tree changes and upgrade save/replay scenarios
-remain pending. Available credits do not yet drive repair service. The mission
+side-wide. Damage-priority groups, repair-budget allocation and destruction
+damage remain pending. Hall-upgrade completion/build-tree changes and upgrade
+save/replay scenarios are covered by the subsequent flag-0 production entry. Available credits do not yet drive repair service. The mission
 parity runner and strict normalized comparator are present, while task 01's packet
 replay, audited object-ID mapping and aligned reference observer remain prerequisites
 for a normalized reference comparison.
@@ -288,3 +288,55 @@ pass using cached hook environments copied into `build/pre-commit/` because
 network access is unavailable. Synthetic replay hashes agree after every command
 and across different viewing sides. Loader checks retain town membership and
 exclude standalone side defences from inferred town attachment.
+
+## Town upgrades and flag-0 production (2026-10-28)
+
+**Independent implementation / existing V tables:** the menu retains flag-0
+structure entries from `buildtree.csv`. The existing price/time formula applies
+at acceptance, with one payment and a frozen countdown. Queue reservations block
+duplicate structures and competing hall upgrades in the same town. DisabledID,
+affordability and local/side-wide prerequisites still apply. Completion replaces
+the owned live hall in place, preserving its ID, town and selection references,
+updates its descriptor HP and navigation footprint, resets its harvest clocks,
+and installs the race/level build tree. No generic troop-stat bonus is applied.
+Other flag-0 structures complete in their producing town and use the existing
+resource-map income, warehouse, repair-supply and prerequisite rules. Town-member
+command selection resolves mission section numbers independently of vector slots;
+repair supply uses the corresponding town slot. The AI purchase skeleton continues
+to select mobile units; autonomous development remains a separate task.
+
+**P engine policies / O reference parity:** automatic placement searches free
+footprints in increasing square rings around the live hall, with row/column tie
+breaking. This is a deterministic fallback, not a verified terrain ranking or
+reference placement algorithm. Production waits at zero remaining time if its
+hall is dead or no footprint fits; queue cancellation remains available. Hall
+upgrades require a free replacement footprint and assign the new descriptor's
+full HP on completion. Original HP transitions, active-building suspension and
+exact start/completion ticks remain open. The existing side-wide eight-entry
+queue and full cancellation refund are unchanged placeholders. Map construction
+continues to use the build-tree construction flag; flag-0 commands ignore map
+coordinates. These engine command conventions do not establish packet parity.
+Town levels are now hashed, so older saves with stored hashes are incompatible.
+
+**Synthetic validation:** all supported race/level upgrades, sparse town section
+numbers, preserved hall identity and footprint blocking, build-tree unlocks,
+competing/repeated requests, paused timers, flag-0 farms/mines/defences, adjusted
+costs, completed/queued duplicates, resource accumulation after completion,
+DisabledID, insufficient money, invalid town members, dead halls, cancellation,
+serialized command replay and upgrade save/replay are covered in `engine_unit`.
+These checks validate engine construction, not measured original behavior.
+
+**Dependency and observation boundary:** the economy/prerequisite implementation
+is present. Task 01's audited packet replay, object identity mapping and aligned
+normalized observer are still missing; that dependent comparison remains undone.
+An isolated reference attempt used a private game directory with read-only asset
+symlinks and dummy SDL drivers under `unshare -rn`. Loopback setup failed with
+`Cannot open netlink socket: Operation not permitted`, before runtime launch.
+No reference observation or new M evidence is claimed. The private attempt log
+is under ignored `work/town-production/reference.log`.
+
+**Checks:** Release build and `engine_unit` pass. Full CTest with the supplied
+read-only game installation and SDL dummy drivers passes 15 of 16 checks,
+including all three private-data checks. `lockstep_processes` fails at UDP socket
+creation with `Operation not permitted`, matching the pre-change baseline.
+All pre-commit gates pass using cached hook environments inside this worktree.

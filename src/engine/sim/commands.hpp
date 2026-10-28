@@ -26,7 +26,8 @@ enum class Pct : uint8_t {
 //   DestroyHere: b = town section number, ids = buildings to toggle in its current repairer list.
 //   These are engine field conventions, not a claim about the reference packet payload layout.
 //   CreateGroup/AddToGroup/SelectGroup/SelectByNo: a = group number 0..9 (+ ids for Create/Add).
-//   Build: a = item type (UGI); for buildings b,c = tile x,y of the footprint centre; units ignore b,c.
+//   Build: a = item type (UGI); flag-1 construction uses b,c = footprint centre tile.
+//   Flag-0 entries ignore b,c: queue a unit, automatically placed structure, or in-place hall upgrade.
 //   Build/BuildMode: optional ids[0] selects an owned town member; absent = first owned town (engine convention).
 //   BuildMode: a = runtime speed 0 slow / 1 normal / 2 fast.
 //   QueueKill: a = queue index to cancel (refund).  PauseBuild: a = 1 pause / 0 resume.  Pause*: global.

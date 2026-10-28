@@ -63,7 +63,7 @@ struct Prerequisite { int type = 0; bool side_wide = false; };
 
 struct BuildItem {
   int type = 0;
-  bool construct = false;        // true: building placed on the map, false: unit trained
+  bool construct = false;        // true: building placed on the map, false: queued unit/structure/upgrade
   std::vector<Prerequisite> prereq;  // A suffix selects side-wide completed counts
 };
 
