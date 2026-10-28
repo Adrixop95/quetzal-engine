@@ -2,6 +2,17 @@
 
 namespace aztec::path {
 
+u64 NavGrid::state_hash() const {
+  if (cached_hash_ && hash_version_ == version_) return cached_hash_;
+  u64 h = 1469598103934665603ull;
+  auto mix = [&](u64 value) { h = (h ^ value) * 1099511628211ull; };
+  mix(w_); mix(h_); mix(version_);
+  mix(terrain_.size()); for (auto value : terrain_) mix(value);
+  mix(dyn_.size()); for (auto value : dyn_) mix(value);
+  hash_version_ = version_; cached_hash_ = h;
+  return h;
+}
+
 void NavGrid::add_block(int x0, int y0, int bw, int bh, int delta) {
   for (int y = y0; y < y0 + bh; ++y)
     for (int x = x0; x < x0 + bw; ++x)

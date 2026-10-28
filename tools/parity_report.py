@@ -101,13 +101,15 @@ def compare(reference, engine):
         return first or result("equal_observed_fields", through_tick=a["last_tick"])
 
 
-def command_horizon(path):
+def command_rows(path):
+    rows = []
     last = 0
     seen = set()
     for number, line in enumerate(path.read_text().splitlines(), 1):
         words = line.split()
-        if len(words) != 55:
-            raise ValueError(f"{path}:{number}: expected frame, side and 53 hex dwords")
+        if (len(words) != 55 or any(not re.fullmatch(r"[0-9]+", w) for w in words[:2])
+                or any(not re.fullmatch(r"(?:0[xX])?[0-9a-fA-F]+", w) for w in words[2:])):
+            raise ValueError(f"{path}:{number}: expected frame, side and 53 unsigned hex dwords")
         frame, side = map(int, words[:2])
         data = [int(word, 16) for word in words[2:]]
         if (not max(last, 1) <= frame <= 0xffffffff or not 0 <= side < 16 or (frame, side) in seen
@@ -115,7 +117,27 @@ def command_horizon(path):
             raise ValueError(f"{path}:{number}: invalid or duplicate oracle packet")
         seen.add((frame, side))
         last = frame
-    return last
+        rows.append((frame, side, *data))
+    return rows
+
+
+def command_horizon(path):
+    rows = command_rows(path)
+    return rows[-1][0] if rows else 0
+
+
+def verify_packet_readback(commands, readback, ticks):
+    # Lookup is keyed by frame/side. NOTHING packets are deliberately not recorded.
+    expected = sorted(row for row in command_rows(commands) if row[4] != 0x25)
+    actual = sorted(row for row in command_rows(readback) if row[0] <= ticks)
+    if expected != actual:
+        raise ValueError("oracle injected packet readback differs; rebuild runtime with replay recording support")
+
+
+def pool_differences(left, right):
+    return [dict(tick=tick, pool=pool, reference=a, replay=b)
+            for tick, (x, y) in enumerate(zip(left, right, strict=True), 1)
+            for pool, (a, b) in enumerate(zip(x, y, strict=True)) if a != b]
 
 
 def state_rows(path, ticks):
@@ -202,20 +224,35 @@ def replay_mission(args, mission, recording, directory):
             RT_UNIT_EVERY="1", RT_SCRIPT=str(run / "start.txt"), RT_NO_GRAB="1",
             RT_NO_VIDEO="1", RT_RESOLUTION="800x600"))
         reference_runs.append(state_rows(run / "state.txt", ticks))
-    for index, (a, b) in enumerate(zip(*reference_runs, strict=True), 1):
-        for pool, (u, v) in enumerate(zip(a, b, strict=True)):
-            if u != v:
-                return result("reference_nondeterminism", index, field=f"pool[{pool}]",
-                              detail="pool hash/count only; object and semantic field unavailable")
-    if not args.engine_adapter or not args.reference_adapter:
+        verify_packet_readback(commands, run / "commands-read.txt", ticks)
+    differences = pool_differences(*reference_runs)
+    write_json(directory / "pool-differences.json", differences)
+    if not args.reference_adapter:
+        if differences:
+            first = differences[0]
+            return result("reference_nondeterminism", first["tick"], field=f"pool[{first['pool']}]",
+                          detail="raw pool difference; semantic observer required for diagnosis")
         return result("blocked_observation_contract", detail=(
-            "reference replay repeated; engine packet replay and reference normalized observer adapters required"))
-    observed = directory / "reference.jsonl"
-    observer = directory / "observer"
-    observer.mkdir()
-    execute([args.reference_adapter, "--state-log", directory / "reference-1/state.txt",
-             "--unit-log", directory / "reference-1/units.txt", "--mission", mission,
-             "--ticks", ticks, "--commands", commands, "--output", observed], observer, args.timeout)
+            "reference packets repeated; audited identity and normalized observer adapters required"))
+    observations = []
+    for index in (1, 2):
+        observer = directory / f"observer-{index}"
+        observer.mkdir()
+        observed = directory / f"reference-{index}.jsonl"
+        execute([args.reference_adapter, "--state-log", directory / f"reference-{index}/state.txt",
+                 "--unit-log", directory / f"reference-{index}/units.txt", "--mission", mission,
+                 "--ticks", ticks, "--commands", commands, "--output", observed], observer, args.timeout)
+        with observed.open() as stream:
+            metadata = header(stream)
+        if metadata["mission"] != mission or metadata["first_tick"] != 1 or metadata["last_tick"] != ticks:
+            raise ValueError("reference adapter does not cover requested mission/horizon")
+        observations.append(observed)
+    repeated = compare(*observations)
+    if repeated["category"] != "equal_observed_fields":
+        return dict(repeated, category="reference_semantic_nondeterminism")
+    observed = observations[0]
+    if not args.engine_adapter:
+        return result("blocked_observation_contract", detail="normalized reference repeated; engine adapter required")
     engine = directory / "engine"
     engine.mkdir()
     private_game(args.game, engine / "game")
@@ -226,6 +263,9 @@ def replay_mission(args, mission, recording, directory):
         metadata = header(stream)
     if metadata["mission"] != mission or metadata["first_tick"] != 1 or metadata["last_tick"] != ticks:
         raise ValueError("adapter observations do not cover the requested mission/horizon")
+    if differences:
+        verdict["raw_pool_differences"] = len(differences)
+        verdict["raw_pool_diagnosis"] = "declared semantic fields repeat; excluded bytes remain unaudited"
     return verdict
 
 
@@ -306,6 +346,25 @@ class Controls(unittest.TestCase):
             self.assertEqual(len(state_rows(path, 1)), 1)
             with self.assertRaises(ValueError):
                 state_rows(path, 2)
+
+    def test_packet_readback(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            a, b = Path(temporary) / "a", Path(temporary) / "b"
+            packet = "1 0 " + " ".join(["0"] * 53) + "\n"
+            a.write_text(packet)
+            b.write_text(packet)
+            verify_packet_readback(a, b, 1)
+            b.write_text("")
+            with self.assertRaises(ValueError):
+                verify_packet_readback(a, b, 1)
+            for bad in (packet.replace("1 0", "+1 0"), packet.replace("1 0", "1 -0"),
+                        packet.replace("1 0", "4294967296 0"), packet + packet,
+                        packet.rstrip() + " f\n", "1 0 " + " ".join(["100000000"] * 53)):
+                a.write_text(bad)
+                with self.assertRaises(ValueError):
+                    command_rows(a)
+            self.assertEqual(pool_differences([["a", "b"]], [["a", "c"]]),
+                             [dict(tick=1, pool=1, reference="b", replay="c")])
 
     def test_isolation_failure(self):
         from unittest.mock import patch

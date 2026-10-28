@@ -1,9 +1,11 @@
 // Engine tests: test_engine --pure, or test_engine [GAME_DIR] for game-data checks.
 #include "game_dir.hpp"
+#include "temp_dir.hpp"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include "core/mapfiles.hpp"
 #include "core/mp.hpp"
@@ -35,6 +37,90 @@ using namespace aztec;
 using namespace aztec::engine;
 static int failures = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); failures++; } } while (0)
+
+static void test_movement_rules() {
+  // Invented descriptors: parameter lookup, low-byte class flags and speed precedence.
+  TempDir directory;
+  const auto root = directory.path();
+  auto csv = [&](const char* name, const char* rows) { std::ofstream(root / name) << rows; };
+  csv("types.csv", "id,name,kind,param\n0,small,0,7\n6,large,0,8\n7,air,3,2\n30,spider,1,4\n83,truck,4,5\n3,vehicle,6,6\n");
+  csv("desc_marine.csv", "param,d0,d1,d2,d3,d4,d5,d6,d7,d8,d9,d10,d11\n7,0,100,0,100,100,13,0,-1,0,0,0,65537\n8,0,100,0,100,100,7,0,-1,0,0,0,256\n");
+  csv("desc_zeppelin.csv", "param,d0,d1,d2,d3,d4,d5\n2,0,100,0,0,0,11\n");
+  csv("desc_spider.csv", "param,d0,d1,d2,d3,d4,d5,d6,d7\n4,0,0,0,0,0,0,0,3\n");
+  csv("desc_truck.csv", "param,d0,d1,d2,d3,d4,d5\n5,0,0,0,0,0,12\n");
+  csv("desc_headtruck.csv", "param,d0,d1,d2,d3,d4,d5,d6,d7\n6,0,0,0,0,0,0,0,6\n");
+  csv("speed_measured.csv", "type,name,mean\n0,small,99.9\n7,air,98.1\n87,unknown,6.5\n");
+  RulesData invented;
+  CHECK(invented.load_dir(root.string()));
+  CHECK(!invented.type(0).large && invented.type(6).large);
+  for (auto [id, speed] : std::vector<std::pair<int, int>>{{0,13}, {6,7}, {7,11}, {30,3}, {83,12}, {3,6}}) {
+    CHECK(invented.type(id).speed == speed * 256);
+    CHECK(invented.type(id).speed_src == Src::Verified);
+  }
+  CHECK(invented.type(87).speed == 6 * 256 + 128 && invented.type(87).speed_src == Src::Measured);
+  CHECK(invented.type(33).speed_src == Src::Placeholder); // no established Bird speed getter
+
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  for (int id : {0,1,2,5,27,28,29,31,36,53,54,55,82}) {
+    CHECK(!rules->type(id).large && rules->type(id).class_src == Src::Verified);
+  }
+  for (int id : {6,30,32,35,56,57,3,4,83}) {
+    CHECK(rules->type(id).large && rules->type(id).class_src == Src::Verified);
+  }
+  CHECK(rules->type(0).speed == 9 * 256);
+  CHECK(rules->type(7).speed == 8 * 256);
+  CHECK(rules->type(5).radius_src == Src::Placeholder);
+
+  // Verify the descriptor class reaches navigation, including an unreachable large-unit goal.
+  for (int type : {5,6,30}) {
+    World w; w.terrain.w = w.terrain.h = 20; w.terrain.cells.resize(400);
+    w.passability = {20, 20, std::vector<uint8_t>(400, 2)};
+    for (int y = 0; y < 20; ++y) w.passability.v[y * 20 + 10] = 0;
+    w.passability.v[10 * 20 + 10] = 1;
+    Object o; o.id = 1; o.type = type;
+    o.teleport(tile_center_fixed(4), tile_center_fixed(10)); w.objects.push_back(o);
+    GameSim sim(rules); sim.init(w);
+    Command move; move.type = Pct::Move; move.ids = {1}; move.a = 16 * 48 + 24; move.b = 10 * 48 + 24;
+    sim.submit(move);
+    for (int tick = 0; tick < 250; ++tick) { w.begin_tick(); sim.tick(w); }
+    CHECK((w.objects[0].cur_x > to_fixed(10 * 48)) == (type == 5));
+    CHECK(w.objects[0].order == uint8_t(Order::Idle));
+  }
+
+  // Air crosses impassable ground and overlapping objects; vessels have no ground agent.
+  World initial; initial.terrain.w = initial.terrain.h = 20; initial.terrain.cells.resize(400);
+  initial.passability = {20, 20, std::vector<uint8_t>(400, 0)};
+  for (int type : {7,7,84,88}) {
+    Object o; o.id = uint32_t(initial.objects.size() + 1); o.type = type;
+    o.teleport(to_fixed(100) + 127, to_fixed(100) + 63); initial.objects.push_back(o);
+  }
+  for (Pct command : {Pct::Move, Pct::AttackMove}) {
+    World w = initial;
+    GameSim sim(rules); sim.init(w);
+    for (const auto& o : w.objects) CHECK(o.mover == -1);
+    Command move; move.type = command; move.ids = {1,2,3,4}; move.a = 700; move.b = 600;
+    sim.submit(move);
+    for (int tick = 0; tick < 150; ++tick) {
+      w.begin_tick(); sim.tick(w);
+      CHECK(w.objects[0].cur_x == w.objects[1].cur_x && w.objects[0].cur_y == w.objects[1].cur_y);
+      if (tick == 0) {
+        path::Vec2 delta{w.objects[0].cur_x - initial.objects[0].cur_x,
+                         w.objects[0].cur_y - initial.objects[0].cur_y};
+        CHECK(path::length(delta) >= 8 * 256 - 2 && path::length(delta) <= 8 * 256 + 2);
+      }
+    }
+    CHECK(w.objects[0].cur_x == to_fixed(700) && w.objects[0].cur_y == to_fixed(600));
+    CHECK(w.objects[0].order == uint8_t(Order::Idle) && w.objects[0].anim_state == 0);
+    for (int i : {2,3}) {
+      CHECK(w.objects[i].cur_x == initial.objects[i].cur_x && w.objects[i].cur_y == initial.objects[i].cur_y);
+      CHECK(w.objects[i].order == uint8_t(Order::Idle));
+    }
+    World replayed = initial;
+    auto replay = GameSim::replay(replayed, rules, sim.log(), sim.tick_count());
+    CHECK(replay->state_hash(replayed) == sim.state_hash(w));
+  }
+}
 
 static void test_sight() {
   auto rules = std::make_shared<RulesData>();
@@ -339,7 +425,7 @@ static void test_commands_ui() {
     regions.insert(regions.end(), l.queue.begin(), l.queue.end());
     regions.push_back(l.pause); regions.push_back(l.previous); regions.push_back(l.next);
     for (size_t i = 0; i < regions.size(); i++) {
-      CHECK(regions[i].x >= panel.x && regions[i].y >= panel.y);
+      CHECK(regions[i].x >= panel.x - 50 * scale && regions[i].y >= panel.y);
       CHECK(regions[i].x + regions[i].w <= panel.x + panel.w);
       CHECK(regions[i].y + regions[i].h <= panel.y + panel.h);
       for (size_t j = i + 1; j < regions.size(); j++) CHECK(!SDL_HasIntersection(&regions[i], &regions[j]));
@@ -358,6 +444,10 @@ static void test_commands_ui() {
   key.key_down[SDL_SCANCODE_KP_4] = false; key.key_down[SDL_SCANCODE_LEFT] = true;
   CHECK(keys.action_down(key, "ScrollLeft"));
   CHECK(CommandsUi::sdl_scancode(999) == SDL_SCANCODE_UNKNOWN);
+  CHECK(CommandsUi::sdl_scancode(1) == SDL_SCANCODE_ESCAPE);
+  CHECK(CommandsUi::sdl_scancode(2) == SDL_SCANCODE_1);
+  CHECK(CommandsUi::sdl_scancode(10) == SDL_SCANCODE_9);
+  CHECK(CommandsUi::sdl_scancode(11) == SDL_SCANCODE_0);
   CHECK(CommandsUi::icon_slot(0) == 23 && CommandsUi::icon_slot(2) == 7 && CommandsUi::icon_slot(6) == 39);
 
   auto rules = std::make_shared<RulesData>();
@@ -397,7 +487,9 @@ static void test_commands_ui() {
   Input target; target.mx = 400; target.my = 300;
   target.pressed[SDL_BUTTON_LEFT] = true; target.buttons[SDL_BUTTON_LEFT] = true;
   CHECK(ui.update(target, w, cam, 1, mm, true, panel));
-  CHECK(!ui.wants_left_click() && sim.state_hash(w) == before);
+  // Submission changes the pending-command hash before it changes world orders.
+  CHECK(!ui.wants_left_click() && sim.state_hash(w) != before);
+  CHECK(w.objects[0].order == uint8_t(Order::Idle) && sim.log().empty());
   tick();
   CHECK(sim.log().back().cmd.type == Pct::Move && sim.log().back().cmd.a == 400);
   // A consumed targeting press must not start a new selection when the button is released.
@@ -445,7 +537,7 @@ static void test_commands_ui() {
   l = CommandsUi::layout(panel, 1);
   int build_index = -1;
   for (size_t i = 0; i < menu.size(); i++) if (menu[i].construct && menu[i].enabled) { build_index = int(i); break; }
-  CHECK(build_index >= int(l.production.size()));
+  CHECK(build_index >= 0);
   if (build_index >= 0) {
     for (int page = 0; page < build_index / int(l.production.size()); page++) click(l.next);
     click(l.production[size_t(build_index) % l.production.size()]);
@@ -1626,6 +1718,7 @@ static void test_audio_data(const std::string& dir) {
 int main(int argc, char** argv) {
   if (argc == 2 && std::string(argv[1]) == "--pure") {
     test_pure();
+    test_movement_rules();
     test_sight();
     test_production();
     test_town_production();

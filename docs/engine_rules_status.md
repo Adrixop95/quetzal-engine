@@ -8,7 +8,7 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Rule | Status | Source / notes |
 |---|---|---|
 | 12 Hz step, 24.8 fixed-point positions, state hash after every tick, replay from the command log | V (construction) | no comparison with the original yet; the engine hash differs from the recompilation's hash |
-| State hash covers town race/level and objects (incl. secondary HP, regeneration selector, destinations, orders, construction timers, town membership/hall identity and harvest accumulators/cursors), sides (money, queues including paid costs/town ownership, groups, selected tactic, build pause), day clock, town speeds, repair credits, repairer modes/lists, spawn counter, transient projectiles/effects (flight endpoints, payloads and animation clocks), relations, per-town AI states/known towns/harvest and spending totals, script state and the full movement system (agents, orders, slots, steering caches) | engine | collection sizes are mixed in |
+| State hash contract 2 covers future-affecting mutable state under identical immutable rules/sight inputs | engine construction | Includes queued commands, object/effect previous positions and source, world/script-side identity, town/side/path/resource inputs, per-side outcomes, script program and collection lengths, navigation blocker counts/configuration/cached field costs. Local presentation and diagnostics are excluded; see [audit and limits](determinism.md). This is not a content-compatibility digest or reference hash |
 | Command types (PCT_FRAME_*) and their numbers | V | `docs/object_types.md`. Implemented: PAUSEON/OFF, CREATEGROUP, ADDTOGROUP, MOVE, ATTACK, BUILD, BUILDMODE, DESTROYHERE (list toggle), GARRISON, REPAIRMODE, QUEUEKILL, PAUSEBUILD. Logged only: SELECTGROUP, ATTACKMODE, SELECTBYNO, FOLLOWTEAM |
 | Stop (0x50) and AttackMove (0x51) | P | engine extensions; the original has no such packets |
 | Command coordinates / tiles from packets | engine | clamped into the map before any fixed-point conversion; invalid tiles are ignored |
@@ -16,11 +16,12 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Marine primary/max HP = d1; separate secondary HP = d4 | V fields / engine replay | CSV loader, initial objects and trained spawns retain distinct values; primary mission HP is preserved when supplied. Hypno kill-time assignment is not implemented |
 | Marine regeneration | V threshold facts / P state integration | Active living Marines add d2 when below selected d1/d3 threshold; no extrapolation to other kinds. Explicit hashed `regen_alternate` selector defaults to d1. The supplied specification does not identify the reference state transition selecting d3 or establish clamp/overshoot behavior; current pre-add threshold behavior is a construction choice pending reference evidence |
 | Primary HP of other types | V descriptor fields / P elsewhere | Building d1, Defence d3, Bird/Zeppelin d1, Headtruck/Spider d3 loaded. Headtruck/Spider initial and max fields agree in current tables. Other types retain highest mission HP fallback |
-| Marine speed = desc d5 px/tick | V | `desc_marine.csv`; overridden by `speed_measured.csv` when present (parsed with integer arithmetic, locale independent) |
-| Measured speed (all types with a measurement) | M | `speed_measured.csv` (mean mid-run speed) |
-| Speed of fliers, boats, unknown types | P | 8 px/tick; fliers move in straight lines, boats stand still |
+| Descriptor movement speed | V getters / synthetic integration | Marine d5, Headtruck/Spider d7, Zeppelin/Truck d5 in px/tick, converted to 24.8. Historical averages no longer override established descriptor speeds |
+| Measured speed fallback | M | `speed_measured.csv` (mean mid-run speed), used only without a verified speed getter; these averages include steering/sampling effects |
+| Bird speed and transport routes | P / unresolved | Bird and unknown speeds default to 8 px/tick. Boats and Johnka remain stationary; neither receives a ground agent. Scripted transport routes are unimplemented |
 | Unit radius (collision disc) | P | 14 px, large 20 px |
-| Movement class small / large (`.dat` 1 = small only) | V (meaning of `.dat`), P (type assignment) | large: trucks, bear, elephant |
+| Movement class small / large (`.dat` 1 = small only) | V code facts / synthetic integration | Marine d11 low byte selects small when nonzero; Spider/Truck/Headtruck use large. Bear is small; Knight/Bizon/Snowman/Elefant large. Missing Marine descriptors retain an explicitly provisional small fallback |
+| Air orders and ground collisions | engine / P reference integration | Aircraft use straight fixed-point movement without terrain/contact blocking, including engine attack-move orders. Ground agents retain continuous disc avoidance/pushing and flow fields. Reference tile reservations, vehicle turning, formation/path decisions and exact arrival timing remain unimplemented or unmeasured; see [V05 progress](rules_movement.md#8-v05-partial-integration-2026-10-28) |
 | Price and build time | V formula / synthetic checks | `types.csv` with outpost/developed hall, runtime speed, hostile-to-everyone and computer branches. Float32 factors evaluated before truncation after +0.5; developed fast computer 100 -> 160 gold / 53 time units. No lifted 161 rounding |
 | Production countdown | engine / O parity | Computed time units drive tick countdowns; one payment at acceptance, none at spawn. Exact original start/completion tick ordering is unverified |
 | Build tree (who can build what, prerequisites) | V | `buildtree.csv`; ordinary prerequisites require completed objects in the producing town, A entries use side-wide counts. Completed/in-progress/queued structures prevent duplicates in that town; DisabledID and adjusted affordability are checked |
@@ -207,15 +208,27 @@ push was run by the assistant.
 | Every trigger is evaluated each tick; actions run when all conditions hold; `trigger(N).disable` turns one off | P | inferred from usage (`attacked != -1` plus self-disable) |
 | Triggers enabled by another trigger start disabled; initialised in `GameSim::init()` (not tied to tick 1) | P | initial state undocumented |
 | `localTime` / `globalTime` = ticks since mission start | P | |
-| Timers: start at 0 and count every tick; `set(V)` sets and starts, `stop`, `kill`; `timer(0)` exists from the start | P | |
+| Timers: start at 0 and count every tick; `set(V)` sets and starts, `stop`, `kill`; `timer(0)` exists from the start | engine synthetic / P reference | Timer 0 is initialized before tick 1; stop/start retains values, kill suppresses comparisons. Fixed-width 64-bit timer values; see [campaign audit](campaign_scripts.md) |
 | `side(S).units` = living non-buildings; `towns` = living town halls (outpost / village / town / fortress types); `enemies` = units and town halls of hostile sides | P | |
 | `tactic(N)` = living objects of the side with `[Team#] ScenarioID = N`; `valid` 0/1; `idle` = all idle; `attacked` = id of the last attacker or -1 | P | |
 | `attackTown(id)`, `moveTo(x,y)` = attack-move of the whole group (tiles -> pixels, clamped to the map) | P | |
 | `joinTactic`, `giftToSide`, `kill`, `lock/unlock`, `setPath/setCycledPath/...` (successive points of `[Paths]`) | P | |
 | `setFriendlyTo/NeutralTo/EnemyTo` changes the relation one-way (8x8 matrix) | P | |
 | `addMoney/takeMoney`, `printString`, `centerView`, `cameraActivate(i,v)` (jump to `Camera#`), `victory/defeat` | P | the mission ends for the script side |
-| `boat(N).activate`, `johnka(N).enable`, `submarine(N).go`, `buildCommand`, `moveCommand`, `cameraDeactivate` | not done | counted as `unsupported` |
-| Defences from `[SideN] Defence#` appear as objects (towers); `defence(N).valid` = alive | P | Reference loader creates each defence with a dedicated tactic and optional scenario ID. Camera records are separate; see `rules_ai.md` |
+| `boat(N).activate`, `johnka(N).enable/disable`, `submarine(N).go`, `buildCommand`, `moveCommand`, `cameraDeactivate` | not done | Shared runner/headless/inventory classification; 19 unsupported campaign sites in missions 2, 7, 9 and 15. Build/move/deactivate and Johnka disable are absent from the audited campaign |
+| Defences from `[SideN] Defence#` appear as objects (towers); `defence(N).valid` = alive | engine identity checks / P reference | Explicit defence provenance excludes colliding team scenario IDs and accidental town membership. Dedicated reference tactic behavior remains unimplemented. Camera records are separate; see `rules_ai.md` |
+
+V12 progress (2026-10-28): the [campaign script audit](campaign_scripts.md)
+records every condition/action kind across 15 private campaign scripts (92
+triggers, 129 conditions, 363 action sites). All parse; 19 action sites remain
+unsupported. `script_unit` covers every condition kind, enablement/source order,
+timer lifecycle, path variants, alliances, gifts, defence identity, outcomes and
+replay continuation with synthetic data. Gifting now stops the movement agent
+and rejects invalid recipients; defence provenance and per-side outcomes are
+hashed. These are engine consistency fixes, not measured reference semantics.
+The isolated reference control failed during namespace network setup before
+launch. V02/V05/V10/V11 adapters and mission objective validation remain open;
+V12 is not complete. Camera activation still ignores its second argument.
 
 ## Computer player (`ai/planner.*`, `sim/ai.cpp` adapter)
 Controlled sides have `OnlyComp=1` and are not neutral. The pure planner reads
@@ -591,3 +604,94 @@ fixture resolved those failures. The independent engine rendered mission 1
 with fog and minimap after 24 requested ticks (`work/v13-engine.png`, ignored).
 This is a smoke check, not campaign visibility acceptance. Pre-commit passed
 using locally cached hooks relocated into ignored build output.
+
+## V02/V03 replay and determinism progress (2026-10-28)
+
+**Engine construction / synthetic evidence:** the oracle text parser fails closed
+on malformed or unordered packets and missing input/output files. Injected
+non-NOTHING packets are logged for exact readback checks. The mission runner
+retains all raw pool differences and, when adapters exist, compares normalized
+observations from both reference repeats before comparing engines. The optional
+engine replay observer exposes the before-command boundary without inventing an
+oracle object mapping. `oracle_packets`, `parity_controls` and
+`determinism_state` cover these contracts; see [parity method](parity.md).
+
+The state audit fixed hash omissions, made script timers explicitly 64-bit,
+reset command history on reinitialization and removed host `long double` from
+production/warehouse arithmetic using the same exact binary32 coefficients.
+Hash contract 2 invalidates older saved hashes; the UI refuses a replay mismatch
+before replacing the active world. This is not full V16 save hardening.
+The 14,400-tick synthetic process scenario includes training/RNG spawns,
+movement/combat, command-log replay and fresh-process continuation from tick
+7,201, with viewing/presentation variations. The workflow now compares complete
+synthetic transcripts across GCC, MSVC, MinGW and AppleClang; remote results and
+native Windows validation are still required. See [determinism audit](determinism.md).
+
+**Reference evidence unavailable:** nine isolated corpus attempts failed during
+loopback setup before the reference executable launched. Private outputs are in
+`work/parity/v02-isolated/`. No transient-pool cause, original-versus-lifted
+arithmetic diagnosis, audited reference object/ownership/max-HP observer, packet
+translator or first semantic mismatch was obtained. Tasks 01/11 remain partial;
+the changes above do not depend on those missing adapters. V02 and V03 remain
+open, including reference ordering/RNG and full campaign/platform evidence.
+
+Local validation: GCC 16.2.1 Release build and all 21 runnable CTest entries
+passed; three private-data entries and the UDP process check skipped. Clang
+22.1.8 passed the five focused path/oracle/determinism/tooling checks, with an
+identical 14,400-tick transcript and movement golden digest. All pre-commit hooks
+passed using a copied local cache, including explicit checks of new files.
+The reference wrapper passed a C11 syntax check; no lifted runtime was linked or
+launched here. Open-PR refresh could not reach the GitHub API, so no unmerged
+dependency is assumed present. These results do not establish native Windows,
+remote CI, live rendering/audio or campaign determinism.
+## In-game UI layout (2026-10-28, partial task 14)
+
+**Existing reference evidence (V):** [formats.md](formats.md#cursors-and-interface-selection-of-sprites-from-commonxbe)
+records the 800x600 mission 4 layout: Menu at x=598, a 120x90 minimap at
+(638,70), portraits near x=722, and a 254x208 command card at (546,392).
+Local resource inspection confirms common:282 is a 60x22 two-frame Menu button,
+292 is the 204x493 side background, and 297 is a 254x208 command background.
+These are resource dimensions and historical coordinates, not a new live capture.
+
+**Independent implementation:** shared geometry anchors the minimap/selection
+strip to the right and the command card to the bottom. Menu uses its original
+resource and its actual 60x22 hit region. Maps smaller than the minimap opening
+retain one pixel per tile at UI scale 1; larger maps fit the opening. The first
+selected object's portrait occupies the right column and uses its owner's team
+palette. Command/production controls follow the five-column card cells, with
+paging and all eight queue hit regions retained. This particular allocation of
+commands, production and queue controls is engine presentation (P), pending live
+comparison. The scale is constrained by both window dimensions so a 900-pixel
+window height alone cannot double the panel beyond the available width.
+
+Resource text, selection labels, tooltips and messages now use physical integer
+UI scaling for both installed and fallback fonts. Long text wraps at UTF-8
+character boundaries; tooltips wrap long tokens and cap their height. Messages
+wrap within the visible world area, use font-derived line spacing and keep the
+latest lines when full. Hiding the panel restores the full width for messages
+and mission banners. DirectInput translation includes digit keys and Escape;
+existing configured bindings still suppress conflicting M/X/H engine shortcuts.
+Unsupported gameplay modes remain unavailable.
+
+**Synthetic verification:** `ui_screenshots` renders invented RGB565 panel,
+button and glyph resources through SDL's software renderer with dummy drivers.
+It saves eight synthetic PNGs under the build directory, covering 800x493,
+800x600, 1024x768 and 1600x1200 with installed-font-shaped fixtures and the
+fallback font. It compares independently specified panel silhouettes, Menu and
+command-icon regions, and message glyph rasters with per-channel tolerance 3
+and at most 0.2% differing pixels in each region. A deliberately displaced card
+edge must fail comparison. Geometry assertions cover minimap/portrait anchors;
+long-tooltip bounds and the existing command/replay tests cover additional
+regressions. These checks verify independent rendering contracts, not original
+pixel parity. No game screenshots or pixels are test fixtures.
+
+**Live limitation:** the isolated reference attempt failed at `ip link set lo up`
+with `Cannot open netlink socket: Operation not permitted`, before launch. The
+script and failure log remain in ignored `work/ui-probe/`; isolation was not
+bypassed. Independent-engine static and selected-unit captures succeeded using
+dummy SDL inside `unshare -rn` with a private installation copy. Their visual
+review establishes readability only. Full command icon semantics, font choice,
+selection/group presentation, resource decoration, tooltip timing/appearance,
+message-log history and synchronized reference comparison remain open (P).
+Repair and hall-upgrade UI acceptance also depend on the incomplete town-command
+work described above; this task does not invent those gameplay semantics.

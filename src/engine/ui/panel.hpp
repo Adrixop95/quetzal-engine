@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "engine/render/font.hpp"
+#include "engine/ui/panel_layout.hpp"
 #include "engine/render/sprite_store.hpp"
 
 namespace aztec::engine {
@@ -17,6 +18,8 @@ class Panel {
   int width() const { return rect_.w; }
   SDL_Rect rect() const { return rect_; }
   SDL_Rect minimap_rect() const { return mini_; }   // free area for the minimap inside the panel
+  SDL_Rect menu_rect() const { return in_game_panel_layout(rect_, scale_).menu; }
+  bool contains(int x, int y) const;
   void draw_tooltip(SDL_Renderer* r, const Font& font, const std::string& text) const;
   // `info`: lines shown in the first slot area under the minimap (selection summary); `tooltip` drawn near the bottom.
   void draw(SDL_Renderer* r, SpriteStore& store, const Font& font, int gold, const std::vector<std::string>& info = {},

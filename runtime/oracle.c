@@ -7,12 +7,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "oracle_packets.h"
 
 void f_0043d120_orig(CPU* c);
 void pathlog_tick(uint32_t frame);
 
-#define CMD_DWORDS 53
-typedef struct { uint32_t frame, side; uint32_t d[CMD_DWORDS]; } Rec;
+typedef OraclePacket Rec;
 static Rec* recs; static size_t nrecs, caprecs;
 static FILE* logf_, *statef_, *unitf_; static int mode_init, replay;
 
@@ -63,30 +63,54 @@ static void log_state(uint32_t frame) {
   fputc('\n', statef_); fflush(statef_);
 }
 
+static FILE* oracle_open(const char* path, const char* mode) {
+  FILE* f = fopen(path, mode);
+  if (!f) { fprintf(stderr, "oracle: cannot open %s\n", path); exit(EXIT_FAILURE); }
+  return f;
+}
+
 static void init_mode(void) {
   mode_init = 1;
-  const char* sl = getenv("RT_STATE_LOG");
-  if (sl) statef_ = fopen(sl, "w");
-  const char* ul = getenv("RT_UNIT_LOG");
-  if (ul) unitf_ = fopen(ul, "w");
-  const char* l = getenv("RT_CMD_LOG");
-  if (l) logf_ = fopen(l, "w");
   const char* r = getenv("RT_CMD_REPLAY");
   if (r) {
-    FILE* f = fopen(r, "r");
-    if (f) {
-      char line[2048];
-      while (fgets(line, sizeof line, f)) {
-        Rec x; char* p = line; char* e;
-        x.frame = (uint32_t)strtoul(p, &e, 10); p = e; x.side = (uint32_t)strtoul(p, &e, 10); p = e;
-        for (int i = 0; i < CMD_DWORDS; i++) { x.d[i] = (uint32_t)strtoul(p, &e, 16); p = e; }
-        if (nrecs == caprecs) { caprecs = caprecs ? caprecs * 2 : 1024; recs = realloc(recs, caprecs * sizeof *recs); }
-        recs[nrecs++] = x;
+    FILE* f = oracle_open(r, "r");
+    char line[2048];
+    OraclePacketOrder order = {0, 0};
+    size_t number = 0;
+    while (fgets(line, sizeof line, f)) {
+      Rec x;
+      ++number;
+      if ((!strchr(line, '\n') && !feof(f)) || !oracle_packet_parse(line, &x, &order)) {
+        fprintf(stderr, "oracle: invalid packet at %s:%zu\n", r, number);
+        exit(EXIT_FAILURE);
       }
-      fclose(f); replay = 1;
-      DBG("oracle", "replaying %zu recorded commands", nrecs);
+      if (nrecs == caprecs) {
+        size_t capacity = caprecs ? caprecs * 2 : 1024;
+        if (capacity < caprecs || capacity > SIZE_MAX / sizeof *recs) exit(EXIT_FAILURE);
+        Rec* resized = realloc(recs, capacity * sizeof *recs);
+        if (!resized) exit(EXIT_FAILURE);
+        recs = resized; caprecs = capacity;
+      }
+      recs[nrecs++] = x;
     }
+    if (ferror(f)) { fprintf(stderr, "oracle: replay read failed\n"); exit(EXIT_FAILURE); }
+    fclose(f); replay = 1;
+    DBG("oracle", "replaying %zu recorded commands", nrecs);
   }
+  const char* sl = getenv("RT_STATE_LOG");
+  if (sl) statef_ = oracle_open(sl, "w");
+  const char* ul = getenv("RT_UNIT_LOG");
+  if (ul) unitf_ = oracle_open(ul, "w");
+  const char* l = getenv("RT_CMD_LOG");
+  if (l) logf_ = oracle_open(l, "w");
+}
+
+static void record_packet(uint32_t frame, uint32_t side, uint32_t out) {
+  if (!logf_ || !frame || GU32(out + 8) == 0x25) return;
+  fprintf(logf_, "%u %u", frame, side);
+  for (int i = 0; i < CMD_DWORDS; i++) fprintf(logf_, " %x", GU32(out + 4 * i));
+  fputc('\n', logf_);
+  if (fflush(logf_) || ferror(logf_)) { fprintf(stderr, "oracle: packet write failed\n"); exit(EXIT_FAILURE); }
 }
 
 static const Rec* find_rec(uint32_t frame, uint32_t side) {
@@ -107,14 +131,11 @@ void f_0043d120(CPU* c) {   // uint __cdecl FUN_0043d120(int side, uint32_t* out
     if (frame != 0 && GU8(0x4cc394)) {
       if (r) memcpy(GPTR(out), r->d, sizeof r->d);
       else { memset(GPTR(out), 0, CMD_DWORDS * 4); GU32(out + 8) = 0x25; GU32(out + 12) = frame; }   // PCT_FRAME_NOTHING
+      record_packet(frame, side, out);
       *(uint32_t*)(c->r + 0x284) = ret; GREG(c, 0x10) += 4; GREG(c, 0x00) = 1;
       return;
     }
   }
   f_0043d120_orig(c);
-  if (logf_ && (GREG(c, 0x00) & 0xff) && frame != 0 && GU32(out + 8) != 0x25) {
-    fprintf(logf_, "%u %u", frame, side);
-    for (int i = 0; i < CMD_DWORDS; i++) fprintf(logf_, " %x", GU32(out + 4 * i));
-    fputc('\n', logf_); fflush(logf_);
-  }
+  if (GREG(c, 0x00) & 0xff) record_packet(frame, side, out);
 }

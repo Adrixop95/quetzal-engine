@@ -40,6 +40,11 @@ void FlowField::build(const NavGrid& g, MoveClass cls, const Cell* goals, int ng
     b.clear();
     ++cur;
   }
+  // Costs are immutable until the next build; cache their digest off the tick path.
+  state_hash_ = 1469598103934665603ull;
+  auto mix = [&](u64 value) { state_hash_ = (state_hash_ ^ value) * 1099511628211ull; };
+  mix(w_); mix(h_); mix(u32(cls_)); mix(version_); mix(cost_.size());
+  for (u32 value : cost_) mix(value);
 }
 
 bool FlowField::step(int x, int y, int& nx, int& ny) const {

@@ -2,7 +2,7 @@
 
 `tools/parity_report.py` orchestrates private corpus replays and compares normalized
 observations. Whole-mission cross-engine parity is **blocked** in this checkout.
-The normalized packet/state interface from task `01-oracle-parity` has not landed.
+The audited packet translation/identity adapters from task `01-oracle-parity` are missing.
 The script does not translate reference pool hashes into engine hashes or infer
 object fields from a hash mismatch.
 
@@ -38,15 +38,16 @@ For each recording, the runner:
    collecting `RT_CMD_LOG`, `RT_STATE_LOG` and `RT_UNIT_LOG` every tick. Campaign
    navigation supports missions 1 through 15; menu/profile selection still needs
    live verification on each installation.
-4. Requires both reference state streams to cover ticks 1 through the horizon.
-   It compares their four pool count/hash pairs for repeatability. A difference
-   reports `reference_nondeterminism`, its tick and pool; object identity and
-   semantic field remain unavailable. Recorded state hashes are used for horizon
-   validation only, since host state can vary between processes.
-5. When both adapters below exist, obtains reference normalized observations and
-   invokes engine replay in another private game copy, then compares fields.
-   Without adapters it reports `blocked_observation_contract` after reference
-   repeatability succeeds.
+4. Requires both state streams to cover ticks 1 through the horizon and verifies
+   exact injected-packet readback. It compares four pool count/hash pairs,
+   retaining every difference privately. Without a reference adapter, a raw
+   difference reports `reference_nondeterminism` with tick/pool only; matching
+   pools report `blocked_observation_contract`. Recorded state hashes determine
+   the horizon only, since host state can vary between processes.
+5. With a reference adapter, normalizes both repeats and requires equal declared
+   fields over the entire horizon. With an engine adapter too, invokes engine
+   replay in another private game copy and compares fields. Raw pool differences
+   remain unaudited even when the declared semantic subset repeats.
 
 Every process runs with both SDL dummy drivers inside `unshare -rn`, behind
 `timeout -s KILL`. A shell with `-e` configures loopback and the private address;
@@ -153,3 +154,42 @@ contains coverage and failure categories only, with no game-derived state.
 No movement, combat, economy or script divergence is established by this attempt.
 Priorities in [engine_rules_status.md](engine_rules_status.md) distinguish the
 observed tooling blockers from existing rule gaps awaiting mission evidence.
+
+## V02 replay audit (2026-10-28)
+
+The reference wrapper now rejects missing/unreadable replay files, signed or
+out-of-range integers, short/extra packets, decreasing frames and duplicate
+frame/side keys. It fails before serving any packet, instead of silently using
+live input or zero-filled malformed records. The independent C parser is tested
+by `oracle_packets` without lifted code. This is a wrapper construction property;
+it does not verify the guest tick's ordering or packet payload semantics.
+`RT_CMD_LOG` also records injected non-NOTHING packets. Rebuild a private runtime
+before using packet readback validation: the old runtime returned before logging
+injected commands. The runner compares every recorded frame/side/dword against
+the input through the requested horizon. Empty input remains a valid no-input
+replay. Frame/side lookup permits different text ordering of sides in one frame;
+it does not establish the reference's actual side-fetch order.
+
+Raw pool differences are retained in `pool-differences.json`. When a reference
+adapter is supplied, it must normalize **both** runs, with the same mission,
+phase, contract and complete horizon. A first semantic difference is reported as
+`reference_semantic_nondeterminism`. Repeating declared fields alongside differing
+raw pools leaves excluded bytes unaudited; it does not diagnose those bytes as
+harmless or establish full reference repeatability.
+
+`GameSim::replay` accepts a `ReplayObserver` callback before command submission
+and `World::begin_tick`: observation tick 1 is the initialized world, and tick t
+is the state after t-1 updates. `determinism_state` verifies this boundary. The
+engine's append-only object indices are stable within a replay; they are **not**
+an audited cross-engine identity mapping. The observer hook therefore does not
+supply the missing packet translator or normalized reference adapter.
+
+A new nine-mission corpus attempt used the explicit read-only installation and
+runtime paths with private game copies, both SDL dummy drivers, `unshare -rn`
+and 45-second hard timeouts. All nine attempts failed at loopback setup with
+`Operation not permitted`; the reference executable never launched. The private
+report is `work/parity/v02-isolated/report.json`. No semantic mismatch, transient
+pool cause or lifted price-rounding diagnosis was measured. The earlier
+`v02-baseline` attempt rejected its too-short explicit horizon before launch and
+is not reference-run evidence. V02 remains open, including original-instruction
+versus lifted-arithmetic validation and audited ownership/max-HP observers.
