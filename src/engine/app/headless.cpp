@@ -1,8 +1,10 @@
 #include "engine/app/headless.hpp"
+#include "engine/app/options.hpp"
 
 #include <algorithm>
 #include <charconv>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -173,7 +175,8 @@ void audit(const Script& script, const World& w, Report& report) {
 
 int run_headless(int argc, char** argv) {
   Report report;
-  std::string game = "game", rules_dir = "docs/data", orders_path, output;
+  std::string game = "game", rules_dir = default_rules_dir(), orders_path, output;
+  if (const char* value = std::getenv("AZTEC_GAME")) game = value;
   int max_ticks = 43200, interval = 120;
   bool auto_orders = true;
   try {

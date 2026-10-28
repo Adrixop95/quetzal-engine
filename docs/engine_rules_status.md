@@ -535,3 +535,41 @@ read-only game installation and SDL dummy drivers passes 15 of 16 checks,
 including all three private-data checks. `lockstep_processes` fails at UDP socket
 creation with `Operation not permitted`, matching the pre-change baseline.
 All pre-commit gates pass using cached hook environments inside this worktree.
+
+## V18 release packaging (2026-10-28)
+
+**Independent implementation / construction evidence:** the release workflow
+requires Linux and Windows builds, synthetic CTest and pre-commit before a single
+publish job can attach packages. Separate fresh jobs extract and relocate the
+actual archives before smoke testing. `tools/package_release.py` stages only the
+engine, tracked public rules metadata and package documentation/license. Linux
+bundling collects transitive shared dependencies, Debian copyright notices,
+common license texts, exact source versions and their source archives/patches;
+the host supplies glibc and drivers. Windows uses static SDL2/MSVC runtime linkage
+and carries SDL2 source and license. Publication also includes the exact public
+engine source archive and checksums. No game files, oracle or lifted code are
+inputs. See [PACKAGES.md](PACKAGES.md) for external installation setup and the
+optional separately installed ffmpeg dependency.
+
+Rules resolve beside the executable before the source-tree `docs/data` default;
+`--rules-dir` overrides them. Headless mode also honors `AZTEC_GAME`, matching the
+interactive engine. These are application setup changes, not simulation rule or
+reference parity evidence; no V/M/P simulation label changes.
+
+**Local synthetic evidence:** Release configure/build and full CTest pass:
+17 passed, three absent private-data checks skipped and the denied-socket process
+check skipped. Pre-commit passes using cached hooks inside the worktree. The
+relocated local package passes `tests/test_package.py` with both SDL dummy drivers
+inside `unshare -rn`, using a private synthetic installation and unrelated
+working directory: victory at tick 10, repeated identical reports, bounded SDL
+rendering and useful failures for missing/corrupt archives, corrupt terrain and
+missing rules. No private installation or reference process was used.
+
+**Pending dependency / release evidence:** local staging on Fedora uses host
+libraries and is explicitly marked non-distributable. Debian dependency/source
+collection, clean-runner Linux package execution, static Windows linkage and
+native Windows smoke execution require the release CI jobs; none was run here.
+V17's code/build matrix exists, but green remote gates and branch protection
+remain unverified. GitHub PR refresh failed at the API connection, so no unmerged
+work is assumed available. V18 stays incomplete until both platform package jobs
+pass. This work does not claim campaign playability, device testing or parity.
