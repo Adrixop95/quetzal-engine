@@ -1,0 +1,2 @@
+Task: replace placeholder sight range and fog rules with the original behaviour.
+docs/engine_rules_status.md marks sight range, fog values and target acquisition as placeholders. Use the reference oracle (docs/EXPERIMENTS.md) and private decompilation evidence to determine per-type sight (light-mask IDs, daylight, brightness threshold), then implement it in src/engine/sim only, with synthetic tests and updated status rows (V/M/P). Public text must contain only independent descriptions and measured numbers, no decompiled code.

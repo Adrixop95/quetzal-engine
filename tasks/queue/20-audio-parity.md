@@ -1,0 +1,2 @@
+Task: audio parity in the new engine.
+Verify that music, voices, ambient and effects from the original banks play with correct triggering (unit select/order/attack/death, building events, music per mission) in the new engine. Fix gaps in src/engine audio code, add headless audio-event log tests on synthetic data, document the event-to-sound mapping in docs/audio.md without including any audio data.
