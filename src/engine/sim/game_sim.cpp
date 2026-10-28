@@ -86,17 +86,11 @@ void GameSim::init(World& w) {
   spawn_counter_ = 0;
   visual_rng_ = 12345;
   if (script_.loaded() && !w.original_save) script_.init(w);
-  // largest mission hp per type = fallback maximum
-  std::vector<int> seen(kNumTypes, 0);
-  for (const Object& o : w.objects)
-    if (o.type >= 0 && o.type < kNumTypes) seen[size_t(o.type)] = std::max(seen[size_t(o.type)], o.hp);
   for (Object& o : w.objects) {
     if (o.type < 0 || o.type >= kNumTypes) { o.type = -1; o.alive = true; continue; }   // unknown types become inert markers
     const TypeRules& r = rules_->type(o.type);
+    o.initialize_health(r, bool(w.original_save));
     if (!w.original_save) {
-      o.hp_max = r.hp_src == Src::Verified ? r.hp_max : std::max(seen[size_t(o.type)], r.structure ? r.hp_max : 1);
-      if (o.hp <= 0) o.hp = o.hp_max;
-      o.secondary_hp = r.secondary_hp;
       o.progress = 1000;
       o.gold_harvest = {}; o.repair_harvest = {}; o.harvest_ready = false;
       o.body_angle = o.facing * 32; o.turret_angle = o.body_angle;
@@ -198,9 +192,8 @@ uint32_t GameSim::spawn(World& w, int type, int side, int pxx, int pyy, int hp, 
   o.facing = 6;
   o.body_angle = o.turret_angle = o.facing * 32;
   const TypeRules& r = rules_->type(type);
-  o.hp_max = r.hp_max > 0 ? r.hp_max : std::max(hp, 1);
-  o.hp = hp > 0 ? hp : o.hp_max;
-  o.secondary_hp = r.secondary_hp;
+  o.hp = hp;
+  o.initialize_health(r);
   o.anim_variant = next_visual_rand();
   o.teleport(to_fixed(pxx), to_fixed(pyy));
   if (constructing) {
@@ -787,13 +780,18 @@ void GameSim::run_orders(World& w) {
     Object& o = w.objects[i];
     if (o.removed || o.type < 0) continue;
     if (!o.alive) {
+      if (o.regen_service_ticks > 0) --o.regen_service_ticks;
       if (++o.corpse_ticks > (rules_->type(o.type).structure ? 249 : kCorpseTicks)) { o.removed = true; }
       continue;
     }
     const TypeRules& r = rules_->type(o.type);
     if (o.cooldown > 0) o.cooldown--;
-    if (o.progress < 1000) continue;
-    o.hp = regenerated_hp(r, o.hp, o.regen_alternate);
+    if (o.progress < 1000) {
+      if (o.regen_service_ticks > 0) --o.regen_service_ticks;
+      continue;
+    }
+    o.hp = regenerated_hp(r, o.hp, o.regen_service_ticks > 0);
+    if (o.regen_service_ticks > 0) --o.regen_service_ticks;
     path::Agent* ag = o.mover >= 0 ? &mover_->agents_mut()[size_t(o.mover)] : nullptr;
     bool moving = ag && ag->state == path::AgentState::Moving;
 
@@ -1210,7 +1208,7 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(o.facing); mix(o.anim_state); mix(uint32_t(o.corpse_ticks));
     mix(uint32_t(o.dest_x)); mix(uint32_t(o.dest_y)); mix(o.resume); mix(uint32_t(o.build_elapsed)); mix(uint32_t(o.build_total));
     mix(uint32_t(o.town)); mix(o.town_hall); mix(o.defence);
-    mix(uint32_t(o.secondary_hp)); mix(o.regen_alternate);
+    mix(uint32_t(o.secondary_hp)); mix(uint32_t(o.regen_service_ticks));
     mix(uint32_t(o.hp_max)); mix(uint32_t(o.tactic)); mix(uint32_t(o.scenario)); mix(o.last_hit_by); mix(uint32_t(o.mover)); mix(o.anim_variant);
   }
   mix(w.effects.size());
