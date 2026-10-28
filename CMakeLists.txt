@@ -180,6 +180,17 @@ if(Python3_Interpreter_FOUND)
   set_tests_properties(zspr_tools PROPERTIES LABELS "unit")
 endif()
 
+# Independent save format: malformed inputs, atomic replacement and replay rejection.
+add_executable(test_engine_save tests/test_engine_save.cpp)
+target_link_libraries(test_engine_save PRIVATE aztec_engine_lib)
+add_test(NAME engine_save COMMAND test_engine_save)
+set_tests_properties(engine_save PROPERTIES LABELS "unit" TIMEOUT 55)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME engine_save_processes COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_SOURCE_DIR}/tests/test_engine_save_processes.py $<TARGET_FILE:test_engine_save>)
+  set_tests_properties(engine_save_processes PROPERTIES LABELS "unit" TIMEOUT 100)
+endif()
+
 add_executable(test_portability tests/test_portability.cpp)
 target_link_libraries(test_portability PRIVATE aztec_engine_lib)
 add_test(NAME portability COMMAND test_portability)

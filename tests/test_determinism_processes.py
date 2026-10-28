@@ -40,8 +40,20 @@ def run(binary):
         if exported:
             shutil.copyfile(reference, exported)
         damaged = bytearray(save.read_bytes())
-        name_size = int.from_bytes(damaged[4:8], "little")
-        damaged[8 + name_size + 8] ^= 1  # Saved state hash, after the mission string and tick.
+        if damaged[:4] != b"AZS3":
+            raise RuntimeError("Unexpected save format")
+        name_size = int.from_bytes(damaged[12:16], "little")
+        damaged[16 + name_size + 8] ^= 1  # Saved state hash, after the mission string and tick.
+        save.write_bytes(damaged)
+        rejected = subprocess.run([binary, "resume", str(root / "rejected"), str(save), "0", "0"],
+                                  env=env, capture_output=True, text=True, timeout=45)
+        if rejected.returncode == 0 or "cannot read save" not in rejected.stderr:
+            raise RuntimeError("Corrupt save checksum was not rejected")
+        # Recompute the container checksum so replay must detect the changed state hash.
+        checksum = 1469598103934665603
+        for byte in damaged[:-8]:
+            checksum = ((checksum ^ byte) * 1099511628211) & ((1 << 64) - 1)
+        damaged[-8:] = checksum.to_bytes(8, "little")
         save.write_bytes(damaged)
         rejected = subprocess.run([binary, "resume", str(root / "rejected"), str(save), "0", "0"],
                                   env=env, capture_output=True, text=True, timeout=45)
