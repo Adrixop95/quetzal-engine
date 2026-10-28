@@ -898,6 +898,140 @@ static void test_production() {
   CHECK(replay->state_hash(replay_world) == rs.state_hash(original));
 }
 
+static void test_town_production() {
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  auto item = [](GameSim& sim, const World& w, int town, int type) {
+    for (const MenuItem& m : sim.menu(w, 0, town)) if (m.type == type) return m;
+    MenuItem missing; missing.type = -1; return missing;
+  };
+  // Every listed hall upgrade replaces the same hall, even with sparse town section numbers.
+  for (int race = 0; race < 3; ++race) for (int level = 1; level <= 3; ++level) {
+    int target = rules->town_building(level, race);
+    if (target < 0) continue;
+    World fresh = production_world();
+    fresh.mission.towns[0].index = 4; fresh.mission.towns[0].race = race; fresh.mission.towns[0].type = 0;
+    production_object(fresh, rules->town_building(0, race), 4, 10, 10);
+    fresh.objects[0].town_hall = true;
+    fresh.side_state.resize(8); fresh.side_state[0].money = 10000;
+    World w = fresh;
+    GameSim sim(rules); sim.init(w);
+    MenuItem upgrade = item(sim, w, 0, target);
+    CHECK(upgrade.enabled && !upgrade.construct);
+    CHECK(upgrade.price == rules->type(target).price);
+    CHECK(upgrade.time == production_value(rules->type(target).time, 0, 1, false, false, true));
+    Command buy; buy.type = Pct::Build; buy.a = target; buy.ids = {1};
+    sim.submit(buy); sim.submit(buy); // repeated and competing upgrades are unavailable while reserved
+    production_steps(sim, w, 1);
+    CHECK(w.side_state[0].queue.size() == 1 && w.side_state[0].queue[0].remaining == upgrade.time - 1);
+    CHECK(w.side_state[0].money == 10000 - upgrade.price);
+    for (const MenuItem& m : sim.menu(w, 0)) if (m.type != (race == 0 ? 0 : race == 1 ? 27 : 53)) CHECK(!m.enabled);
+    CHECK(w.objects.size() == 1 && w.objects[0].type == rules->town_building(0, race));
+    Command pause; pause.type = Pct::PauseBuild; pause.a = 1; sim.submit(pause);
+    production_steps(sim, w, 3);
+    CHECK(w.side_state[0].queue[0].remaining == upgrade.time - 1);
+    pause.a = 0; sim.submit(pause);
+    production_steps(sim, w, upgrade.time - 2);
+    CHECK(w.mission.towns[0].type == 0);
+    production_steps(sim, w, 1);
+    CHECK(w.mission.towns[0].type == level && w.mission.towns[1].type == 1);
+    CHECK(w.objects.size() == 1 && w.objects[0].id == 1 && w.objects[0].type == target);
+    CHECK(w.objects[0].town == 4 && w.objects[0].town_hall && w.town_state[0].hall == 1);
+    CHECK(w.objects[0].hp == rules->type(target).hp_max && w.side_state[0].queue.empty());
+    CHECK(item(sim, w, 0, race == 0 ? 14 : race == 1 ? 41 : 67).enabled);
+    CHECK(!sim.can_place(w, 0, target, 10, 10)); // upgraded footprint remains blocked
+    auto hash = sim.state_hash(w); w.mission.towns[0].type = 0;
+    CHECK(sim.state_hash(w) != hash); w.mission.towns[0].type = level;
+    SaveData save; save.mission = "synthetic-upgrade"; save.tick = sim.tick_count();
+    save.hash = sim.state_hash(w); save.log = sim.log();
+    SaveData decoded; CHECK(deserialize_save(serialize_save(save), decoded));
+    auto replay = GameSim::replay(fresh, rules, decoded.log, decoded.tick);
+    CHECK(replay->state_hash(fresh) == decoded.hash);
+  }
+
+  // All races' flag-0 farms/mines/defences use queued production, with normal costs and timers.
+  for (auto choice : {std::pair{0, 12}, {0, 13}, {0, 17}, {1, 39}, {1, 48}, {2, 65}, {2, 66}}) {
+    World fresh = production_world();
+    int race = choice.first, type = choice.second;
+    int level = type == 48 || type == 66 ? 2 : 1;
+    fresh.mission.towns[0].race = race; fresh.mission.towns[0].type = level;
+    fresh.resources.v.assign(1600, uint16_t(65 | (65 << 8)));
+    fresh.side_state.resize(8); fresh.side_state[0].money = 10000;
+    production_object(fresh, rules->town_building(level, race), 0, 10, 10);
+    fresh.objects[0].town_hall = true;
+    if (type == 17) production_object(fresh, 14, 0, 20, 20);
+    World w = fresh; GameSim sim(rules); sim.init(w);
+    MenuItem m = item(sim, w, 0, type);
+    CHECK(m.enabled && !m.construct);
+    CHECK(m.price == rules->type(type).price && m.time == rules->type(type).time);
+    Command buy; buy.type = Pct::Build; buy.a = type; buy.ids = {1}; buy.b = -999; buy.c = -999;
+    sim.submit(buy); sim.submit(buy); production_steps(sim, w, 1);
+    CHECK(w.side_state[0].queue.size() == 1 && w.side_state[0].queue[0].paid == m.price);
+    CHECK(w.side_state[0].money == 10000 - m.price);
+    CHECK(w.objects.size() == fresh.objects.size() && !item(sim, w, 0, type).enabled);
+    production_steps(sim, w, m.time - 2);
+    CHECK(w.objects.size() == fresh.objects.size());
+    production_steps(sim, w, 1);
+    CHECK(w.side_state[0].queue.empty() && w.objects.size() == fresh.objects.size() + 1);
+    CHECK(w.objects.back().type == type && w.objects.back().town == 0 && w.objects.back().progress == 1000);
+    CHECK(!sim.can_place(w, 0, type, int(w.objects.back().cur_x >> 8) / kTilePx, int(w.objects.back().cur_y >> 8) / kTilePx));
+    CHECK(!item(sim, w, 0, type).enabled);
+    if (type == 12 || type == 39 || type == 65)
+      CHECK(item(sim, w, 0, race == 0 ? 18 : race == 1 ? 40 : 70).enabled);
+    // Income/repair accumulation begins at completion, using the resource map at the chosen site.
+    if (type == 13) {
+      CHECK(w.objects.back().gold_harvest.accumulated > 0);
+      int money = w.side_state[0].money;
+      production_steps(sim, w, 100); CHECK(w.side_state[0].money > money);
+    }
+    std::vector<LoggedCommand> log; CHECK(deserialize_log(serialize_log(sim.log()), log));
+    auto replay = GameSim::replay(fresh, rules, log, sim.tick_count());
+    CHECK(replay->state_hash(fresh) == sim.state_hash(w));
+  }
+
+  // A blocked map retains the completed reservation; cancellation releases it.
+  World blocked = production_world();
+  blocked.passability = {40, 40, std::vector<uint8_t>(1600, 0)};
+  blocked.side_state.resize(8); blocked.side_state[0].money = 10000;
+  production_object(blocked, 11, 0, 10, 10); blocked.objects[0].town_hall = true;
+  GameSim blocked_sim(rules); blocked_sim.init(blocked);
+  Command request; request.type = Pct::Build; request.a = 12;
+  blocked_sim.submit(request); production_steps(blocked_sim, blocked, 200);
+  CHECK(blocked.objects.size() == 1 && blocked.side_state[0].queue[0].remaining == 0);
+  CHECK(!item(blocked_sim, blocked, 0, 12).enabled);
+  Command remove; remove.type = Pct::QueueKill; blocked_sim.submit(remove);
+  production_steps(blocked_sim, blocked, 1);
+  CHECK(blocked.side_state[0].queue.empty() && item(blocked_sim, blocked, 0, 12).enabled);
+
+  // Upgrade cancellation keeps the old hall/tree and releases competing upgrade choices.
+  World cancelled = production_world(); cancelled.mission.towns[0].type = 0;
+  cancelled.side_state.resize(8); cancelled.side_state[0].money = 10000;
+  production_object(cancelled, 10, 0, 10, 10); cancelled.objects[0].town_hall = true;
+  GameSim cancel_sim(rules); cancel_sim.init(cancelled);
+  request.a = 19; cancel_sim.submit(request); production_steps(cancel_sim, cancelled, 1);
+  cancel_sim.submit(remove); production_steps(cancel_sim, cancelled, 1);
+  CHECK(cancelled.objects[0].type == 10 && cancelled.mission.towns[0].type == 0);
+  CHECK(cancelled.side_state[0].money == 10000 && item(cancel_sim, cancelled, 0, 24).enabled);
+
+  World w = production_world(); production_object(w, 11, 0, 10, 10);
+  w.objects[0].town_hall = true;
+  GameSim sim(rules); sim.init(w); w.side_state[0].money = 0;
+  CHECK(!item(sim, w, 0, 12).enabled);
+  w.side_state[0].money = 10000; w.mission.sides[0].disabled = {12};
+  CHECK(!item(sim, w, 0, 12).enabled);
+  w.mission.sides[0].disabled.clear();
+  Command buy; buy.type = Pct::Build; buy.a = 12; buy.ids = {999};
+  sim.submit(buy); production_steps(sim, w, 1); CHECK(w.side_state[0].queue.empty());
+  buy.ids = {1}; sim.submit(buy); production_steps(sim, w, 1);
+  int paid = w.side_state[0].queue[0].paid;
+  // A dead hall holds completed production without spawning at an unrelated side start.
+  sim.script_kill(w, 1); production_steps(sim, w, 200);
+  CHECK(w.objects.size() == 1 && w.side_state[0].queue[0].remaining == 0);
+  int money = w.side_state[0].money;
+  Command cancel; cancel.type = Pct::QueueKill; sim.submit(cancel); production_steps(sim, w, 1);
+  CHECK(w.side_state[0].queue.empty() && w.side_state[0].money == money + paid);
+}
+
 static void test_descriptor_combat() {
   auto rules = std::make_shared<RulesData>();
   CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
@@ -1169,6 +1303,7 @@ int main(int argc, char** argv) {
   if (argc == 2 && std::string(argv[1]) == "--pure") {
     test_pure();
     test_production();
+    test_town_production();
     test_projectiles();
     test_descriptor_combat();
     test_script_animation_clocks();
