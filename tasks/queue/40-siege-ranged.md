@@ -1,0 +1,3 @@
+Task: Make siege machines and catapults fire at range.
+Observed by the user when playing mission 1 with build/aztec_engine (a real game session): Siege machines and catapults do not shoot; they try to close in and attack like melee units. Fix target acquisition, weapon range selection, firing positions and reload for ranged siege weapons, with minimum range and projectile behaviour as in the original.
+Reproduce the symptom with a deterministic synthetic scenario or headless test first, fix the cause in the new engine (src/engine, not runtime/), and keep behaviour matching the original game. Follow CLAUDE.md: public repo, English only, no game assets or executable-derived code, deterministic simulation, update docs/engine_rules_status.md for rules you change.

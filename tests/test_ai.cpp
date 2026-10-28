@@ -86,6 +86,44 @@ static void unit(const RulesData& rules) {
   s = {}; s.phase = 2; s.target_town = 1; s.known_towns = {1}; s.elapsed = 1;
   d = ai::step(w, rules, 0, s, {}); CHECK(issued(d, Pct::AttackMove)->ids.size() == 101);
 }
+// Busy towns still update speed and dispatch newly available defenders.
+static void reinforcements(const RulesData& rules) {
+  auto w = world();
+  object(w, 0, 0, 0, 9, 8);
+  object(w, 0, 1, 1, 10, 8);
+  w.objects[0].last_hit_by = 4;
+  ai::TownState s;
+  auto first = ai::step(w, rules, 0, s, {});
+  CHECK(issued(first, Pct::Attack) && issued(first, Pct::Attack)->ids == std::vector<uint32_t>{3});
+  w.town_speed[0] = 2;
+  s = first.next; s.phase = 22; s.remaining = 4; s.spent = 20000;
+  w.objects[2].order = uint8_t(Order::Attack); w.objects[2].target = 4;
+  object(w, 0, 0, 0, 9, 9);       // a newly trained autonomous defender
+  object(w, 0, 0, 0, 9, 10, 7);   // mission tactic remains under script control
+  object(w, 0, 0, 1, 9, 11);      // another town's forces remain independent
+  object(w, 0, 0, 0, 9, 12);
+  w.objects.back().alive = false;
+  w.side_state[0].queue.push_back({0, 20, 20, 0, 100});
+  auto d = ai::step(w, rules, 0, s, {});
+  CHECK(issued(d, Pct::Attack) && issued(d, Pct::Attack)->ids == std::vector<uint32_t>{5});
+  CHECK(d.next.phase == 22 && d.next.remaining == 4);
+  CHECK(d.next.science_timer == s.science_timer + 1 && d.next.elapsed == s.elapsed + 1);
+  CHECK(issued(d, Pct::BuildMode) && issued(d, Pct::BuildMode)->a == 1);
+  w.objects[4].order = uint8_t(Order::Attack); w.objects[4].target = 4;
+  CHECK(!issued(ai::step(w, rules, 0, d.next, {}), Pct::Attack));
+  // Hidden, dead, allied or departed attackers cannot draw reinforcements.
+  w.objects[4].order = uint8_t(Order::Idle);
+  w.visibility.sides[0].v.assign(1600, 152);
+  CHECK(!issued(ai::step(w, rules, 0, s, {}), Pct::Attack));
+  w.visibility.sides[0].v.assign(1600, 0);
+  w.objects[3].alive = false;
+  CHECK(!issued(ai::step(w, rules, 0, s, {}), Pct::Attack));
+  w.objects[3].alive = true; w.relation[0][1] = kFriend;
+  CHECK(!issued(ai::step(w, rules, 0, s, {}), Pct::Attack));
+  w.relation[0][1] = kEnemy;
+  w.objects[3].teleport(tile_center_fixed(16), tile_center_fixed(8));
+  CHECK(!issued(ai::step(w, rules, 0, s, {}), Pct::Attack));
+}
 // Initialization must provide both planner state and town-command hall identities.
 static void initialization(std::shared_ptr<const RulesData> rules) {
   auto w = world();
@@ -147,6 +185,38 @@ static void sparse_towns(std::shared_ptr<const RulesData> rules) {
   ++w.ai_towns[0].spent; CHECK(sim.state_hash(w) != hash); --w.ai_towns[0].spent;
   ++w.mission.towns[0].type; CHECK(sim.state_hash(w) != hash);
 }
+// Two towns sharing cash select their own speeds before pricing their orders.
+static void town_orders(std::shared_ptr<const RulesData> rules) {
+  auto w = world();
+  w.mission.towns[1].side = w.objects[1].side = 0;
+  w.mission.sides[1].only_comp = false;
+  w.relation[0][1] = kFriend;
+  GameSim sim(rules); sim.init(w);
+  w.town_speed[0] = 2;
+  w.ai_towns[0].phase = w.ai_towns[1].phase = 7;
+  w.ai_towns[0].spent = 20000;
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.town_speed[0] == 1 && w.town_speed[1] == 2);
+  CHECK(w.side_state[0].queue.size() == 2);
+  if (w.side_state[0].queue.size() != 2) return;
+  for (int ti = 0; ti < 2; ++ti) {
+    const auto& q = w.side_state[0].queue[size_t(ti)];
+    CHECK(q.town == ti && q.type == 12);
+    CHECK(q.paid == production_value(rules->type(12).price, 1, ti + 1, true, false, false));
+    CHECK(w.ai_towns[ti].phase == 8);
+  }
+  // Speed comparison includes equality in the fast branch and keeps updating
+  // while production suspends state transitions.
+  w.side_state[0].money = 0;
+  w.ai_towns[0].spent = 100;
+  w.ai_towns[0].harvested = 200;
+  w.ai_towns[0].elapsed = 0;
+  CHECK(ai::build_speed(w, w.ai_towns[0], 0) == 2);
+  --w.ai_towns[0].harvested;
+  CHECK(ai::build_speed(w, w.ai_towns[0], 0) == 1);
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.town_speed[0] == 1 && w.ai_towns[0].phase == 8);
+}
 static void scripted(std::shared_ptr<const RulesData> rules) {
   auto a = world(); a.objects[0].scenario = 42;
   object(a, 0, 1, 1, 25, 26, 7); object(a, 0, 1, 1, 26, 26, 8);
@@ -168,18 +238,55 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
   auto initial = world();
   for (auto& side : initial.side_state) side.money = 2000;
   initial.resources.v.assign(1600, 65);
+  // Synthetic durable halls keep both producers alive through the full soak.
+  // These HP values exercise sustained opposition, not campaign balance.
+  for (auto& o : initial.objects) { o.hp = 1000000; o.town_hall = true; }
   auto a = initial, b = initial; b.local_side = 1;
-  GameSim sa(rules), sb(rules); sa.init(a); sb.init(b);
+  GameSim sa(rules), sb(rules);
+  CHECK(sa.attach_script(AZTEC_AI_ECONOMY_SCRIPT)); CHECK(sb.attach_script(AZTEC_AI_ECONOMY_SCRIPT));
+  sa.init(a); sb.init(b);
   bool construction = false, movement = false, casualties = false;
+  std::array<int, 4> waves{}, shots{}, losses{}, births{};
+  std::array<int, 2> side_waves{};
+  std::vector<uint64_t> hashes{sa.state_hash(a)};
   const int ticks = 20 * 60 * 12;
   for (int t = 0; t < ticks; ++t) {
     if (t == 100 || t == 110) {
       Command c; c.type = Pct::PauseBuild; c.side = 0; c.a = t == 100 ? 1 : 0;
       sa.submit(c); sb.submit(c);
     }
+    auto previous = a.ai_towns;
+    const auto objects = a.objects;
+    const int cash = a.side_state[0].money;
     a.begin_tick(); b.begin_tick(); sa.tick(a); sb.tick(b);
+    const auto net_income = a.ai_towns[0].harvested - previous[0].harvested -
+                            (a.ai_towns[0].spent - previous[0].spent);
+    if (t == 999) CHECK(a.side_state[0].money == net_income);
+    if (t == 1199) CHECK(a.side_state[0].money == cash + 2000 + net_income);
+    for (size_t ti = 0; ti < previous.size(); ++ti) {
+      if (previous[ti].phase != 2 || previous[ti].remaining != 0 || a.ai_towns[ti].phase != 11) continue;
+      const int target_index = a.ai_towns[ti].target_town;
+      CHECK(target_index >= 0 && target_index < int(a.mission.towns.size()));
+      if (target_index < 0 || target_index >= int(a.mission.towns.size())) continue;
+      const auto& target = a.mission.towns[size_t(target_index)];
+      bool released = false;
+      for (size_t i = 0; i < objects.size(); ++i) {
+        const auto& o = a.objects[i];
+        released |= objects[i].order == uint8_t(Order::Idle) && o.alive && o.side == int(ti) &&
+                    o.dest_x == target.x * kTilePx + kTilePx / 2 &&
+                    o.dest_y == target.y * kTilePx + kTilePx / 2 &&
+                    (o.order == uint8_t(Order::AttackMove) || o.resume == 1);
+      }
+      if (released) { ++waves[size_t(t / 3600)]; ++side_waves[ti]; }
+    }
+    for (size_t i = 0; i < a.objects.size(); ++i) {
+      if (i >= objects.size()) { ++births[size_t(t / 3600)]; continue; }
+      shots[size_t(t / 3600)] += a.objects[i].cooldown > objects[i].cooldown;
+      losses[size_t(t / 3600)] += objects[i].alive && !a.objects[i].alive;
+    }
     if ((t + 1) % 3600 == 0) std::fprintf(stderr, "Skirmish tick %d: %zu objects\n", t + 1, a.objects.size());
-    if (sa.state_hash(a) != sb.state_hash(b)) { CHECK(false); return; }
+    hashes.push_back(sa.state_hash(a));
+    if (hashes.back() != sb.state_hash(b)) { CHECK(false); return; }
     for (const auto& side : a.side_state) for (const auto& q : side.queue)
       construction |= rules->type(q.type).structure;
     for (const auto& o : a.objects) {
@@ -189,15 +296,28 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
     }
   }
   CHECK(construction); CHECK(movement); CHECK(casualties);
-  CHECK(a.ai_towns[0].spent > 0 && a.ai_towns[0].harvested > 0);
+  std::printf("Wave completions by five-minute interval: %d %d %d %d\n", waves[0], waves[1], waves[2], waves[3]);
+  for (size_t i = 0; i < waves.size(); ++i) {
+    std::printf("Interval %zu: %d shots, %d losses, %d births\n", i, shots[i], losses[i], births[i]);
+    CHECK(waves[i] > 0 && shots[i] > 0 && losses[i] > 0 && births[i] > 0);
+  }
+  for (int side = 0; side < 2; ++side) {
+    CHECK(a.objects[size_t(side)].alive && side_waves[size_t(side)] > 0);
+    CHECK(a.ai_towns[size_t(side)].spent > 0 && a.ai_towns[size_t(side)].harvested > 0);
+  }
+  CHECK(sa.script().unsupported() == 0);
   CHECK(a.objects.size() > 2); CHECK(sa.log().size() == 2);
-  auto replay = initial; auto sim = GameSim::replay(replay, rules, sa.log(), ticks);
+  auto replay = initial;
+  auto sim = GameSim::replay(replay, rules, sa.log(), ticks, AZTEC_AI_ECONOMY_SCRIPT,
+    [&](uint64_t tick, const World& w, const GameSim& current) {
+      CHECK(current.state_hash(w) == hashes[size_t(tick - 1)]);
+    });
   CHECK(sim->state_hash(replay) == sa.state_hash(a));
   std::printf("20-minute skirmish: %d ticks, %zu objects, hash %016llx\n", ticks, a.objects.size(),
               static_cast<unsigned long long>(sa.state_hash(a)));
 }
 int main(int argc, char** argv) {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
-  if (argc > 1 && std::string(argv[1]) == "--smoke") smoke(rules); else { unit(*rules); initialization(rules); sparse_towns(rules); scripted(rules); }
+  if (argc > 1 && std::string(argv[1]) == "--smoke") smoke(rules); else { unit(*rules); reinforcements(*rules); initialization(rules); sparse_towns(rules); town_orders(rules); scripted(rules); }
   return failures ? 1 : 0;
 }
