@@ -12,6 +12,7 @@ repos:
       - id: check-json
         exclude: ^docs/data/sprites_mapping\.json$
       - id: check-merge-conflict
+        args: [--assume-in-merge]
       - id: check-added-large-files
         args: [--maxkb=1200]
   - repo: https://github.com/codespell-project/codespell
