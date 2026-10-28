@@ -20,7 +20,7 @@ IEEE-754 binary32. The layout, in order, is:
 | Field | Encoding |
 | --- | --- |
 | Magic | Four bytes `AZS3` |
-| Format version, replay version | Two u32 values, currently 3 and 1 |
+| Format version, replay version | Two u32 values, currently 3 and 2 |
 | Mission length, mission | u32 byte count, then ASCII basename bytes without a terminator |
 | Tick, state hash, script hash, content hash | Four u64 values |
 | Camera x, y, zoom | Three binary32 values |
