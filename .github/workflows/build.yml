@@ -2,9 +2,17 @@ name: Build and test
 
 on:
   push:
-    branches-ignore: [main, develop]
+    branches: [main, develop]   # feature branches build through their pull request only (no duplicate runs)
   pull_request:
   workflow_dispatch:
+
+concurrency:   # a newer push to the same branch cancels the older run
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  CCACHE_MAXSIZE: 500M
 
 permissions:
   contents: read
@@ -15,11 +23,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build g++ libsdl2-dev
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build g++ libsdl2-dev ccache
+      - name: Restore the compiler cache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-linux-${{ github.sha }}
+          restore-keys: ccache-linux-
       - name: Configure without the recompiled runtime
-        run: cmake -S . -B build_ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR= -DGAME_DIR=
+        run: cmake -S . -B build_ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR= -DGAME_DIR= -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache
       - name: Build core, engine, tools, and tests
-        run: cmake --build build_ci --parallel 2
+        run: cmake --build build_ci --parallel $(nproc)
       - name: Run tests (game-data tests skip without a local installation)
         run: ctest --test-dir build_ci --output-on-failure
 
@@ -44,16 +58,35 @@ jobs:
         shell: ${{ matrix.shell }}
     steps:
       - uses: actions/checkout@v4
+      - name: Restore the vcpkg binary cache
+        if: matrix.compiler == 'MSVC'
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}\vcpkg_cache
+          key: vcpkg-sdl2-x64-windows-v1
       - name: Install SDL2 for MSVC
         if: matrix.compiler == 'MSVC'
-        run: '& "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install sdl2:x64-windows'
+        env:
+          VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\vcpkg_cache
+        run: |
+          New-Item -ItemType Directory -Force "$env:VCPKG_DEFAULT_BINARY_CACHE" | Out-Null
+          & "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install sdl2:x64-windows
+      - name: Restore the compiler cache
+        if: matrix.compiler != 'MSVC'
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-${{ matrix.compiler }}-${{ github.sha }}
+          restore-keys: ccache-${{ matrix.compiler }}-
       - name: Install MinGW dependencies
         if: matrix.compiler == 'MinGW'
         uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
           update: true
+          cache: true
           install: >-
+            mingw-w64-ucrt-x86_64-ccache
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
@@ -61,7 +94,7 @@ jobs:
             mingw-w64-ucrt-x86_64-python
       - name: Install SDL2 on macOS
         if: matrix.compiler == 'AppleClang'
-        run: brew install sdl2 ninja
+        run: brew install sdl2 ninja ccache
       - name: Configure MSVC without private inputs
         if: matrix.compiler == 'MSVC'
         run: >-
@@ -70,12 +103,13 @@ jobs:
           -DVCPKG_TARGET_TRIPLET=x64-windows -DAZTEC_GEN_DIR= -DGAME_DIR=
       - name: Configure MinGW without private inputs
         if: matrix.compiler == 'MinGW'
-        run: cmake -S . -B build_ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR= -DGAME_DIR=
+        run: cmake -S . -B build_ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR= -DGAME_DIR= -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache
       - name: Configure macOS without private inputs
         if: matrix.compiler == 'AppleClang'
         run: >-
           cmake -S . -B build_ci -G Ninja -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_PREFIX_PATH="$(brew --prefix sdl2)" -DAZTEC_GEN_DIR= -DGAME_DIR=
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache
       - name: Build core, engine, tools, and tests
         run: cmake --build build_ci --config Release --parallel 2
       - name: Run synthetic tests
