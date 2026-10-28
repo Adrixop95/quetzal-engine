@@ -101,6 +101,10 @@ must rerun the documented probes and retain failures as failures.
 
 ## Prioritized roadmap
 
+The [v1 roadmap](ROADMAP.md) defines release acceptance, remaining tasks and rough
+sizes. It reconciles the inventory with current tests and records the pending
+open-PR review; use it for release scope and the list below for investigation order.
+
 This order reconciles [REWRITE.md](REWRITE.md),
 [REBUILD_CHECKLIST.md](REBUILD_CHECKLIST.md), the engine status, rules summary and
 sprite mapping. The first six items have complete prompts in `tasks/queue/`.
