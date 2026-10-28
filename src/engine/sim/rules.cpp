@@ -5,7 +5,9 @@
 #include <cstring>
 #include <fstream>
 #include <functional>
+#include <limits>
 #include <sstream>
+#include <tuple>
 
 #include "engine/world/type_info.hpp"
 #include "engine/sim/sight.hpp"
@@ -118,13 +120,19 @@ int harvest_tick(HarvestState& s, int rate, int clock, int period, const std::ve
 }
 
 int production_value(int base, int hall, int speed, bool computer, bool hostile_all, bool time) {
-  // Preserve float32 constants, then evaluate the x87 expression before truncation.
-  constexpr float price_k[] = {2.f / 3.f, 1.f, 2.f};
-  constexpr float time_k[] = {2.f, 1.f, 2.f / 3.f};
+  // Exact binary32 constants, represented over 2^24. Split the 80-bit product
+  // before multiplying the second coefficient; this also works without __int128.
+  if (base <= 0) return 0;
+  constexpr uint64_t one = uint64_t(1) << 24, mask = one - 1;
+  constexpr uint64_t price_k[] = {11184811, one, 2 * one};
+  constexpr uint64_t time_k[] = {2 * one, one, 11184811};
   int index = hostile_all ? 0 : std::clamp(speed, 0, 2);
-  float k = hall == 0 ? (time ? 1.5f : 1.f) : (time ? time_k[index] : price_k[index]);
-  float f = computer && !hostile_all ? 0.8f : 1.f;
-  return int(static_cast<long double>(base) * k * f + 0.5L);
+  uint64_t k = hall == 0 ? (time ? one * 3 / 2 : one) : (time ? time_k[index] : price_k[index]);
+  uint64_t f = computer && !hostile_all ? 13421773 : one;
+  uint64_t product = uint64_t(base) * k;
+  uint64_t high = (product >> 24) * f, low = (product & mask) * f;
+  uint64_t value = (high >> 24) + (((high & mask) * one + low + (uint64_t(1) << 47)) >> 48);
+  return int(std::min(value, uint64_t(std::numeric_limits<int>::max())));
 }
 
 void RulesData::init_defaults() {
@@ -138,11 +146,13 @@ void RulesData::init_defaults() {
     const TypeInfo* ti = type_info(t);
     r.kind = ti ? ti->kind : -1;
     r.structure = ti && ti->is_structure();
-    r.mobile = r.kind == 0 || r.kind == 1 || r.kind == 4 || r.kind == 6 || r.kind == 10;
+    r.mobile = r.kind == 0 || r.kind == 1 || r.kind == 4 || r.kind == 6;
     r.nonorganic = r.structure || r.kind == 1 || r.kind == 4 || r.kind == 6 || r.kind == 9;
     r.flier = r.kind == 3 || r.kind == 5;
     r.armed = r.kind == 0 || r.kind == 1 || r.kind == 6 || r.kind == 7 || r.kind == 9 || r.kind == 10;
-    r.large = r.kind == 4 || r.kind == 6 || t == 5 || t == 57;
+    // Boats and Johnka use scripted routes, never the ground movement system.
+    r.large = r.kind == 1 || r.kind == 4 || r.kind == 6;
+    if (r.large) r.class_src = Src::Verified;
     r.speed = 8 * 256;
     r.radius_px = r.large ? 20 : 14;
     r.range_px = is_melee(t) ? 56 : 288;
@@ -179,6 +189,18 @@ bool RulesData::load_dir(const std::string& dir) {
         }
   }
   if (const char* game = std::getenv("AZTEC_GAME")) load_sight(game);
+  // Established getters only (rules_summary.md). Bird speed remains unresolved.
+  for (auto [kind, family, field] : {std::tuple{1, "spider", 7}, {3, "zeppelin", 5},
+                                   {4, "truck", 5}, {6, "headtruck", 7}}) {
+    for (const auto& row : read_csv(dir + "/desc_" + family + ".csv"))
+      for (int id = 0; id < kNumTypes; ++id)
+        if (kind_param[id] == std::pair{kind, num(row, 0)} && row.size() > size_t(field + 1)) {
+          int speed = num(row, field + 1);
+          if (speed > 0 && speed <= (1 << 14)) {
+            types_[id].speed = speed * 256; types_[id].speed_src = Src::Verified;
+          }
+        }
+  }
   // Marine d1 is primary/max HP; d4 is independent secondary HP.
   auto marine = read_csv(dir + "/desc_marine.csv");
   auto building = read_csv(dir + "/desc_building.csv");
@@ -199,6 +221,11 @@ bool RulesData::load_dir(const std::string& dir) {
           t.hp_src = Src::Verified;
           t.speed = num(r, 6) * 256;  // d5 (column index shifts by one for the leading param column)
           t.speed_src = Src::Verified;
+          if (r.size() > 12) {
+            t.large = (uint32_t(num(r, 12)) & 255u) == 0;  // d11 low byte, not the organic/hypno bytes
+            t.class_src = Src::Verified;
+            t.radius_px = t.large ? 20 : 14;  // still a provisional collision disc
+          }
         }
     } else if (t.structure && t.kind == 2) {
       for (auto& r : building)
@@ -317,7 +344,9 @@ bool RulesData::load_dir(const std::string& dir) {
     int id = num(r, 0);
     if (id < 0 || id >= kNumTypes || r.size() < 3) continue;
     int v = parse_fixed256(r[2]);
-    if (v > 0) { types_[id].speed = v; types_[id].speed_src = Src::Measured; }
+    if (v > 0 && types_[id].speed_src != Src::Verified) {
+      types_[id].speed = v; types_[id].speed_src = Src::Measured;
+    }
   }
   for (auto& r : read_csv(dir + "/duel_damage.csv")) {
     // attacker,attacker_ugi,target,target_ugi,damage,interval,hits

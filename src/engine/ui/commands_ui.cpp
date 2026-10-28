@@ -5,6 +5,7 @@
 
 #include "engine/ui/hud.hpp"
 #include "engine/ui/names.hpp"
+#include "engine/ui/panel_layout.hpp"
 #include "engine/world/type_info.hpp"
 
 namespace aztec::engine {
@@ -48,6 +49,8 @@ SDL_Scancode CommandsUi::sdl_scancode(int dik) {
   static constexpr SDL_Scancode letters[] = {
     SDL_SCANCODE_Q, SDL_SCANCODE_W, SDL_SCANCODE_E, SDL_SCANCODE_R, SDL_SCANCODE_T, SDL_SCANCODE_Y,
     SDL_SCANCODE_U, SDL_SCANCODE_I, SDL_SCANCODE_O, SDL_SCANCODE_P};
+  if (dik >= 2 && dik <= 10) return SDL_Scancode(SDL_SCANCODE_1 + dik - 2);
+  if (dik == 11) return SDL_SCANCODE_0;
   if (dik >= 16 && dik <= 25) return letters[dik - 16];
   static constexpr SDL_Scancode home[] = {SDL_SCANCODE_A, SDL_SCANCODE_S, SDL_SCANCODE_D, SDL_SCANCODE_F,
     SDL_SCANCODE_G, SDL_SCANCODE_H, SDL_SCANCODE_J, SDL_SCANCODE_K, SDL_SCANCODE_L};
@@ -57,6 +60,7 @@ SDL_Scancode CommandsUi::sdl_scancode(int dik) {
   if (dik >= 44 && dik <= 50) return bottom[dik - 44];
   if (dik >= 59 && dik <= 68) return SDL_Scancode(SDL_SCANCODE_F1 + dik - 59);
   switch (dik) {
+    case 1: return SDL_SCANCODE_ESCAPE;
     case 12: return SDL_SCANCODE_MINUS; case 13: return SDL_SCANCODE_EQUALS;
     case 14: return SDL_SCANCODE_BACKSPACE; case 15: return SDL_SCANCODE_TAB;
     case 26: return SDL_SCANCODE_LEFTBRACKET; case 27: return SDL_SCANCODE_RIGHTBRACKET;
@@ -104,19 +108,20 @@ bool CommandsUi::bound_hit(const Input& in, SDL_Scancode key) const { return !in
 CommandPanelLayout CommandsUi::layout(const SDL_Rect& p, int sc) {
   sc = std::max(1, sc);
   CommandPanelLayout l;
-  auto box = [&](int x, int y, int w, int h) { return SDL_Rect{p.x + x * sc, p.y + y * sc, w * sc, h * sc}; };
-  l.portrait = box(14, 214, 60, 56);
-  l.summary = box(78, 216, 112, 54);
-  for (int i = 0; i < 6; i++) l.commands[i] = box(18 + i % 3 * 57, 280 + i / 3 * 46, 50, 44);
-  bool compact = p.h / sc < 550;
-  int queue_y = p.h / sc - (compact ? 48 : 94);
-  // Short windows keep one row; taller windows gain rows. Paging makes every entry reachable.
-  int rows = std::max(1, (queue_y - 400) / 44);
-  for (int i = 0; i < rows * 4; i++) l.production.push_back(box(14 + i % 4 * 44, 396 + i / 4 * 44, 40, 40));
-  l.previous = box(14, 374, 24, 18); l.next = box(166, 374, 24, 18);
-  l.pause = box(14, queue_y, 176, 18);
-  for (int i = 0; i < 8; i++) l.queue[i] = compact ? box(14 + i * 22, queue_y + 20, 20, 24)
-                                                : box(14 + i % 4 * 44, queue_y + 20 + i / 4 * 32, 40, 30);
+  const auto geometry = in_game_panel_layout(p, sc);
+  const auto card = geometry.card;
+  auto box = [&](int x, int y, int w, int h) { return SDL_Rect{card.x + x * sc, card.y + y * sc, w * sc, h * sc}; };
+  l.portrait = geometry.portrait;
+  l.summary = geometry.summary;
+  // Five columns follow the cells in common:297. The command/production split
+  // and queue controls are engine presentation pending a live reference capture.
+  auto cell = [&](int i) { return box(16 + i % 5 * 44, 70 + i / 5 * 44, 40, 40); };
+  for (int i = 0; i < 6; ++i) l.commands[i] = cell(i);
+  for (int i = 6; i < 15; ++i) l.production.push_back(cell(i));
+  l.previous = box(14, 20, 20, 18);
+  l.next = box(48, 20, 20, 18);
+  l.pause = box(90, 12, 150, 18);
+  for (int i = 0; i < 8; ++i) l.queue[i] = box(90 + i * 18, 34, 16, 20);
   return l;
 }
 
@@ -268,8 +273,10 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
     }
     return true;
   }
-  if (!contains(panel, in.mx, in.my)) return false;
-  auto l = layout(panel, std::max(1, panel.w / 204));
+  const int scale = std::max(1, panel.w / 204);
+  if (panel.w <= 0 || (!contains(panel, in.mx, in.my) &&
+      !contains(in_game_panel_layout(panel, scale).card, in.mx, in.my))) return false;
+  auto l = layout(panel, scale);
   for (size_t i = 0; i < l.commands.size(); i++) if (contains(l.commands[i], in.mx, in.my)) activate(PanelAction(i), w);
   auto items = sim_->menu(w, w.local_side);
   int count = int(l.production.size()), pages = std::max(1, (int(items.size()) + count - 1) / count);
@@ -300,32 +307,32 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
 std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Font& font, const StrBase& strings, const World& w,
                                   const SDL_Rect& panel, int sc, int mx, int my) const {
   auto l = layout(panel, sc);
+  const int ts = font.ui_scale(sc);
   std::string tip;
-  auto draw_icon = [&](int type, bool portrait, const SDL_Rect& rect, bool enabled = true) {
-    SpriteKey k; k.index = icon_sprite(type, portrait); k.team = uint8_t(w.side_color(w.local_side));
-    if (!k.index || !blit(r, store, k, rect, 0, enabled)) font.draw(r, rect.x + 4 * sc, rect.y + 8 * sc, "?", sc, {235, 220, 190, 255});
+  auto draw_icon = [&](int type, bool portrait, const SDL_Rect& rect, bool enabled = true, int side = -1) {
+    SpriteKey k; k.index = icon_sprite(type, portrait); k.team = uint8_t(w.side_color(side < 0 ? w.local_side : side));
+    if (!k.index || !blit(r, store, k, rect, 0, enabled)) font.draw(r, rect.x + 4 * sc, rect.y + 8 * sc, "?", ts, {235, 220, 190, 255});
   };
   if (!w.selection.ids.empty()) {
     const Object* o = w.find(w.selection.ids.front());
     if (o) {
-      draw_icon(o->type, true, l.portrait);
-      // Wrap the selection name inside the remaining width rather than across the panel edge.
-      std::string name = type_display_name(strings, o->type);
+      draw_icon(o->type, true, l.portrait, true, o->side);
+      const auto lines = font.wrap(type_display_name(strings, o->type), ts, l.summary.w);
       int y = l.summary.y;
-      while (!name.empty() && y < l.summary.y + 30 * sc) {
-        size_t n = name.size();
-        while (n > 1 && font.width(name.substr(0, n), sc) > l.summary.w) --n;
-        font.draw(r, l.summary.x, y, name.substr(0, n), sc, {255, 240, 190, 255});
-        name.erase(0, n); y += font.height(sc) + sc;
+      for (const auto& line : lines) {
+        if (y + font.height(ts) > l.summary.y + 32 * sc) break;
+        font.draw(r, l.summary.x, y, line, ts, {255, 240, 190, 255});
+        y += font.height(ts) + sc;
       }
-      font.draw(r, l.summary.x, l.summary.y + 34 * sc, "HP " + std::to_string(o->hp) + "  x" + std::to_string(w.selection.ids.size()), sc, {230, 230, 210, 255});
+      const std::string stats = "HP " + std::to_string(o->hp) + " x" + std::to_string(w.selection.ids.size());
+      font.draw(r, l.summary.x, l.summary.y + 38 * sc, stats, ts, {230, 230, 210, 255});
     }
-  } else font.draw(r, l.summary.x, l.summary.y + 12 * sc, "No selection", sc, {210, 200, 180, 255});
+  } else font.draw(r, l.summary.x, l.summary.y + 12 * sc, "No selection", ts, {210, 200, 180, 255});
   if (!sim_) return {};
   for (size_t i = 0; i < l.commands.size(); i++) {
     bool enabled = action_enabled(PanelAction(i), w, &sim_->rules()), hover = contains(l.commands[i], mx, my);
     SpriteKey k; k.archive = ArchiveId::Common; k.index = kButtons[i]; k.shade = 0;
-    if (!blit(r, store, k, l.commands[i], 0, enabled)) font.draw(r, l.commands[i].x, l.commands[i].y, kLabels[i], sc, {220, 210, 180, 255});
+    if (!blit(r, store, k, l.commands[i], 0, enabled)) font.draw(r, l.commands[i].x, l.commands[i].y, kLabels[i], ts, {220, 210, 180, 255});
     bool selected = (i == 0 && mode_ == TargetMode::Move) || (i == 1 && mode_ == TargetMode::Attack);
     if (hover || selected) border(r, l.commands[i], enabled);
     if (hover) {
@@ -350,10 +357,10 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
   auto items = sim_->menu(w, w.local_side);
   int count = int(l.production.size()), pages = std::max(1, (int(items.size()) + count - 1) / count);
   int page = std::clamp(page_, 0, pages - 1);
-  font.draw(r, l.previous.x, l.previous.y, "<", sc, {240, 220, 170, 255});
-  std::string title = "Production " + std::to_string(page + 1) + "/" + std::to_string(pages);
-  font.draw(r, panel.x + 42 * sc, l.previous.y, title, sc, {240, 220, 170, 255});
-  font.draw(r, l.next.x + 10 * sc, l.next.y, ">", sc, {240, 220, 170, 255});
+  font.draw(r, l.previous.x, l.previous.y, "<", ts, {240, 220, 170, 255});
+  std::string title = std::to_string(page + 1) + "/" + std::to_string(pages);
+  font.draw(r, l.previous.x, l.previous.y + 20 * sc, title, ts, {240, 220, 170, 255});
+  font.draw(r, l.next.x, l.next.y, ">", ts, {240, 220, 170, 255});
   const SideState* ss = w.local_side >= 0 && w.local_side < int(w.side_state.size()) ? &w.side_state[w.local_side] : nullptr;
   for (int i = 0; i < count && page * count + i < int(items.size()); i++) {
     const MenuItem& m = items[size_t(page * count + i)];
@@ -362,7 +369,7 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
     bool enabled = m.enabled && !full;
     draw_icon(m.type, false, rect, enabled);
     border(r, rect, (enabled && contains(rect, mx, my)) || placing_ == m.type);
-    if (m.construct) font.draw(r, rect.x + 28 * sc, rect.y + 28 * sc, "B", sc, {255, 230, 120, 255});
+    if (m.construct) font.draw(r, rect.x + 28 * sc, rect.y + 28 * sc, "B", ts, {255, 230, 120, 255});
     if (contains(rect, mx, my)) {
       tip = type_display_name(strings, m.type) + "\nCost: " + std::to_string(m.price) + "  Time: " + std::to_string(m.time);
       if (!m.enabled) tip += std::string("\nUnavailable: ") + m.why_not;
@@ -371,7 +378,7 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
     }
   }
   if (ss) {
-    font.draw(r, l.pause.x, l.pause.y, ss->queue.empty() ? "Queue empty" : ss->build_paused ? "Resume production" : "Pause production", sc, {220, 225, 185, 255});
+    font.draw(r, l.pause.x, l.pause.y, ss->queue.empty() ? "Queue empty" : ss->build_paused ? "Resume production" : "Pause production", ts, {220, 225, 185, 255});
     if (!ss->queue.empty() && contains(l.pause, mx, my)) tip = ss->build_paused ? "Resume production" : "Pause production";
     for (size_t i = 0; i < ss->queue.size() && i < l.queue.size(); i++) {
       const QueueItem& q = ss->queue[i];
