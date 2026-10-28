@@ -328,6 +328,42 @@ network access is unavailable. Synthetic replay hashes agree after every command
 and across different viewing sides. Loader checks retain town membership and
 exclude standalone side defences from inferred town attachment.
 
+## Campaign harness boundaries
+
+The automated runner and renderer-free engine mode are described in
+[playthrough.md](playthrough.md). Reports and installation-specific observations
+stay under ignored `work/`. Two equal independent-engine runs establish internal
+reproducibility only. Script path state hashing now includes cycling and inversion
+flags and separate side/tactic keys; script initialization resets the unsupported
+action counter. Synthetic checks cover these corrections. Older recorded hashes
+may change.
+
+Larger engine gaps exposed by campaign exercising remain open:
+
+- Boat activation, johnka enable/disable, submarine dispatch, side build/move
+  script commands and camera deactivation reach unsupported action branches.
+  The harness audits dormant branches as well as counting executed ones. Missions
+  depending on them need script/transport implementation before completion can
+  be assessed; camera-only diagnostics need not prevent gameplay progress.
+- The existing computer AI purchases units and reacts defensively. The harness's
+  human-side purchase/nearest-hostile policy cannot solve scripted transport,
+  escort, exploration or construction objectives. Completing the documented AI
+  and script task remains a prerequisite for credible autonomous campaign coverage.
+- Orders can remain active without positional progress. A stalled-order report
+  needs a movement/pathfinding investigation with the object, target, terrain and
+  dynamic blockers preserved; it does not establish an unreachable objective.
+  Expensive missions can hit the wall budget without producing a terminal hash.
+- Immediate script defeat and pending victory conditions need mission-specific
+  initialization/trigger investigation and aligned reference observations. Do
+  not bypass triggers, infer a win from enemy elimination, or change script
+  semantics merely to make the exercising policy pass.
+
+The checker proves only the documented static impossible-rectangle cases and
+identifies scripts without local victory actions. General objective reachability,
+mission strategy and reference campaign parity remain unresolved. No oracle
+record/replay dependency is required for the standalone harness; it remains
+required for any claim that its outcomes match the original game.
+
 ## Town upgrades and flag-0 production (2026-10-28)
 
 **Independent implementation / existing V tables:** the menu retains flag-0

@@ -30,7 +30,7 @@ add_library(aztec_engine_lib
   src/engine/render/atlas.cpp src/engine/render/sprite_store.cpp src/engine/render/font.cpp
   src/engine/render/png.cpp src/engine/render/fog.cpp src/engine/render/scene_renderer.cpp
   src/engine/ui/cursor.cpp src/engine/ui/panel.cpp src/engine/ui/names.cpp src/engine/ui/selection_ui.cpp src/engine/ui/commands_ui.cpp src/engine/ui/frontend.cpp src/engine/ui/minimap.cpp src/engine/ui/hud.cpp
-  src/engine/app/options.cpp src/engine/audio/mixer.cpp src/engine/audio/audio_system.cpp src/engine/audio/scene_audio.cpp src/engine/app/playtest.cpp src/engine/app/sheet.cpp src/engine/app/engine.cpp)
+  src/engine/app/options.cpp src/engine/audio/mixer.cpp src/engine/audio/audio_system.cpp src/engine/audio/scene_audio.cpp src/engine/app/playtest.cpp src/engine/app/sheet.cpp src/engine/app/engine.cpp src/engine/app/headless.cpp)
 target_compile_features(aztec_engine_lib PUBLIC cxx_std_20)
 target_include_directories(aztec_engine_lib PUBLIC src)
 target_compile_options(aztec_engine_lib PRIVATE -Wall -Wextra)
@@ -103,6 +103,9 @@ if(Python3_Interpreter_FOUND)
   set_tests_properties(map_viewer PROPERTIES LABELS "unit" TIMEOUT 20)
   add_test(NAME zpath_tools COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_zpath_tools.py $<TARGET_FILE:path_bench>)
   set_tests_properties(zpath_tools PROPERTIES LABELS "unit" TIMEOUT 20)
+  add_test(NAME playthrough COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_playthrough.py $<TARGET_FILE:aztec_engine>)
+  set_tests_properties(playthrough PROPERTIES LABELS "unit" TIMEOUT 30)
 endif()
 
 # ---- release test configuration (the path target above is already registered)
