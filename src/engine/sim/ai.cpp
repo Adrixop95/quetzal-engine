@@ -24,7 +24,7 @@ void GameSim::run_ai(World& w) {
                         state.phase == 14 || state.phase == 15 || state.phase == 18 || state.phase == 22 || state.phase == 23;
     for (const auto& q : w.side_state[town.side].queue) if (q.town == int(ti)) needs_offers = false;
     for (const auto& o : w.objects)
-      if (o.alive && !o.removed && o.town == int(ti) && o.progress < 1000) needs_offers = false;
+      if (o.alive && !o.removed && o.town == town.index && o.side == town.side && o.progress < 1000) needs_offers = false;
     const auto items = needs_offers ? menu(w, town.side, int(ti)) : std::vector<MenuItem>{};
     for (const auto& item : items) {
       // Reprice with this tick's strategist speed before the BuildMode command is applied.

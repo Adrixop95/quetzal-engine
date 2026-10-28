@@ -10,7 +10,7 @@ bool live(const Object& o) { return o.alive && !o.removed && o.type >= 0; }
 bool near(const TownDef& a, const TownDef& b) { return std::abs(a.x - b.x) < 8 && std::abs(a.y - b.y) < 8; }
 int count(const World& w, int town, int type) {
   int n = 0;
-  for (const auto& o : w.objects) if (live(o) && o.town == town && o.type == type) ++n;
+  for (const auto& o : w.objects) if (live(o) && o.town == w.mission.towns[town].index && o.side == w.mission.towns[town].side && o.type == type) ++n;
   return n;
 }
 int64_t income(const World& w, const TownState& s, int town) {
@@ -38,12 +38,14 @@ std::vector<Intelligence> intelligence(const World& w, const RulesData& rules, i
     const auto& t = w.mission.towns[ti];
     bool seen = false;
     for (const auto& o : w.objects)
-      if (live(o) && o.town == int(ti) && visible(w, observer, o.id)) seen = true;
+      if (live(o) && o.town == t.index && o.side == t.side && visible(w, observer, o.id)) seen = true;
     if (!seen) continue;
     Intelligence record; record.town = int(ti);
     for (const auto& o : w.objects) {
-      if (!live(o) || o.type >= 90 || o.town < 0 || o.town >= int(w.mission.towns.size())) continue;
-      if (!near(t, w.mission.towns[o.town])) continue;
+      if (!live(o) || o.type >= 90) continue;
+      const auto home = std::find_if(w.mission.towns.begin(), w.mission.towns.end(),
+                                     [&](const auto& td) { return td.index == o.town && td.side == o.side; });
+      if (home == w.mission.towns.end() || !near(t, *home)) continue;
       if (t.side == observer) {
         if (o.side != observer || rules.type(o.type).kind != 2) continue;
       } else if (!visible(w, observer, o.id)) continue;
@@ -57,7 +59,7 @@ std::vector<Intelligence> intelligence(const World& w, const RulesData& rules, i
 int development(const World& w, const RulesData& rules, int town) {
   int result = 0;
   for (const auto& o : w.objects)
-    if (live(o) && o.town == town && rules.type(o.type).kind == 2) result += rules.type(o.type).dev_level;
+    if (live(o) && o.town == w.mission.towns[town].index && o.side == w.mission.towns[town].side && rules.type(o.type).kind == 2) result += rules.type(o.type).dev_level;
   for (const auto& s : w.side_state) for (const auto& q : s.queue)
     if (q.town == town && rules.type(q.type).kind == 2) result += rules.type(q.type).dev_level;
   return std::clamp(result, 0, 9);
@@ -82,7 +84,7 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
   std::vector<uint32_t> available;
   const Object* attacker = nullptr;
   for (const auto& o : w.objects) {
-    if (!live(o) || o.town != town || o.side != t.side) continue;
+    if (!live(o) || o.town != t.index || o.side != t.side) continue;
     const auto& r = rules.type(o.type);
     if (r.structure && !anchor) anchor = o.id;
     busy |= o.progress < 1000;
@@ -111,7 +113,7 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
     return ti >= 0 && ti < int(w.mission.towns.size()) && w.mission.towns[ti].type != 0 &&
            w.hostile(t.side, w.mission.towns[ti].side) &&
            std::find(s.known_towns.begin(), s.known_towns.end(), ti) != s.known_towns.end() &&
-           std::any_of(w.objects.begin(), w.objects.end(), [&](const auto& o) { return live(o) && o.town == ti; });
+           std::any_of(w.objects.begin(), w.objects.end(), [&](const auto& o) { return live(o) && o.town == w.mission.towns[ti].index && o.side == w.mission.towns[ti].side; });
   };
   if (!enemy(s.target_town)) {
     s.target_town = -1;
@@ -121,7 +123,7 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
     // G: redirect eligible autonomous town troops, including moving troops, on a new alert.
     auto c = command(Pct::Attack); c.a = int(attacker->id);
     for (const auto& o : w.objects)
-      if (live(o) && o.town == town && o.side == t.side && o.tactic < 0 &&
+      if (live(o) && o.town == t.index && o.side == t.side && o.tactic < 0 &&
           (rules.type(o.type).mobile || rules.type(o.type).flier) && rules.type(o.type).armed &&
           rules.attack(o.type, attacker->type).damage > 0) c.ids.push_back(o.id);
     if (!c.ids.empty()) d.commands.push_back(c);
