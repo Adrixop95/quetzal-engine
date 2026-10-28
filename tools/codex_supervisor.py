@@ -171,6 +171,11 @@ def sync_with_develop(num, head, hint=""):
         lrun(f"git checkout -q -f --detach origin/{head}")
         lrun(" ".join(GIT) + " merge --no-commit --no-ff origin/develop")
         conflicted = lrun("git diff --name-only --diff-filter=U").stdout.split()
+        for f in [f for f in conflicted if f.endswith(".md")]:   # docs conflicts are additive: keep both sides without Codex
+            if lrun(f"git show :1:{f} > /tmp/.u_base && git show :2:{f} > /tmp/.u_ours && git show :3:{f} > /tmp/.u_theirs "
+                    f"&& git merge-file --union -p /tmp/.u_ours /tmp/.u_base /tmp/.u_theirs > {f}.u && mv {f}.u {f}").returncode == 0:
+                lrun(f"git add {f}")
+        conflicted = lrun("git diff --name-only --diff-filter=U").stdout.split()
         try:
             if conflicted:
                 log("PR", num, "conflicts:", " ".join(conflicted))
