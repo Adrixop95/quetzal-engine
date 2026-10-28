@@ -43,6 +43,7 @@ struct WeaponRules {
 struct TypeRules {
   HarvestRule harvest;
   WeaponRules weapon;
+  int dev_level = 0;             // types.csv DevLevel, summed for ordinary town buildings
   int kind = -1;                 // class kind (type_info)
   bool structure = false, mobile = false, flier = false, armed = false, large = false;
   int hp_max = 0;     Src hp_src = Src::Placeholder;      // Marine desc d1 (verified), else largest mission hp

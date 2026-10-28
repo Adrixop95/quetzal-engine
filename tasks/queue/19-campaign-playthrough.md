@@ -1,0 +1,2 @@
+Task: automated campaign playthrough harness.
+Build tools/playthrough.py plus an engine headless mode that loads each campaign mission from the user's private game data, runs it with the engine AI and scripted orders until a win/lose condition or timeout, and reports crashes, script errors, unreachable objectives and determinism (two runs, equal state hash). Commit only code and docs/playthrough.md (method, how to run); results go to private work/. Fix small engine bugs found, and list larger ones in docs/engine_rules_status.md.

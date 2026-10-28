@@ -64,8 +64,10 @@ def land(name):
         return
     lrun("cmake -S . -B build_sup -DAZTEC_GEN_DIR= -DCMAKE_BUILD_TYPE=Release >/dev/null && cmake --build build_sup --parallel 8 2>&1 | tail -3")
     if lrun("ctest --test-dir build_sup >/dev/null 2>&1").returncode != 0:
-        log("tests FAILED for", name, lrun("ctest --test-dir build_sup --output-on-failure 2>&1 | tail -30").stdout)
+        out = lrun("ctest --test-dir build_sup --output-on-failure 2>&1 | tail -30").stdout
+        log("tests FAILED for", name, out)
         lrun("git reset -q --hard")
+        return_to_codex(name, "Landing failed: the tests fail on a clean checkout of develop with your changes applied. Fix the cause and finish again. Test output tail:\n" + out[-1500:])
         return
     committed = False
     for _ in range(3):   # pre-commit hooks may rewrite files (whitespace, EOF): re-add and retry
@@ -78,6 +80,7 @@ def land(name):
     if not committed:
         log("commit failed for", name, "\n", last)
         lrun("git reset -q --hard")
+        return_to_codex(name, "Landing failed: pre-commit/commit rejected your changes. Fix the reported problems. Output tail:\n" + last[-1500:])
         return
     lrun(f"git push -q -u origin {branch}")
     pr = lrun(f"gh pr create --base develop --title 'Codex task {name}' --body 'Automated landing of the Codex task {name}; gated by ctest, pre-commit and CI.'").stdout.strip()
@@ -87,6 +90,18 @@ def land(name):
         log("could not open PR for", name)
         return
     mark_harvested(name)
+
+
+LAND_TRIES = {}
+
+
+def return_to_codex(name, text):
+    """Send a failed landing back to the Codex session that made it (at most 3 times); otherwise leave it for a human."""
+    LAND_TRIES[name] = LAND_TRIES.get(name, 0) + 1
+    if LAND_TRIES[name] > 3:
+        log("STUCK: task", name, "failed landing 3 times")
+        return
+    log("feedback to", name, run(f"python3 {ORCH} feedback {name} {json.dumps(text)}").stdout.strip())
 
 
 def mark_harvested(name):
