@@ -105,7 +105,7 @@ estimates. Reference-dependent work may grow when evidence changes.
 | ID | Task and completion evidence | Size | Existing basis / dependencies |
 | --- | --- | --- | --- |
 | V17 | Make native Linux and Windows builds/tests required CI gates. Resolve GCC/POSIX assumptions, SDL discovery, paths/case handling and serialization portability; isolate optional POSIX networking or supply a Windows adapter so default builds succeed. | L | Task [09](../tasks/queue/09-portability.md); current build CI is Linux-only, Windows release job is experimental and `aztec_net` uses POSIX UDP. Can proceed alongside simulation work. |
-| V18 | Produce self-contained engine packages with external-data setup instructions, rules metadata, dependencies and licenses; smoke-test on clean Linux/Windows machines without the oracle/generated source. Check missing or malformed data produces useful errors. | M | Release workflow exists but currently packages the executable, README and license only. V17; audit runtime data lookup and optional ffmpeg requirements. |
+| V18 | Produce self-contained engine packages with external-data setup instructions, rules metadata, dependencies and licenses; smoke-test on clean Linux/Windows machines without the oracle/generated source. Check missing or malformed data produces useful errors. | M | Packaging, external-data/license instructions and separate clean-runner smoke jobs implemented; local synthetic staging verified. Native CI/package evidence remains pending, so this row is not complete. V17; see [package evidence](#v18-package-evidence). |
 | V19 | Add the full campaign harness and mission coverage matrix: completion route, expected outcome, unsupported actions, unreachable objectives, timeout/crash reports, paired tick hashes and mid-mission saves. Cover all 15 missions, defeat/retry and final progression with automated scenarios plus interactive acceptance. | XL | Task [19](../tasks/queue/19-campaign-playthrough.md); no playthrough harness exists. Historical corpus has only nine recordings over bounded intervals. Harness/inventory can start now; successful completion depends on V03-V16. |
 | V20 | Fix campaign/soak failures, run malformed-input and sanitizer checks, and complete required tests on hosts that permit sockets and private game-data runs. Publish an English release checklist with platform, mission and save/load results and outstanding limitations. | L | `fuzz` and [ROBUSTNESS.md](../tests/ROBUSTNESS.md) cover loaders, not all runtime failures. V17-V19; no skipped or denied test may stand in for required release evidence. |
 
@@ -114,6 +114,25 @@ first behavioral divergences rather than assigning causality from engine hashes.
 Economy, scripts, AI and their UI depend on one another; split the XL rows into
 reviewable scenarios and update status after each merged change. Close the
 campaign matrix and fresh-process save continuations before declaring v1.
+
+### V18 package evidence
+
+- [x] Implement Linux dependency/source/notice bundling, static Windows packaging,
+  packaged rules lookup, external-data instructions and gated publication with
+  engine source and checksums. ffmpeg is documented as optional and external.
+- [x] Verify local relocated staging from an unrelated working directory with
+  synthetic victory/repeatability, SDL dummy rendering, missing/corrupt archives,
+  corrupt terrain and missing rules. No original data or oracle is used.
+- [ ] Obtain green Linux and Windows release builds and extracted-package smoke
+  runs on fresh CI runners. This Linux development host is Fedora; local staging
+  uses host libraries and does not verify Debian bundling or native Windows.
+- [ ] Reconcile V17's required native checks and branch protection with actual CI
+  results. The checkout contains portability code and a native build matrix, but
+  GitHub PR status could not be refreshed (API connection failed). No unmerged
+  dependency or successful remote run is assumed.
+
+V18 remains unchecked until the clean-platform evidence exists. Packaging work
+does not establish campaign completion, original-game parity or native devices.
 
 ## Deferred work and fidelity follow-ups
 
