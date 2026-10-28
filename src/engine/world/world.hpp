@@ -3,6 +3,8 @@
 // previous and current tick position so the renderer can interpolate between 12 Hz ticks.
 #pragma once
 #include <cstdint>
+#include <memory>
+#include "core/savegame.hpp"
 #include <string>
 #include <vector>
 #include "core/map.hpp"
@@ -43,6 +45,8 @@ struct Object {
   int transport_phase = 0, orientation = 0;
   bool construction_overlay = false;
   bool has_fired = false;
+  int64_t body_tick = -1, attack_tick = -1;  // independent visual clocks, advanced only by GameSim
+  bool body_moving = false;
   // --- simulation state (written only by the Simulation) ---
   int32_t hp_max = 0;
   int32_t secondary_hp = 0;    // Marine d4, independent of primary/max HP
@@ -52,6 +56,7 @@ struct Object {
   int32_t dest_x = 0, dest_y = 0;  // order destination, world px
   int32_t cooldown = 0;        // ticks until the next shot
   int32_t corpse_ticks = 0;    // ticks since death
+  bool town_hall = false;      // explicit hall identity, independent of its upgrade type
   int32_t tactic = -1;         // team (tactic) number for Team objects, changed by joinTactic
   int32_t scenario = -1;       // ScenarioID of defences / vessels (script references)
   uint32_t last_hit_by = 0;    // id of the last attacker (script condition tactic(N).attacked)
@@ -74,9 +79,19 @@ struct QueueItem { int type = 0; int remaining = 0; int total = 0; int town = -1
 // Per-side economy and command state.
 struct SideState {
   int money = 0;
+  int32_t selected_tactic = -1; // deterministic command selection; separate from local UI selection
   bool build_paused = false;
   std::vector<QueueItem> queue;         // training / construction queue (production time in ticks)
   std::vector<uint32_t> groups[10];     // control groups 0..9
+};
+
+enum class RepairMode : uint8_t { Off = 0, Repair = 1, Destroy = 2 };
+
+struct TownState {
+  int index = 0, side = 0;      // mission section number and owner
+  uint32_t hall = 0;
+  RepairMode repair_mode = RepairMode::Off;
+  std::vector<uint32_t> marked; // canonical repairer membership; no separate object mark to desynchronize
 };
 
 enum Relation : uint8_t { kEnemy = 0, kFriend = 1, kNeutral = 2 };
@@ -91,6 +106,9 @@ struct Selection {
 };
 
 struct World {
+  // Retains unresolved original research, script and pool state without inventing semantics.
+  std::shared_ptr<const SaveGame> original_save;
+  std::vector<uint32_t> original_unit_ids; // imported engine ID minus one -> sparse original pool ID
   MissionDef mission;
   TerrainMap terrain;
   Grid<uint8_t> passability;     // may be empty
@@ -99,6 +117,7 @@ struct World {
   Sprite preview;                // .spr minimap preview; w == 0 if absent
   std::vector<Object> objects;
   std::vector<Effect> effects;
+  std::vector<TownState> town_state;
   std::vector<SideState> side_state;   // indexed by side number
   uint8_t relation[8][8] = {};          // relation[a][b]: how side a regards side b (enemy / friend / neutral)
   uint8_t outcome = kRunning;           // mission result for the local side (scripts: side(local).victory / defeat)

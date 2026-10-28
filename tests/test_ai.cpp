@@ -86,6 +86,21 @@ static void unit(const RulesData& rules) {
   s = {}; s.phase = 2; s.target_town = 1; s.known_towns = {1}; s.elapsed = 1;
   d = ai::step(w, rules, 0, s, {}); CHECK(issued(d, Pct::AttackMove)->ids.size() == 101);
 }
+// Initialization must provide both planner state and town-command hall identities.
+static void initialization(std::shared_ptr<const RulesData> rules) {
+  auto w = world();
+  w.mission.start_time = -1;
+  w.mission.sides[1].only_comp = false;
+  w.objects[0].town_hall = w.objects[1].town_hall = true;
+  w.side_state[0].selected_tactic = 7;
+  GameSim sim(rules); sim.init(w);
+  CHECK(sim.tick_count() == 0 && w.day_clock == kDayTicks - 1);
+  CHECK(w.ai_towns.size() == 2 && w.town_state.size() == 2);
+  CHECK(w.town_state[0].hall == 1 && w.town_state[1].hall == 2);
+  CHECK(w.side_state[0].selected_tactic == -1);
+  CHECK(w.visibility.sides[0].v == std::vector<uint8_t>(1600, 24));
+  CHECK(w.visibility.sides[1].v == std::vector<uint8_t>(1600, 0));
+}
 static void scripted(std::shared_ptr<const RulesData> rules) {
   auto a = world(); a.objects[0].scenario = 42;
   object(a, 0, 1, 1, 25, 26, 7); object(a, 0, 1, 1, 26, 26, 8);
@@ -135,6 +150,6 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
 }
 int main(int argc, char** argv) {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
-  if (argc > 1 && std::string(argv[1]) == "--smoke") smoke(rules); else { unit(*rules); scripted(rules); }
+  if (argc > 1 && std::string(argv[1]) == "--smoke") smoke(rules); else { unit(*rules); initialization(rules); scripted(rules); }
   return failures ? 1 : 0;
 }

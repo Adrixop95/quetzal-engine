@@ -121,12 +121,22 @@ CommandPanelLayout CommandsUi::layout(const SDL_Rect& p, int sc) {
 }
 
 bool CommandsUi::action_enabled(PanelAction action, const World& w, const RulesData* rules) {
-  if (action == PanelAction::Repair || action == PanelAction::Garrison) return false;
+  if (action == PanelAction::Repair) return false;
   for (uint32_t id : w.selection.ids) {
     const Object* o = w.find(id);
     if (!o || !o->alive || o->removed || o->side != w.local_side || o->type < 0) continue;
     const TypeInfo* ti = type_info(o->type);
-    if (action == PanelAction::Destroy) return true;
+    if (action == PanelAction::Garrison) {
+      if (o->town_hall && o->town >= 0) return true;
+      continue;
+    }
+    if (action == PanelAction::Destroy) {
+      for (const TownState& town : w.town_state)
+        if (town.index == o->town && town.side == o->side && town.repair_mode != RepairMode::Off &&
+            !o->town_hall && o->progress >= 1000 && ti && ti->is_structure() &&
+            (town.repair_mode == RepairMode::Destroy || o->hp < o->hp_max)) return true;
+      continue;
+    }
     if (rules) {
       const TypeRules& tr = rules->type(o->type);
       if ((tr.mobile || tr.flier) && (action != PanelAction::Attack || tr.armed)) return true;
@@ -170,14 +180,31 @@ void CommandsUi::issue_to_selection(const World& w, Command c) const {
     const Object* o = w.find(id);
     if (o && o->alive && !o->removed && o->side == w.local_side) c.ids.push_back(id);
   }
-  if (!c.ids.empty()) sim_->submit(std::move(c));
+  if (c.type == Pct::DestroyHere) {
+    for (const TownState& town : w.town_state) {
+      if (town.side != w.local_side) continue;
+      Command toggle = c; toggle.b = town.index; toggle.ids.clear();
+      for (uint32_t id : c.ids) {
+        const Object* o = w.find(id);
+        if (o && o->town == town.index) toggle.ids.push_back(id);
+      }
+      if (!toggle.ids.empty()) sim_->submit(std::move(toggle));
+    }
+  } else if (!c.ids.empty()) sim_->submit(std::move(c));
 }
 void CommandsUi::activate(PanelAction action, const World& w) {
   if (!action_enabled(action, w, &sim_->rules())) return;
   cancel_mode();
   if (action == PanelAction::Move) mode_ = TargetMode::Move;
   else if (action == PanelAction::Attack) mode_ = TargetMode::Attack;
-  else { Command c; c.type = action == PanelAction::Stop ? Pct::Stop : Pct::DestroyHere; issue_to_selection(w, c); }
+  else if (action == PanelAction::Garrison) {
+    for (uint32_t id : w.selection.ids) {
+      const Object* o = w.find(id);
+      if (!o || !o->town_hall || !o->alive || o->removed || o->side != w.local_side) continue;
+      Command c; c.type = Pct::Garrison; c.side = uint8_t(w.local_side); c.b = o->town;
+      sim_->submit(c); break;
+    }
+  } else { Command c; c.type = action == PanelAction::Stop ? Pct::Stop : Pct::DestroyHere; issue_to_selection(w, c); }
 }
 
 bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alpha, const Minimap& mm, bool in_world, const SDL_Rect& panel) {
@@ -190,6 +217,7 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
   if (bound_hit(in, SDL_SCANCODE_H)) activate(PanelAction::Stop, w);
   if (bound_hit(in, SDL_SCANCODE_M)) activate(PanelAction::Move, w);
   if (bound_hit(in, SDL_SCANCODE_X)) activate(PanelAction::Attack, w);
+  if (!in.ctrl && !in.alt && action_hit(in, "Garrison")) activate(PanelAction::Garrison, w);
   if (!in.ctrl && !in.alt && action_hit(in, "Destroy")) activate(PanelAction::Destroy, w);
   for (int k = 0; k < 10; k++) {
     SDL_Scancode sc = SDL_Scancode(k == 0 ? SDL_SCANCODE_0 : SDL_SCANCODE_1 + k - 1);
@@ -312,10 +340,11 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
         SDL_Scancode shortcut = i == 0 ? SDL_SCANCODE_M : i == 1 ? SDL_SCANCODE_X : SDL_SCANCODE_H;
         if (!key_bound(shortcut)) tip += std::string(" (") + SDL_GetScancodeName(shortcut) + ")";
       }
-      if (i == 3 || i == 4) tip += "\nUnavailable: not supported by the simulation";
-      else if (!enabled) tip += "\nSelect an owned " + std::string(i == 5 ? "unit or building" : "unit");
+      if (i == 3) tip += "\nRepair is unavailable";
+      else if (i == 4) tip += "\nExtract the selected town's troops";
+      else if (i == 5) tip += "\nToggle buildings in the town's active repairer list";
+      else if (!enabled) tip += "\nSelect an owned unit";
       else if (i == 1) tip += "\nClick an enemy to attack, or terrain to attack-move";
-      else if (i == 5) tip += "\nRemove selected units and buildings";
     }
   }
   auto items = sim_->menu(w, w.local_side);
