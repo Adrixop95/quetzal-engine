@@ -140,7 +140,8 @@ bool import_original_save(const SaveGame& save, World& world, std::string& error
       o.source = o.town >= 0 ? ObjectSource::Town : ObjectSource::Team;
       if (r.kind == 8) o.source = ObjectSource::Boat;
       if (r.kind == 10) o.source = ObjectSource::Johnka;
-      o.hp = signed_word(value(r, 0x38)); o.hp_max = signed_word(value(r, 0x3c));
+      o.hp = signed_word(value(r, 0x38)); o.secondary_hp = signed_word(value(r, 0x3c));
+      o.regen_service_ticks = std::max(0, signed_word(value(r, 0x54)));
       o.alive = o.hp > 0;
       o.teleport(pixel_position(value(r, 0x24)), pixel_position(value(r, 0x28)));
       if (r.kind == 0) o.teleport(signed_word(value(r, 0x6c)), signed_word(value(r, 0x70)));

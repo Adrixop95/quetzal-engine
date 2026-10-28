@@ -284,7 +284,7 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
     if (it.effect || it.tree || !it.primary || !world_.selection.contains(it.o->id) || it.o->type < 0) continue;
     const TypeInfo* ti = type_info(it.o->type);
     bool structure = ti && ti->is_structure();
-    int hpmax = hp_max(it.o->type);
+    int hpmax = it.o->hp_max;
     float frac = hpmax > 0 ? std::clamp(float(it.o->hp) / hpmax, 0.f, 1.f) : 1.f;
     float w = (structure ? 70.f : 26.f) * cam.zoom, h = std::max(3.f, 4.f * cam.zoom);
     float x = cam.to_screen_x(it.wx) - w / 2, y = cam.to_screen_y(it.wy - (structure ? 110.f : 46.f));
@@ -294,15 +294,6 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
     SDL_SetRenderDrawColor(r, frac > 0.6f ? 60 : 230, frac > 0.3f ? 210 : 50, frac > 0.6f ? 60 : 40, 255);
     SDL_RenderFillRectF(r, &fg);
   }
-}
-
-int SceneRenderer::hp_max(int type) const {
-  auto it = hp_max_.find(type);
-  if (it != hp_max_.end()) return it->second;
-  int m = 0;
-  for (const Object& o : world_.objects)
-    if (o.type == type) m = std::max(m, o.hp);
-  return hp_max_[type] = m;
 }
 
 ObjectState SceneRenderer::object_state(const Object& o) const {

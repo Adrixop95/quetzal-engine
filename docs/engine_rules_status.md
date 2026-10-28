@@ -13,9 +13,9 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Stop (0x50) and AttackMove (0x51) | P | engine extensions; the original has no such packets |
 | Command coordinates / tiles from packets | engine | clamped into the map before any fixed-point conversion; invalid tiles are ignored |
 | Command order inside a tick: ascending side, then submission order | P | original: per-side queues in `0x4577b0` (order not verified) |
-| Marine primary/max HP = d1; separate secondary HP = d4 | V fields / engine replay | CSV loader, initial objects and trained spawns retain distinct values; primary mission HP is preserved when supplied. Hypno kill-time assignment is not implemented |
-| Marine regeneration | V threshold facts / P state integration | Active living Marines add d2 when below selected d1/d3 threshold; no extrapolation to other kinds. Explicit hashed `regen_alternate` selector defaults to d1. The supplied specification does not identify the reference state transition selecting d3 or establish clamp/overshoot behavior; current pre-add threshold behavior is a construction choice pending reference evidence |
-| Primary HP of other types | V descriptor fields / P elsewhere | Building d1, Defence d3, Bird/Zeppelin d1, Headtruck/Spider d3 loaded. Headtruck/Spider initial and max fields agree in current tables. Other types retain highest mission HP fallback |
+| Descriptor primary/max and secondary HP | V fields / engine checks | All nine descriptor families loaded; mission/spawn maxima never depend on other instances. Positive mission HP is preserved. Original-save +0x3c is secondary HP; maximum comes from rules at simulation initialization. See V04 below |
+| Descriptor regeneration | V inspected thresholds/countdown/overshoot / P facility producer | Marine, Truck, Zeppelin, Bird, Headtruck, Spider and Cannon recover below natural thresholds, or full HP while the hashed service countdown is positive. Pre-add check permits overshoot; countdown expires after the update. Facility coverage/refresh and exact tick alignment remain open |
+| Scripted object health and placement identity | V zero maximum getters / engine identity checks | Boat, Johnka and Camera maximum getters return zero; Submarine remains an unsupported marker. Town membership uses section numbers, including sparse IDs; team scenario/tactic, defence and vessel provenance remain distinct. Live reference identity still depends on V02 |
 | Descriptor movement speed | V getters / synthetic integration | Marine d5, Headtruck/Spider d7, Zeppelin/Truck d5 in px/tick, converted to 24.8. Historical averages no longer override established descriptor speeds |
 | Measured speed fallback | M | `speed_measured.csv` (mean mid-run speed), used only without a verified speed getter; these averages include steering/sampling effects |
 | Bird speed and transport routes | P / unresolved | Bird and unknown speeds default to 8 px/tick. Boats and Johnka remain stationary; neither receives a ground agent. Scripted transport routes are unimplemented |
@@ -61,7 +61,7 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Projectile trajectory and collision | P | straight flight toward the launch-time target position; no gravity, homing, terrain collision or interception. The original target receives the hit even after moving; splash additionally hits living hostile objects inside the radius. Source death does not cancel flight |
 | Reference trajectory, interception, burn and splash measurements | blocked / no measurements | The 2026-10-28 isolated probe failed before game launch: namespace loopback setup returned `Cannot open netlink socket: Operation not permitted`. This is not a no-hit observation. Ballistic parameters, terrain/obstacle tests, burn cadence and per-category splash damage remain unresolved; see the [measurement protocol](EXPERIMENTS.md#projectile-measurement-protocol). No simulation rules were changed from this failed probe |
 | Effect animation ids, slots, durations and hotspots | V resource metadata | `effects.hpp`, `AnimSet`, `sprites_mapping.md`; effects read frame/light timelines from installed Units.xbe. 150/151/152 last 11 ticks in slot 0 and 10 in slots 1/2; debris/rubble 250; shockwave 105 lasts 30. Arrow/Axe/Ball use dir32 looping slots, flame uses a one-shot slot |
-| Damage fire | V selection / P HP inputs | built structures at <=75/50/25% HP use 154/155/156 at ground position +(0,1), looping; repair/death removes the fire. HP maxima retain the pre-existing uncertainties |
+| Damage fire | V selection / engine descriptor HP inputs | built structures at <=75/50/25% HP use 154/155/156 at ground position +(0,1), looping; repair/death removes the fire. Descriptor maxima are supplied by V04; synchronized reference rendering remains open |
 | Explosions, debris, muzzle and beam | V selection metadata / P spawn timing | vehicle death 152, ground debris 113; Arrow d13=105 creates shockwave; immediate descriptor d10/d11 enables muzzle 106 at +20 px, beam 107 at approximately 30-px steps, impact 110. No extra turret muzzle sprite is invented |
 | Smoke and unknown owners | open | smoke contained in known animation frames renders through the same effect path. Standalone anims 104/153 remain unassigned: their owners/spawn conditions are unverified, so no smoke spawning rule is invented |
 | Height and displacement | P flight altitude | Axe uses frame height, debris/rubble height -1; vehicle explosions retain explicit render height; other transient heights default to zero. Ball light reduction with altitude, altitude production and per-frame simulation displacement remain unresolved |
@@ -334,7 +334,7 @@ combinations, Marine d1/d4 differences (Bear/Bizon), strict threshold boundaries
 sequential rounding, armor rounding and zero-air suppression, special constant
 weapons, unavailable/delegated weapons, reload+1 hits against a stationary
 structure, and replay hashes at every tick of a 24-tick duel. Hash sensitivity
-covers secondary HP and the explicit regeneration selector. Old engine saves
+covers secondary HP and regeneration state (superseded by the V04 countdown below). Old engine saves
 with previously computed hashes are not hash-compatible with this correction.
 
 **Evidence boundary:** V arithmetic refers to documented reference facts, not a
@@ -824,3 +824,78 @@ stored hashes may no longer match; the save format was not changed.
 three game-data entries and restricted UDP process test skip. All pre-commit
 hooks pass using a copy of the local hook cache under ignored build output.
 Private-data/reference runs are not verified by these skipped checks.
+
+## V04 initialization and regeneration (2026-10-28, partial)
+
+**V inspected field facts:** local constructor/getter and instruction review
+establishes this descriptor mapping. Entries are dword indices; a dash means no
+such descriptor field is loaded. Only factual metadata and independently written
+engine logic are included in the public tree.
+
+| Kind | Primary/max HP | Secondary HP | Regeneration | Natural threshold | Physical armor | Weapon ID |
+| --- | --- | --- | --- | --- | --- | --- |
+| Marine | d1 | d4 | d2 | d3 | d13 | d7 |
+| Building | d1 | - | - | - | d57 | - |
+| Zeppelin | d1 | d4 | d2 | d3 | d13 | d8 |
+| Truck | d1 | d4 | d2 | d3 | d12 | d7 |
+| Bird | d1 | d4 | d2 | d3 | d15 | d9 |
+| Headtruck / Spider | d3 | d6 | d4 | d5 | d15 | d9 |
+| Defence | d3 | - | - | - | d65 | d59 |
+| Cannon | d2 | d5 | d3 | d4 | d12 | d7 |
+
+Maximum getters include `0x45fe50`, `0x4711a0`, `0x44a0f0` and `0x415dc0`;
+physical armor is virtual +0x10c (for example `0x45ff20`, `0x44a180`,
+`0x40fab0`, `0x41cc20`). Boat/Johnka/Camera inherit a zero maximum getter;
+no mission-instance maximum or invented one-HP maximum is assigned to them.
+The renderer now uses each object's simulation maximum, including after upgrades.
+Original-save import preserves secondary HP independently; initialization installs
+the descriptor maximum without replacing saved primary HP or service countdown.
+This is a field correction, not complete original-save resumption.
+
+Recovery Think paths (`0x433db0`, `0x460a10`, `0x4719b0`, `0x407b10`,
+`0x42c880`, `0x44b360`, `0x417090`)
+select the natural threshold when object +0x54 is zero and full primary HP when
+positive. The comparison precedes addition, without clamping to the threshold.
+The base update `0x43edc0` decrements the counter after Think; the setter
+`0x402990` replaces it. Town facility service refreshes it to 10 in the inspected
+`0x45d4d0` path. Headtruck/Defence instead override that service method with
+immediate capped healing (`0x41cbe0`); a countdown is not invented for that call.
+The engine implements countdown expiry and descriptor recovery. Automatic facility
+coverage/refresh is still absent: its small/large-pool category and spatial branches
+need validation before a universal service radius is introduced.
+
+**Engine construction checks:** synthetic placement covers all 90 public types,
+side ownership, sparse town IDs 4/9, hall linkage, colliding scenario IDs, separate
+defence/vessel provenance, positive damaged/over-max HP and independent maxima.
+Seven recovery families cover natural/full boundaries, overshoot, service expiry,
+pause, dead-object exclusion, unchanged secondary HP and serialized command-log
+save/replay hashes through expiry. Original-save tests distinguish saved secondary
+HP from descriptor maximum and retain a positive countdown. The private engine
+test additionally loads and checks initialization for all 15 campaign missions.
+These establish engine behavior and data coverage, not reference equivalence.
+
+The Hypno predicate/weapon mapping and a tested kill-time calculation use secondary
+HP for Hypno and primary HP otherwise, with ceiling hit count times reload
+(`0x46fac0`); it is a calculation helper, not integrated tactic assignment.
+Hypno damage/conversion, secondary-HP transitions, ownership transfer and assignment
+remain unverified and unimplemented. Existing generic hit handling must not be
+interpreted as verified Hypno behavior. Unresolved weapon families remain unresolved.
+
+**Missing dependencies and observations:** V02's audited reference identity/field
+adapters and aligned observer are incomplete in this checkout. A bounded private
+reference probe used the supplied read-only runtime, resource symlinks, copied maps
+and configuration, private Maps/Saves directories, dummy SDL and `unshare -rn`.
+It failed at loopback setup with `Cannot open netlink socket: Operation not
+permitted`, before launching the game. Inputs and failure output remain under
+ignored `work/v04/`; there is no new M evidence, record/replay result or normalized
+reference comparison. V04 remains open for these dependencies, facility service,
+Hypno behavior and campaign-wide live transitions.
+
+**Validation:** baseline Release build and 26 CTest entries passed; five entries
+skipped (four private-data checks and restricted UDP processes). Baseline
+pre-commit passed using a worktree copy of the local cache. The private engine
+check passed with dummy SDL inside `unshare -rn`, using a private installation
+copy. Final Release build, the same 26 CTest entries, the private engine check
+and all pre-commit hooks passed; the same five CTest entries skipped.
+Changed behavior can invalidate older saved replay hashes; the save container
+format is unchanged and existing mismatch rejection still applies.

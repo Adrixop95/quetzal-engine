@@ -2,24 +2,8 @@
 
 namespace aztec::engine {
 
-bool load_world(const GameData& data, const std::string& spec, World& w, std::string& err) {
-  std::string mp = resolve_mission(data.maps_dir(), spec);
-  if (mp.empty()) { err = "mission not found: " + spec; return false; }
-  w = World{};
-  if (!load_mission(mp, w.mission)) { err = "cannot parse " + mp; return false; }
-  const std::string& base = w.mission.file_name;
-  std::string mapf = data.map_file(base, "map");
-  if (mapf.empty() && w.mission.map_name != base) mapf = data.map_file(w.mission.map_name, "map");
-  if (mapf.empty() || !load_terrain_map(mapf, w.terrain)) { err = "cannot load .map for " + base; return false; }
-  if (w.terrain.w <= 0 || w.terrain.h <= 0) { err = "empty map"; return false; }
-  if (w.mission.w == 0) { w.mission.w = w.terrain.w; w.mission.h = w.terrain.h; }
-
-  std::string f;
-  if (!(f = data.map_file(base, "dat")).empty()) load_passability(f, w.terrain.w, w.terrain.h, w.passability);
-  if (!(f = data.map_file(base, "rm")).empty()) load_resource_map(f, w.resources);
-  if (!(f = data.map_file(base, "vis")).empty()) load_vis(f, w.visibility);
-  if (!(f = data.map_file(base, "spr")).empty()) load_preview(f, w.preview);
-
+void place_mission_objects(World& w) {
+  w.objects.clear();
   uint32_t next_id = 1;
   for (const PlacedObject& p : w.mission.objects) {
     Object o;
@@ -28,12 +12,8 @@ bool load_world(const GameData& data, const std::string& spec, World& w, std::st
     o.source = p.source;
     o.defence = p.defence;
     o.side = p.side;
-    if (p.source == ObjectSource::Town && !p.defence)
-      for (size_t i = 0; i < w.mission.towns.size(); ++i)
-        if (w.mission.towns[i].index == p.group) o.town = int(i);
     o.hp = p.hp;
     o.facing = 6;  // south
-    o.hp_max = p.hp;
     if (p.source == ObjectSource::Team) o.tactic = p.scenario_id;
     if (p.source == ObjectSource::Town && !p.defence) o.town = p.group;
     o.scenario = p.scenario_id;
@@ -53,11 +33,31 @@ bool load_world(const GameData& data, const std::string& spec, World& w, std::st
     o.town = t.index;
     o.town_hall = true;
     o.side = t.side;
-    o.town = int(&t - w.mission.towns.data());
     o.scenario = t.scenario_id;
     o.teleport(tile_center_fixed(t.x), tile_center_fixed(t.y));
     w.objects.push_back(o);
   }
+}
+
+bool load_world(const GameData& data, const std::string& spec, World& w, std::string& err) {
+  std::string mp = resolve_mission(data.maps_dir(), spec);
+  if (mp.empty()) { err = "mission not found: " + spec; return false; }
+  w = World{};
+  if (!load_mission(mp, w.mission)) { err = "cannot parse " + mp; return false; }
+  const std::string& base = w.mission.file_name;
+  std::string mapf = data.map_file(base, "map");
+  if (mapf.empty() && w.mission.map_name != base) mapf = data.map_file(w.mission.map_name, "map");
+  if (mapf.empty() || !load_terrain_map(mapf, w.terrain)) { err = "cannot load .map for " + base; return false; }
+  if (w.terrain.w <= 0 || w.terrain.h <= 0) { err = "empty map"; return false; }
+  if (w.mission.w == 0) { w.mission.w = w.terrain.w; w.mission.h = w.terrain.h; }
+
+  std::string f;
+  if (!(f = data.map_file(base, "dat")).empty()) load_passability(f, w.terrain.w, w.terrain.h, w.passability);
+  if (!(f = data.map_file(base, "rm")).empty()) load_resource_map(f, w.resources);
+  if (!(f = data.map_file(base, "vis")).empty()) load_vis(f, w.visibility);
+  if (!(f = data.map_file(base, "spr")).empty()) load_preview(f, w.preview);
+
+  place_mission_objects(w);
   w.script_side = 0;
   for (const SideDef& sd : w.mission.sides)
     if (!sd.only_comp && !sd.neutral) { w.script_side = sd.index; break; }

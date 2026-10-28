@@ -49,7 +49,7 @@ struct TypeRules {
   int dev_level = 0;             // types.csv DevLevel, summed for ordinary town buildings
   int kind = -1;                 // class kind (type_info)
   bool structure = false, mobile = false, flier = false, armed = false, large = false;
-  int hp_max = 0;     Src hp_src = Src::Placeholder;      // Marine desc d1 (verified), else largest mission hp
+  int hp_max = 0;     Src hp_src = Src::Placeholder;      // descriptor maximum; never inferred from mission instances
   int secondary_hp = 0, regen = 0, regen_alt_threshold = 0;
   bool service_damage_protected = false; // Building descriptor byte +0xec blocks explicit service damage
   int weapon_id = -1;
@@ -81,8 +81,10 @@ struct WeaponResult {
 
 // Each matching category is applied separately, rounding down after each 8.8 product.
 int category_damage(int base, const std::vector<int>& multipliers);
-// The alternate-state selector is explicit: its reference state mapping remains unresolved.
-int regenerated_hp(const TypeRules& type, int hp, bool alternate_state);
+// Positive service countdown selects full HP; natural recovery uses the lower threshold.
+int regenerated_hp(const TypeRules& type, int hp, bool serviced);
+// Hypno estimates use secondary HP; unavailable damage/getters return -1.
+int estimated_kill_time(const TypeRules& attacker, int hp, int secondary_hp, const WeaponResult& shot);
 
 struct DuelEntry { int dmg = 0, interval = 0; };
 
