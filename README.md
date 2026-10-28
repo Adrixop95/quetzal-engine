@@ -4,6 +4,8 @@ An open-source reimplementation of the engine of **The Aztec / Aztec Empire** (N
 The project reads the data files of your own copy of the game; **no game data, executable or generated code derived from the executable is part of this repository.**
 
 Status: early work in progress. See `docs/` for what is understood so far.
+The [v1 roadmap](docs/ROADMAP.md) defines campaign playability, deterministic
+simulation, engine save/load and Linux/Windows release requirements.
 
 ## What is here
 - `src/core/` - loaders for the original file formats (archives, sprites, palettes, maps, mission files `.mp`/`.scn`/`.vis`, strings, saves, audio banks).
