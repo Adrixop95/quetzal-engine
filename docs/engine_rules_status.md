@@ -244,7 +244,7 @@ commands are regenerated during replay rather than added to the player command l
 | Development and production composition | P (G in reference rules) | Cheapest available combat/development item with UGI tie break. Existing prerequisites, disabled types, prices and affordability apply. Does not reproduce recursive scoring or randomized ties |
 | Intelligence | V discovery/cadence / P visibility | Records visible live towns, own ordinary buildings and visible foreign membership including nearby towns within eight tiles on both axes. Town discovery refreshes on first use and every `(side+1)*1000` updates. Previously discovered living enemy towns remain valid destinations through fog. Computer layers initialize at 24; uses engine visibility values <=24; exact MapExplorer weighting and visibility parity remain open |
 | Attack waves | P (G fallback) | States 1/2 prepare purchases and release idle autonomous combat units toward a known hostile non-outpost town. Local and threatened force targets use documented `3*(development+1)` and `7*(development+1)` counts. Offensive purchase count is a fallback, not a verified launch threshold |
-| Defence reactions | P (G fallback) | A new live visible hostile attacker of a town structure redirects eligible autonomous town troops, including moving troops. Eight-tile threat bounds and plan entry are explicit fallback choices. Script-owned tactics are preserved. Placement failure disables defence attempts; unaffordability does not |
+| Defence reactions | P (G fallback) | A new live visible hostile attacker of a town structure redirects eligible autonomous town troops, including moving troops. Idle reinforcements also respond to the ongoing alert while production is busy, without resetting active orders or the production plan. Eight-tile threat bounds and plan entry are explicit fallback choices. Script-owned tactics are preserved. Placement failure disables defence attempts; unaffordability does not |
 | Placement | P (G fallback) | Stable radius/row/column search within eight tiles, weighted resource bytes for terrain harvesters. Failed placement produces no purchase, payment or reservation. Map construction uses placement offers; flag-0 farms/mines/defences use queued automatic placement, while hall upgrades replace the existing hall |
 | Population and tactic limits | open | Removed the invented 80-unit cap. No difficulty bonuses or universal population limit. No reference kill-time assignment, 15..23-tick tactic scan or full side-response arbitration is claimed |
 | `Tendency`, `BuildSpeed`, `Difficulty` from `.mp` | no effect in rewrite | Runtime speed is selected by the strategist; mission loader keys do not override it |
@@ -253,22 +253,67 @@ commands are regenerated during replay rather than added to the player command l
 construction/queue suspension, fog, wave release above 80 units, defence alerts,
 script ownership, sparse town IDs with queued structures and harvest accounting,
 and `.scn` attackTown/moveTo/path actions across viewing sides.
-`ai_skirmish` runs twenty simulated minutes (14,400 ticks) twice, comparing every
-tick hash across viewing sides, then checks command-log replay. Activity assertions
-require construction, income, production, combat orders and casualties. This is an
-asset-independent headless engine test, not reference parity.
+`ai_unit` additionally checks idle reinforcements during queued production,
+non-repeated active orders, script/other-town ownership, rejected threats,
+science/elapsed advancement and speed updates while busy. Two towns sharing cash
+issue independent farm orders priced after their own normal/fast speed selection;
+the exact income-versus-twice-spending boundary is checked.
 
-The task 03 resource-map and pricing work is present, but its independent town
-queues and start-payment/refund semantics are still incomplete. Task 01 normalized
-oracle comparison tooling is absent. Town-command and hall-upgrade support is
+`ai_skirmish` runs twenty simulated minutes (14,400 ticks) twice, comparing every
+tick hash across viewing sides, then compares command-log replay at every tick.
+The synthetic `ai_economy.scn` drains both sides' cash at tick 1000 and grants
+2000 at tick 1200; assertions reconcile those actions with harvested income and
+purchase spending. Deliberately durable synthetic halls (1,000,000 initial HP)
+keep both producers alive. Each five-minute interval must contain an autonomous
+wave release, firing, casualties and new objects. A wave counts only when the
+planner completes state 2 and an idle troop receives the destination order.
+Both sides must launch, harvest and spend. These are asset-independent headless
+engine scenarios, not reference parity or campaign balance measurements.
+
+**V11 synthetic evidence (2026-10-28):** waves per five-minute interval were
+2/2/1/1; firing events 354/287/205/190; casualties 10/11/15/22; new objects
+30/21/23/30. All 14,400 tick hashes matched across viewing sides and replay,
+ending at `a361c839f7171bfa`. Defence reinforcement dispatch is still a P policy
+(G in the reference rules), not a newly measured reference fact. It introduces no
+new persistent state or RNG draws. Changed autonomous orders can invalidate old
+saves' stored replay hashes; the save format is unchanged.
+
+The task 03 resource-map/pricing work and independent town queues are present;
+reference payment/refund semantics remain incomplete. V02's audited object
+identities and aligned normalized AI observers are absent, although packet
+validation and comparison tooling exist. Town-command and hall-upgrade support is
 present; autonomous hall-upgrade selection, exact economic queue semantics, tactic
 assignment and reference timing parity remain open. Existing unsupported boat/johnka/submarine, build/move script
 actions and camera semantics remain listed in the mission-script section.
 
-The private mission probe used a private game copy, dummy SDL drivers and
-`unshare -rn` through `tools/zstat_run.sh`. Namespace setup failed with
+V05-V10 remain incomplete dependencies for campaign acceptance. The work above
+exercises the existing deterministic planner independently of their missing
+reference movement, sight, combat, economy, town-service and tactic contracts;
+composition, development scoring, placement, threat entry, offensive thresholds
+and side-plan arbitration remain P/O. V11 therefore remains open.
+
+The 2026-10-28 private mission_1 probe used the supplied read-only installation
+and runtime, a private game copy, dummy SDL drivers and `unshare -rn` through
+`tools/zstat_run.sh`. Namespace setup failed before launch with
 `Cannot open netlink socket: Operation not permitted`; no reference run or parity
-result is claimed. All private inputs and probe outputs remain under ignored work/.
+result is claimed. Private copies and failure logs remain under ignored
+`work/ai-game/` and `work/ai-probe/`. No new reference M evidence was obtained.
+
+Validation: baseline and final Release builds and pre-commit gates passed.
+Full CTest: 26 passed, four private-data checks and the restricted UDP process
+check skipped, zero failures. Separately, `test_formats` and `test_engine` passed
+with the private installation copy and dummy SDL inside `unshare -rn`; these
+check asset loading and engine integration, not reference behavior.
+
+Private campaign smoke attempts used `aztec_engine --headless --max-ticks 14400`
+with its automatic human-side exercising policy, twice per mission, under the
+same namespace/dummy-SDL/private-copy restrictions. Mission 1 ended in defeat at
+tick 1196 (state `f0fe635c3a48d9c`, tick-trace `531ea20dbc6f6c1e`); mission 4
+ended in defeat at tick 1474 (state `459f91226436afb1`, trace
+`163aed4c58ac510e`). Each mission's two complete JSON reports matched; neither
+executed an unsupported action. These are bounded engine smoke results, not
+winning routes, full twenty-minute campaign runs or reference comparisons.
+Private reports/logs are in `work/ai-probe/engine-m{1,4}-{1,2}.*`.
 
 ## Audio (`src/engine/audio/`)
 | Rule | Status | Notes |

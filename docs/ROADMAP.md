@@ -88,8 +88,23 @@ estimates. Reference-dependent work may grow when evidence changes.
 | V08 | Validate economy clock phase, activation/suspension, construction placement/completion and training/spawn timing. Replace side-wide queues and provisional refunds with measured town-local production behavior. | L | Task [03](../tasks/queue/03-economy-production.md); resource-map income, price formulas and prerequisites already have synthetic coverage. V02/V04. |
 | V09 | Complete repair priority/allocation and destruction service using harvested credits; finish hall upgrades and non-map farms/mines, costs, timers, build-tree changes and command/UI integration. Verify save/replay through completion. | L | Tasks [05](../tasks/queue/05-town-commands.md), [17](../tasks/queue/17-town-upgrades-structures.md); garrison extraction/list toggles exist, service and upgrades remain incomplete. V08. |
 | V10 | Implement campaign-required attack modes, group/follow/selection command semantics and evidenced population/difficulty rules. Remove invented limits such as AI cap 80; do not infer a universal cap from queue limits. | L | Task [16](../tasks/queue/16-population-difficulty.md); several original command types are only logged. V02/V04/V08. |
-| V11 | Implement deterministic town planning, strategist speed selection, defence reactions and autonomous attack waves. Exercise economy/build orders and sustained opposition in mission scenarios and a repeated 20-minute run. | XL | Tasks [06](../tasks/queue/06-ai-mission-behavior.md), [13](../tasks/queue/13-ai-from-rules.md); current AI is a purchase skeleton. V05-V10. |
+| V11 | Implement deterministic town planning, strategist speed selection, defence reactions and autonomous attack waves. Exercise economy/build orders and sustained opposition in mission scenarios and a repeated 20-minute run. | XL | Tasks [06](../tasks/queue/06-ai-mission-behavior.md), [13](../tasks/queue/13-ai-from-rules.md); deterministic town planner is integrated; reinforcement and sustained-opposition checks are implemented below. V05-V10 remain incomplete. |
 | V12 | Audit every campaign script condition/action and implement required boat/Johnka/submarine, build/move and camera commands. Verify trigger enablement/order, timers, paths, alliances, gifts, defence identity and victory/defeat against mission objectives. Require zero unsupported required actions. | XL | `script_unit` now covers trigger order/timers, all condition kinds, paths, gifts, identities and replay. [Campaign audit](campaign_scripts.md): all 15 scripts parse; 19 transport action sites remain unsupported. Camera semantics and objective/reference validation remain open; V02/V05/V10/V11 adapters are incomplete. |
+
+V11 implementation evidence (2026-10-28; full acceptance remains open):
+
+- [x] Exercise deterministic town states, economic preferences, town-local orders
+  with shared cash, strategist speed boundaries/pricing, and defence reinforcement
+  dispatch during production. Preserve script tactics and active combat orders.
+- [x] Run the synthetic mission cash-pressure scenario for 14,400 ticks twice
+  across viewing sides and compare every tick with command-log replay. Each
+  five-minute interval contains autonomous waves, firing, casualties and births;
+  both towns remain productive using explicitly synthetic durable halls.
+- [ ] Complete V05-V10 contracts and reference-aligned mission comparisons.
+  The isolated reference probe failed at namespace loopback setup before launch;
+  no new reference observation or campaign acceptance is claimed. Composition,
+  placement, threat entry, release thresholds and side-plan arbitration remain
+  provisional. See the [AI evidence inventory](engine_rules_status.md).
 
 V08/V09 implementation update (2026-10-28):
 
