@@ -148,7 +148,7 @@ def harvest(name, branch, title):
     t = refresh(load(name))
     wd = t["workdir"]
     os.chdir(wd)
-    checked("git add -A -- . ':!.build*' ':!build*' ':!work'")
+    checked("git add -A")   # .gitignore already excludes build and work; explicit excludes of ignored paths fail on new git
     patch = checked("git diff --cached --binary").stdout
     checked("git reset -q")
     if not patch.strip():
