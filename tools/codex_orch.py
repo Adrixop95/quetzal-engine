@@ -142,7 +142,7 @@ def harvest(name, branch, title):
     def checked(cmd):
         result = sh(cmd)
         if result.returncode:
-            raise RuntimeError(cmd + "\n" + result.stdout + result.stderr)
+            raise RuntimeError("Harvest command failed: " + cmd + "\n" + result.stdout + result.stderr)
         return result
 
     t = refresh(load(name))

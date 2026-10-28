@@ -29,6 +29,9 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Weapon damage | V documented arithmetic / engine synthetic checks | Marine d7 and Defence d59 select weapon IDs. Classes 1/2/13 apply each matching 8.8 multiplier in sequence, then armor term; arrow zero-air suppresses armor. Classes 4/5/6/10 constants implemented; 8 delegates and 12 sums known child damage. Historical duel entries are diagnostics only. Other descriptor weapon mappings/armor retain placeholders |
 | Weapon reload getters and cooldown | V Marine reload+1 / P other scheduling | Classes 1/2/13/4/5/6/10 use documented reload/range. Simulation schedules reload+1; this is verified only for Marine cooldown, not universal hit intervals. Composite scheduling remains unresolved |
 | Projectile and unresolved weapon behavior | P / unresolved | Projectile speed is distinct metadata, not added to reload. Descriptor damage feeds provisional straight projectile flight and impact timing; direct weapons hit immediately. Reference flight/animation timing remains unverified. Classes 0/3/7/9/11, complete burn behavior and composite scheduling are unavailable calculations; known unresolved descriptor weapons do not silently fire generic damage |
+| Weapon range | V getters / P geometry and fallback | Established weapon getters replace generic ranges; Euclidean centre distance plus mobile source radius and placeholder target radius/footprint remains. Types without loaded weapon descriptors retain 56/288/336 px placeholders |
+| Sight range (target acquisition, fog) | P | Rewrite: 288 px (6 tiles), buildings 8 tiles. Reference: per-type interpolated light-mask IDs, daylight and brightness >32; separate tactic scan and weapon checks |
+| Auto-attack of enemies in sight (idle and attack-moving units) | P | nearest enemy, ties = lower id; hostility from the relation matrix |
 | Weapon range | V getters / P geometry and fallback | Established weapon getters replace generic ranges; Euclidean centre distance plus placeholder target radius/footprint remains. Types without loaded weapon descriptors retain 56/288/336 px placeholders |
 | Sight data and visibility predicate | V facts / synthetic checks | Descriptor mask IDs replace the scalar radius. Per-side interpolated brightness must exceed 32; daylight and frame glow contribute. User lighting resources enable these rules; asset-free acquisition retains a P six-tile fallback. See the [sight and fog notes](sight_fog.md) |
 | Auto-attack of visible enemies (idle and attack-moving units) | V visibility gate / P tactic integration | Side brightness >32, hostility and known weapon eligibility gate candidates. Nearest enemy, lower-id ties and four-tick per-object scanning remain placeholders; original tactic bounds, 100-entry arrays and 15..23-tick scans are not implemented |
@@ -41,7 +44,9 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Starting money = side `StartMoney` | V | `.mp` |
 | Garrison | engine / V semantic fact | Extracts live mobile town members into a fresh tactic and selects it. Explicit mission town membership and hall identity, invalid-owner checks, empty/repeated extraction, hash and save/replay checks. Reference packet field layout and live comparison remain unverified |
 | Repair/destroy mode and list commands | engine / partial | Modes 0/1/2; mode changes clear lists, same-mode commands preserve them. Eligible completed town structures toggle membership; halls, mobile units, foreign-town targets and construction are rejected. Off mode collects damaged ordinary buildings. Dead, repaired or reassigned targets are pruned. Commands do not delete or change HP. Repair credits are harvested, but service allocation and destruction damage remain unimplemented |
-| Attack modes, population limits, difficulty levels | not done | Universal population cap and other difficulty bonuses remain open |
+| Attack modes | V numeric modes / partial engine | Direct 0, defensive 1, aggressive 2, balanced 3 (default). Command, ownership/tactic propagation, direct range-only engagement, movement gates and replay/hash state implemented. Group distance limits, attached-tactic graph and full assignment remain pending; see investigation below |
+| Universal population cap | O reference / engine correction | Task 13 removes the unsupported AI-only cap 80 in develop. Synthetic human/AI production above 110 units passes. Queue 50 and assignment arrays 100 do not establish a side cap; no live population measurement succeeded |
+| Difficulty bonuses | V map-key exclusion / O other effects | Map Difficulty stays editor metadata; synthetic 0/100 inputs produce identical simulation hashes. No HP, damage, income or price bonus is invented. Global difficulty effects remain unverified |
 
 ## Projectiles and effects
 
@@ -78,6 +83,121 @@ Historical branch validation: Release build, all eight CTest entries (including 
 headless fixture and pre-commit gates passed on 2026-10-26. Cached hook
 environments were copied into the worktree to run pre-commit without network
 access. The fixture asserts vehicle losses and writes flight/impact/combat shots.
+
+
+
+## Population, difficulty and tactic modes (2026-10-28, partial task 16)
+
+**Reference investigation:** the supplied private data, local decompilation and
+original instructions were available read-only. The 18 supplied campaign/tutorial
+`.mp` files contain 58 Difficulty entries: 55 zero, one 100 and two 75. Those
+values are editor metadata, not evidence of three difficulty levels or stat
+multipliers. The inspected campaign `.scn` action names supply no difficulty,
+population-limit or attack-mode setter. Existing descriptor tables supply per-type
+HP/weapons and production data; no universal population field is established.
+The inspected production path still gives no side cap. This is a bounded finding,
+not proof that the whole game has no limit or difficulty effects.
+
+The original UI has **four** modes, rather than an established three-mode
+stand-ground/defend/hunt enumeration. See the factual mode table and method
+addresses in [rules_ai.md](rules_ai.md#tactic-attack-modes). The mode setter clears
+combat assignment and propagates to qualifying attached tactics. The reference
+also has mode-dependent group distances 4/8/8/6 in tile coordinates; these are
+not weapon ranges or replacement sight radii.
+
+**Independent implementation:** the older command inventory above predates this
+partial ATTACKMODE handler. `AttackMode` is hashed object state, defaulting to
+balanced. Engine command fields use `a` for the mode and `ids` for owned mobile
+members; their living mobile same-side tactic members receive the mode too.
+Negative tactic IDs do not connect unrelated units. Invalid modes, foreign,
+dead/removed, unknown and structure targets are ignored. These are engine command
+conventions, not original packet decoding. Mode changes clear the attack target
+and resume interrupted movement, or stop an idle pursuit. Direct control acquires
+only in-range targets and never issues pursuit movement. Defensive mode engages
+while idle and preserves movement orders; aggressive/balanced modes can interrupt
+movement and resume it after target death. Explicit attack orders remain available.
+The range geometry, four-tick acquisition cadence and nearest-enemy policy remain
+existing approximations. This is a useful partial integration, not full tactic
+parity: aggressive/balanced currently share that policy. Attached-tactic graphs,
+group centres, mode-specific group distance enforcement, formation return and
+mode inheritance across later tactic joins/spawns still require the tactic model.
+
+Task 13 has removed the unsupported AI-only 80-unit cutoff in develop. This patch
+preserves that planner rather than modifying its superseded adapter. Human and computer production
+still require existing build-tree prerequisites, money and queue admission.
+This does not assert unlimited reference population. Difficulty remains absent
+from simulation inputs; the core parser retains the editor key for tooling.
+No bonus is inferred from the computer discount or runtime build speed.
+
+**Synthetic verification:** production starts and completes with 110 existing
+mobile units through explicit purchases on both human and computer sides. Parsed Difficulty 0 and 100 inputs
+have identical state hashes at each of 110 ticks. All four mode values, invalid
+values/IDs, side-local tactic propagation, independent unassigned members,
+structure exclusion, direct ranged fire without pursuit, movement gates,
+resumption after target death, hash sensitivity and serialized command-log replay
+are covered by `test_engine --pure`. Hash changes invalidate older engine saves
+with recorded hashes. These checks establish engine behavior, not oracle parity.
+
+**Measurement blocker:** a private map with 110 friendly footmen and a distant
+hostile control was generated using `make_zstat.py`, then attempted through
+`zstat_run.sh` with both dummy SDL drivers inside `unshare -rn`. Namespace setup
+failed at `ip link set lo up`: `Cannot open netlink socket: Operation not permitted`.
+The executable did not launch. No no-input/record/replay population result,
+difficulty bonus or stance timing was measured. Private maps, disassembly and
+failure logs remain under ignored `work/population-difficulty/` (the disassembly
+is `work/population-text.asm`). No unisolated fallback was used.
+
+**Dependencies:** task 01's audited packet/object mapping and aligned normalized
+observer remain prerequisites for differential oracle comparison; the full tactic
+assignment/group model is still absent from this checkout. Work independent of
+those prerequisites is implemented above. A permitted reference host must test
+production across candidate boundaries, difficulty settings, stationary/moving
+stance scenarios and record/replay before promoting the unresolved statuses.
+
+**Worktree validation:** bootstrap with `--no-hooks`, Release configure/build with
+`AZTEC_GEN_DIR=`, and all pre-commit hooks passed. Final CTest with the external
+installation and both SDL dummy drivers passed 15 of 16 entries, including all
+three installed-data checks. `lockstep_processes` failed with `UDP socket:
+Operation not permitted`, matching the baseline failure before edits. The new
+synthetic engine checks pass. No git metadata was written; changes remain
+uncommitted.
+
+**Landing regression correction:** a synthetic footman duel reproduced no damage
+and no casualties because the firing check omitted the attacker's collision
+radius. A 10-pixel weapon plus a 14-pixel target radius allowed only 24 pixels,
+while two 14-pixel discs stop 28 pixels apart. Mobile weapon checks now include
+both source and target extents, shared by direct-mode acquisition and firing.
+Collision radii and centre-distance geometry remain engine approximations, not
+new verified reference facts. The regression checks damage, casualties and replay.
+The develop integration must retain task 13's town planner and its removal of the
+80-unit fallback cap; the older adapter in this checkout is left untouched.
+
+**Revalidation after landing feedback:** the corrected changes were merged, without
+conflicts, into an ignored `build/landing-repro/` snapshot of current develop.
+Its Release build passed. The unchanged `ai_unit` and 20-minute `ai_skirmish`
+checks passed, including the casualty assertion, viewing-side hash comparison and
+command-log replay. Of 18 CTest entries, 14 passed and three installed-data checks
+skipped in this clean-data snapshot; only `lockstep_processes` failed because UDP
+sockets are denied by the sandbox. The original worktree also passed its Release
+build and 15 of 16 checks with installed data, with the same network restriction.
+All pre-commit hooks pass. The focused melee regression failed its damage and
+casualty assertions before the reach correction and passes afterward.
+
+**Landing retry correction:** the harvester previously printed success even when
+`git checkout -b` failed because an earlier attempt left the task branch behind.
+That led the supervisor to test and commit a clean develop checkout. Harvest now
+resets the local task branch from current develop with `checkout -B`, checks every
+git step, and reports preparation only after patch application succeeds. Mocked
+git-command tests cover retries and staging, diff, reset and checkout/apply failure
+propagation without writing git metadata. This does not publish or merge changes.
+The final conflict-free snapshot of develop (`bc4d12c`) with this patch builds and
+passes CTest: 15 tests pass, four skip (three installed-data checks and the
+restricted socket test), zero fail. This includes the original AI skirmish and
+newer town/projectile/audio suites. Five handoff-tool tests, including mocked git
+failure cases, and all pre-commit hooks pass. The older original worktree retains
+its previously documented UDP baseline failure. No landing command, commit or
+push was run by the assistant.
+
 
 ## Mission scripts (`.scn`, `sim/script_runner.*`)
 `side(local)` means the mission's human side (`World::script_side`: the first side that is neither `OnlyComp` nor neutral), identical for every peer; the viewing side (`World::local_side`) never influences the simulation.

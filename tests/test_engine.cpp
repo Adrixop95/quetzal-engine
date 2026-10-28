@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <string>
 #include "core/mapfiles.hpp"
+#include "core/mp.hpp"
 #include "core/strbase.hpp"
 #include "engine/ui/names.hpp"
 #include "engine/ui/commands_ui.hpp"
@@ -892,6 +893,126 @@ static void production_steps(GameSim& sim, World& w, int ticks) {
   for (int t = 0; t < ticks; ++t) { w.begin_tick(); sim.tick(w); }
 }
 
+static void test_population_difficulty_modes() {
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  // Queue/assignment array capacities must not become side population limits.
+  for (bool computer : {false, true}) {
+    World initial = production_world();
+    initial.mission.sides[0].only_comp = computer;
+    initial.side_state.resize(8); initial.side_state[0].money = 10000;
+    production_object(initial, 11, 0, 4, 4);
+    for (int i = 0; i < 110; ++i) production_object(initial, 0, 0, 10 + i % 20, 10 + i / 20);
+    World low = initial, high = initial;
+    for (auto pair : {std::pair{&low, 0}, std::pair{&high, 100}}) {
+      Ini ini;
+      CHECK(ini.parse("[Globals]\nSides=1\n[Side0]\nStartMoney=10000\nOnlyComp=" +
+                      std::to_string(int(computer)) + "\nDifficulty=" + std::to_string(pair.second)));
+      MpFile mp; CHECK(parse_mp(ini, mp));
+      CHECK(mp.sides[0].difficulty == pair.second); // retained as editor metadata
+      MissionDef mission; CHECK(parse_mission(ini, "synthetic", mission));
+      pair.first->mission.sides[0] = mission.sides[0]; // discarded by the simulation adapter
+    }
+    GameSim a(rules), b(rules); a.init(low); b.init(high);
+    Command buy; buy.type = Pct::Build; buy.a = 0;
+    a.submit(buy); b.submit(buy);
+    for (int t = 0; t < 110; ++t) {
+      production_steps(a, low, 1); production_steps(b, high, 1);
+      CHECK(a.state_hash(low) == b.state_hash(high));
+    }
+    CHECK(low.objects.size() > initial.objects.size());
+    CHECK(low.side_state[0].money < 10000);
+  }
+
+  World initial = production_world();
+  initial.relation[0][1] = kEnemy;
+  production_object(initial, 0, -1, 10, 10);
+  production_object(initial, 0, -1, 20, 20);
+  production_object(initial, 0, -1, 12, 10);
+  initial.objects[0].tactic = initial.objects[1].tactic = 7;
+  initial.objects[2].side = 1; initial.objects[2].tactic = 7; // tactic numbers are side-local
+  production_object(initial, 14, -1, 30, 30); // structures are not mobile members
+  production_object(initial, 0, -1, 25, 25); // unassigned member stays independent
+  for (int mode = 0; mode <= 3; ++mode) {
+    World w = initial;
+    GameSim sim(rules); sim.init(w);
+    Command stance; stance.type = Pct::AttackMode; stance.a = mode; stance.ids = {1, 1, 4, 999};
+    sim.submit(stance); production_steps(sim, w, 4);
+    CHECK(w.objects[0].attack_mode == AttackMode(mode));
+    CHECK(w.objects[1].attack_mode == AttackMode(mode));
+    CHECK(w.objects[2].attack_mode == AttackMode::Balanced);
+    CHECK(w.objects[3].attack_mode == AttackMode::Balanced);
+    CHECK(w.objects[4].attack_mode == AttackMode::Balanced);
+    CHECK((w.objects[0].order == uint8_t(Order::Attack)) == (mode != 0));
+    const auto hash = sim.state_hash(w);
+    w.objects[0].attack_mode = AttackMode((mode + 1) % 4);
+    CHECK(sim.state_hash(w) != hash);
+    w.objects[0].attack_mode = AttackMode(mode);
+    for (int bad : {-1, 4}) {
+      stance.a = bad; sim.submit(stance); production_steps(sim, w, 1);
+      CHECK(w.objects[0].attack_mode == AttackMode(mode));
+    }
+    std::vector<LoggedCommand> log;
+    CHECK(deserialize_log(serialize_log(sim.log()), log));
+    World fresh = initial;
+    auto replay = GameSim::replay(fresh, rules, log, sim.tick_count());
+    CHECK(replay->state_hash(fresh) == sim.state_hash(w));
+  }
+  // Direct control fires in range but never walks after an out-of-range target.
+  World direct = initial;
+  direct.objects[0].type = 27; // ranged unit, outside collision overlap
+  direct.objects[2].teleport(direct.objects[0].cur_x + to_fixed(60), direct.objects[0].cur_y);
+  GameSim ds(rules); ds.init(direct);
+  Command stance; stance.type = Pct::AttackMode; stance.a = 0; stance.ids = {1};
+  ds.submit(stance); production_steps(ds, direct, 4);
+  CHECK(direct.objects[0].has_fired);
+  ds.teleport(direct, 3, 900, 500);
+  const Fixed x = direct.objects[0].cur_x, y = direct.objects[0].cur_y;
+  production_steps(ds, direct, 20);
+  CHECK(direct.objects[0].cur_x == x && direct.objects[0].cur_y == y);
+
+  // Melee units must be able to hit across their non-overlapping collision discs.
+  // A 10-pixel weapon reach plus only the target's 14-pixel radius is shorter
+  // than two 14-pixel discs in contact, leaving both opponents pursuing forever.
+  World duel = production_world();
+  duel.relation[0][1] = duel.relation[1][0] = kEnemy;
+  production_object(duel, 0, -1, 10, 10);
+  production_object(duel, 0, -1, 11, 10); duel.objects.back().side = 1;
+  const World duel_initial = duel;
+  GameSim melee(rules); melee.init(duel);
+  production_steps(melee, duel, 100);
+  CHECK(duel.objects[0].hp < duel.objects[0].hp_max || duel.objects[1].hp < duel.objects[1].hp_max);
+  production_steps(melee, duel, 600);
+  CHECK(!duel.objects[0].alive || !duel.objects[1].alive);
+  World duel_replay = duel_initial;
+  auto repeated = GameSim::replay(duel_replay, rules, melee.log(), melee.tick_count());
+  CHECK(repeated->state_hash(duel_replay) == melee.state_hash(duel));
+
+  // An explicit direct-control attack also cancels an old movement agent order.
+  Command move_direct; move_direct.type = Pct::Move; move_direct.ids = {1};
+  move_direct.a = 700; move_direct.b = 500;
+  ds.submit(move_direct); production_steps(ds, direct, 2);
+  CHECK(direct.objects[0].attack_mode == AttackMode::Direct);
+  Command explicit_attack; explicit_attack.type = Pct::Attack; explicit_attack.ids = {1}; explicit_attack.a = 3;
+  const Fixed before_x = direct.objects[0].cur_x, before_y = direct.objects[0].cur_y;
+  ds.submit(explicit_attack); production_steps(ds, direct, 8);
+  CHECK(direct.objects[0].cur_x == before_x && direct.objects[0].cur_y == before_y);
+
+  // Defensive/direct modes preserve movement; aggressive/balanced can interrupt it.
+  for (int mode = 0; mode <= 3; ++mode) {
+    World w = initial; GameSim sim(rules); sim.init(w);
+    stance.a = mode; sim.submit(stance);
+    Command move; move.type = Pct::Move; move.ids = {1}; move.a = 700; move.b = 500;
+    sim.submit(move); production_steps(sim, w, 4);
+    CHECK(w.objects[0].order == uint8_t(mode < 2 ? Order::Move : Order::Attack));
+    if (mode >= 2) {
+      CHECK(w.objects[0].resume == 2);
+      sim.script_kill(w, 3); production_steps(sim, w, 1);
+      CHECK(w.objects[0].order == uint8_t(Order::Move) && w.objects[0].target == 0);
+    }
+  }
+}
+
 static void test_production() {
   auto rules = std::make_shared<RulesData>();
   CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
@@ -1454,6 +1575,7 @@ int main(int argc, char** argv) {
     test_sprite_metadata();
     test_audio_pure();
     test_commands_ui();
+    test_population_difficulty_modes();
   } else {
     std::string dir = test_game_dir(argc, argv);
     if (!test_game_dir_exists(dir)) return 77;

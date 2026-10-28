@@ -25,6 +25,9 @@ constexpr Fixed tile_center_fixed(int tile) { return to_fixed(tile * kTilePx + k
 
 struct Vec2f { float x = 0, y = 0; };
 
+// Reference tactic mode numbers; group assignment remains provisional in GameSim.
+enum class AttackMode : uint8_t { Direct = 0, Defensive = 1, Aggressive = 2, Balanced = 3 };
+
 struct Object {
   uint32_t id = 0;
   int type = -1;         // UGI id, -1 = marker without a type
@@ -51,6 +54,7 @@ struct Object {
   int32_t hp_max = 0;
   int32_t secondary_hp = 0;    // Marine d4, independent of primary/max HP
   bool regen_alternate = false; // explicit selector; reference state transition mapping is unresolved
+  AttackMode attack_mode = AttackMode::Balanced;
   uint8_t order = 0;           // sim::Order
   uint32_t target = 0;         // object id for attack orders (0 = none)
   int32_t dest_x = 0, dest_y = 0;  // order destination, world px
@@ -60,7 +64,7 @@ struct Object {
   int32_t tactic = -1;         // team (tactic) number for Team objects, changed by joinTactic
   int32_t scenario = -1;       // ScenarioID of defences / vessels (script references)
   uint32_t last_hit_by = 0;    // id of the last attacker (script condition tactic(N).attacked)
-  uint8_t resume = 0;          // attack order interrupted an attack-move: resume it afterwards
+  uint8_t resume = 0;          // interrupted movement: 1 = attack-move, 2 = move, 0 = idle
   int32_t build_elapsed = 0, build_total = 0;  // construction timer (ticks)
   int32_t progress = 1000;     // construction 0..1000 (1000 = finished); buildings only
   int32_t mover = -1;          // agent index in the movement system, -1 = does not walk
