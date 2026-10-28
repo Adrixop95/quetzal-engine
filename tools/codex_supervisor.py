@@ -77,6 +77,11 @@ def land(name):
             committed = True
             break
         last = (c.stdout + c.stderr)[-1500:]
+    if not committed and "nothing to commit" in last:
+        log("no changes to land for", name, "(already in develop or empty result)")
+        lrun("git reset -q --hard")
+        mark_harvested(name)
+        return
     if not committed:
         log("commit failed for", name, "\n", last)
         lrun("git reset -q --hard")
