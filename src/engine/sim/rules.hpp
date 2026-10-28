@@ -4,10 +4,13 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace aztec::engine {
+
+struct SightData;
 
 enum class Src : uint8_t { Verified, Measured, Placeholder };
 
@@ -53,7 +56,7 @@ struct TypeRules {
   bool nonorganic = false, category_f4 = false, category_e8 = false, hypno = false;
   int speed = 0;      Src speed_src = Src::Placeholder;   // fixed 24.8 px per tick; measured (speed_measured.csv) or Marine d5
   int radius_px = 14; Src radius_src = Src::Placeholder;
-  int sight_px = 288; Src sight_src = Src::Placeholder;
+  int vision_mask = 0; Src sight_src = Src::Placeholder;
   int range_px = 56;  Src range_src = Src::Placeholder;
   int dmg = 500, reload = 12; Src dmg_src = Src::Placeholder;  // placeholder only when no descriptor weapon is loaded
   int price = 0, time = 0; Src cost_src = Src::Placeholder;    // types.csv (price/time verified from the UI tooltip function)
@@ -89,6 +92,10 @@ class RulesData {
   // Loads from a directory containing types.csv, desc_*.csv, speed_measured.csv, duel_damage.csv, buildtree.csv.
   // Missing files are tolerated (placeholders are used). Returns true if at least types.csv was read.
   bool load_dir(const std::string& dir);
+  // Load the user's light masks, animation light sources and daylight keys.
+  bool load_sight(const std::string& game_dir);
+  void set_sight(std::shared_ptr<const SightData> data) { sight_ = std::move(data); }
+  const SightData* sight() const { return sight_.get(); }
   // Built-in defaults only (tests, missing data).
   void init_defaults();
   const TypeRules& type(int id) const { return id >= 0 && id < int(types_.size()) ? types_[id] : dummy_; }
@@ -102,6 +109,7 @@ class RulesData {
   bool loaded() const { return loaded_; }
 
  private:
+  std::shared_ptr<const SightData> sight_;
   struct WeaponRecord { int kind = -1; std::vector<int> data; };
   WeaponResult weapon_impl(int id, const TypeRules& target, bool allied, int depth) const;
   std::map<int, WeaponRecord> weapons_;

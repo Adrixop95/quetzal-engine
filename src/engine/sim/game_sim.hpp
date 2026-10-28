@@ -77,7 +77,7 @@ class GameSim : public Simulation {
   uint32_t spawn(World& w, int type, int side, int px, int py, int hp, bool constructing);
   void attach_agent(Object& o);
   bool menu_ok(const World& w, int side, const BuildItem& it, int town, const char** why) const;
-  const Object* nearest_enemy(const World& w, const Object& o, int radius_px) const;
+  const Object* nearest_enemy(const World& w, const Object& o) const;
   int town_index(const World& w, int side) const;
   int producing_town(const World& w, int side, const std::vector<uint32_t>& ids) const;
   const Object* town_hall(const World& w, int town) const;

@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <string>
 #include "core/mapfiles.hpp"
+#include "core/mp.hpp"
 #include "core/strbase.hpp"
 #include "engine/ui/names.hpp"
 #include "engine/ui/commands_ui.hpp"
@@ -21,6 +22,7 @@
 #include "engine/assets/sprite_provider.hpp"
 #include "engine/platform/clock.hpp"
 #include "engine/sim/game_sim.hpp"
+#include "engine/sim/sight.hpp"
 #include "engine/sim/savegame.hpp"
 #include "core/endian.hpp"
 #include "engine/sim/simulation.hpp"
@@ -32,6 +34,102 @@ using namespace aztec;
 using namespace aztec::engine;
 static int failures = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); failures++; } } while (0)
+
+static void test_sight() {
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  CHECK(rules->type(0).vision_mask >= 64 && rules->type(0).vision_mask <= 71);
+  CHECK(rules->type(0).sight_src == Src::Verified);
+  for (auto [type, mask] : std::vector<std::pair<int, int>>{{0,64}, {1,68}, {5,65}, {54,69},
+       {30,70}, {10,70}, {11,71}, {14,69}, {7,71}, {83,66}, {33,71}, {34,69},
+       {3,67}, {4,70}, {17,68}, {23,70}, {26,71}, {87,70}})
+    CHECK(rules->type(type).vision_mask == mask);
+  auto inputs = std::make_shared<SightData>();
+  for (auto& day : inputs->daylight) day.fill(80);
+  auto& mask = inputs->masks[rules->type(0).vision_mask];
+  mask.assign(404, 152); mask[0] = mask[2] = 20; mask[1] = mask[3] = 0;
+  mask[4 + 10 * 20 + 10] = 0;
+  rules->set_sight(inputs);
+  std::vector<uint8_t> grid(40 * 40, 152);
+  stamp_sight(grid, 40, 40, inputs->mask(rules->type(0).vision_mask), 20 * 48, 20 * 48, true);
+  CHECK(grid[20 * 40 + 20] == 0 && grid[20 * 40 + 19] == 152);
+  // Translation blends four samples, truncating each term on each axis.
+  std::fill(grid.begin(), grid.end(), 152);
+  stamp_sight(grid, 40, 40, inputs->mask(rules->type(0).vision_mask), 20 * 48 + 24, 20 * 48 + 24, true);
+  CHECK(grid[20 * 40 + 20] == 114);
+  std::vector<uint8_t> glow(40 * 40, 145);
+  stamp_sight(glow, 40, 40, inputs->mask(rules->type(0).vision_mask), -24, -24, false);
+  CHECK(*std::max_element(glow.begin(), glow.end()) == 152);
+  stamp_sight(glow, 40, 40, data::LightMask{}, 0, 0, false);
+
+  VisFile::Layer boundary{2, 2, {32, 33, 32, 33}};
+  CHECK(sight_brightness(boundary, 0, 0) == 32 * 256);
+  CHECK(sight_brightness(boundary, 24, 24) > 32 * 256);
+  CHECK(sight_brightness(boundary, -1, 0) == 0);
+  CHECK(sight_brightness(boundary, 96, 0) == 0);
+
+  World initial;
+  initial.terrain.w = initial.terrain.h = 40; initial.terrain.cells.resize(1600);
+  Object scout; scout.id = 1; scout.type = 0; scout.hp = 6000;
+  scout.teleport(to_fixed(20 * 48), to_fixed(20 * 48)); initial.objects.push_back(scout);
+  World world = initial;
+  GameSim sim(rules); sim.init(world);
+  world.begin_tick(); sim.tick(world);
+  CHECK(world.visibility.sides.size() == 8);
+  const auto index = size_t(20 * 41 + 20);
+  CHECK(world.visibility.sides[0].w == 41 && world.visibility.sides[0].h == 42);
+  CHECK(world.visibility.sides[0].v[index] == 80);
+  CHECK(world.visibility.sides[1].v[index] == 0); // hostile and allied vision is not shared
+  world.objects[0].alive = false;
+  world.begin_tick(); sim.tick(world);
+  CHECK(world.visibility.sides[0].v[index] == 32);
+  world.objects[0].alive = true;
+  inputs->daylight[0][3] = 24;
+  world.begin_tick(); sim.tick(world);
+  CHECK(world.visibility.sides[0].v[index] == 32); // explored floor survives darkness
+  world.local_side = 7;
+  world.begin_tick(); sim.tick(world);
+  CHECK(world.visibility.sides[0].v[index] == 80);
+  auto hash = sim.state_hash(world);
+  world.visibility.sides[0].v[index]++;
+  CHECK(sim.state_hash(world) != hash);
+
+  World a = initial, b = initial;
+  GameSim first(rules), second(rules); first.init(a); second.init(b);
+  b.local_side = 7;
+  for (int t = 0; t < 8; ++t) {
+    a.begin_tick(); first.tick(a); b.begin_tick(); second.tick(b);
+    CHECK(first.state_hash(a) == second.state_hash(b));
+    World replayed = initial;
+    auto replay = GameSim::replay(replayed, rules, first.log(), first.tick_count());
+    CHECK(first.state_hash(a) == replay->state_hash(replayed));
+  }
+  // A lit target beyond the old six-tile radius is eligible; exactly 32 is not.
+  std::fill(mask.begin() + 4, mask.end(), 0);
+  Object enemy; enemy.id = 2; enemy.type = 10; enemy.side = 1; enemy.hp = 30000;
+  enemy.teleport(to_fixed(20 * 48 + 400), to_fixed(20 * 48));
+  initial.objects.push_back(enemy);
+  initial.relation[0][1] = kEnemy;
+  for (int ambient : {32, 33}) {
+    for (auto& day : inputs->daylight) day.fill(uint8_t(ambient));
+    World duel = initial;
+    GameSim combat(rules); combat.init(duel);
+    for (int t = 0; t < 3; ++t) { duel.begin_tick(); combat.tick(duel); }
+    CHECK(duel.objects[0].target == (ambient == 33 ? 2u : 0u));
+  }
+  // Clean checkouts have no private masks. Their combat remains functional,
+  // using the bounded placeholder instead of silently disabling acquisition.
+  rules->set_sight(nullptr);
+  CHECK(initial.visibility.sides.empty());
+  for (int distance : {200, 400}) {
+    World duel = initial;
+    duel.objects[1].teleport(to_fixed(20 * 48 + distance), to_fixed(20 * 48));
+    GameSim combat(rules); combat.init(duel);
+    for (int t = 0; t < 3; ++t) { duel.begin_tick(); combat.tick(duel); }
+    CHECK(duel.objects[0].target == (distance == 200 ? 2u : 0u));
+    CHECK(duel.visibility.sides.empty());
+  }
+}
 
 static void test_sprite_metadata() {
   using namespace aztec::data;
@@ -88,6 +186,14 @@ static void test_sprite_metadata() {
 
 static void test_sprite_assets(const std::string& dir) {
   using namespace aztec::data;
+  RulesData sight_rules;
+  CHECK(sight_rules.load_dir(AZTEC_TEST_RULES_DIR));
+  CHECK(sight_rules.load_sight(dir));
+  if (sight_rules.sight()) {
+    CHECK(sight_rules.sight()->masks.size() == 24);
+    for (const auto& day : sight_rules.sight()->daylight)
+      for (uint8_t value : day) CHECK(value <= 152 && value % 8 == 0);
+  }
   SpriteDb db;
   CHECK(db.open(find_file_ci(dir + "/Res", "Units.xbe")));
   int inventory_count = 0;
@@ -558,6 +664,7 @@ static void test_sim(const std::string& dir) {
   if (!data.open(dir, err)) { CHECK(false); return; }
   auto rules = std::make_shared<RulesData>();
   if (!rules->load_dir(AZTEC_TEST_RULES_DIR)) { CHECK(false); return; }
+  CHECK(rules->load_sight(dir));
   CHECK(rules->type(0).hp_max == 6000 && rules->type(0).hp_src == Src::Verified);
   CHECK(rules->type(0).price == 100);
 
@@ -728,6 +835,8 @@ static void test_script(const std::string& dir) {
   if (!data.open(dir, err)) { CHECK(false); return; }
   auto rules = std::make_shared<RulesData>();
   if (!rules->load_dir(AZTEC_TEST_RULES_DIR)) { CHECK(false); return; }
+  // Keep the script timer checks independent of optional lighting resources.
+  rules->set_sight(nullptr);
   World w;
   if (!load_world(data, "1", w, err)) { CHECK(false); return; }
   GameSim sim(rules);
@@ -735,7 +844,7 @@ static void test_script(const std::string& dir) {
   sim.init(w);
   // trigger 0 (localTime == 1400): side 1 tactic 7 attacks town 0
   bool ordered = false;
-  for (int t = 0; t < 1500; t++) {
+  for (int t = 0; t < 1401; t++) {
     w.begin_tick();
     sim.tick(w);
     if (t == 1390)
@@ -782,6 +891,126 @@ static void production_object(World& w, int type, int town, int x, int y) {
 
 static void production_steps(GameSim& sim, World& w, int ticks) {
   for (int t = 0; t < ticks; ++t) { w.begin_tick(); sim.tick(w); }
+}
+
+static void test_population_difficulty_modes() {
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  // Queue/assignment array capacities must not become side population limits.
+  for (bool computer : {false, true}) {
+    World initial = production_world();
+    initial.mission.sides[0].only_comp = computer;
+    initial.side_state.resize(8); initial.side_state[0].money = 10000;
+    production_object(initial, 11, 0, 4, 4);
+    for (int i = 0; i < 110; ++i) production_object(initial, 0, 0, 10 + i % 20, 10 + i / 20);
+    World low = initial, high = initial;
+    for (auto pair : {std::pair{&low, 0}, std::pair{&high, 100}}) {
+      Ini ini;
+      CHECK(ini.parse("[Globals]\nSides=1\n[Side0]\nStartMoney=10000\nOnlyComp=" +
+                      std::to_string(int(computer)) + "\nDifficulty=" + std::to_string(pair.second)));
+      MpFile mp; CHECK(parse_mp(ini, mp));
+      CHECK(mp.sides[0].difficulty == pair.second); // retained as editor metadata
+      MissionDef mission; CHECK(parse_mission(ini, "synthetic", mission));
+      pair.first->mission.sides[0] = mission.sides[0]; // discarded by the simulation adapter
+    }
+    GameSim a(rules), b(rules); a.init(low); b.init(high);
+    Command buy; buy.type = Pct::Build; buy.a = 0;
+    a.submit(buy); b.submit(buy);
+    for (int t = 0; t < 110; ++t) {
+      production_steps(a, low, 1); production_steps(b, high, 1);
+      CHECK(a.state_hash(low) == b.state_hash(high));
+    }
+    CHECK(low.objects.size() > initial.objects.size());
+    CHECK(low.side_state[0].money < 10000);
+  }
+
+  World initial = production_world();
+  initial.relation[0][1] = kEnemy;
+  production_object(initial, 0, -1, 10, 10);
+  production_object(initial, 0, -1, 20, 20);
+  production_object(initial, 0, -1, 12, 10);
+  initial.objects[0].tactic = initial.objects[1].tactic = 7;
+  initial.objects[2].side = 1; initial.objects[2].tactic = 7; // tactic numbers are side-local
+  production_object(initial, 14, -1, 30, 30); // structures are not mobile members
+  production_object(initial, 0, -1, 25, 25); // unassigned member stays independent
+  for (int mode = 0; mode <= 3; ++mode) {
+    World w = initial;
+    GameSim sim(rules); sim.init(w);
+    Command stance; stance.type = Pct::AttackMode; stance.a = mode; stance.ids = {1, 1, 4, 999};
+    sim.submit(stance); production_steps(sim, w, 4);
+    CHECK(w.objects[0].attack_mode == AttackMode(mode));
+    CHECK(w.objects[1].attack_mode == AttackMode(mode));
+    CHECK(w.objects[2].attack_mode == AttackMode::Balanced);
+    CHECK(w.objects[3].attack_mode == AttackMode::Balanced);
+    CHECK(w.objects[4].attack_mode == AttackMode::Balanced);
+    CHECK((w.objects[0].order == uint8_t(Order::Attack)) == (mode != 0));
+    const auto hash = sim.state_hash(w);
+    w.objects[0].attack_mode = AttackMode((mode + 1) % 4);
+    CHECK(sim.state_hash(w) != hash);
+    w.objects[0].attack_mode = AttackMode(mode);
+    for (int bad : {-1, 4}) {
+      stance.a = bad; sim.submit(stance); production_steps(sim, w, 1);
+      CHECK(w.objects[0].attack_mode == AttackMode(mode));
+    }
+    std::vector<LoggedCommand> log;
+    CHECK(deserialize_log(serialize_log(sim.log()), log));
+    World fresh = initial;
+    auto replay = GameSim::replay(fresh, rules, log, sim.tick_count());
+    CHECK(replay->state_hash(fresh) == sim.state_hash(w));
+  }
+  // Direct control fires in range but never walks after an out-of-range target.
+  World direct = initial;
+  direct.objects[0].type = 27; // ranged unit, outside collision overlap
+  direct.objects[2].teleport(direct.objects[0].cur_x + to_fixed(60), direct.objects[0].cur_y);
+  GameSim ds(rules); ds.init(direct);
+  Command stance; stance.type = Pct::AttackMode; stance.a = 0; stance.ids = {1};
+  ds.submit(stance); production_steps(ds, direct, 4);
+  CHECK(direct.objects[0].has_fired);
+  ds.teleport(direct, 3, 900, 500);
+  const Fixed x = direct.objects[0].cur_x, y = direct.objects[0].cur_y;
+  production_steps(ds, direct, 20);
+  CHECK(direct.objects[0].cur_x == x && direct.objects[0].cur_y == y);
+
+  // Melee units must be able to hit across their non-overlapping collision discs.
+  // A 10-pixel weapon reach plus only the target's 14-pixel radius is shorter
+  // than two 14-pixel discs in contact, leaving both opponents pursuing forever.
+  World duel = production_world();
+  duel.relation[0][1] = duel.relation[1][0] = kEnemy;
+  production_object(duel, 0, -1, 10, 10);
+  production_object(duel, 0, -1, 11, 10); duel.objects.back().side = 1;
+  const World duel_initial = duel;
+  GameSim melee(rules); melee.init(duel);
+  production_steps(melee, duel, 100);
+  CHECK(duel.objects[0].hp < duel.objects[0].hp_max || duel.objects[1].hp < duel.objects[1].hp_max);
+  production_steps(melee, duel, 600);
+  CHECK(!duel.objects[0].alive || !duel.objects[1].alive);
+  World duel_replay = duel_initial;
+  auto repeated = GameSim::replay(duel_replay, rules, melee.log(), melee.tick_count());
+  CHECK(repeated->state_hash(duel_replay) == melee.state_hash(duel));
+
+  // An explicit direct-control attack also cancels an old movement agent order.
+  Command move_direct; move_direct.type = Pct::Move; move_direct.ids = {1};
+  move_direct.a = 700; move_direct.b = 500;
+  ds.submit(move_direct); production_steps(ds, direct, 2);
+  CHECK(direct.objects[0].attack_mode == AttackMode::Direct);
+  Command explicit_attack; explicit_attack.type = Pct::Attack; explicit_attack.ids = {1}; explicit_attack.a = 3;
+  const Fixed before_x = direct.objects[0].cur_x, before_y = direct.objects[0].cur_y;
+  ds.submit(explicit_attack); production_steps(ds, direct, 8);
+  CHECK(direct.objects[0].cur_x == before_x && direct.objects[0].cur_y == before_y);
+
+  // Defensive/direct modes preserve movement; aggressive/balanced can interrupt it.
+  for (int mode = 0; mode <= 3; ++mode) {
+    World w = initial; GameSim sim(rules); sim.init(w);
+    stance.a = mode; sim.submit(stance);
+    Command move; move.type = Pct::Move; move.ids = {1}; move.a = 700; move.b = 500;
+    sim.submit(move); production_steps(sim, w, 4);
+    CHECK(w.objects[0].order == uint8_t(mode < 2 ? Order::Move : Order::Attack));
+    if (mode >= 2) {
+      CHECK(w.objects[0].resume == 2);
+      sim.script_kill(w, 3); production_steps(sim, w, 1);
+      CHECK(w.objects[0].order == uint8_t(Order::Move) && w.objects[0].target == 0);
+    }
+  }
 }
 
 static void test_production() {
@@ -1335,6 +1564,7 @@ static void test_audio_data(const std::string& dir) {
 int main(int argc, char** argv) {
   if (argc == 2 && std::string(argv[1]) == "--pure") {
     test_pure();
+    test_sight();
     test_production();
     test_town_production();
     test_projectiles();
@@ -1345,6 +1575,7 @@ int main(int argc, char** argv) {
     test_sprite_metadata();
     test_audio_pure();
     test_commands_ui();
+    test_population_difficulty_modes();
   } else {
     std::string dir = test_game_dir(argc, argv);
     if (!test_game_dir_exists(dir)) return 77;

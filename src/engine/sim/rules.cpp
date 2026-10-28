@@ -8,8 +8,40 @@
 #include <sstream>
 
 #include "engine/world/type_info.hpp"
+#include "engine/sim/sight.hpp"
+#include "engine/assets/daylight.hpp"
 
 namespace aztec::engine {
+
+bool SightData::load(const std::string& game_dir) {
+  masks.clear();
+  Archive lights;
+  Daylight keys;
+  if (!lights.open(find_file_ci(game_dir + "/Res", "light.xbe")) ||
+      !keys.load_from_exe(find_file_ci(game_dir, "Aztec.exe"))) return false;
+  for (int id = 1; id <= 71; ++id) {
+    auto item = lights.get(data::kLightGroup, id);
+    if (data::LightMask(item).ok()) masks[id] = {item.data, item.data + item.size};
+  }
+  for (int set = 0; set < 2; ++set) {
+    if (keys.keys(set).empty()) return false;
+    for (int t = 0; t < 7200; ++t) {
+      auto next = std::upper_bound(keys.keys(set).begin(), keys.keys(set).end(), t,
+          [](int time, const DayKey& key) { return time < key.time; });
+      if (next == keys.keys(set).end()) return false;
+      daylight[set][t] = uint8_t(std::clamp(next->level * 8, 0, 152));
+    }
+  }
+  const auto units = find_file_ci(game_dir + "/Res", "Units.xbe");
+  return !masks.empty() && sprites.open(units) && effects.open(units);
+}
+
+bool RulesData::load_sight(const std::string& game_dir) {
+  auto inputs = std::make_shared<SightData>();
+  if (!inputs->load(game_dir)) { sight_.reset(); return false; }
+  sight_ = std::move(inputs);
+  return true;
+}
 
 namespace {
 std::vector<std::vector<std::string>> read_csv(const std::string& path) {
@@ -135,6 +167,18 @@ bool RulesData::load_dir(const std::string& dir) {
     t.cost_src = Src::Verified;
     kind_param[id] = {t.kind, num(r, 3)};
   }
+  static const char* sight_families[] = {"marine", "spider", "building", "zeppelin", "truck", "bird", "headtruck", "defence", "", "cannon"};
+  static const int sight_fields[] = {6, 8, 55, 7, 6, 8, 8, 58, -1, 6};
+  for (int kind = 0; kind < 10; ++kind) {
+    if (sight_fields[kind] < 0) continue;
+    for (const auto& row : read_csv(dir + "/desc_" + sight_families[kind] + ".csv"))
+      for (int id = 0; id < kNumTypes; ++id)
+        if (kind_param[id] == std::pair{kind, num(row, 0)}) {
+          int mask = num(row, sight_fields[kind] + 1);
+          if (mask >= 64 && mask <= 71) { types_[id].vision_mask = mask; types_[id].sight_src = Src::Verified; }
+        }
+  }
+  if (const char* game = std::getenv("AZTEC_GAME")) load_sight(game);
   // Marine d1 is primary/max HP; d4 is independent secondary HP.
   auto marine = read_csv(dir + "/desc_marine.csv");
   auto building = read_csv(dir + "/desc_building.csv");
