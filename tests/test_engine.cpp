@@ -2,6 +2,8 @@
 #include "game_dir.hpp"
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <filesystem>
 #include <string>
 #include "core/mapfiles.hpp"
 #include "core/strbase.hpp"
@@ -648,6 +650,45 @@ static void test_sim(const std::string& dir) {
   }
 }
 
+static void test_script_animation_clocks() {
+  char directory[] = "/tmp/aztec-script-clocks-XXXXXX";
+  if (!mkdtemp(directory)) { CHECK(false); return; }
+  const auto path = std::filesystem::path(directory) / "clocks.scn";
+  FILE* file = std::fopen(path.c_str(), "w");
+  if (!file) { CHECK(false); std::filesystem::remove(directory); return; }
+  std::fputs("trigger(0) conditions localTime == 1 actions side(local).victory end\n", file);
+  CHECK(std::fclose(file) == 0);
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  for (bool imported : {false, true}) {
+    World w;
+    w.terrain.w = w.terrain.h = 20;
+    w.terrain.cells.resize(400);
+    Object o; o.id = 1; o.type = 14; o.hp = o.hp_max = 30000;
+    o.attack_tick = 4;
+    o.teleport(to_fixed(200), to_fixed(200));
+    w.objects.push_back(o);
+    if (imported) w.original_save = std::make_shared<SaveGame>();
+    GameSim sim(rules);
+    CHECK(sim.attach_script(path.string()));
+    sim.init(w);
+    Command pause; pause.type = Pct::PauseOn;
+    sim.submit(pause);
+    w.begin_tick(); sim.tick(w);
+    CHECK(w.objects[0].attack_tick == 4 && w.objects[0].body_tick == -1);
+    CHECK(w.outcome == kRunning);
+    pause.type = Pct::PauseOff;
+    sim.submit(pause);
+    w.begin_tick(); sim.tick(w);
+    CHECK(w.objects[0].attack_tick == 5 && w.objects[0].body_tick == 0);
+    CHECK(w.outcome == (imported ? kRunning : kVictory));
+    w.begin_tick(); sim.tick(w);
+    CHECK(w.objects[0].attack_tick == 6 && w.objects[0].body_tick == 1);
+  }
+  std::filesystem::remove(path);
+  std::filesystem::remove(directory);
+}
+
 static void test_script(const std::string& dir) {
   GameData data;
   std::string err;
@@ -939,6 +980,13 @@ static void test_descriptor_combat() {
   for (int tick = 1; tick <= 24; ++tick) {
     world.begin_tick(); sim.tick(world);
     CHECK(world.objects[0].has_fired);
+    CHECK(world.objects[0].attack_tick == (tick - 1) % 10);
+    CHECK(world.objects[1].body_tick == tick - 1); // the built body clock continues through combat
+    if (tick == 11 || tick == 21) CHECK(world.objects[0].body_tick > 0);
+    auto visual_hash = sim.state_hash(world);
+    ++world.objects[0].attack_tick;
+    CHECK(sim.state_hash(world) != visual_hash);
+    --world.objects[0].attack_tick;
     if (tick == 1 || tick == 11 || tick == 21) CHECK(world.objects[0].cooldown == 10);
     CHECK(world.objects[1].hp == 30000 - 150 * ((tick - 1) / 10 + 1));
     CHECK(world.objects[2].hp == 20044 && world.objects[2].secondary_hp == 36000);
@@ -1123,6 +1171,7 @@ int main(int argc, char** argv) {
     test_production();
     test_projectiles();
     test_descriptor_combat();
+    test_script_animation_clocks();
     test_town_commands();
     test_sprite_metadata();
     test_audio_pure();
