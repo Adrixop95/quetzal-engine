@@ -51,6 +51,7 @@ struct TypeRules {
   bool structure = false, mobile = false, flier = false, armed = false, large = false;
   int hp_max = 0;     Src hp_src = Src::Placeholder;      // Marine desc d1 (verified), else largest mission hp
   int secondary_hp = 0, regen = 0, regen_alt_threshold = 0;
+  bool service_damage_protected = false; // Building descriptor byte +0xec blocks explicit service damage
   int weapon_id = -1;
   int physical_armor = 0;
   bool nonorganic = false, category_f4 = false, category_e8 = false, hypno = false;

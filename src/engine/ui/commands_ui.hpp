@@ -65,6 +65,7 @@ class CommandsUi {
   std::vector<KeyBinding> bindings_;
   TargetMode mode_ = TargetMode::None;
   int placing_ = -1;
+  uint32_t placing_member_ = 0;
   int page_ = 0;
   bool right_down_ = false, right_moved_ = false;
   int rx_ = 0, ry_ = 0;

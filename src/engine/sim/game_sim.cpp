@@ -433,7 +433,8 @@ void GameSim::apply(World& w, const Command& c) {
         uint32_t id = spawn(w, c.a, c.side, c.b * kTilePx + kTilePx / 2, c.c * kTilePx + kTilePx / 2, 0, true);
         w.find_mut(id)->town = w.mission.towns[size_t(ti)].index;
         w.find_mut(id)->build_total = std::max(1, mi->time);
-      } else if (ss->queue.size() < 8) {
+      } else if (std::count_if(ss->queue.begin(), ss->queue.end(),
+                               [ti](const QueueItem& q) { return q.town == ti; }) < 8) {
         ss->money -= mi->price;
         if (ti >= 0 && ti < int(w.ai_towns.size())) w.ai_towns[ti].spent += mi->price;
         ss->queue.push_back({c.a, std::max(1, mi->time), std::max(1, mi->time), ti, mi->price});
@@ -462,6 +463,53 @@ void GameSim::maintain_town_marks(World& w) {
     for (const Object& o : w.objects)
       if (rules_->type(o.type).kind == 2 && mark_eligible(o, town) &&
           std::find(town.marked.begin(), town.marked.end(), o.id) == town.marked.end()) town.marked.push_back(o.id);
+  }
+}
+
+// Credits are a per-tick work budget, independent of side cash. Groups are
+// snapshotted before service so healing never changes priority within this tick.
+void GameSim::service_towns(World& w) {
+  for (size_t ti = 0; ti < w.town_state.size(); ++ti) {
+    TownState& town = w.town_state[ti];
+    int64_t budget = w.repair_credits[ti];
+    w.repair_credits[ti] = 0;
+    if (budget <= 0) continue;
+    std::array<std::vector<uint32_t>, 4> groups;
+    for (uint32_t id : town.marked) {
+      const Object* o = w.find(id);
+      if (!o || !mark_eligible(*o, town)) continue;
+      int group = rules_->type(o->type).kind == 7 ? 3 :
+                  o->hp_max / o->hp > 3 ? 0 : o->hp_max / o->hp > 2 ? 1 : 2;
+      groups[size_t(group)].push_back(id);
+    }
+    const bool destroy = town.repair_mode == RepairMode::Destroy;
+    const std::array<int, 4> order = destroy ? std::array<int, 4>{0, 1, 2, 3} : std::array<int, 4>{3, 0, 1, 2};
+    for (int group : order) {
+      const auto& ids = groups[size_t(group)];
+      if (ids.empty() || budget == 0) continue;
+      if (destroy) budget *= 3;
+      const int64_t share = budget / int64_t(ids.size());
+      for (uint32_t id : ids) {
+        if (budget == 0) break;
+        Object* o = w.find_mut(id);
+        int64_t work = std::min({share, budget, int64_t(destroy ? o->hp : o->hp_max - o->hp)});
+        if (work == 0) {
+          town.marked.erase(std::remove(town.marked.begin(), town.marked.end(), id), town.marked.end());
+          continue;
+        }
+        if (destroy) {
+          // Weapon 10 supplies attribution; the service passes explicit damage,
+          // rather than calculating another descriptor weapon hit.
+          if (!rules_->type(o->type).service_damage_protected) {
+            o->hp = int(std::max<int64_t>(std::numeric_limits<int>::min(), int64_t(o->hp) - work * 3));
+            o->last_hit_by = ids.front();
+            if (o->hp <= 0) kill(w, *o);
+          }
+        } else o->hp += int(work);
+        budget -= work;
+      }
+      if (destroy) budget /= 3;
+    }
   }
 }
 
@@ -546,29 +594,31 @@ bool GameSim::can_place(const World& w, int side, int type, int tx, int ty, cons
 void GameSim::economy(World& w) {
   for (size_t s = 0; s < w.side_state.size(); s++) {
     SideState& ss = w.side_state[s];
-    if (!ss.queue.empty() && !ss.build_paused) {
-      QueueItem& q = ss.queue.front();
+    if (ss.build_paused) continue;
+    // Storage remains in command insertion order; each town advances only its first item.
+    std::vector<int> advanced;
+    for (size_t i = 0; i < ss.queue.size();) {
+      QueueItem& q = ss.queue[i];
+      if (std::find(advanced.begin(), advanced.end(), q.town) != advanced.end()) { ++i; continue; }
+      advanced.push_back(q.town);
+      const Object* hall = town_hall(w, q.town);
+      // A missing producer suspends production rather than spawning at the side start.
+      if (!hall || hall->progress < 1000) { ++i; continue; }
       if (q.remaining > 0) --q.remaining;
+      bool finished = false;
       if (q.remaining <= 0) {
-        if (rules_->type(q.type).structure) {
-          if (finish_structure(w, int(s), q)) ss.queue.erase(ss.queue.begin());
-          continue;
+        if (rules_->type(q.type).structure) finished = finish_structure(w, int(s), q);
+        else {
+          int bx = px(hall->cur_x), by = px(hall->cur_y);
+          int fh = rules_->type(hall->type).foot_h;
+          int slot = int(spawn_counter_++ % 5);
+          uint32_t id = spawn(w, q.type, int(s), bx + (slot - 2) * 26, by + fh * 24 + 40, 0, false);
+          w.find_mut(id)->town = w.mission.towns[size_t(q.town)].index;
+          finished = true;
         }
-        int type = q.type, ti = q.town;
-        ss.queue.erase(ss.queue.begin());
-        int bx = 0, by = 0, fh = 2;
-        bool found = false;
-        if (ti >= 0) {
-          const TownDef& t = w.mission.towns[size_t(ti)];
-          int tb = rules_->town_building(t.type, t.race);
-          for (const Object& o : w.objects)
-            if (!o.removed && o.alive && o.side == int(s) && o.type == tb && o.town == t.index) { bx = px(o.cur_x); by = px(o.cur_y); fh = rules_->type(tb).foot_h; found = true; break; }
-        }
-        if (!found) { for (const SideDef& sd : w.mission.sides) if (sd.index == int(s)) { bx = sd.start_x * kTilePx + 24; by = sd.start_y * kTilePx + 24; } }
-        int slot = int(spawn_counter_++ % 5);
-        uint32_t id = spawn(w, type, int(s), bx + (slot - 2) * 26, by + fh * 24 + 40, 0, false);
-        w.find_mut(id)->town = ti >= 0 ? w.mission.towns[size_t(ti)].index : -1;
       }
+      if (finished) ss.queue.erase(ss.queue.begin() + i);
+      else ++i;
     }
   }
   std::fill(w.repair_credits.begin(), w.repair_credits.end(), 0);
@@ -900,6 +950,7 @@ void GameSim::tick(World& w) {
   advance_effects(w);
   run_orders(w);
   maintain_town_marks(w);
+  service_towns(w);
   mover_->tick();
   sync_movement(w);
   for (auto& o : w.objects) {

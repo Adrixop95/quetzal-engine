@@ -40,11 +40,11 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Simulation fog brightness and exploration | V formulas / synthetic checks | Every active tick: global daylight plus saturated glow (maximum 152), minimum side vision darkness, nonnegative difference; previous exploration capped at 32. Raw brightness replaces invented 0/96/152 states. Renderer integration remains separate |
 | Building construction: placement on free tiles, progress = adjusted build time, stages = animation slot 0 | V formula/stages, engine placement | Hall/speed/computer time applies to placed construction. Original placement/worker and exact completion semantics remain open |
 | Building footprint in tiles | P | desc d4/d5 (px) rounded up, centred on the clicked tile |
-| Unit training: side queue (max 8), first item progresses, 100 % refund on cancel | P queue/refund policy | Items retain producing town and actual payment; cancellation refunds that payment even after speed changes. Spawn below that town hall. Independent simultaneous town queues remain unimplemented |
+| Town production: first item per town progresses independently, one completion per town per tick | engine / P capacity, pause, refund and spawn policies | Shared insertion-ordered storage retains town ownership and actual payment. Eight pending items per town; side-wide pause and full paid-cost cancellation remain provisional. Missing/incomplete halls suspend timers. See V08/V09 validation below |
 | Building income and repair supply | V formulas / synthetic checks | Descriptor occupancy cells equal to 2 weight resource channels A/B with d60/d61; periodic/scheduled 7200-tick clock from StartTime. Gold and d62/d320 repair supplies have separate accumulators. Completed same-town warehouse applies once to farms only. Missing resource map contributes zero terrain bytes |
 | Starting money = side `StartMoney` | V | `.mp` |
 | Garrison | engine / V semantic fact | Extracts live mobile town members into a fresh tactic and selects it. Explicit mission town membership and hall identity, invalid-owner checks, empty/repeated extraction, hash and save/replay checks. Reference packet field layout and live comparison remain unverified |
-| Repair/destroy mode and list commands | engine / partial | Modes 0/1/2; mode changes clear lists, same-mode commands preserve them. Eligible completed town structures toggle membership; halls, mobile units, foreign-town targets and construction are rejected. Off mode collects damaged ordinary buildings. Dead, repaired or reassigned targets are pruned. Commands do not delete or change HP. Repair credits are harvested, but service allocation and destruction damage remain unimplemented |
+| Repair/destroy mode and list commands | engine / partial | Modes 0/1/2; mode changes clear lists, same-mode commands preserve them. Eligible completed town structures toggle membership; halls, mobile units, foreign-town targets and construction are rejected. Off mode collects damaged ordinary buildings. Dead, repaired or reassigned targets are pruned. Commands do not delete or change HP. Harvested credits now drive priority-group repair/destruction and are cleared after service; exact tick alignment remains unverified |
 | Attack modes | V numeric modes / partial engine | Direct 0, defensive 1, aggressive 2, balanced 3 (default). Command, ownership/tactic propagation, direct range-only engagement, movement gates and replay/hash state implemented. Group distance limits, attached-tactic graph and full assignment remain pending; see investigation below |
 | Universal population cap | O reference / engine correction | Task 13 removes the unsupported AI-only cap 80 in develop. Synthetic human/AI production above 110 units passes. Queue 50 and assignment arrays 100 do not establish a side cap; no live population measurement succeeded |
 | Difficulty bonuses | V map-key exclusion / O other effects | Map Difficulty stays editor metadata; synthetic 0/100 inputs produce identical simulation hashes. No HP, damage, income or price bonus is invented. Global difficulty effects remain unverified |
@@ -291,9 +291,9 @@ phase. An exhausted schedule resets on a separate tick with clock <= first date.
 with the first owned town as the default. This is an engine command convention,
 not a claim about original packet fields. Human and computer towns initialize at
 normal speed. Autonomous town transitions suspend during active construction;
-non-map structures use automatic placement, while concurrent town queues and exact
-original placement/spawn ticks still need integration/evidence. Repair credits are exposed per town for the current
-tick; spending them belongs to the separate repair-service task.
+non-map structures use automatic placement. Concurrent town queues and repair service
+are integrated in the V08/V09 update below; exact original placement/spawn ticks
+and active-building suspension still need evidence.
 
 **M differential evidence:** none added. This worktree has no local game assets,
 reference executable/lift or task 01 normalized economy/training comparison tool.
@@ -411,8 +411,8 @@ RepairMode and DestroyHere; RepairMode uses `a` for 0/1/2, and DestroyHere uses
 payload. Duplicate target IDs in one packet count once. DestroyHere toggles the
 active repairer list; off-mode manual toggles are ignored. The UI only allows
 eligible list targets when a mode is active and routes them to their own town.
-Repair controls remain disabled pending repair-service integration; credit
-production is available separately.
+The hall Repair button now cycles automatic service, marked repair and marked
+destruction through logged commands. Its configured Repair key does the same.
 
 **Engine construction checks:** synthetic invalid town/side/target, multiple-town
 extraction, repeated empty extraction, duplicate/repeated toggles, mode-change
@@ -424,10 +424,10 @@ compatibility. Hash changes mean older saves with recorded hashes are incompatib
 
 **Dependency boundary after merge:** resource-based income, per-tick repair-credit
 harvesting, town-local prerequisites and producing-town attachment for new spawns
-are implemented by the economy work described above. Production queues remain
-side-wide. Damage-priority groups, repair-budget allocation and destruction
-damage remain pending. Hall-upgrade completion/build-tree changes and upgrade
-save/replay scenarios are covered by the subsequent flag-0 production entry. Available credits do not yet drive repair service. The mission
+are implemented by the economy work described above. Independent town progression,
+damage-priority allocation and destruction service are implemented in the V08/V09
+update below. Hall-upgrade completion/build-tree changes and upgrade save/replay
+scenarios are covered by the subsequent flag-0 production entry. The mission
 parity runner and strict normalized comparator are present, while task 01's packet
 replay, audited object-ID mapping and aligned reference observer remain prerequisites
 for a normalized reference comparison.
@@ -504,12 +504,14 @@ to select mobile units; autonomous development remains a separate task.
 **P engine policies / O reference parity:** automatic placement searches free
 footprints in increasing square rings around the live hall, with row/column tie
 breaking. This is a deterministic fallback, not a verified terrain ranking or
-reference placement algorithm. Production waits at zero remaining time if its
-hall is dead or no footprint fits; queue cancellation remains available. Hall
+reference placement algorithm. Production suspends its timer if its hall is
+missing/incomplete and waits at zero if no footprint fits; cancellation remains
+available. Hall
 upgrades require a free replacement footprint and assign the new descriptor's
 full HP on completion. Original HP transitions, active-building suspension and
-exact start/completion ticks remain open. The existing side-wide eight-entry
-queue and full cancellation refund are unchanged placeholders. Map construction
+exact start/completion ticks remain open. Queues now progress independently per
+town, with eight entries per town; capacity, side-wide pause and full
+cancellation refund remain placeholders. Map construction
 continues to use the build-tree construction flag; flag-0 commands ignore map
 coordinates. These engine command conventions do not establish packet parity.
 Town levels are now hashed, so older saves with stored hashes are incompatible.
@@ -628,3 +630,68 @@ selection/group presentation, resource decoration, tooltip timing/appearance,
 message-log history and synchronized reference comparison remain open (P).
 Repair and hall-upgrade UI acceptance also depend on the incomplete town-command
 work described above; this task does not invent those gameplay semantics.
+
+## V08/V09 economy and town service update (2026-10-28, partial)
+
+**Independent implementation:** production advances the first pending item of each
+producing town, retaining insertion order for commands, completions and cancellation
+indices. Completing an item does not advance that town's next item on the same
+tick. Missing/incomplete halls suspend queued timers; they never spawn units at
+an unrelated side start. UI production menus and queue cancellation follow the
+selected object's town, and placement remembers the producing town. Cancellation
+feedback shows the actual payment. The eight-entry limit is now per town; it is
+still a P UI policy, not the reference's documented 50-entry queue. Production
+pause remains side-wide, and full refunds remain P pending measurements.
+
+Repair service consumes each town's harvested credits after orders/mark maintenance
+and discards its unused budget every tick. Modes 0/1 repair; mode 2 destroys.
+Membership, HP, credits, navigation changes and death effects already participate
+in hashes; no unrecorded service clock or persistent budget was introduced.
+
+**V inspected facts / synthetic implementation checks:** local instruction review
+of repair selection/allocation (`0x444730`, `0x444920`) establishes three ordinary
+building groups using integer maxHP/currentHP: greater than 3, equal to 3, and
+at most 2. Repair processes Defence before those groups; destruction processes
+Defence last. Each group takes a fixed integer share of its incoming budget.
+Capping work on one target does not redistribute its unused share inside the
+group; residue passes to the next group. Zero work removes membership, including
+when the group is too large for a positive share. Destruction triples the budget
+before sharing, limits work by current HP, applies three damage per work unit,
+and divides remaining work by three before the next group. Weapon 10 provides
+the first group member as attribution; this path passes explicit damage rather
+than calculating another descriptor hit. Building byte +0xec rejects this damage
+while still consuming work (`0x410560`); service loads that ordinary-building
+protection flag. Death uses the engine's existing navigation/effect cleanup.
+These are independently described facts, not copied executable-derived source.
+
+`engine_unit` covers exact damage-group boundaries, Defence priority, capped
+shares, zero-share removal, residue flowing between groups, no carry between
+ticks, automatic service in another town, no cash spending, protected buildings,
+destruction death/footprint cleanup and save/replay starting before completion.
+It also checks simultaneous town training, serialization within a town, pause
+clock suspension, completion boundaries, producing-town UI cancellation and
+construction's final tick versus first harvest tick. All-race hall upgrades also
+check a saved paused countdown resumed through completion. Existing build-tree and non-map structure checks remain in place.
+These checks establish engine behavior; construction's same-tick countdown,
+activation phase, hall HP reset and spawn positions remain engine conventions.
+
+**O dependencies and failed observation:** V02's audited packet replay, object
+identity adapter and aligned normalized economy observer are not available in
+this checkout; V04 initialization/HP parity is also incomplete. Work independent
+of those prerequisites is implemented above. The supplied private installation
+and runtime were accessed read-only. A private game copy with resource symlinks,
+ordinary Maps/Saves directories and copied configuration was prepared under
+ignored `work/economy-game/`. The bounded dummy-SDL reference attempt under
+`unshare -rn` failed at loopback setup with `Cannot open netlink socket: Operation
+not permitted`, before launching the game. Private logs remain under
+`work/economy-probe/`; there is no new M evidence. Exact clock/command phase,
+activation/suspension, placement, original training/spawn/completion ticks,
+refunds and hall-upgrade HP transitions remain open. V08 and V09 therefore remain
+incomplete in the roadmap. Changed simulation behavior also means older saves'
+stored hashes may no longer match; the save format was not changed.
+
+**Validation in this worktree:** baseline and final Release builds pass with
+`AZTEC_GEN_DIR=` and a worktree-local ccache. Full CTest passes 17 entries; the
+three game-data entries and restricted UDP process test skip. All pre-commit
+hooks pass using a copy of the local hook cache under ignored build output.
+Private-data/reference runs are not verified by these skipped checks.

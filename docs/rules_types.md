@@ -118,6 +118,17 @@ The Chinese reset comparison includes equality because its first entry is zero. 
 
 Eligible marked objects are building kind (including Defence), attached to a tactic, excluding the town hall and current construction. Repair requires missing HP; destroy may accept full-health targets. Off-mode town service also places damaged eligible ordinary buildings into the list (`0x45d4d0`). Repair processes Defence first and ordinary buildings in groups of decreasing damage, then distributes integer shares within each group (`0x444730`, `0x444920`). Repair factor is 1.0. Destroy triples the group budget, applies weapon 10 with damage factor 3.0, and divides remaining budget by 3; normal damage handling still applies.
 
+**V (instruction review, 2026-10-28):** Ordinary service priority uses integer
+maxHP/currentHP groups >3, ==3 and <=2, with stable list order within each group.
+Defence precedes them for repair and follows them for destruction. The share is
+fixed at group entry; work capped by a target's missing/current HP leaves residue
+for subsequent groups, without recalculating shares inside the group. Zero work
+removes the target from the list. Destruction's explicit damage is three times
+allocated work; weapon 10 supplies attribution rather than an additional computed
+weapon hit. Building byte +0xec can reject that explicit damage while the work
+budget is still spent (`0x410560`, `0x43ea30`). This does not establish all Defence
+protection branches or live service tick alignment.
+
 Destroy packet 0x1a (`0x4489b0`) toggles an owned building under the cursor in the selected town's nonzero-mode list; it rejects a different town's object and current construction. It is not immediate deletion of arbitrary selected objects. No cash refund is present in this command path.
 
 **G:** Workshops/stables/air facilities also enable nearby allied mobile-unit service for 10 HP. The small-pool and larger-pool branches use different spatial/category paths, so exact boundaries and airborne parity remain **O**.
