@@ -1,4 +1,5 @@
 #include "engine/audio/scene_audio.hpp"
+#include "engine/world/object_state.hpp"
 
 namespace aztec::engine {
 void emit_scene_audio(const World& world, const AnimSpriteProvider& provider,
@@ -15,16 +16,7 @@ void emit_scene_audio(const World& world, const AnimSpriteProvider& provider,
     if (o.removed) continue;
     const float x = o.cur_x / 256.f, y = o.cur_y / 256.f;
     if (!visible(x, y, o.side)) continue;
-    ObjectState st;
-    st.type_id = o.type;
-    if (o.type < 0 && o.source == ObjectSource::Boat) st.type_id = -2;
-    if (o.type < 0 && o.source == ObjectSource::Johnka) st.type_id = -3;
-    st.hp = o.hp; st.max_hp = o.hp_max; st.progress = o.progress;
-    st.facing = o.facing; st.anim_state = o.anim_state; st.anim_tick = o.anim_tick;
-    st.anim_variant = o.anim_variant; st.body_tick = o.body_tick; st.attack_tick = o.attack_tick;
-    st.moving = o.body_moving; st.initial_turret = !o.has_fired;
-    st.destruction_radius = o.destruction_radius;
-    st.transport_phase = o.transport_phase; st.orientation = o.orientation;
+    const auto st = object_sprite_state(o, world.side_color(o.side));
     const auto frames = provider.sound_frames(st);
     for (size_t i = 0; i < frames.size(); ++i) play(frames[i], uint64_t(o.id) << 16 | i, x, y);
   }

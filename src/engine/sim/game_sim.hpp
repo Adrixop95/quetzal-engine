@@ -71,6 +71,7 @@ class GameSim : public Simulation {
   void fire_weapon(World& w, const WeaponRules& weapon, const Object& source, Object& target, int damage);
   void decoration(World& w, int anim, int slot, Fixed x, Fixed y, int height, int side, uint32_t source = 0);
   void sync_movement(World& w);
+  void update_animation_state(World& w);
   void update_fog(World& w);
   void run_ai(World& w);   // sim/ai.cpp
   void kill(World& w, Object& o);

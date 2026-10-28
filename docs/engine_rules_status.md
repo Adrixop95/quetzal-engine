@@ -535,3 +535,59 @@ read-only game installation and SDL dummy drivers passes 15 of 16 checks,
 including all three private-data checks. `lockstep_processes` fails at UDP socket
 creation with `Operation not permitted`, matching the pre-change baseline.
 All pre-commit gates pass using cached hook environments inside this worktree.
+
+## V13 simulation animation producers (2026-10-28, partial)
+
+**Engine construction checks:** body and turret angles are separate 0..255
+simulation fields, initialized from facing and included in state hashes. Older command-log saves with recorded hashes are
+not hash-compatible with this change. Actual
+fixed-point displacement supplies body direction; attack targets supply turret
+aim, including the killing shot before target removal. Turret aim preserves a
+stationary chassis direction. Aircraft return to idle when displacement stops.
+This is an engine policy, not measured original turn rates or turret tracking.
+The existing aligned-direction selector now receives full angles; Bird steering
+cooldown and Cannon hop restart rules remain unresolved under V05/V07.
+
+Rendering, simulation light selection and frame audio use one read-only object
+snapshot, including both angles, transport phase, construction, height and
+independent clocks. Animation ages now advance in simulations rather than in
+`World::begin_tick`, so pause freezes them. Defence construction produces its
+slot-6 overlay while progress is incomplete and clears it at completion. Existing
+HP seeks, fires, death explosions, debris and known-radius rubble remain in use.
+Altitude and destruction radius inputs remain unresolved; no dynamics or radius
+formula is invented here.
+
+**C/R integration:** Boat opening finishes in Open, closing finishes in Closed,
+and turning toggles orientation once and finishes in Closed. Completion uses
+finite frame durations from the installed animation bank through the existing
+`SightData` resource bundle. Missing, holding or malformed sequences never imply
+completion. The transition resets the phase age to zero. V12 still lacks Boat,
+Johnka and submarine activation/travel adapters, so campaign scripts cannot yet
+initiate these phases. Johnka retains its existing orientation loop.
+
+Synthetic tests cover both Boat orientations, exact duration boundaries, stable
+phases, missing resources, pause/resume, off-axis aim and flight direction,
+killing-shot aim, angle hash sensitivity, command-log replay and construction
+completion. Dummy-SDL exact pixels verify that the renderer consumes the body
+angle without mutating state. These are independent implementation checks, not
+reference observations; exact and tolerant reference metrics remain separate in
+`zspr_compare.py` and no new score is reported.
+
+**Blocked reference evidence:** all three attack/death, overlap and night probes
+used the supplied external runtime and installation through the private-copy
+runner, both dummy SDL drivers and `unshare -rn`. Each returned status 1 at
+interface setup: `Cannot open netlink socket: Operation not permitted`.
+The runner inventory is ignored at `work/v13-contract-probes/inventory.json`.
+No game launch, record/replay control, reference pixels or new M/P evidence was
+obtained. V13 remains open for V05-V07/V12 behavior, aircraft altitude, destruction
+radius, synchronized scenes and visibility/minimap acceptance.
+
+Validation: Release build and all 17 runnable CTest entries passed; three private
+checks and restricted UDP skipped in the asset-free configuration. Private
+`test_formats` and `test_engine` passed with a complete private Maps copy inside
+`unshare -rn` and dummy SDL. An initial copy containing only mission 1 failed
+the checks requiring mission 4 and at least 30 maps; completing the private
+fixture resolved those failures. The independent engine rendered mission 1
+with fog and minimap after 24 requested ticks (`work/v13-engine.png`, ignored).
+This is a smoke check, not campaign visibility acceptance. Pre-commit passed
+using locally cached hooks relocated into ignored build output.
