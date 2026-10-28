@@ -155,14 +155,31 @@ def harvest(name, branch, title):
         print("no changes in", wd)
         return
     pf = os.path.join(ROOT, "work/codex", name + ".patch")
-    with open(pf, "w") as stream:
-        stream.write(patch)
+    with open(pf, "w") as patch_file:
+        patch_file.write(patch)
     land = os.environ.get("LAND_ROOT", ROOT)
     os.chdir(land)
-    # A failed landing leaves this task's local branch behind. Retry its patch
-    # against current develop; this only resets the local landing branch.
-    r = checked("git fetch -q origin && git checkout -q -f -B %s origin/develop && git apply --3way %s" %
-                (shlex.quote(branch), shlex.quote(pf)))
+    checked("git fetch -q origin")
+    branch_arg = shlex.quote(branch)
+    checked("git check-ref-format --branch " + branch_arg)
+    existing = sh("git show-ref --verify --quiet " + shlex.quote("refs/heads/" + branch))
+    if existing.returncode not in (0, 1):
+        raise RuntimeError(existing.stdout + existing.stderr)
+    if existing.returncode == 0:
+        # Failed test/commit attempts leave the landing branch at its base.
+        # Refresh those branches, but preserve any commits not yet integrated.
+        checked("git merge-base --is-ancestor " + branch_arg + " origin/develop")
+    checked("git checkout -q -f -B " + branch_arg + " origin/develop")
+    try:
+        r = checked("git apply --3way " + shlex.quote(pf))
+    except RuntimeError:
+        print("FAILED: the patch did not apply on origin/develop")
+        raise
+    staged = sh("git diff --cached --quiet")
+    if staged.returncode == 0:
+        raise RuntimeError("Harvest patch produced no staged changes; it may already be integrated.")
+    if staged.returncode != 1:
+        raise RuntimeError(staged.stdout + staged.stderr)
     print(r.stdout, r.stderr)
     print("Branch", branch, "prepared with the patch applied; review, build, test, then commit and open the PR "
           "(git add the files; git commit; git push -u origin %s; gh pr create --base develop --title '%s')" % (branch, title))

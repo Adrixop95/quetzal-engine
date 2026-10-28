@@ -22,6 +22,7 @@
 #include "engine/assets/sprite_provider.hpp"
 #include "engine/platform/clock.hpp"
 #include "engine/sim/game_sim.hpp"
+#include "engine/sim/sight.hpp"
 #include "engine/sim/savegame.hpp"
 #include "core/endian.hpp"
 #include "engine/sim/simulation.hpp"
@@ -33,6 +34,102 @@ using namespace aztec;
 using namespace aztec::engine;
 static int failures = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); failures++; } } while (0)
+
+static void test_sight() {
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  CHECK(rules->type(0).vision_mask >= 64 && rules->type(0).vision_mask <= 71);
+  CHECK(rules->type(0).sight_src == Src::Verified);
+  for (auto [type, mask] : std::vector<std::pair<int, int>>{{0,64}, {1,68}, {5,65}, {54,69},
+       {30,70}, {10,70}, {11,71}, {14,69}, {7,71}, {83,66}, {33,71}, {34,69},
+       {3,67}, {4,70}, {17,68}, {23,70}, {26,71}, {87,70}})
+    CHECK(rules->type(type).vision_mask == mask);
+  auto inputs = std::make_shared<SightData>();
+  for (auto& day : inputs->daylight) day.fill(80);
+  auto& mask = inputs->masks[rules->type(0).vision_mask];
+  mask.assign(404, 152); mask[0] = mask[2] = 20; mask[1] = mask[3] = 0;
+  mask[4 + 10 * 20 + 10] = 0;
+  rules->set_sight(inputs);
+  std::vector<uint8_t> grid(40 * 40, 152);
+  stamp_sight(grid, 40, 40, inputs->mask(rules->type(0).vision_mask), 20 * 48, 20 * 48, true);
+  CHECK(grid[20 * 40 + 20] == 0 && grid[20 * 40 + 19] == 152);
+  // Translation blends four samples, truncating each term on each axis.
+  std::fill(grid.begin(), grid.end(), 152);
+  stamp_sight(grid, 40, 40, inputs->mask(rules->type(0).vision_mask), 20 * 48 + 24, 20 * 48 + 24, true);
+  CHECK(grid[20 * 40 + 20] == 114);
+  std::vector<uint8_t> glow(40 * 40, 145);
+  stamp_sight(glow, 40, 40, inputs->mask(rules->type(0).vision_mask), -24, -24, false);
+  CHECK(*std::max_element(glow.begin(), glow.end()) == 152);
+  stamp_sight(glow, 40, 40, data::LightMask{}, 0, 0, false);
+
+  VisFile::Layer boundary{2, 2, {32, 33, 32, 33}};
+  CHECK(sight_brightness(boundary, 0, 0) == 32 * 256);
+  CHECK(sight_brightness(boundary, 24, 24) > 32 * 256);
+  CHECK(sight_brightness(boundary, -1, 0) == 0);
+  CHECK(sight_brightness(boundary, 96, 0) == 0);
+
+  World initial;
+  initial.terrain.w = initial.terrain.h = 40; initial.terrain.cells.resize(1600);
+  Object scout; scout.id = 1; scout.type = 0; scout.hp = 6000;
+  scout.teleport(to_fixed(20 * 48), to_fixed(20 * 48)); initial.objects.push_back(scout);
+  World world = initial;
+  GameSim sim(rules); sim.init(world);
+  world.begin_tick(); sim.tick(world);
+  CHECK(world.visibility.sides.size() == 8);
+  const auto index = size_t(20 * 41 + 20);
+  CHECK(world.visibility.sides[0].w == 41 && world.visibility.sides[0].h == 42);
+  CHECK(world.visibility.sides[0].v[index] == 80);
+  CHECK(world.visibility.sides[1].v[index] == 0); // hostile and allied vision is not shared
+  world.objects[0].alive = false;
+  world.begin_tick(); sim.tick(world);
+  CHECK(world.visibility.sides[0].v[index] == 32);
+  world.objects[0].alive = true;
+  inputs->daylight[0][3] = 24;
+  world.begin_tick(); sim.tick(world);
+  CHECK(world.visibility.sides[0].v[index] == 32); // explored floor survives darkness
+  world.local_side = 7;
+  world.begin_tick(); sim.tick(world);
+  CHECK(world.visibility.sides[0].v[index] == 80);
+  auto hash = sim.state_hash(world);
+  world.visibility.sides[0].v[index]++;
+  CHECK(sim.state_hash(world) != hash);
+
+  World a = initial, b = initial;
+  GameSim first(rules), second(rules); first.init(a); second.init(b);
+  b.local_side = 7;
+  for (int t = 0; t < 8; ++t) {
+    a.begin_tick(); first.tick(a); b.begin_tick(); second.tick(b);
+    CHECK(first.state_hash(a) == second.state_hash(b));
+    World replayed = initial;
+    auto replay = GameSim::replay(replayed, rules, first.log(), first.tick_count());
+    CHECK(first.state_hash(a) == replay->state_hash(replayed));
+  }
+  // A lit target beyond the old six-tile radius is eligible; exactly 32 is not.
+  std::fill(mask.begin() + 4, mask.end(), 0);
+  Object enemy; enemy.id = 2; enemy.type = 10; enemy.side = 1; enemy.hp = 30000;
+  enemy.teleport(to_fixed(20 * 48 + 400), to_fixed(20 * 48));
+  initial.objects.push_back(enemy);
+  initial.relation[0][1] = kEnemy;
+  for (int ambient : {32, 33}) {
+    for (auto& day : inputs->daylight) day.fill(uint8_t(ambient));
+    World duel = initial;
+    GameSim combat(rules); combat.init(duel);
+    for (int t = 0; t < 3; ++t) { duel.begin_tick(); combat.tick(duel); }
+    CHECK(duel.objects[0].target == (ambient == 33 ? 2u : 0u));
+  }
+  // Clean checkouts have no private masks. Their combat remains functional,
+  // using the bounded placeholder instead of silently disabling acquisition.
+  rules->set_sight(nullptr);
+  CHECK(initial.visibility.sides.empty());
+  for (int distance : {200, 400}) {
+    World duel = initial;
+    duel.objects[1].teleport(to_fixed(20 * 48 + distance), to_fixed(20 * 48));
+    GameSim combat(rules); combat.init(duel);
+    for (int t = 0; t < 3; ++t) { duel.begin_tick(); combat.tick(duel); }
+    CHECK(duel.objects[0].target == (distance == 200 ? 2u : 0u));
+    CHECK(duel.visibility.sides.empty());
+  }
+}
 
 static void test_sprite_metadata() {
   using namespace aztec::data;
@@ -89,6 +186,14 @@ static void test_sprite_metadata() {
 
 static void test_sprite_assets(const std::string& dir) {
   using namespace aztec::data;
+  RulesData sight_rules;
+  CHECK(sight_rules.load_dir(AZTEC_TEST_RULES_DIR));
+  CHECK(sight_rules.load_sight(dir));
+  if (sight_rules.sight()) {
+    CHECK(sight_rules.sight()->masks.size() == 24);
+    for (const auto& day : sight_rules.sight()->daylight)
+      for (uint8_t value : day) CHECK(value <= 152 && value % 8 == 0);
+  }
   SpriteDb db;
   CHECK(db.open(find_file_ci(dir + "/Res", "Units.xbe")));
   int inventory_count = 0;
@@ -559,6 +664,7 @@ static void test_sim(const std::string& dir) {
   if (!data.open(dir, err)) { CHECK(false); return; }
   auto rules = std::make_shared<RulesData>();
   if (!rules->load_dir(AZTEC_TEST_RULES_DIR)) { CHECK(false); return; }
+  CHECK(rules->load_sight(dir));
   CHECK(rules->type(0).hp_max == 6000 && rules->type(0).hp_src == Src::Verified);
   CHECK(rules->type(0).price == 100);
 
@@ -729,6 +835,8 @@ static void test_script(const std::string& dir) {
   if (!data.open(dir, err)) { CHECK(false); return; }
   auto rules = std::make_shared<RulesData>();
   if (!rules->load_dir(AZTEC_TEST_RULES_DIR)) { CHECK(false); return; }
+  // Keep the script timer checks independent of optional lighting resources.
+  rules->set_sight(nullptr);
   World w;
   if (!load_world(data, "1", w, err)) { CHECK(false); return; }
   GameSim sim(rules);
@@ -736,7 +844,7 @@ static void test_script(const std::string& dir) {
   sim.init(w);
   // trigger 0 (localTime == 1400): side 1 tactic 7 attacks town 0
   bool ordered = false;
-  for (int t = 0; t < 1500; t++) {
+  for (int t = 0; t < 1401; t++) {
     w.begin_tick();
     sim.tick(w);
     if (t == 1390)
@@ -1456,6 +1564,7 @@ static void test_audio_data(const std::string& dir) {
 int main(int argc, char** argv) {
   if (argc == 2 && std::string(argv[1]) == "--pure") {
     test_pure();
+    test_sight();
     test_production();
     test_town_production();
     test_projectiles();
