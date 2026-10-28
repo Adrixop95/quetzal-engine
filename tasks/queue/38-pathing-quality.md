@@ -1,0 +1,3 @@
+Task: Fix movement path quality.
+Observed by the user when playing mission 1 with build/aztec_engine (a real game session): Path tracing works badly: wrong routes, detours, units blocking each other, stalls around obstacles and in groups. Use the pluggable MoveSystem in src/engine/sim/path and the oracle/measurements in docs to compare against the original behaviour.
+Reproduce the symptom with a deterministic synthetic scenario or headless test first, fix the cause in the new engine (src/engine, not runtime/), and keep behaviour matching the original game. Follow CLAUDE.md: public repo, English only, no game assets or executable-derived code, deterministic simulation, update docs/engine_rules_status.md for rules you change.
