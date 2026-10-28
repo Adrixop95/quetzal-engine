@@ -98,6 +98,16 @@ class HandoffToolsTest(unittest.TestCase):
         self.assertNotIn("prepared", output)
         save.assert_not_called()
 
+    def test_harvest_reports_patch_failure_without_marking_harvested(self):
+        failure = "git apply --3way " + str(self.root / "work/codex/sight.patch")
+        calls, output, save, error = self.harvest(fail=failure, existing=True)
+        self.assertIsNotNone(error)
+        self.assertTrue("command failed" in str(error))
+        self.assertTrue("FAILED: the patch did not apply on origin/develop" in output)
+        self.assertNotIn("prepared", output)
+        self.assertEqual(calls[-1], failure)
+        save.assert_not_called()
+
     def test_queue_preference_and_legacy_fallback(self):
         legacy = self.root / "work/codex/queue"
         legacy.mkdir(parents=True)

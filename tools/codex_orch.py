@@ -170,7 +170,11 @@ def harvest(name, branch, title):
         # Refresh those branches, but preserve any commits not yet integrated.
         checked("git merge-base --is-ancestor " + branch_arg + " origin/develop")
     checked("git checkout -q -f -B " + branch_arg + " origin/develop")
-    r = checked("git apply --3way " + shlex.quote(pf))
+    try:
+        r = checked("git apply --3way " + shlex.quote(pf))
+    except RuntimeError:
+        print("FAILED: the patch did not apply on origin/develop")
+        raise
     staged = sh("git diff --cached --quiet")
     if staged.returncode == 0:
         raise RuntimeError("Harvest patch produced no staged changes; it may already be integrated.")
