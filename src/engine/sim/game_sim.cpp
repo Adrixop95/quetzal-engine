@@ -5,6 +5,7 @@
 #include <limits>
 
 #include "engine/world/type_info.hpp"
+#include "engine/sim/sight.hpp"
 
 namespace aztec::engine {
 
@@ -237,11 +238,17 @@ void GameSim::kill(World& w, Object& o) {
   }
 }
 
-const Object* GameSim::nearest_enemy(const World& w, const Object& o, int radius_px) const {
+const Object* GameSim::nearest_enemy(const World& w, const Object& o) const {
+  const bool mask_sight = rules_->sight() != nullptr;
+  if (mask_sight && (o.side < 0 || o.side >= int(w.visibility.sides.size()))) return nullptr;
   const Object* best = nullptr;
-  int64_t bd = int64_t(radius_px) * radius_px;
+  // Preserve asset-free simulation combat when the user's lighting inputs are
+  // unavailable. This six-tile fallback remains a placeholder, not a sight fact.
+  constexpr int64_t fallback_radius = 6 * kTilePx;
+  int64_t bd = mask_sight ? std::numeric_limits<int64_t>::max() : fallback_radius * fallback_radius;
   for (const Object& t : w.objects) {
     if (t.removed || !t.alive || t.type < 0 || !w.hostile(o.side, t.side) || t.progress < 1000) continue;
+    if (mask_sight && sight_brightness(w.visibility.sides[o.side], px(t.cur_x), px(t.cur_y)) <= 32 * 256) continue;
     const auto shot = rules_->attack(o.type, t.type, !w.hostile(o.side, t.side));
     if (!shot.damage_known || !shot.getters_known || shot.damage <= 0) continue;
     int64_t d = d2(o, t);
@@ -614,7 +621,7 @@ void GameSim::run_orders(World& w) {
     // acquire targets: idle units and attack-moving units react to enemies in sight
     if (o.order == uint8_t(Order::Idle) || o.order == uint8_t(Order::AttackMove)) {
       if ((tick_ + o.id) % 4 == 0) {
-        if (const Object* e = nearest_enemy(w, o, r.sight_px)) {
+        if (const Object* e = nearest_enemy(w, o)) {
           o.resume = o.order == uint8_t(Order::AttackMove) ? 1 : 0;
           o.order = uint8_t(Order::Attack);
           o.target = e->id;
@@ -779,25 +786,49 @@ void GameSim::sync_movement(World& w) {
   }
 }
 
-// Per-side fog layers (.vis): tiles within sight of a living own object become lit (0); tiles that were lit and are no
-// longer seen stay "explored" (96). Unexplored = 152. Sight radius is a placeholder (docs/engine_rules_status.md).
+// The persistent side grid stores brightness, with an explored ceiling of 32.
 void GameSim::update_fog(World& w) {
-  int mw = w.terrain.w, mh = w.terrain.h;
+  const SightData* inputs = rules_->sight();
+  if (!inputs || w.terrain.w <= 0 || w.terrain.h <= 0) return;
+  int mw = w.terrain.w + 1, mh = w.terrain.h + 2;
+  std::vector<uint8_t> glow(size_t(mw) * mh, inputs->daylight[w.mission.tileset != 0][w.day_clock]);
+  for (const Object& o : w.objects) {
+    if (o.removed || !o.alive) continue;
+    ObjectState st;
+    st.type_id = o.type; st.facing = o.facing; st.anim_state = o.anim_state;
+    st.anim_tick = o.anim_tick; st.body_tick = o.body_tick; st.attack_tick = o.attack_tick;
+    st.anim_variant = o.anim_variant; st.moving = o.body_moving;
+    st.hp = o.hp; st.max_hp = o.hp_max; st.progress = o.progress;
+    int mask = inputs->sprites.light_mask(st);
+    if (mask >= 1 && mask <= 16)
+      stamp_sight(glow, mw, mh, inputs->mask(mask), px(o.cur_x), px(o.cur_y), false);
+  }
+  for (const Effect& e : w.effects) {
+    auto frame = inputs->effects.anim(e.anim).at_tick(e.slot, e.age, e.loop);
+    if (frame.light >= 1 && frame.light <= 16)
+      stamp_sight(glow, mw, mh, inputs->mask(frame.light), px(e.x), px(e.y), false);
+  }
+  if (w.visibility.sides.empty()) w.visibility.sides.resize(w.side_state.size());
   bool changed = false;
   for (size_t side = 0; side < w.visibility.sides.size(); side++) {
     VisFile::Layer& l = w.visibility.sides[side];
-    if (l.w != mw || l.h != mh || l.v.size() < size_t(mw) * mh) continue;
-    std::vector<uint8_t> seen(size_t(mw) * mh, 0);
-    for (const Object& o : w.objects) {
-      if (o.removed || !o.alive || o.type < 0 || o.side != int(side) || o.progress < 1000) continue;
-      int rad = (rules_->type(o.type).structure ? 8 * kTilePx : rules_->type(o.type).sight_px) / kTilePx;
-      int cx = px(o.cur_x) / kTilePx, cy = px(o.cur_y) / kTilePx;
-      for (int y = std::max(0, cy - rad); y <= std::min(mh - 1, cy + rad); y++)
-        for (int x = std::max(0, cx - rad); x <= std::min(mw - 1, cx + rad); x++)
-          if ((x - cx) * (x - cx) + (y - cy) * (y - cy) <= rad * rad) seen[size_t(y) * mw + x] = 1;
+    if (l.w != mw || l.h != mh || l.v.size() != size_t(mw) * mh) {
+      VisFile::Layer expanded;
+      expanded.w = mw; expanded.h = mh; expanded.v.assign(size_t(mw) * mh, 0);
+      if (l.w == w.terrain.w && l.h == w.terrain.h && l.v.size() == size_t(l.w) * l.h)
+        for (int y = 0; y < l.h; ++y)
+          std::copy_n(l.v.begin() + size_t(y) * l.w, l.w, expanded.v.begin() + size_t(y) * mw);
+      l = std::move(expanded); changed = true;
     }
-    for (size_t i = 0; i < seen.size(); i++) {
-      uint8_t nv = seen[i] ? 0 : (l.v[i] == 0 ? 96 : l.v[i]);
+    std::vector<uint8_t> vision(glow.size(), 152);
+    for (const Object& o : w.objects) {
+      if (o.removed || !o.alive || o.side != int(side)) continue;
+      int mask = rules_->type(o.type).vision_mask;
+      if (o.source == ObjectSource::Boat || o.source == ObjectSource::Johnka) mask = 71;
+      stamp_sight(vision, mw, mh, inputs->mask(mask), px(o.cur_x), px(o.cur_y), true);
+    }
+    for (size_t i = 0; i < glow.size(); i++) {
+      uint8_t nv = uint8_t(std::max(std::min(int(l.v[i]), 32), std::max(0, int(glow[i]) - vision[i])));
       if (nv != l.v[i]) { l.v[i] = nv; changed = true; }
     }
   }
@@ -830,7 +861,7 @@ void GameSim::tick(World& w) {
     o.body_tick = moving == o.body_moving ? o.body_tick + 1 : 0;
     o.body_moving = moving;
   }
-  if (tick_ % 4 == 0) update_fog(w);
+  update_fog(w);
 }
 
 void GameSim::script_order(World& w, const std::vector<uint32_t>& ids, int pxx, int pyy, bool attack_move) {
