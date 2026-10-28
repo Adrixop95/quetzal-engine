@@ -157,6 +157,23 @@ static SaveData long_save(const std::shared_ptr<RulesData>& rules) {
   auto s = fixture(); s.tick = sim.tick_count(); s.hash = sim.state_hash(w); s.log = sim.log();
   return s;
 }
+static void pending_save(const std::shared_ptr<RulesData>& rules) {
+  auto world = initial_world(); GameSim game(rules); game.init(world);
+  Command move; move.type = Pct::Move; move.ids = {1}; move.a = 300; move.b = 200;
+  game.submit(move);
+  CHECK(game.has_pending_commands());
+  advance(world, game, 1);
+  CHECK(!game.has_pending_commands());
+  auto save = fixture(); save.tick = game.tick_count(); save.hash = game.state_hash(world); save.log = game.log();
+  SaveData decoded;
+  CHECK(deserialize_save(serialize_save(save), decoded));
+  auto restored = initial_world(); std::string error;
+  auto replay = replay_save(decoded, restored, rules, save.content_hash, "", error);
+  CHECK(replay && error.empty());
+  CHECK(replay->state_hash(restored) == game.state_hash(world));
+  advance(world, game, 30); advance(restored, *replay, 30);
+  CHECK(replay->state_hash(restored) == game.state_hash(world));
+}
 static void continuation(const SaveData& s, const std::shared_ptr<RulesData>& rules) {
   World uninterrupted = initial_world(); GameSim original(rules); original.init(uninterrupted);
   advance(uninterrupted, original, 14400, true);
@@ -213,6 +230,6 @@ int main(int argc, char** argv) {
     CHECK(!write_save(argv[2], s)); return 0;
   }
   CHECK(argc == 1);
-  malformed(); files(); continuation(long_save(rules), rules);
+  malformed(); files(); pending_save(rules); continuation(long_save(rules), rules);
   std::puts("Engine save robustness and continuation passed");
 }

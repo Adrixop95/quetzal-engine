@@ -26,6 +26,73 @@ const char* cmp_text(Cmp c) {
   return "?";
 }
 
+const char* condition_name(CondKind kind) {
+  switch (kind) {
+    case CondKind::Always: return "Always";
+    case CondKind::LocalTime: return "LocalTime";
+    case CondKind::GlobalTime: return "GlobalTime";
+    case CondKind::Timer: return "Timer";
+    case CondKind::SideEnemies: return "SideEnemies";
+    case CondKind::SideUnits: return "SideUnits";
+    case CondKind::SideTowns: return "SideTowns";
+    case CondKind::SideTactics: return "SideTactics";
+    case CondKind::SideMoney: return "SideMoney";
+    case CondKind::SideUnitsInRect: return "SideUnitsInRect";
+    case CondKind::SideUnitsOfUGIInRect: return "SideUnitsOfUGIInRect";
+    case CondKind::SideUnitsOfId: return "SideUnitsOfId";
+    case CondKind::TacticValid: return "TacticValid";
+    case CondKind::TacticAttacked: return "TacticAttacked";
+    case CondKind::TacticIdle: return "TacticIdle";
+    case CondKind::TacticLocked: return "TacticLocked";
+    case CondKind::DefenceValid: return "DefenceValid";
+    case CondKind::IsFriendly: return "IsFriendly";
+    case CondKind::IsNeutral: return "IsNeutral";
+    case CondKind::IsEnemy: return "IsEnemy";
+  }
+  return "Unknown";
+}
+
+const char* action_name(ActKind kind) {
+  switch (kind) {
+    case ActKind::TriggerEnable: return "TriggerEnable";
+    case ActKind::TriggerDisable: return "TriggerDisable";
+    case ActKind::BoatActivate: return "BoatActivate";
+    case ActKind::JohnkaEnable: return "JohnkaEnable";
+    case ActKind::JohnkaDisable: return "JohnkaDisable";
+    case ActKind::SubmarineGo: return "SubmarineGo";
+    case ActKind::TimerSet: return "TimerSet";
+    case ActKind::TimerStart: return "TimerStart";
+    case ActKind::TimerStop: return "TimerStop";
+    case ActKind::TimerKill: return "TimerKill";
+    case ActKind::CenterView: return "CenterView";
+    case ActKind::PrintString: return "PrintString";
+    case ActKind::PrintStringR: return "PrintStringR";
+    case ActKind::SideVictory: return "SideVictory";
+    case ActKind::SideDefeat: return "SideDefeat";
+    case ActKind::SideBuildCommand: return "SideBuildCommand";
+    case ActKind::SideMoveCommand: return "SideMoveCommand";
+    case ActKind::SideCameraActivate: return "SideCameraActivate";
+    case ActKind::SideCameraDeactivate: return "SideCameraDeactivate";
+    case ActKind::SideSetFriendlyTo: return "SideSetFriendlyTo";
+    case ActKind::SideSetNeutralTo: return "SideSetNeutralTo";
+    case ActKind::SideSetEnemyTo: return "SideSetEnemyTo";
+    case ActKind::SideAddMoney: return "SideAddMoney";
+    case ActKind::SideTakeMoney: return "SideTakeMoney";
+    case ActKind::TacticAttackTown: return "TacticAttackTown";
+    case ActKind::TacticMoveTo: return "TacticMoveTo";
+    case ActKind::TacticJoinTactic: return "TacticJoinTactic";
+    case ActKind::TacticSetPath: return "TacticSetPath";
+    case ActKind::TacticSetInvertedPath: return "TacticSetInvertedPath";
+    case ActKind::TacticSetCycledPath: return "TacticSetCycledPath";
+    case ActKind::TacticSetCycledInvertedPath: return "TacticSetCycledInvertedPath";
+    case ActKind::TacticLock: return "TacticLock";
+    case ActKind::TacticUnlock: return "TacticUnlock";
+    case ActKind::TacticKill: return "TacticKill";
+    case ActKind::TacticGiftToSide: return "TacticGiftToSide";
+  }
+  return "Unknown";
+}
+
 namespace {
 
 struct Fail { std::string msg; int line; };

@@ -2,6 +2,7 @@
 #pragma once
 #include <SDL.h>
 #include <string>
+#include <vector>
 #include "engine/render/sprite_store.hpp"
 
 namespace aztec::engine {
@@ -10,10 +11,13 @@ class Font {
  public:
   bool init(SDL_Renderer* r, SpriteStore* store = nullptr);  // with a store: original font from Res/fnts.xbe
   ~Font();
-  // Draws at (x, y) top-left with an integer `scale`; lower-case is drawn as upper-case.
+  // Draws at (x, y); the built-in fallback maps lower-case to upper-case.
   void draw(SDL_Renderer* r, int x, int y, const std::string& s, int scale, SDL_Color c, bool shadow = true) const;
   int width(const std::string& s, int scale) const;
   int height(int scale) const { return original_ ? 12 * eff(scale) : 5 * scale; }
+  // UI callers specify a physical integer pixel multiplier for either font source.
+  int ui_scale(int pixels) const { return original_ ? 2 * pixels : pixels; }
+  std::vector<std::string> wrap(const std::string& text, int scale, int max_width) const;
   bool original() const { return original_; }
 
  private:
