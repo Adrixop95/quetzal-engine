@@ -3,7 +3,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <unistd.h>
+#include "temp_dir.hpp"
 #include "engine/audio/scene_audio.hpp"
 
 using namespace aztec;
@@ -56,9 +56,8 @@ static Bytes animation() {
   return b;
 }
 int main() {
-  char name[] = "/tmp/aztec-audio-XXXXXX";
-  char* temp = mkdtemp(name); if (!temp) return 1;
-  const std::filesystem::path root(temp);
+  TempDir directory;
+  const auto& root = directory.path();
   std::filesystem::create_directory(root / "Res");
   std::filesystem::create_directory(root / "Music");
   Bytes set(4); put(set, 0, 1);
@@ -180,6 +179,5 @@ int main() {
   CHECK(fallback.current_track() == 0 && !fallback.mixer().music_playing() && music_events.empty());
   fallback.start_music(1, 15, 0); // an exact invalid track must not select another
   CHECK(fallback.current_track() == 0 && music_events.empty());
-  std::filesystem::remove_all(root);
   return failures ? 1 : 0;
 }
