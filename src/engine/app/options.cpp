@@ -8,6 +8,7 @@ namespace aztec::engine {
 
 const char* usage_text() {
   return "usage: aztec_engine [options] [MISSION]\n"
+         "  aztec_engine --headless --help   bounded simulation-only campaign mode\n"
          "  MISSION            number (campaign mission_N), map name from game/Maps, or path to .mp (default 1)\n"
          "  --game DIR         game directory (default ./game, or $AZTEC_GAME)\n"
          "  --load-original FILE  import an original .sav (partial resume; see docs/savegame.md)\n"

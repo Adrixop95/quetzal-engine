@@ -1,8 +1,11 @@
 #include <cstdio>
+#include <cstring>
 #include "engine/app/engine.hpp"
+#include "engine/app/headless.hpp"
 
 int main(int argc, char** argv) {
   using namespace aztec::engine;
+  if (argc > 1 && std::strcmp(argv[1], "--headless") == 0) return run_headless(argc - 1, argv + 1);
   Options o;
   std::string err;
   bool usage = false;

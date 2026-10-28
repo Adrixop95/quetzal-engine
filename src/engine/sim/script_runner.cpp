@@ -30,6 +30,7 @@ void ScriptRunner::init(const World&) {
   timers_.clear();
   tactics_.clear();
   local_time_ = 0;
+  unsupported_ = 0;
   // Triggers that another trigger enables start disabled (initial state is not documented; see header).
   for (const Trigger& t : script_.triggers) enabled_[t.id] = true;
   for (const Trigger& t : script_.triggers)
@@ -270,7 +271,11 @@ uint64_t ScriptRunner::state_hash() const {
   mix(local_time_);
   for (const auto& e : enabled_) { mix(uint64_t(e.first)); mix(e.second); }
   for (const auto& t : timers_) { mix(uint64_t(t.first)); mix(uint64_t(t.second.value)); mix(t.second.running * 2u + t.second.exists); }
-  for (const auto& t : tactics_) { mix(uint64_t(t.first.first * 1000 + t.first.second)); mix(t.second.locked); mix(uint64_t(t.second.path + 1)); mix(uint64_t(t.second.path_index)); }
+  for (const auto& t : tactics_) {
+    mix(uint64_t(t.first.first)); mix(uint64_t(t.first.second));
+    mix(t.second.locked); mix(uint64_t(t.second.path + 1)); mix(uint64_t(t.second.path_index));
+    mix(t.second.cycled); mix(t.second.inverted);
+  }
   return h;
 }
 

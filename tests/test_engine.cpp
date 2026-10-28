@@ -649,6 +649,39 @@ static void test_sim(const std::string& dir) {
   }
 }
 
+static void test_script_path_hash() {
+  auto rules = std::make_shared<RulesData>();
+  rules->init_defaults();
+  GameSim sim(rules);
+  World w;
+  w.terrain.w = w.terrain.h = 2;
+  w.terrain.cells.resize(4);
+  sim.init(w);
+  std::vector<uint64_t> hashes;
+  for (auto kind : {script::ActKind::TacticSetPath, script::ActKind::TacticSetCycledPath,
+                    script::ActKind::TacticSetInvertedPath, script::ActKind::TacticSetCycledInvertedPath}) {
+    script::Script s;
+    script::Trigger t;
+    script::Action a; a.kind = kind; a.id = 1; a.a = 0;
+    t.actions.push_back(a);
+    s.triggers.push_back(t);
+    ScriptRunner runner;
+    runner.set(s); runner.init(w); runner.tick(sim, w);
+    auto h = runner.state_hash();
+    CHECK(std::find(hashes.begin(), hashes.end(), h) == hashes.end());
+    hashes.push_back(h);
+  }
+  script::Script s;
+  script::Trigger t;
+  script::Action a; a.kind = script::ActKind::BoatActivate;
+  t.actions.push_back(a); s.triggers.push_back(t);
+  ScriptRunner runner;
+  runner.set(s); runner.init(w); runner.tick(sim, w);
+  CHECK(runner.unsupported() == 1);
+  runner.init(w);
+  CHECK(runner.unsupported() == 0);
+}
+
 static void test_script_animation_clocks() {
   char directory[] = "/tmp/aztec-script-clocks-XXXXXX";
   if (!mkdtemp(directory)) { CHECK(false); return; }
@@ -1171,6 +1204,7 @@ int main(int argc, char** argv) {
     test_projectiles();
     test_descriptor_combat();
     test_script_animation_clocks();
+    test_script_path_hash();
     test_town_commands();
     test_sprite_metadata();
     test_audio_pure();
