@@ -1,0 +1,2 @@
+Task: projectile trajectories, terrain collision and splash.
+Replace the straight-flight placeholder in docs/engine_rules_status.md (Projectiles and effects) with measured behaviour: ballistic arcs where applicable, terrain/obstacle interception, flame burn sequencing and splash damage by armor category. Measure on the reference runtime, implement deterministically with integer maths, add tests, update the table.
