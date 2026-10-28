@@ -40,9 +40,17 @@ void GameSim::attach_agent(Object& o) {
 void GameSim::init(World& w) {
   tick_ = w.original_save ? w.tick : 0;
   if (!w.original_save) w.day_clock = (w.mission.start_time % kDayTicks + kDayTicks) % kDayTicks;
+  w.ai_towns.assign(w.mission.towns.size(), {});
   w.town_speed.assign(w.mission.towns.size(), 1);
   w.repair_credits.assign(w.mission.towns.size(), 0);
   w.effects.clear();
+  // Reference computer intelligence starts with visibility value 24 (rules_ai.md).
+  // Imported saves retain their recorded fog instead of restarting intelligence.
+  if (!w.original_save) {
+    for (const auto& side : w.mission.sides)
+      if (side.only_comp && !side.neutral && side.index >= 0 && side.index < int(w.visibility.sides.size()))
+        std::fill(w.visibility.sides[side.index].v.begin(), w.visibility.sides[side.index].v.end(), uint8_t(24));
+  }
   w.town_state.clear();
   for (const TownDef& t : w.mission.towns) {
     TownState state;
@@ -372,11 +380,13 @@ void GameSim::apply(World& w, const Command& c) {
         if (c.b < 0 || c.c < 0 || c.b >= w.terrain.w || c.c >= w.terrain.h) break;
         if (!can_place(w, c.side, c.a, c.b, c.c, &why)) break;
         ss->money -= mi->price;
+        if (ti >= 0 && ti < int(w.ai_towns.size())) w.ai_towns[ti].spent += mi->price;
         uint32_t id = spawn(w, c.a, c.side, c.b * kTilePx + kTilePx / 2, c.c * kTilePx + kTilePx / 2, 0, true);
         w.find_mut(id)->town = w.mission.towns[size_t(ti)].index;
         w.find_mut(id)->build_total = std::max(1, mi->time);
       } else if (ss->queue.size() < 8) {
         ss->money -= mi->price;
+        if (ti >= 0 && ti < int(w.ai_towns.size())) w.ai_towns[ti].spent += mi->price;
         ss->queue.push_back({c.a, std::max(1, mi->time), std::max(1, mi->time), ti, mi->price});
       }
       break;
@@ -557,8 +567,10 @@ void GameSim::economy(World& w) {
       int repair_rate = int(((int64_t(h.repair_rate) * 65536 / 100) + 128) >> 8);
       int credits = harvest_tick(o.repair_harvest, repair_rate, w.day_clock, h.repair_period);
       for (size_t ti = 0; ti < w.mission.towns.size(); ++ti)
-        if (w.mission.towns[ti].index == o.town && w.mission.towns[ti].side == o.side)
+        if (w.mission.towns[ti].index == o.town && w.mission.towns[ti].side == o.side) {
           w.repair_credits[ti] += credits * 100;
+          w.ai_towns[ti].harvested += gain;
+        }
     }
   }
 }
@@ -859,6 +871,12 @@ uint64_t GameSim::state_hash(const World& w) const {
   mix(w.day_clock);
   mix(w.mission.towns.size());
   for (const TownDef& t : w.mission.towns) { mix(uint32_t(t.index)); mix(uint32_t(t.type)); mix(uint32_t(t.race)); }
+  mix(w.ai_towns.size());
+  for (const auto& s : w.ai_towns) {
+    mix(s.phase); mix(s.science_timer); mix(s.target_town); mix(s.remaining);
+    mix(s.defence_enabled); mix(s.elapsed); mix(s.harvested); mix(s.spent); mix(s.last_alert);
+    mix(s.known_towns.size()); for (int town : s.known_towns) mix(town);
+  }
   mix(w.town_speed.size()); for (int speed : w.town_speed) mix(speed);
   mix(w.repair_credits.size()); for (int credits : w.repair_credits) mix(credits);
   mix(tick_); mix(rng_); mix(paused_); mix(spawn_counter_); mix(w.objects.size());

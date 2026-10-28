@@ -91,8 +91,13 @@ static void synthetic() {
   auto bw = base_world(); CHECK(import_original_save(bordered.decode(), bw, error));
   CHECK(bw.visibility.sides[1].v == Bytes({0, 96, 152, 1}));
   auto rules = std::make_shared<RulesData>(); rules->init_defaults(); GameSim sim(rules);
+  // Computer-owned imported towns must initialize the planner without resetting saved fog.
+  w.mission.sides[0].only_comp = true;
   sim.init(w);
+  CHECK(w.ai_towns.size() == w.mission.towns.size());
+  CHECK(w.town_state.size() == w.mission.towns.size());
   CHECK(sim.tick_count() == 123 && w.day_clock == 7199);
+  CHECK(w.visibility.sides[0].v == Bytes({0, 96, 152, 0}));
   CHECK(w.find(1)->hp_max == 7000 && !w.find(3)->alive && w.find(3)->hp == 0);
   CHECK(w.visibility.sides[1].v == Bytes({0, 96, 152, 1}));
   w.begin_tick(); sim.tick(w); CHECK(w.tick == 124 && sim.tick_count() == 124);

@@ -1,0 +1,2 @@
+Task: write docs/ROADMAP.md defining v1.
+Define v1 as: whole campaign playable from the user's original data without crashes, deterministic simulation, own save/load, Linux and Windows builds. Derive the checklist from docs/engine_rules_status.md, docs/HANDOFF.md, open PRs and the tests; list each remaining gap with an owner-neutral task description and rough size. Link it from README.md and docs/HANDOFF.md. Docs only.
