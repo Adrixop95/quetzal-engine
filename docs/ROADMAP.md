@@ -107,7 +107,18 @@ estimates. Reference-dependent work may grow when evidence changes.
 | V17 | Make native Linux and Windows builds/tests required CI gates. Resolve GCC/POSIX assumptions, SDL discovery, paths/case handling and serialization portability; isolate optional POSIX networking or supply a Windows adapter so default builds succeed. | L | Task [09](../tasks/queue/09-portability.md); current build CI is Linux-only, Windows release job is experimental and `aztec_net` uses POSIX UDP. Can proceed alongside simulation work. |
 | V18 | Produce self-contained engine packages with external-data setup instructions, rules metadata, dependencies and licenses; smoke-test on clean Linux/Windows machines without the oracle/generated source. Check missing or malformed data produces useful errors. | M | Release workflow exists but currently packages the executable, README and license only. V17; audit runtime data lookup and optional ffmpeg requirements. |
 | V19 | Add the full campaign harness and mission coverage matrix: completion route, expected outcome, unsupported actions, unreachable objectives, timeout/crash reports, paired tick hashes and mid-mission saves. Cover all 15 missions, defeat/retry and final progression with automated scenarios plus interactive acceptance. | XL | Task [19](../tasks/queue/19-campaign-playthrough.md); no playthrough harness exists. Historical corpus has only nine recordings over bounded intervals. Harness/inventory can start now; successful completion depends on V03-V16. |
-| V20 | Fix campaign/soak failures, run malformed-input and sanitizer checks, and complete required tests on hosts that permit sockets and private game-data runs. Publish an English release checklist with platform, mission and save/load results and outstanding limitations. | L | `fuzz` and [ROBUSTNESS.md](../tests/ROBUSTNESS.md) cover loaders, not all runtime failures. V17-V19; no skipped or denied test may stand in for required release evidence. |
+| V20 | Fix campaign/soak failures, run malformed-input and sanitizer checks, and complete required tests on hosts that permit sockets and private game-data runs. Publish an English release checklist with platform, mission and save/load results and outstanding limitations. | L | Malformed-input/local ASan/UBSan subset completed below; hosted sanitizer CI pending. [ROBUSTNESS.md](../tests/ROBUSTNESS.md) records coverage and limits. V17-V19 remain dependencies for campaign/release work; no skipped or denied test may stand in for required release evidence. |
+
+V20 partial evidence (2026-10-28; the full row remains open):
+
+- [x] Extend synthetic malformed-input checks across every core loader and
+  selected engine adapters; fix the descriptor overflow and validation gaps
+  covered by the regressions. GCC Release and Clang ASan/UBSan checks passed.
+- [x] Add a fail-fast ASan/UBSan build option and dedicated Linux synthetic CI job.
+- [ ] Obtain hosted sanitizer CI results, including leak detection. Local leak
+  inspection is denied by the sandbox; only ASan/UBSan ran successfully here.
+- [ ] Complete V17-V19 dependencies, campaign/soak fixes, required private-data
+  and socket checks, and the platform/mission/save-load release checklist.
 
 Start V01-V03, V17 and the V19 mission inventory early. Use V02 to prioritize
 first behavioral divergences rather than assigning causality from engine hashes.

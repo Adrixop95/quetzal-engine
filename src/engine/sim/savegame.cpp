@@ -2,9 +2,11 @@
 
 #include <cstdio>
 #include <cstring>
+#include <cmath>
 
 #include "core/mapfiles.hpp"
 #include "core/endian.hpp"
+#include "core/loader_limits.hpp"
 
 namespace aztec::engine {
 
@@ -37,16 +39,22 @@ std::vector<uint8_t> serialize_save(const SaveData& s) {
 }
 
 bool deserialize_save(const std::vector<uint8_t>& v, SaveData& out) {
+  if (v.size() > detail::kFileBytes) return false;
+  SaveData parsed;
   if (v.size() < 8 || std::memcmp(v.data(), "AZS2", 4) != 0) return false;
   size_t o = 4;
   uint32_t n, ln;
-  if (!get(v, o, n) || o + n > v.size()) return false;
-  out.mission.assign(reinterpret_cast<const char*>(v.data() + o), n);
+  if (!get(v, o, n) || n > detail::kTextBytes || n > v.size() - o) return false;
+  parsed.mission.assign(reinterpret_cast<const char*>(v.data() + o), n);
+  if (parsed.mission.find('\0') != std::string::npos) return false;
   o += n;
-  if (!get(v, o, out.tick) || !get(v, o, out.hash) || !get(v, o, out.script_hash) || !get(v, o, out.cam_x) || !get(v, o, out.cam_y) || !get(v, o, out.cam_zoom) || !get(v, o, ln)) return false;
-  if (o + ln > v.size()) return false;
+  if (!get(v, o, parsed.tick) || !get(v, o, parsed.hash) || !get(v, o, parsed.script_hash) || !get(v, o, parsed.cam_x) || !get(v, o, parsed.cam_y) || !get(v, o, parsed.cam_zoom) || !get(v, o, ln)) return false;
+  if (ln != v.size() - o || !std::isfinite(parsed.cam_x) || !std::isfinite(parsed.cam_y) ||
+      !std::isfinite(parsed.cam_zoom) || parsed.cam_zoom <= 0) return false;
   std::vector<uint8_t> log(v.begin() + long(o), v.begin() + long(o + ln));
-  return deserialize_log(log, out.log);
+  if (!deserialize_log(log, parsed.log)) return false;
+  out = std::move(parsed);
+  return true;
 }
 
 bool write_save(const std::string& path, const SaveData& s) {

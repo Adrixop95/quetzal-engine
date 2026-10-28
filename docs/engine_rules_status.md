@@ -535,3 +535,29 @@ read-only game installation and SDL dummy drivers passes 15 of 16 checks,
 including all three private-data checks. `lockstep_processes` fails at UDP socket
 creation with `Operation not permitted`, matching the pre-change baseline.
 All pre-commit gates pass using cached hook environments inside this worktree.
+
+## V20 malformed-input and sanitizer subset (2026-10-28)
+
+V (construction property): `AZTEC_SANITIZERS=ON` instruments independent targets
+with fail-fast ASan/UBSan. The dedicated Linux CI job builds without private
+inputs and runs the synthetic `unit` suite. Hosted CI execution is pending.
+`fuzz` now exercises every core file loader's file and memory paths, plus engine
+save/log, mission, animation, light-mask, daylight-header, optional CSV and
+playtest loading. See [tests/ROBUSTNESS.md](../tests/ROBUSTNESS.md) for the
+coverage inventory, commands, limits and evidence boundaries.
+
+The expanded corpus runs 117,068 deterministic mutations plus explicit
+regressions. It exposed signed overflow in descriptor speed conversion under
+UBSan; loading now rejects unrepresentable speeds. Footprint rounding uses
+wider arithmetic, optional text metadata is bounded, sparse path indices cannot
+overflow vector sizing, and daylight loading validates header/section ranges
+and clears prior keys. Engine save/log parsing rejects malformed framing and
+preserves the save output or clears the log output on failure.
+
+Local GCC Release and Clang ASan/UBSan synthetic checks passed. Local leak
+checking is unavailable because LeakSanitizer thread inspection is denied;
+CI keeps leak checking enabled. Game-data and socket-process checks skip in
+this environment. This establishes loader regression evidence only: V17-V19
+campaign, packaging and platform acceptance remain dependencies for the rest
+of V20. No reference/game-data run, full campaign soak, safe active-world save
+replacement (V16), or whole-game parity is claimed.

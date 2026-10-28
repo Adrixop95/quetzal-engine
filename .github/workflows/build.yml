@@ -18,6 +18,28 @@ permissions:
   contents: read
 
 jobs:
+  sanitizers:
+    name: ASan and UBSan synthetic tests
+    runs-on: ubuntu-24.04
+    env:
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+      SDL_VIDEODRIVER: dummy
+      SDL_AUDIODRIVER: dummy
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build clang libsdl2-dev
+      - name: Configure without private inputs
+        run: >-
+          cmake -S . -B build_sanitize -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          -DAZTEC_SANITIZERS=ON -DAZTEC_GEN_DIR= -DGAME_DIR=
+      - name: Build all independent targets
+        run: cmake --build build_sanitize --parallel 2
+      - name: Run synthetic checks including malformed inputs
+        run: ctest --test-dir build_sanitize -L unit --output-on-failure
+
   build:
     runs-on: ubuntu-24.04
     steps:

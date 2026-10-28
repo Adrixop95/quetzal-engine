@@ -10,6 +10,8 @@
 #include "engine/world/type_info.hpp"
 #include "engine/sim/sight.hpp"
 #include "engine/assets/daylight.hpp"
+#include "core/loader_limits.hpp"
+#include "core/mapfiles.hpp"
 
 namespace aztec::engine {
 
@@ -46,7 +48,9 @@ bool RulesData::load_sight(const std::string& game_dir) {
 namespace {
 std::vector<std::vector<std::string>> read_csv(const std::string& path) {
   std::vector<std::vector<std::string>> rows;
-  std::ifstream f(path);
+  std::vector<uint8_t> bytes;
+  if (!read_file(path, bytes) || bytes.size() > detail::kTextBytes) return rows;
+  std::istringstream f(std::string(bytes.begin(), bytes.end()));
   std::string line;
   bool first = true;
   while (std::getline(f, line)) {
@@ -62,6 +66,7 @@ std::vector<std::vector<std::string>> read_csv(const std::string& path) {
     }
     cols.push_back(cur);
     rows.push_back(std::move(cols));
+    if (rows.size() > detail::kEntries) return {};
   }
   return rows;
 }
@@ -84,7 +89,7 @@ int parse_fixed256_impl(const std::string& t) {
   return int(neg ? -v : v);
 }
 
-int num(const std::vector<std::string>& r, size_t i, int def = 0) { return i < r.size() && !r[i].empty() ? std::atoi(r[i].c_str()) : def; }
+int num(const std::vector<std::string>& r, size_t i, int def = 0) { return i < r.size() && !r[i].empty() ? detail::integer(r[i].c_str(), def) : def; }
 
 // Melee types use a short reach; everything else with a weapon shoots. Placeholder classification (see docs/engine_rules_status.md).
 bool is_melee(int t) {
@@ -197,7 +202,9 @@ bool RulesData::load_dir(const std::string& dir) {
           t.category_f4 = !t.category_e8;
           t.hypno = ((flags >> 16) & 255) != 0;
           t.hp_src = Src::Verified;
-          t.speed = num(r, 6) * 256;  // d5 (column index shifts by one for the leading param column)
+          const int speed = num(r, 6);
+          if (speed < 0 || speed > INT_MAX / 256) { init_defaults(); return false; }
+          t.speed = speed * 256;  // d5 (column index shifts by one for the leading param column)
           t.speed_src = Src::Verified;
         }
     } else if (t.structure && t.kind == 2) {
@@ -213,7 +220,7 @@ bool RulesData::load_dir(const std::string& dir) {
           if (harvest.scheduled)
             for (int i = 0; i < std::clamp(harvest.period, 0, 255); ++i) harvest.dates.push_back(num(r, 66 + i));
           int w = num(r, 5), h = num(r, 6);  // d4, d5 (px)
-          if (w > 0 && h > 0) { t.foot_w = std::max(1, (w + 47) / 48); t.foot_h = std::max(1, (h + 47) / 48); t.foot_src = Src::Placeholder; }
+          if (w > 0 && h > 0) { t.foot_w = int((int64_t(w) + 47) / 48); t.foot_h = int((int64_t(h) + 47) / 48); t.foot_src = Src::Placeholder; }
         }
     }
   }
@@ -336,7 +343,7 @@ bool RulesData::load_dir(const std::string& dir) {
     it.construct = num(r, 4) != 0;
     std::stringstream ss(r.size() > 5 ? r[5] : "");
     std::string tok;
-    while (ss >> tok) it.prereq.push_back({std::atoi(tok.c_str()), tok.back() == 'A'});
+    while (ss >> tok) it.prereq.push_back({detail::integer(tok.c_str()), tok.back() == 'A'});
     tree_[{num(r, 0), num(r, 1)}].push_back(it);
   }
   return true;

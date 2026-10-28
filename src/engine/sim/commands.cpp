@@ -1,6 +1,7 @@
 #include "engine/sim/commands.hpp"
 
 #include <cstring>
+#include "core/loader_limits.hpp"
 
 namespace aztec::engine {
 
@@ -27,15 +28,21 @@ std::vector<uint8_t> serialize_log(const std::vector<LoggedCommand>& log) {
 
 bool deserialize_log(const std::vector<uint8_t>& v, std::vector<LoggedCommand>& out) {
   out.clear();
+  std::vector<LoggedCommand> parsed;
+  if (v.size() > detail::kFileBytes) return false;
   if (v.size() < 8 || std::memcmp(v.data(), "AZC1", 4) != 0) return false;
   size_t o = 4;
   uint32_t n;
   if (!get32(v, o, n)) return false;
+  if (n > (v.size() - o) / 28) return false;
   for (uint32_t i = 0; i < n; i++) {
     LoggedCommand l;
     uint32_t lo, hi, ts, a, b, c, cnt;
     if (!get32(v, o, lo) || !get32(v, o, hi) || !get32(v, o, ts) || !get32(v, o, a) || !get32(v, o, b) || !get32(v, o, c) || !get32(v, o, cnt)) return false;
     if (cnt > 100000) return false;
+    if (cnt > (v.size() - o) / 4 || ts > 0xffff) return false;
+    const unsigned type = ts & 255;
+    if (!((type >= 0x13 && type <= 0x25) || type == 0x50 || type == 0x51)) return false;
     l.tick = uint64_t(lo) | uint64_t(hi) << 32;
     l.cmd.type = Pct(ts & 255);
     l.cmd.side = uint8_t(ts >> 8);
@@ -45,8 +52,10 @@ bool deserialize_log(const std::vector<uint8_t>& v, std::vector<LoggedCommand>& 
       if (!get32(v, o, id)) return false;
       l.cmd.ids.push_back(id);
     }
-    out.push_back(std::move(l));
+    parsed.push_back(std::move(l));
   }
+  if (o != v.size()) return false;
+  out = std::move(parsed);
   return true;
 }
 

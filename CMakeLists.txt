@@ -4,6 +4,15 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(AZTEC_SANITIZERS "Instrument independent builds with ASan and UBSan" OFF)
+if(AZTEC_SANITIZERS)
+  if(MSVC OR NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    message(FATAL_ERROR "AZTEC_SANITIZERS requires GCC or Clang")
+  endif()
+  add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address,undefined)
+endif()
+
 function(aztec_warnings target)
   if(MSVC)
     target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8)
@@ -157,7 +166,7 @@ target_compile_definitions(test_engine PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CUR
 
 # Synthetic malformed-input coverage, independent of user game files.
 add_executable(test_fuzz tests/test_fuzz.cpp)
-target_link_libraries(test_fuzz aztec_core)
+target_link_libraries(test_fuzz aztec_engine_lib)
 add_test(NAME fuzz COMMAND test_fuzz)
 set_tests_properties(fuzz PROPERTIES TIMEOUT 55 LABELS "unit")
 

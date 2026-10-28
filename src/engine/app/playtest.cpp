@@ -9,6 +9,8 @@
 
 #include "engine/sim/script_runner.hpp"
 #include "engine/world/type_info.hpp"
+#include "core/loader_limits.hpp"
+#include "core/mapfiles.hpp"
 
 namespace aztec::engine {
 
@@ -18,8 +20,10 @@ static std::string lower(std::string s) {
 }
 
 bool PlaytestScript::load(const std::string& path, std::string& err) {
-  std::ifstream f(path);
-  if (!f) { err = "cannot open " + path; return false; }
+  lines_.clear(); pc_ = 0;
+  std::vector<uint8_t> bytes;
+  if (!read_file(path, bytes) || bytes.size() > detail::kTextBytes) { err = "cannot read bounded playtest script " + path; return false; }
+  std::istringstream f(std::string(bytes.begin(), bytes.end()));
   std::string line;
   int n = 0;
   while (std::getline(f, line)) {

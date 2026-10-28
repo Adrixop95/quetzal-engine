@@ -4,6 +4,8 @@
 #include <charconv>
 #include <fstream>
 #include <sstream>
+#include "core/loader_limits.hpp"
+#include "core/mapfiles.hpp"
 
 namespace aztec::engine {
 namespace {
@@ -199,7 +201,9 @@ bool AnimSpriteProvider::load_visual_rules(const std::string& directory) {
   bool loaded = false;
   for (int kind = 0; kind < 10; ++kind) {
     if (columns[kind] < 0) continue;
-    std::ifstream input(directory + "/desc_" + names[kind] + ".csv");
+    std::vector<uint8_t> bytes;
+    if (!read_file(directory + "/desc_" + names[kind] + ".csv", bytes) || bytes.size() > detail::kTextBytes) continue;
+    std::istringstream input(std::string(bytes.begin(), bytes.end()));
     std::string line;
     std::getline(input, line);
     while (std::getline(input, line)) {
