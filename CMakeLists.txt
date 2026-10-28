@@ -208,7 +208,8 @@ set_tests_properties(portability PROPERTIES LABELS "unit")
 add_executable(test_ai tests/test_ai.cpp)
 target_link_libraries(test_ai aztec_engine_lib)
 target_compile_definitions(test_ai PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data"
-  AZTEC_AI_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/ai_orders.scn")
+  AZTEC_AI_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/ai_orders.scn"
+  AZTEC_AI_ECONOMY_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/ai_economy.scn")
 add_test(NAME ai_unit COMMAND test_ai)
 add_test(NAME ai_skirmish COMMAND test_ai --smoke)
 set_tests_properties(ai_unit PROPERTIES LABELS "unit")

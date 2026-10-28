@@ -119,15 +119,19 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
     s.target_town = -1;
     for (int ti : s.known_towns) if (enemy(ti)) { s.target_town = ti; break; }
   }
-  if (attacker && s.last_alert != attacker->id) {
-    // G: redirect eligible autonomous town troops, including moving troops, on a new alert.
+  if (attacker) {
+    const bool new_alert = s.last_alert != attacker->id;
+    // G: a new alert redirects autonomous troops; an ongoing alert also receives
+    // idle reinforcements without resetting active orders or the production plan.
     auto c = command(Pct::Attack); c.a = int(attacker->id);
     for (const auto& o : w.objects)
       if (live(o) && o.town == t.index && o.side == t.side && o.tactic < 0 &&
+          (new_alert || o.order == 0) &&
           (rules.type(o.type).mobile || rules.type(o.type).flier) && rules.type(o.type).armed &&
           rules.attack(o.type, attacker->type).damage > 0) c.ids.push_back(o.id);
     if (!c.ids.empty()) d.commands.push_back(c);
-    s.last_alert = attacker->id; s.phase = 16; s.remaining = 0;
+    if (new_alert) { s.phase = 16; s.remaining = 0; }
+    s.last_alert = attacker->id;
   }
   if (!attacker) s.last_alert = 0;
   for (const auto& q : w.side_state[t.side].queue) busy |= q.town == town;
