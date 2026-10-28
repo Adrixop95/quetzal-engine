@@ -65,7 +65,7 @@ add_library(aztec_engine_lib
   src/engine/sim/simulation.cpp src/engine/sim/commands.cpp src/engine/sim/savegame.cpp src/engine/sim/rules.cpp src/engine/sim/game_sim.cpp src/engine/sim/script_runner.cpp src/engine/sim/ai.cpp src/engine/ai/planner.cpp
   src/engine/render/atlas.cpp src/engine/render/sprite_store.cpp src/engine/render/font.cpp
   src/engine/render/png.cpp src/engine/render/fog.cpp src/engine/render/scene_renderer.cpp
-  src/engine/ui/cursor.cpp src/engine/ui/panel.cpp src/engine/ui/names.cpp src/engine/ui/selection_ui.cpp src/engine/ui/commands_ui.cpp src/engine/ui/frontend.cpp src/engine/ui/minimap.cpp src/engine/ui/hud.cpp
+  src/engine/ui/cursor.cpp src/engine/ui/panel.cpp src/engine/ui/names.cpp src/engine/ui/selection_ui.cpp src/engine/ui/commands_ui.cpp src/engine/ui/frontend.cpp src/engine/ui/campaign.cpp src/engine/ui/minimap.cpp src/engine/ui/hud.cpp
   src/engine/app/options.cpp src/engine/audio/mixer.cpp src/engine/audio/audio_system.cpp src/engine/audio/scene_audio.cpp src/engine/app/playtest.cpp src/engine/app/sheet.cpp src/engine/app/engine.cpp src/engine/app/headless.cpp)
 target_compile_features(aztec_engine_lib PUBLIC cxx_std_20)
 target_include_directories(aztec_engine_lib PUBLIC src)
@@ -231,6 +231,14 @@ add_executable(test_audio tests/test_audio.cpp)
 target_link_libraries(test_audio aztec_engine_lib)
 add_test(NAME audio_events COMMAND test_audio)
 set_tests_properties(audio_events PROPERTIES LABELS "unit;audio")
+
+add_executable(test_campaign_ui tests/test_campaign_ui.cpp)
+target_link_libraries(test_campaign_ui PRIVATE aztec_engine_lib)
+aztec_warnings(test_campaign_ui)
+target_compile_definitions(test_campaign_ui PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data")
+add_test(NAME campaign_ui COMMAND test_campaign_ui ${CMAKE_CURRENT_BINARY_DIR}/campaign-ui)
+set_tests_properties(campaign_ui PROPERTIES LABELS "unit" TIMEOUT 30
+  ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
 
 # Read-only campaign script inventory plus asset-independent trigger contracts.
 add_executable(aztec_script_audit tools/script_audit.cpp)

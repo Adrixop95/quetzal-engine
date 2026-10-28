@@ -12,35 +12,14 @@
 #include "engine/render/sprite_store.hpp"
 #include "engine/render/png.hpp"
 #include "engine/ui/cursor.hpp"
+#include "engine/ui/campaign.hpp"
 
 namespace fs = std::filesystem;
 
 namespace aztec::engine {
 
 std::vector<std::string> wrap_text(const Font& font, const std::string& text, int max_width, int scale) {
-  std::vector<std::string> lines;
-  std::string para;
-  auto flush_para = [&]() {
-    std::string cur, word;
-    auto push_word = [&]() {
-      if (word.empty()) return;
-      std::string t = cur.empty() ? word : cur + " " + word;
-      if (!cur.empty() && font.width(t, scale) > max_width) { lines.push_back(cur); cur = word; }
-      else cur = t;
-      word.clear();
-    };
-    for (char c : para) { if (c == ' ') push_word(); else word += c; }
-    push_word();
-    lines.push_back(cur);
-    para.clear();
-  };
-  for (char c : text) {
-    if (c == '\r') continue;
-    if (c == '\n') flush_para();
-    else para += c;
-  }
-  flush_para();
-  return lines;
+  return font.wrap(text, scale, max_width);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -75,7 +54,7 @@ class Screen {
   bool run(FrontendResult& out, const std::string& open_briefing);
 
  private:
-  enum class Mode { Main, Campaign, Custom, Briefing, Options };
+  enum class Mode { Main, Campaign, Custom, Briefing, Options, Audio };
 
   void background(uint32_t id) {
     const StoredSprite& s = store_.get(common_key(id));
@@ -101,8 +80,16 @@ class Screen {
     SDL_SetRenderDrawColor(r, h ? 255 : 190, h ? 220 : 150, h ? 120 : 80, 255);
     SDL_RenderDrawRect(r, &d);
     int m = L_.msize(1.5f);
-    int tw = font_.width(b.text, 2 * m), th = font_.height(2 * m);
-    font_.draw(r, d.x + (d.w - tw) / 2, d.y + (d.h - th) / 2, b.text, 2 * m, enabled ? (h ? SDL_Color{255, 240, 170, 255} : SDL_Color{235, 215, 160, 255}) : SDL_Color{130, 120, 110, 255});
+    while (m > 1 && font_.width(b.text, 2 * m) > d.w - 8) --m;
+    const int ts = 2 * m;
+    auto lines = font_.wrap(b.text, ts, std::max(1, d.w - 8));
+    std::string label = lines.empty() ? "" : lines.front();
+    if (lines.size() > 1) {
+      const auto shortened = font_.wrap(label, ts, std::max(1, d.w - 8 - font_.width("...", ts)));
+      label = (shortened.empty() ? "" : shortened.front()) + "...";
+    }
+    int tw = font_.width(label, ts), th = font_.height(ts);
+    font_.draw(r, d.x + (d.w - tw) / 2, d.y + (d.h - th) / 2, label, ts, enabled ? (h ? SDL_Color{255, 240, 170, 255} : SDL_Color{235, 215, 160, 255}) : SDL_Color{130, 120, 110, 255});
   }
   bool clicked(const Button& b) const { return click_ && hover(b); }
 
@@ -127,8 +114,10 @@ class Screen {
   struct Entry { std::string spec, title; };
   std::vector<Entry> campaign_, custom_;
   int custom_page_ = 0;
+  CampaignProgress progress_;
+  AudioOptions audio_options_;
   // briefing
-  std::string brief_spec_, brief_title_, brief_text_, brief_avi_;
+  std::string brief_spec_, brief_text_, brief_avi_;
   bool brief_campaign_ = false;
   int brief_scroll_ = 0;
   bool quit_ = false;
@@ -136,6 +125,7 @@ class Screen {
 };
 
 void Screen::load_lists() {
+  progress_.load(data_.root() + "/Saves/engine_campaign.txt");
   campaign_.clear();
   custom_.clear();
   std::error_code ec;
@@ -172,27 +162,16 @@ void Screen::load_lists() {
 
 void Screen::enter_briefing(const std::string& spec) {
   brief_spec_ = spec;
-  brief_title_ = spec;
   brief_text_.clear();
   brief_avi_.clear();
   brief_scroll_ = 0;
-  std::string lo = spec;
-  for (auto& c : lo) c = char(std::tolower(c));
-  brief_campaign_ = lo.rfind("mission_", 0) == 0;
+  brief_campaign_ = campaign_number(spec) != 0;
   std::string mp = resolve_mission(data_.maps_dir(), spec);
   MissionDef m;
   if (!mp.empty() && load_mission(mp, m)) {
-    if (!m.title.empty()) brief_title_ = m.title;
     brief_avi_ = m.avi;
-    for (const std::string& n : m.notes) brief_text_ += n + "\n";
   }
-  std::string mit = find_file_ci(data_.maps_dir(), (fs::path(mp).stem().string()) + ".mit");
-  std::vector<BriefingSection> secs;
-  if (!mit.empty() && load_briefing(mit, secs) && !secs.empty()) {
-    brief_text_.clear();
-    brief_title_ = cp1250_to_utf8(secs[0].title);
-    for (const BriefingSection& s : secs) brief_text_ += cp1250_to_utf8(s.text) + "\n";
-  }
+  brief_text_ = mission_briefing(data_, spec);
   mode_ = Mode::Briefing;
 }
 
@@ -268,7 +247,7 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
         text(400, 22, "Campaign", 2.2f, gold, true);
         for (size_t i = 0; i < campaign_.size(); i++) {
           int col = int(i) / 8, row = int(i) % 8;
-          Button b{col ? 430 : 90, 100 + row * 52, 290, 44, std::to_string(i + 1) + ". " + campaign_[i].title};
+          Button b{col ? 430 : 90, 100 + row * 52, 290, 44, (progress_.won(campaign_number(campaign_[i].spec)) ? "[Done] " : "") + std::to_string(campaign_number(campaign_[i].spec)) + ". " + campaign_[i].title};
           draw_button(b);
           if (clicked(b)) enter_briefing(campaign_[i].spec);
         }
@@ -301,28 +280,34 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
         background(290);
         std::vector<std::string> lines = wrap_text(font_, brief_text_, L_.W(330), 2 * L_.msize(1.2f));
         int lh = font_.height(2 * L_.msize(1.2f)) + 3;
-        int maxl = std::max(1, (L_.W(330) * 2 / 1) / std::max(1, lh) / 2 + 12);
-        (void)maxl;
-        int y = 205;
-        if (in_.wheel < 0) brief_scroll_++;
-        if (in_.wheel > 0) brief_scroll_ = std::max(0, brief_scroll_ - 1);
-        brief_scroll_ = std::min(brief_scroll_, std::max(0, int(lines.size()) - 9));
-        for (size_t i = size_t(brief_scroll_); i < lines.size(); i++) {
-          if (y > 470) break;
-          font_.draw(win_.renderer(), L_.X(235), L_.Y(y), lines[i], 2 * L_.msize(1.2f), {40, 25, 15, 255}, false);
-          y += int(lh / L_.s) + 1;
-        }
+        const int count = std::max(1, L_.W(270) / lh);
+        if (in_.wheel < 0 || in_.hit(SDL_SCANCODE_DOWN)) brief_scroll_++;
+        if (in_.wheel > 0 || in_.hit(SDL_SCANCODE_UP)) brief_scroll_--;
+        if (in_.hit(SDL_SCANCODE_PAGEDOWN)) brief_scroll_ += count;
+        if (in_.hit(SDL_SCANCODE_PAGEUP)) brief_scroll_ -= count;
+        if (in_.hit(SDL_SCANCODE_HOME)) brief_scroll_ = 0;
+        if (in_.hit(SDL_SCANCODE_END)) brief_scroll_ = int(lines.size());
+        brief_scroll_ = std::clamp(brief_scroll_, 0, std::max(0, int(lines.size()) - count));
+        for (int i = 0; i < count && i + brief_scroll_ < int(lines.size()); ++i)
+          font_.draw(win_.renderer(), L_.X(235), L_.Y(205) + i * lh, lines[size_t(i + brief_scroll_)], 2 * L_.msize(1.2f), {40, 25, 15, 255}, false);
         Button start{610, 300, 170, 40, "Start"}, back{610, 400, 170, 40, "Back"}, vid{610, 350, 170, 40, "Intro video"};
         draw_button(start);
         draw_button(back);
         bool have_video = !brief_avi_.empty();
         if (have_video) draw_button(vid);
-        if (clicked(start) || in_.hit(SDL_SCANCODE_RETURN)) chosen_ = brief_spec_;
+        if (clicked(start) || (in_.hit(SDL_SCANCODE_RETURN) && !in_.alt)) chosen_ = brief_spec_;
         if (clicked(back) || in_.hit(SDL_SCANCODE_ESCAPE)) mode_ = brief_campaign_ ? Mode::Campaign : Mode::Custom;
         if (have_video && clicked(vid)) {
           std::string vp = find_file_ci(data_.root() + "/Video", brief_avi_);
           if (vp.empty() || !play_video(win_, vp)) std::fprintf(stderr, "note: cannot play %s (needs ffmpeg and the file)\n", brief_avi_.c_str());
         }
+        break;
+      }
+      case Mode::Audio: {
+        background(284);
+        audio_options_.update(in_, opts_, ow_, oh_, std::max(1, int(L_.s)));
+        audio_options_.draw(win_.renderer(), font_, opts_, ow_, oh_, std::max(1, int(L_.s)));
+        if (!audio_options_.open) mode_ = Mode::Options;
         break;
       }
       case Mode::Options: {
@@ -333,8 +318,10 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
         Button b2{250, 225, 300, 40, std::string("Edge scrolling: ") + (opts_.edge_scroll ? "on" : "off")};
         Button b3{250, 280, 300, 40, std::string("Fog of war: ") + (opts_.fog ? "on" : "off")};
         Button b4{250, 335, 300, 40, std::string("Day / night tint: ") + (opts_.light ? "on" : "off")};
-        Button back{250, 420, 300, 40, "Back"};
-        for (Button* b : {&b1, &b2, &b3, &b4, &back}) draw_button(*b);
+        Button sound{250, 390, 300, 40, "Audio"};
+        Button back{250, 455, 300, 40, "Back"};
+        for (Button* b : {&b1, &b2, &b3, &b4, &sound, &back}) draw_button(*b);
+        if (clicked(sound)) { mode_ = Mode::Audio; audio_options_.open = true; }
         if (clicked(b1)) win_.set_mode(win_.mode() == DisplayMode::Windowed ? DisplayMode::Borderless : win_.mode() == DisplayMode::Borderless ? DisplayMode::Fullscreen : DisplayMode::Windowed);
         if (clicked(b2)) opts_.edge_scroll = !opts_.edge_scroll;
         if (clicked(b3)) opts_.fog = !opts_.fog;
@@ -356,6 +343,44 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
 bool run_frontend(Window& win, GameData& data, Options& opts, FrontendResult& out, const std::string& open_briefing) {
   Screen s(win, data, opts);
   return s.run(out, open_briefing);
+}
+
+SDL_Rect AudioOptions::row(int i, int w, int h, int sc) {
+  const int width = std::min(w - 16, 400 * sc);
+  return {(w - width) / 2, (h - 6 * 48 * sc) / 2 + i * 48 * sc, width, 36 * sc};
+}
+void AudioOptions::update(const Input& in, Options& o, int w, int h, int sc) {
+  if (!open) return;
+  if (in.hit(SDL_SCANCODE_ESCAPE) || (in.hit(SDL_SCANCODE_RETURN) && !in.alt)) open = false;
+  if (!in.pressed[SDL_BUTTON_LEFT]) return;
+  const SDL_Point point{in.mx, in.my};
+  for (int i = 0; i < 6; ++i) {
+    const auto rect = row(i, w, h, sc);
+    if (!SDL_PointInRect(&point, &rect)) continue;
+    if (i < 3) {
+      float* volumes[] = {&o.sfx_volume, &o.music_volume, &o.speech_volume};
+      *volumes[i] = std::clamp(*volumes[i] + (in.mx < rect.x + rect.w / 2 ? -0.1f : 0.1f), 0.f, 1.f);
+    } else if (i == 3) o.acknowledgement = !o.acknowledgement;
+    else if (i == 4) o.subtitles = !o.subtitles;
+    else open = false;
+  }
+}
+void AudioOptions::draw(SDL_Renderer* r, const Font& font, const Options& o, int w, int h, int sc) const {
+  if (!open) return;
+  SDL_Rect all{0, 0, w, h};
+  SDL_SetRenderDrawColor(r, 20, 18, 14, 255); SDL_RenderFillRect(r, &all);
+  std::string labels[] = {"-  Effects: " + std::to_string(int(std::lround(o.sfx_volume * 100))) + "%  +",
+      "-  Music: " + std::to_string(int(std::lround(o.music_volume * 100))) + "%  +",
+      "-  Speech: " + std::to_string(int(std::lround(o.speech_volume * 100))) + "%  +",
+      std::string("Acknowledgements: ") + (o.acknowledgement ? "on" : "off"),
+      std::string("Subtitles: ") + (o.subtitles ? "on" : "off"), "Back"};
+  for (int i = 0; i < 6; ++i) {
+    const auto rect = row(i, w, h, sc);
+    SDL_SetRenderDrawColor(r, 55, 42, 25, 255); SDL_RenderFillRect(r, &rect);
+    const int ts = 2 * sc;
+    font.draw(r, rect.x + (rect.w - font.width(labels[i], ts)) / 2,
+              rect.y + (rect.h - font.height(ts)) / 2, labels[i], ts, {245, 230, 200, 255});
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -412,14 +437,14 @@ bool play_video(Window& win, const std::string& path) {
 // ---------------------------------------------------------------------------------------------------------------------
 
 SDL_Rect PauseMenu::button(int i, int ow, int oh, int sc) const {
-  int w = 220 * sc, h = 30 * sc;
-  return {(ow - w) / 2, oh / 2 - 120 * sc + i * 40 * sc, w, h};
+  int w = std::min(ow - 16, 280 * sc), h = 30 * sc;
+  return {(ow - w) / 2, (oh - 8 * 38 * sc) / 2 + i * 38 * sc, w, h};
 }
 
 PauseMenu::Action PauseMenu::update(const Input& in, int ow, int oh, int sc) {
   if (!open || !in.pressed[SDL_BUTTON_LEFT]) return Action::None;
-  static const Action acts[6] = {Action::Resume, Action::Save, Action::Load, Action::Restart, Action::Menu, Action::Quit};
-  for (int i = 0; i < 6; i++) {
+  static const Action acts[8] = {Action::Resume, Action::Briefing, Action::Audio, Action::Save, Action::Load, Action::Restart, Action::Menu, Action::Quit};
+  for (int i = 0; i < 8; i++) {
     SDL_Rect b = button(i, ow, oh, sc);
     if (in.mx >= b.x && in.mx < b.x + b.w && in.my >= b.y && in.my < b.y + b.h) return acts[i];
   }
@@ -431,10 +456,10 @@ void PauseMenu::draw(SDL_Renderer* r, const Font& font, int ow, int oh, int sc) 
   SDL_Rect all{0, 0, ow, oh};
   SDL_SetRenderDrawColor(r, 0, 0, 0, 150);
   SDL_RenderFillRect(r, &all);
-  static const char* labels[6] = {"Resume", "Save game", "Load game", "Restart mission", "Main menu", "Quit"};
+  static const char* labels[8] = {"Resume", "Briefing / objectives", "Audio", "Save game", "Load game", "Restart mission", "Main menu", "Quit"};
   int mx, my;
   SDL_GetMouseState(&mx, &my);
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 8; i++) {
     SDL_Rect b = button(i, ow, oh, sc);
     SDL_SetRenderDrawColor(r, 35, 26, 16, 235);
     SDL_RenderFillRect(r, &b);

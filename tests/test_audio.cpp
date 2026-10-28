@@ -5,13 +5,16 @@
 #include <fstream>
 #include "temp_dir.hpp"
 #include "engine/audio/scene_audio.hpp"
+#include "engine/sim/game_sim.hpp"
+#include "core/endian.hpp"
+#include <limits>
 
 using namespace aztec;
 using namespace aztec::engine;
 using Bytes = std::vector<uint8_t>;
 static int failures = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAIL %d: %s\n", __LINE__, #c); ++failures; } } while (0)
-static void put(Bytes& b, size_t pos, uint32_t v) { std::memcpy(b.data() + pos, &v, 4); }
+static void put(Bytes& b, size_t pos, uint32_t v) { write_le(b.data() + pos, v); }
 static void write(const std::filesystem::path& path, const Bytes& b) {
   std::ofstream f(path, std::ios::binary); f.write(reinterpret_cast<const char*>(b.data()), b.size());
 }
@@ -61,7 +64,8 @@ int main() {
   std::filesystem::create_directory(root / "Res");
   std::filesystem::create_directory(root / "Music");
   Bytes set(4); put(set, 0, 1);
-  write(root / "Res/Snd.xbe", archive({{0x460, {wav()}}, {0x3e8, {set, set}}}));
+  write(root / "Res/Snd.xbe", archive({{0x460, {wav()}}, {0x3e8, {set, set}},
+      {0x6, {Bytes{'R', 'e', 'a', 'd', 'y', 0}, Bytes{'N', 'o', ' ', 'W', 'A', 'V', 0}}}}));
   write(root / "Music/music.xbe", archive({{0x460, {wav(), wav()}}}));
   std::vector<Bytes> animations(200);
   animations[3] = animation();   // Footman anim 4
@@ -150,6 +154,60 @@ int main() {
   CHECK(samples[0] == 100 && samples[15] == 200 && mixer.active_voices() == 1);
   CHECK(mixer.gain(handle, 0, 1)); mixer.mix(samples, 8); CHECK(samples[0] == 0);
   mixer.stop(handle); CHECK(mixer.active_voices() == 0 && !mixer.gain(handle, 1, 1));
+  // Speech has its own gain, with captions for missing WAVs and no audio device.
+  events.clear(); audio.event_tick = 42;
+  audio.set_volumes(0, 0, 1);
+  CHECK(audio.play_speech(1, true) == 1);
+  CHECK(audio.subtitle() == "Ready" && events.size() == 2);
+  CHECK(events[0].kind == AudioEvent::Kind::Subtitle && events[0].sound == 1 && events[0].tick == 42);
+  CHECK(events[1].kind == AudioEvent::Kind::Speech && events[1].tick == 42);
+  audio.mixer().mix(samples, 1); CHECK(samples[0] == 100);
+  audio.acknowledgement = false; const auto event_count = events.size();
+  CHECK(audio.play_speech(1, true) == 0 && events.size() == event_count);
+  CHECK(audio.play_speech(2) == 0 && audio.subtitle() == "No WAV");
+  CHECK(events.back().kind == AudioEvent::Kind::Subtitle);
+  audio.update(5.9); CHECK(!audio.subtitle().empty());
+  audio.update(0.1); CHECK(audio.subtitle().empty());
+  audio.set_volumes(1, 0, 0); events.clear();
+  CHECK(audio.play_speech(1) == 0 && audio.subtitle() == "Ready");
+  audio.subtitles = false; audio.update(); CHECK(audio.subtitle().empty());
+  CHECK(audio.play_speech(2) == 0 && audio.subtitle().empty());
+  audio.subtitles = true; audio.set_volumes(0, 0, 1);
+  CHECK(audio.play_speech(1) == 1); CHECK(audio.play_speech(1) == 1);
+  CHECK(audio.mixer().active_voices() == 1); // a new utterance replaces the previous one
+  audio.stop_effects(); CHECK(audio.subtitle().empty() && audio.mixer().active_voices() == 0);
+  audio.set_volumes(-1, 2, std::numeric_limits<float>::quiet_NaN());
+  CHECK(audio.mixer().sfx_volume == 0 && audio.mixer().music_volume == 1 && audio.mixer().speech_volume == 0);
+  // Identical commands and seed must yield identical complete state hashes at every tick.
+  // Exercise real movement and commands with dispatch disabled, muted and audible, changing views and mix cadence.
+  auto rules = std::make_shared<RulesData>(); rules->init_defaults();
+  World initial; initial.terrain.w = initial.terrain.h = 24; initial.terrain.cells.resize(24 * 24);
+  initial.mission.sides.resize(1); initial.mission.sides[0].index = 0;
+  Object unit; unit.id = 1; unit.type = 0; unit.hp = unit.hp_max = 100;
+  unit.cur_x = unit.prev_x = to_fixed(100); unit.cur_y = unit.prev_y = to_fixed(100);
+  initial.objects.push_back(unit);
+  World silent = initial, presented = initial;
+  GameSim silent_sim(rules), presented_sim(rules); silent_sim.init(silent); presented_sim.init(presented);
+  audio.event_sink = {}; audio.start_music(0, 3, 0);
+  for (int t = 0; t < 1200; ++t) {
+    if (t % 100 == 0) {
+      Command command; command.type = Pct::Move; command.side = 0; command.ids = {1};
+      command.a = 100 + (t % 300); command.b = 200;
+      silent_sim.submit(command); presented_sim.submit(command);
+    }
+    silent.begin_tick(); presented.begin_tick(); silent_sim.tick(silent); presented_sim.tick(presented);
+    audio.set_volumes(t % 2 ? 0 : 1, t % 3 ? 0 : 1, t % 5 ? 0 : 1);
+    audio.acknowledgement = t % 7; audio.subtitles = t % 11;
+    emit_scene_audio(presented, provider, units, audio, float(t % 1000), 0,
+        [&](float, float, int) { return t % 4 != 0; });
+    if (t % 13 == 0) audio.play_speech(1, true);
+    audio.mixer().mix(samples, t % 8 + 1); audio.update(1.0 / 12);
+    CHECK(silent_sim.state_hash(silent) == presented_sim.state_hash(presented));
+  }
+  auto replayed = initial;
+  auto replay_sim = GameSim::replay(replayed, rules, presented_sim.log(), presented_sim.tick_count());
+  CHECK(replay_sim->state_hash(replayed) == presented_sim.state_hash(presented));
+  audio.stop_music(); audio.stop_effects();
   // Music works even when the effects archive is absent.
   std::filesystem::remove(root / "Res/Snd.xbe");
   AudioSystem music_only; CHECK(!music_only.init(root.string(), false));

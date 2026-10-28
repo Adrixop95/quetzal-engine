@@ -23,7 +23,7 @@ Positional positional_gain(float dx_px, float dist_px);
 class Mixer {
  public:
   static constexpr int kMaxVoices = 32;
-  uint64_t play(std::shared_ptr<const Pcm> pcm, float left, float right, bool loop = false);
+  uint64_t play(std::shared_ptr<const Pcm> pcm, float left, float right, bool loop = false, bool speech = false);
   bool gain(uint64_t voice, float left, float right);
   void stop(uint64_t voice);
   void stop_effects() { for (auto& voice : voices_) voice = Voice{}; }
@@ -33,11 +33,11 @@ class Mixer {
   bool music_playing() const { return music_pcm_ != nullptr; }
   void mix(int16_t* out, int frames);
   size_t active_voices() const;
-  float sfx_volume = 0.8f, music_volume = 0.6f;
+  float sfx_volume = 0.8f, music_volume = 0.6f, speech_volume = 0.8f;
   bool music_ended = false;   // set by mix() when the stream finished (the owner picks the next track)
 
  private:
-  struct Voice { std::shared_ptr<const Pcm> pcm; size_t pos = 0; float l = 1, r = 1; bool loop = false; uint64_t id = 0; };
+  struct Voice { std::shared_ptr<const Pcm> pcm; size_t pos = 0; float l = 1, r = 1; bool loop = false; uint64_t id = 0; bool speech = false; };
   uint64_t next_voice_ = 0;
   Voice voices_[kMaxVoices];
   std::shared_ptr<const void> music_holder_;

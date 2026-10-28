@@ -274,9 +274,10 @@ result is claimed. All private inputs and probe outputs remain under ignored wor
 | Rule | Status | Notes |
 |---|---|---|
 | Effects from `Snd.xbe`: sound set (`sound_set`) from field [2] of an animation frame, played on the first tick of the frame, random member of the set | V (format), P (random choice uses a local LCG, not the simulation RNG) | |
-| Pan = (x - view centre x) clamped to +-4000 hundredths of dB; attenuation: none up to 500 px, linear to -4000 at 800 px, silent beyond | V (`docs/formats.md`), P (100 units = 1 dB) | the "fog cell >= 0x21" condition is not applied |
-| Music: `Music=N` -> track N, otherwise `MusicMask`; next track when one ends | V (mask selection), P (order = seeded by mission name, cyclic) | `music_allowed_mask` in `core/audio` |
-| Volumes, speech / subtitles, UI sounds, state loops (sequence header), building / projectile sounds | not done | `--volume`, `--no-audio` |
+| Pan = (x - view centre x) clamped to +-4000 hundredths of dB; attenuation: none up to 500 px, linear to -4000 at 800 px, silent beyond | V (`docs/formats.md`), P (100 units = 1 dB) | Scene dispatcher uses the active view visibility predicate; exact reference fog semantics remain open |
+| Music: `Music=N` -> track N, otherwise `MusicMask`; next track when one ends | V (format and ascending cyclic order), V construction / synthetic checks | `music_allowed_mask` in `core/audio`; no simulation RNG or mission-name salt |
+| Animation state loops, building/projectile/effect sounds | V construction / synthetic checks; simulation timing remains P where unresolved | Header loops and frame entries use a read-only scene snapshot; visibility/distance/load/exit cleanup checked in `audio_events` |
+| Independent effects/music/speech gain, acknowledgement suppression and speech WAV/caption API | V construction / synthetic checks, P replacement/duration policy | Separate speech gain, UTF-8 captions, missing-WAV/muted/no-device fallback; six presentation seconds, outside World/hash/replay. Selection/order/announcement producers still need evidenced IDs; see [audio evidence](audio.md) |
 
 ## Saves
 | Rule | Status | Notes |
@@ -824,3 +825,80 @@ stored hashes may no longer match; the save format was not changed.
 three game-data entries and restricted UDP process test skip. All pre-commit
 hooks pass using a copy of the local hook cache under ignored build output.
 Private-data/reference runs are not verified by these skipped checks.
+
+## V14/V15 campaign presentation and audio (2026-10-28, partial)
+
+**Independent implementation:** pause offers briefing/objective review and live
+sound controls. The front-end and in-mission reader share all `.mit` section
+headings/text, with mission notes as fallback; no script condition is invented
+as a completed objective. Text wraps long UTF-8 tokens, and scrolling uses the
+actual visible line count, with wheel/arrows, PageUp/PageDown and Home/End.
+Long campaign labels shrink/ellipsize within buttons. Modal input cannot issue
+world commands or advance simulation time, including the closing click.
+Overlays draw after panels/HUD. Save/load failures now provide on-screen
+feedback; notices remain presentation state.
+
+The outcome screen has clickable continuation, restart/retry and menu controls.
+Enter retries defeat; victory continues to an existing next mission's briefing.
+Numeric mission arguments, case variants and `.mp` paths use bounded campaign
+parsing rather than unchecked pointer arithmetic; custom and final missions do
+not invent a next map. Winning mission 15 displays Campaign Complete. Outcome
+freezes presentation-driven simulation and blocks command input. This is an
+engine flow, not the original ending video or full campaign acceptance.
+
+Campaign wins from ordinary menu sessions persist in a separate default engine
+profile, `Saves/engine_campaign.txt`, with a version and fifteen completion bits.
+The campaign list marks completed missions without imposing unverified locks.
+The file is bounded/validated before replacement; writes stage in an exclusively
+created directory and rename over the active record. Invalid existing profiles
+are preserved and a failed write is reported. A stale `.pending` directory
+refuses a write; it can be removed after confirming no engine session is writing.
+Original `.plr`/saves remain untouched. This does not implement multiple profile
+selection, original profile interoperability or V16 fresh-session frontend loads.
+Scripted playtests and imported worlds do not record campaign wins.
+
+**Audio construction evidence:** explicit speech WAV requests have independent
+live gain and CP1250-to-UTF-8 captions, even without a WAV/device or with muted
+speech. Acknowledgement suppression, caption options/expiry, replacing the
+previous utterance and mission/load cleanup have synthetic checks. Six-second
+caption duration and replacement are P engine presentation policies. No
+selection/order/type/race/announcement ID mapping has been invented: the speech
+API has no campaign event producer yet. Existing animation body/turret/death,
+building/effect cues, loops, visibility attenuation and mission playlists remain
+active. See [audio event mapping and remaining gaps](audio.md).
+
+**Synthetic evidence:** `campaign_ui` checks all fifteen completion bits,
+round-trip/replacement/failure/corruption handling, strict mission parsing,
+missing-next/custom/final progression, briefing headings, audio option bounds and
+invalid gains. It renders invented briefing, outcome and sound overlays at
+800x493, 800x600, 1024x768 and 1600x1200, writes PNGs only under the build tree,
+checks hit regions/clip restoration and distinguishes the first/last text pages
+and victory/defeat images. Its real mission-loop playtest confirms pause,
+briefing and sound dialogs freeze ticks and consume commands, then reaches a
+synthetic victory with no further ticks from world input. Existing
+`ui_screenshots` panel/message comparisons still pass. `audio_events` adds
+1,200-tick complete hash comparisons with and without dispatch under changing
+gains, captions, visibility, listener position and mixer cadence, followed by
+matching command-log replay. No simulation fields, commands, RNG, save encoding
+or hash contract were added or changed by this work.
+
+**Dependencies/evidence limits:** V09/V10 command semantics, V12's 19 unsupported
+transport action sites, V13 rendering and V03 campaign/platform determinism
+remain incomplete in this checkout. Those parts are not claimed as delivered by
+UI/audio construction tests. Required selection/order speech mappings, building
+announcements and original voice policies remain unverified. Full campaign
+controls/groups/hotkeys/repair/upgrade acceptance, live objectives, defeat/retry
+and progression through all missions still require successful player routes and
+reference/interactive evidence. V14 and V15 remain open.
+
+Release build and all runnable CTest checks pass, with private-data and restricted
+UDP checks skipped in the default configuration. Explicit private format and
+engine checks and the 15-mission script inventory passed with the supplied
+installation through a private copy, dummy SDL and `unshare -rn`; original-save
+import skipped because that copy has no original saves. A mission 1 engine
+capture/music-event smoke check succeeded. The reference attempt failed before
+launch at `ip link set lo up` with `Cannot open netlink socket: Operation not
+permitted`; isolation was not bypassed. Private scripts, logs and captures are
+ignored under `work/v14-v15-probe/`. There is no new reference recording, replay,
+pixel metric, audible comparison or campaign completion claim. Open-PR status
+could not be refreshed from GitHub; no unmerged dependency is assumed present.

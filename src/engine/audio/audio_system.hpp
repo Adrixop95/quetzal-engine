@@ -13,7 +13,7 @@
 namespace aztec::engine {
 
 struct AudioEvent {
-  enum class Kind { Sound, LoopStart, LoopStop, Music, MusicStop };
+  enum class Kind { Sound, LoopStart, LoopStop, Music, MusicStop, Speech, Subtitle };
   Kind kind;
   uint64_t source = 0;
   uint32_t set = 0, sound = 0;
@@ -34,7 +34,11 @@ class AudioSystem {
   void stop_effects();
   bool device_ok() const { return dev_ != 0; }
   bool bank_ok() const { return bank_ok_; }
-  void set_volumes(float sfx, float music);
+  void set_volumes(float sfx, float music, float speech = 0.8f);
+  bool acknowledgement = true, subtitles = true;
+  // Explicit speech WAV IDs only. Event/type/race mappings must be evidenced by callers.
+  uint32_t play_speech(uint32_t sound_id, bool is_acknowledgement = false);
+  const std::string& subtitle() const { return subtitle_; }
 
   // Plays sound set `set_id` (a random member) at world position (x, y) heard from the view centre (cx, cy), all in px.
   // Returns the WAV sound id chosen, 0 if none / not audible.
@@ -44,7 +48,7 @@ class AudioSystem {
   // Mission music: `music` = [Globals] Music (exact track when != 0), `mask` = MusicMask; `salt` is retained for source compatibility; tracks play in ascending order.
   void start_music(int music, uint32_t mask, int salt);
   void stop_music();
-  void update();   // call once per frame: starts the next track when one ends
+  void update(double seconds = 0);   // presentation time; starts the next track when one ends
   int current_track() const { return track_; }
   Mixer& mixer() { return mixer_; }   // tests / tools; not thread-safe while the device runs
 
@@ -69,6 +73,10 @@ class AudioSystem {
   int track_ = 0;
   size_t pick_ = 0;
   uint32_t rand_ = 7;
+  uint64_t speech_voice_ = 0;
+  float speech_volume_ = 0.8f;
+  std::string subtitle_;
+  double subtitle_left_ = 0;
 };
 
 }  // namespace aztec::engine

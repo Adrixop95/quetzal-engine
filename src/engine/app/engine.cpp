@@ -21,6 +21,7 @@
 #include "engine/render/scene_renderer.hpp"
 #include "engine/ui/cursor.hpp"
 #include "engine/ui/frontend.hpp"
+#include "engine/ui/campaign.hpp"
 #include "engine/ui/hud.hpp"
 #include "engine/ui/names.hpp"
 #include "engine/ui/panel.hpp"
@@ -90,7 +91,7 @@ static int list_missions(const std::string& dir) {
 
 enum class PlayExit { Quit, ToMenu, Restart, Next };
 
-static PlayExit play_mission(Window& win, GameData& data, const Options& o, AudioSystem* audio, std::shared_ptr<const SpriteProvider> provider,
+static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSystem* audio, std::shared_ptr<const SpriteProvider> provider,
                              std::unique_ptr<Simulation> sim, const std::string& spec, bool& playtest_failed, int& rc) {
   std::string err;
   World world;
@@ -221,6 +222,19 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
     };
     if (o.pre_ticks == 0) emit_audio();
     PauseMenu pause;
+    TextOverlay briefing;
+    AudioOptions audio_options;
+    const std::string briefing_text = mission_briefing(data, world.mission.file_name);
+    const std::string next_mission = world.original_save ? "" : next_campaign_mission(data, world.mission.file_name);
+    std::string notice;
+    double notice_left = 0;
+    auto notify = [&](std::string text) { notice = std::move(text); notice_left = 6; };
+    auto consume_input = [&] {
+      for (int b = 0; b < 6; ++b) in.pressed[b] = in.released[b] = in.buttons[b] = false;
+      std::fill(std::begin(in.key_hit), std::end(in.key_hit), false);
+      std::fill(std::begin(in.key_down), std::end(in.key_down), false);
+      in.wheel = 0; in.dx = in.dy = 0;
+    };
     bool save_requested = false;
     bool leave = false;
     while (!in.quit && !leave) {
@@ -240,7 +254,7 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
         in.focused = true; in.mouse_inside = false;   // no edge scrolling from the synthetic mouse
         PlaytestRequest req;
         bool more = playtest.step(in, world, game, req);
-        for (int i = 0; i < req.run_ticks; i++) { world.begin_tick(); sim->tick(world); }
+        for (int i = 0; i < req.run_ticks; i++) { world.begin_tick(); sim->tick(world); emit_audio(); }
         if (!req.shot.empty()) pending_shot = req.shot;
         if (!more || req.quit) in.quit = true;
       } else {
@@ -260,6 +274,22 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
       }
       cam.set_view(float(view_w), float(oh));
 
+      if (in.hit(SDL_SCANCODE_F11)) win.cycle_borderless();
+      if (in.hit(SDL_SCANCODE_RETURN) && in.alt) win.toggle_fullscreen();
+      notice_left = std::max(0.0, notice_left - dt);
+      const bool submodal = briefing.open || audio_options.open;
+      if (briefing.open) briefing.update(in);
+      else if (audio_options.open) audio_options.update(in, o, ow, oh, pscale);
+      if (submodal) consume_input();
+      if (world.outcome != kRunning && !submodal) {
+        const auto action = OutcomeMenu::update(in, ow, oh, pscale, world.outcome == kVictory);
+        if (action != OutcomeMenu::Action::None) {
+          leave = true;
+          exit_reason = action == OutcomeMenu::Action::Retry ? PlayExit::Restart :
+              action == OutcomeMenu::Action::Continue && !next_mission.empty() && o.menu_session ? PlayExit::Next : PlayExit::ToMenu;
+        }
+        consume_input();
+      }
       if (in.hit(SDL_SCANCODE_ESCAPE) && cmdui.wants_left_click()) {
         cmdui.cancel_mode();
         in.key_hit[SDL_SCANCODE_ESCAPE] = false;
@@ -269,22 +299,18 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
         else if (world.outcome == kRunning) pause.open = !pause.open;
         else { exit_reason = PlayExit::ToMenu; leave = true; }
       }
-      if (world.outcome != kRunning && in.hit(SDL_SCANCODE_RETURN)) {
-        leave = true;
-        std::string lo = world.mission.file_name;
-        for (auto& ch : lo) ch = char(std::tolower(ch));
-        exit_reason = (world.outcome == kVictory && o.menu_session && lo.rfind("mission_", 0) == 0) ? PlayExit::Next : PlayExit::ToMenu;
-      }
       const SDL_Point menu_point{in.mx, in.my};
       const SDL_Rect menu_rect = panel.menu_rect();
-      if (o.menu_session && show_panel && in.pressed[SDL_BUTTON_LEFT] && SDL_PointInRect(&menu_point, &menu_rect)) pause.open = true;
+      if (world.outcome == kRunning && o.menu_session && show_panel && in.pressed[SDL_BUTTON_LEFT] && SDL_PointInRect(&menu_point, &menu_rect)) pause.open = true;
       {
-        PauseMenu::Action pa = pause.update(in, ow, oh, pscale);
+        PauseMenu::Action pa = world.outcome == kRunning && !submodal ? pause.update(in, ow, oh, pscale) : PauseMenu::Action::None;
+        if (pa == PauseMenu::Action::Briefing) briefing.show("Briefing / objectives", briefing_text);
+        if (pa == PauseMenu::Action::Audio) audio_options.open = true;
         if (pa == PauseMenu::Action::Resume) pause.open = false;
         bool do_save = pa == PauseMenu::Action::Save || (in.ctrl && in.hit(SDL_SCANCODE_S));
         bool do_load = pa == PauseMenu::Action::Load || (in.ctrl && in.hit(SDL_SCANCODE_L));
         if (game && do_save && world.original_save)
-          std::fprintf(stderr, "Saving imported worlds as command replay is unsupported\n");
+          notify("Saving imported worlds is unsupported");
         if (game && do_save && !world.original_save) {
           save_requested = true;
           if (pa == PauseMenu::Action::Save) pause.open = false;
@@ -305,10 +331,11 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
           bool saved = save_content_ok && current_save_content(data, world, spec, loaded_rules_dir, current_content) &&
               current_content == session_content && write_save(dir + "/engine_slot1.azs", sd);
           std::printf(saved ? "saved game (tick %llu)\n" : "save failed (tick %llu)\n", (unsigned long long)sd.tick);
+          notify(saved ? "Game saved" : "Save failed");
         }
         if (do_load) save_requested = false;
         if (game && do_load && world.original_save)
-          std::fprintf(stderr, "Loading an engine replay into an imported world is unsupported\n");
+          notify("Loading an engine replay into an imported world is unsupported");
         if (game && do_load && !world.original_save) {
           SaveData sd;
           std::string path = data.root() + "/Saves/engine_slot1.azs";
@@ -336,22 +363,21 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
             world.selection.clear();
             world.fog_version++;
             pause.open = false;
+            end_shown = false;
+            paused = world.outcome != kRunning;
+            stepper = FixedStepper{};
+            notify("Game loaded");
             std::printf("loaded game (tick %llu)\n", (unsigned long long)sd.tick);
           } else {
             std::fprintf(stderr, "Load failed: %s\n", lerr.c_str());
+            notify("Load failed: " + lerr);
           }
         }
         if (pa == PauseMenu::Action::Restart) { exit_reason = PlayExit::Restart; leave = true; }
         if (pa == PauseMenu::Action::Menu) { exit_reason = PlayExit::ToMenu; leave = true; }
         if (pa == PauseMenu::Action::Quit) { exit_reason = PlayExit::Quit; in.quit = true; }
-        if (pause.open) {   // the world ignores input while the pause menu is up
-          for (int b = 0; b < 6; b++) { in.pressed[b] = in.released[b] = in.buttons[b] = false; }
-          std::fill(std::begin(in.key_hit), std::end(in.key_hit), false);
-          in.wheel = 0;
-        }
+        if (pa != PauseMenu::Action::None || pause.open || submodal || world.outcome != kRunning) consume_input();
       }
-      if (in.hit(SDL_SCANCODE_F11)) win.cycle_borderless();
-      if (in.hit(SDL_SCANCODE_RETURN) && in.alt) win.toggle_fullscreen();
       if (in.hit(SDL_SCANCODE_F1)) hud.show_help = !hud.show_help;
       if (in.hit(SDL_SCANCODE_F2)) scene.opts.grid = !scene.opts.grid;
       if (in.hit(SDL_SCANCODE_F3)) scene.opts.passability = !scene.opts.passability;
@@ -369,19 +395,33 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
       }
 
       // Fixed 12 Hz simulation, independent of frame rate.
-      if (!paused && !pause.open) {
+      if (!paused && !pause.open && !submodal && !briefing.open && !audio_options.open && !leave && world.outcome == kRunning) {
         int n = stepper.advance(dt);
         for (int i = 0; i < n; i++) {
           world.begin_tick();
           sim->tick(world);
           emit_audio();
+          if (world.outcome != kRunning) break;
         }
       }
       float alpha = (paused || pause.open) ? 1.f : float(stepper.alpha());
 
       // Script requests: centerView / cameraActivate, mission end.
       if (world.center_serial != seen_center) { seen_center = world.center_serial; cam.center_on(float(world.center_x), float(world.center_y)); }
-      if (world.outcome != kRunning && !end_shown) { end_shown = true; paused = true; }
+      if (world.outcome != kRunning && !end_shown) {
+        end_shown = true; paused = true; pause.open = false; cmdui.cancel_mode();
+        consume_input();
+        if (world.outcome == kVictory && o.menu_session && !pt && !world.original_save && campaign_number(world.mission.file_name)) {
+          const std::string path = data.root() + "/Saves/engine_campaign.txt";
+          CampaignProgress progress;
+          std::error_code ec;
+          const bool exists = fs::exists(path, ec);
+          const bool readable = !ec && (!exists || progress.load(path));
+          progress.record(world.mission.file_name, true);
+          fs::create_directories(data.root() + "/Saves", ec);
+          if (!readable || ec || !progress.save(path)) notify("Campaign progress could not be saved");
+        }
+      }
       // Camera input.
       CameraInput ci;
       bool nokeys = in.ctrl;
@@ -398,7 +438,7 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
       ci.zoom_pivot_x = on_mm || ci.zoom_steps == 0 || in.wheel == 0 ? view_w / 2.f : float(in.mx);
       ci.zoom_pivot_y = on_mm || ci.zoom_steps == 0 || in.wheel == 0 ? oh / 2.f : float(in.my);
       int edge_dx = 0, edge_dy = 0;
-      if (edge && o.screenshot.empty() && in.focused && in.mouse_inside && !drag_minimap) {
+      if (!pause.open && !submodal && world.outcome == kRunning && edge && o.screenshot.empty() && in.focused && in.mouse_inside && !drag_minimap) {
         int z = std::max(2, ui);
         if (in.mx < z) edge_dx = -1;
         if (in.mx >= ow - z) edge_dx = 1;
@@ -418,7 +458,7 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
       if (!in.buttons[SDL_BUTTON_LEFT]) drag_minimap = false;
       // Selection (left button in the world view).
       {
-        bool in_world = !on_mm && !on_panel && !drag_minimap && !pan;
+        bool in_world = world.outcome == kRunning && !pause.open && !submodal && !on_mm && !on_panel && !drag_minimap && !pan;
         bool consumed = cmdui.update(in, world, cam, alpha, minimap, in_world, show_panel ? panel.rect() : SDL_Rect{ow, 0, 0, oh});
         Input selection_input = in;
         selection_input.shift = cmdui.action_down(in, "Add");
@@ -433,7 +473,11 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
         cam.center_on(wx, wy);
       }
 
-      if (audio) audio->update();
+      if (audio) {
+        audio->set_volumes(o.sfx_volume, o.music_volume, o.speech_volume);
+        audio->acknowledgement = o.acknowledgement; audio->subtitles = o.subtitles;
+        audio->update(dt);
+      }
       // Render. Day clock: mission StartTime + simulation ticks (+ interpolation).
       if (use_light) {
         double t = (o.time >= 0 ? o.time : world.mission.start_time) + (o.time >= 0 ? 0 : double(world.tick) + alpha);
@@ -445,17 +489,11 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
       hud.mouse_x = in.mx; hud.mouse_y = in.my; hud.alpha = alpha;
       hud.sprites = scene.stats.sprites; hud.placeholders = scene.stats.placeholders; hud.geometry_calls = scene.stats.geometry_calls;
       selui.draw_box(win.renderer());
-      pause.draw(win.renderer(), scene.font(), ow, oh, pscale);
       {  // script messages (printString) and end-of-mission banner
         draw_messages(win.renderer(), scene.font(), world.messages,
                       SDL_Rect{8 * pscale, 40 * pscale, view_w - 16 * pscale, oh / 4}, pscale);
-        if (world.outcome != kRunning) {
-          std::string t = world.outcome == kVictory ? "MISSION COMPLETE" : "MISSION FAILED";
-          int sc2 = ui * 2, tw = scene.font().width(t, sc2);
-          scene.font().draw(win.renderer(), (view_w - tw) / 2, oh / 3, t, sc2, world.outcome == kVictory ? SDL_Color{120, 255, 120, 255} : SDL_Color{255, 110, 110, 255});
-          std::string t2 = o.menu_session ? "ENTER: CONTINUE   ESC: MENU" : "PRESS ESC TO LEAVE";
-          scene.font().draw(win.renderer(), (view_w - scene.font().width(t2, ui)) / 2, oh / 3 + 18 * ui, t2, ui, {230, 230, 230, 255});
-        }
+        if (audio && !audio->subtitle().empty()) draw_messages(win.renderer(), scene.font(), {{audio->subtitle(), 1}},
+            SDL_Rect{8 * pscale, oh - 150 * pscale, view_w - 16 * pscale, 60 * pscale}, pscale);
       }
       {
         int gx, gy;
@@ -492,6 +530,13 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
         minimap.draw(win.renderer(), cam, alpha, &scene.fog());
       }
       if (show_hud) draw_hud(win.renderer(), scene.font(), world, cam, hud, ui);
+      pause.draw(win.renderer(), scene.font(), ow, oh, pscale);
+      briefing.draw(win.renderer(), scene.font(), ow, oh, pscale);
+      audio_options.draw(win.renderer(), scene.font(), o, ow, oh, pscale);
+      if (world.outcome != kRunning) OutcomeMenu::draw(win.renderer(), scene.font(), ow, oh, pscale,
+          world.outcome == kVictory, campaign_number(world.mission.file_name) == 15, !next_mission.empty());
+      if (notice_left > 0) draw_messages(win.renderer(), scene.font(), {{notice, 1}},
+          SDL_Rect{8 * pscale, oh - 64 * pscale, ow - 16 * pscale, 60 * pscale}, pscale);
       // Cursor last, at the freshest mouse position.
       int cx, cy;
       GetMouse(&cx, &cy);
@@ -553,7 +598,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
     wo.title = "Aztec Empire";
     if (!win.create(wo)) { SDL_Quit(); return 1; }
     Options opts = o;
-    opts.menu_session = o.menu;
+    opts.menu_session = o.menu || o.menu_session;
     std::string spec = o.mission;
     bool menu = o.menu;
     std::string open_brief;
@@ -569,14 +614,19 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       std::fflush(audio_log.get());
     };
     AudioSystem* audio_ptr = nullptr;
-    if (o.audio) { audio.init(o.game_dir); audio.set_volumes(o.sfx_volume, o.music_volume); audio_ptr = &audio; }
+    if (o.audio) { audio.init(o.game_dir); audio.set_volumes(o.sfx_volume, o.music_volume, o.speech_volume); audio_ptr = &audio; }
     for (;;) {
       if (menu) {
         FrontendResult fr;
         if (!run_frontend(win, data, opts, fr, open_brief)) break;
+        opts.menu_session = true;
         spec = fr.mission;
         open_brief.clear();
         menu = false;
+      }
+      if (audio_ptr) {
+        audio.set_volumes(opts.sfx_volume, opts.music_volume, opts.speech_volume);
+        audio.acknowledgement = opts.acknowledgement; audio.subtitles = opts.subtitles;
       }
       PlayExit pe = play_mission(win, data, opts, audio_ptr, provider, std::move(sim), spec, playtest_failed, rc);
       sim.reset();
@@ -584,10 +634,8 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       if (pe == PlayExit::ToMenu) { opts.original_save.clear(); menu = true; continue; }
       if (pe == PlayExit::Restart) continue;
       if (pe == PlayExit::Next) {
-        std::string lo = spec;
-        for (auto& ch : lo) ch = char(std::tolower(ch));
-        int n = std::atoi(lo.c_str() + 8);
-        if (n >= 1 && n < 15) { open_brief = "mission_" + std::to_string(n + 1); menu = true; continue; }
+        open_brief = next_campaign_mission(data, spec);
+        opts.original_save.clear();
         menu = true;
         continue;
       }

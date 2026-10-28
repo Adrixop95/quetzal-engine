@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "engine/assets/game_data.hpp"
+#include "core/text.hpp"
 
 namespace aztec::engine {
 
@@ -42,10 +43,34 @@ bool AudioSystem::init(const std::string& game_dir, bool open_device) {
   return bank_ok_;
 }
 
-void AudioSystem::set_volumes(float sfx, float music) {
+void AudioSystem::set_volumes(float sfx, float music, float speech) {
+  auto volume = [](float v) { return std::isfinite(v) ? std::clamp(v, 0.f, 1.f) : 0.f; };
   std::lock_guard<std::mutex> lock(mu_);
-  mixer_.sfx_volume = sfx;
-  mixer_.music_volume = music;
+  mixer_.sfx_volume = volume(sfx);
+  mixer_.music_volume = volume(music);
+  mixer_.speech_volume = speech_volume_ = volume(speech);
+}
+
+uint32_t AudioSystem::play_speech(uint32_t id, bool is_acknowledgement) {
+  if (!id || !bank_ok_ || (is_acknowledgement && !acknowledgement)) return 0;
+  subtitle_.clear(); subtitle_left_ = 0;
+  auto pcm = sound_pcm(id);
+  const bool playable = pcm && !pcm->empty() && speech_volume_ > 0;
+  {
+    std::lock_guard<std::mutex> lock(mu_);
+    mixer_.stop(speech_voice_);
+    speech_voice_ = playable ? mixer_.play(pcm, 1, 1, false, true) : 0;
+  }
+  // Captions also work without a device, muted speech or a readable WAV.
+  if (subtitles) {
+    subtitle_ = cp1250_to_utf8(bank_.subtitle(id));
+    if (!subtitle_.empty()) {
+      subtitle_left_ = 6; // Engine presentation policy, independent of simulation pause/speed.
+      emit({AudioEvent::Kind::Subtitle, 0, 0, id});
+    }
+  }
+  if (playable) emit({AudioEvent::Kind::Speech, 0, 0, id});
+  return playable ? id : 0;
 }
 
 std::shared_ptr<const Pcm> AudioSystem::sound_pcm(uint32_t id) {
@@ -122,6 +147,8 @@ void AudioSystem::stop_effects() {
   begin_scene_tick(); end_scene_tick();
   std::lock_guard<std::mutex> lock(mu_);
   mixer_.stop_effects();
+  speech_voice_ = 0;
+  subtitle_.clear(); subtitle_left_ = 0;
 }
 
 void AudioSystem::start_music(int music, uint32_t mask, int salt) {
@@ -168,7 +195,12 @@ void AudioSystem::pick_and_play_music() {
   track_ = 0;
 }
 
-void AudioSystem::update() {
+void AudioSystem::update(double seconds) {
+  if (!subtitles) subtitle_.clear();
+  if (std::isfinite(seconds) && seconds > 0) {
+    subtitle_left_ = std::max(0.0, subtitle_left_ - seconds);
+    if (subtitle_left_ == 0) subtitle_.clear();
+  }
   bool ended;
   { std::lock_guard<std::mutex> lock(mu_); ended = mixer_.music_ended; mixer_.music_ended = false; }
   if (ended) pick_and_play_music();
