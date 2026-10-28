@@ -136,9 +136,11 @@ if(Python3_Interpreter_FOUND)
   set_tests_properties(map_viewer PROPERTIES LABELS "unit" TIMEOUT 20)
   add_test(NAME zpath_tools COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_zpath_tools.py $<TARGET_FILE:path_bench>)
   set_tests_properties(zpath_tools PROPERTIES LABELS "unit" TIMEOUT 20)
-  add_test(NAME playthrough COMMAND ${Python3_EXECUTABLE} -I
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_playthrough.py $<TARGET_FILE:aztec_engine>)
-  set_tests_properties(playthrough PROPERTIES LABELS "unit" TIMEOUT 30)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")   # the playthrough runner isolates the game with unshare (Linux only)
+    add_test(NAME playthrough COMMAND ${Python3_EXECUTABLE} -I
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_playthrough.py $<TARGET_FILE:aztec_engine>)
+    set_tests_properties(playthrough PROPERTIES LABELS "unit" TIMEOUT 30)
+  endif()
 endif()
 
 # ---- release test configuration (the path target above is already registered)
