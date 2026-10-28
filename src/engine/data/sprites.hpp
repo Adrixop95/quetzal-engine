@@ -14,11 +14,13 @@ namespace aztec::data {
 struct SpriteRef {
   int32_t sprite = 0;    // 0 = nothing to draw
   int32_t light = 0;     // light.xbe 0x455 id (muzzle glow), 0 = none
-  int32_t sound = 0;     // sound id played on the first tick of the frame
+  int32_t sound = 0;     // sound-set id played on the first tick of the frame
   int32_t fire = 0;      // non-zero: weapon fires on this frame
   int32_t dx = 0, dy = 0;  // world displacement (px) applied each tick while the frame is shown
   int32_t yoff = 0;      // height subtracted from draw Y (ground units); see render_rules.hpp
   int32_t duration = 0;  // ticks at 12/s; 0 = hold forever
+  bool sound_entry = true;  // runtime lookup metadata, not part of the bank record
+  int32_t loop_sound = 0;
   bool valid() const { return sprite != 0; }
 };
 
@@ -59,7 +61,15 @@ class AnimSet {
       if (!total) return {};
       if (loop) elapsed %= total; else if (elapsed >= total) return {};
     }
-    for (int i = 0; i < n; i++) { SpriteRef f = frame(slot, i); if (!f.duration || elapsed < f.duration) return f; elapsed -= f.duration; }
+    for (int i = 0; i < n; i++) {
+      SpriteRef f = frame(slot, i);
+      if (!f.duration || elapsed < f.duration) {
+        f.sound_entry = elapsed == 0;
+        f.loop_sound = loop_sound(slot);
+        return f;
+      }
+      elapsed -= f.duration;
+    }
     return {};
   }
  private:
@@ -91,8 +101,10 @@ class SpriteDb {
   // Full-angle callers can select body/turret/transport sequences explicitly.
   static SpriteRef sprite_for_sequence(const AnimSet& a, AnimSequence sequence, int64_t tick) {
     if (!a.ok() || !sequence.valid()) return {};
-    return sequence.frame >= 0 ? a.frame(sequence.slot, sequence.frame)
-                               : a.at_tick(sequence.slot, tick, sequence.loop);
+    if (sequence.frame < 0) return a.at_tick(sequence.slot, tick, sequence.loop);
+    auto r = a.frame(sequence.slot, sequence.frame);
+    r.sound_entry = tick == 0; r.loop_sound = a.loop_sound(sequence.slot);
+    return r;
   }
 
  private:

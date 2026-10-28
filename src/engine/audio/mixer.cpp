@@ -38,15 +38,24 @@ Positional positional_gain(float dx, float dist) {
   return p;
 }
 
-void Mixer::play(std::shared_ptr<const Pcm> pcm, float l, float r) {
-  if (!pcm || pcm->empty()) return;
+uint64_t Mixer::play(std::shared_ptr<const Pcm> pcm, float l, float r, bool loop) {
+  if (!pcm || pcm->size() < 2) return 0;
   int slot = -1;
   for (int i = 0; i < kMaxVoices; i++) if (!voices_[i].pcm) { slot = i; break; }
   if (slot < 0) {  // steal the voice closest to its end
     size_t best = 0;
     for (int i = 0; i < kMaxVoices; i++) { size_t left = voices_[i].pcm->size() / 2 - voices_[i].pos; if (slot < 0 || left < best) { slot = i; best = left; } }
   }
-  voices_[slot] = {std::move(pcm), 0, l, r};
+  voices_[slot] = {std::move(pcm), 0, l, r, loop, ++next_voice_};
+  return next_voice_;
+}
+
+bool Mixer::gain(uint64_t id, float l, float r) {
+  for (auto& v : voices_) if (v.pcm && v.id == id) { v.l = l; v.r = r; return true; }
+  return false;
+}
+void Mixer::stop(uint64_t id) {
+  for (auto& v : voices_) if (v.id == id) v = Voice{};
 }
 
 void Mixer::play_music(std::shared_ptr<const void> holder, const int16_t* pcm, size_t frames) {
@@ -68,12 +77,19 @@ void Mixer::mix(int16_t* out, int frames) {
   for (Voice& v : voices_) {
     if (!v.pcm) continue;
     size_t total = v.pcm->size() / 2;
-    int n = int(std::min<size_t>(size_t(frames), total - v.pos));
-    const int16_t* s = v.pcm->data() + v.pos * 2;
-    float gl = v.l * sfx_volume, gr = v.r * sfx_volume;
-    for (int i = 0; i < n; i++) { acc[size_t(i) * 2] += int32_t(s[i * 2] * gl); acc[size_t(i) * 2 + 1] += int32_t(s[i * 2 + 1] * gr); }
-    v.pos += size_t(n);
-    if (v.pos >= total) v = Voice{};
+    int offset = 0;
+    while (offset < frames && v.pcm) {
+      int n = int(std::min<size_t>(size_t(frames - offset), total - v.pos));
+      const int16_t* samples = v.pcm->data() + v.pos * 2;
+      float gl = v.l * sfx_volume, gr = v.r * sfx_volume;
+      for (int i = 0; i < n; ++i) {
+        acc[size_t(offset + i) * 2] += int32_t(samples[i * 2] * gl);
+        acc[size_t(offset + i) * 2 + 1] += int32_t(samples[i * 2 + 1] * gr);
+      }
+      offset += n;
+      v.pos += size_t(n);
+      if (v.pos == total) { if (v.loop) v.pos = 0; else v = Voice{}; }
+    }
   }
   if (music_pcm_) {
     int n = int(std::min<size_t>(size_t(frames), music_frames_ - music_pos_));

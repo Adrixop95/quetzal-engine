@@ -62,12 +62,34 @@ data::SpriteRef AnimSpriteProvider::frame_for(const ObjectState& st) const {
   auto r = data::SpriteDb::sprite_for_sequence(a, sequence, tick);
   // Only Marine corpses hold their final death image. Never resurrect a vehicle
   // through an idle fallback when its death sequence is absent.
-  if (!r.valid() && state == data::AnimState::Die && kind == 0)
-    return a.frame(sequence.slot, a.frame_count(sequence.slot) - 1);
+  if (!r.valid() && state == data::AnimState::Die && kind == 0) {
+    r = a.frame(sequence.slot, a.frame_count(sequence.slot) - 1);
+    r.sound_entry = false;
+    return r;
+  }
   if (!r.valid() && (state == data::AnimState::Fidget || (kind == 9 && body_state == data::AnimState::Move)))
     return data::SpriteDb::sprite_for_sequence(a, data::body_sequence(kind, data::AnimState::Idle,
         angle_of(st), 0, aligned, data::kTypeAnims[st.type_id].anim2 != 0), body_tick);
   return r;
+}
+
+std::vector<data::SpriteRef> AnimSpriteProvider::sound_frames(const ObjectState& st) const {
+  auto body = frame_for(st);
+  // Construction seeks an HP frame rather than entering a timed sequence.
+  if (st.progress < 1000) body.sound_entry = false;
+  std::vector<data::SpriteRef> frames{body};
+  const int kind = kind_of(st);
+  if (kind < 0 || state_of(st) == data::AnimState::Die || st.progress < 1000) return frames;
+  const int second = db_.anim_id(st.type_id, 1);
+  if (second) {
+    const bool firing = state_of(st) == data::AnimState::Attack || (st.attack_tick >= 0 &&
+        (state_of(st) == data::AnimState::Idle || state_of(st) == data::AnimState::Move));
+    auto seq = data::turret_sequence(firing ? data::AnimState::Attack : state_of(st),
+        st.secondary_angle < 0 ? angle_of(st) : st.secondary_angle, st.initial_turret);
+    frames.push_back(data::SpriteDb::sprite_for_sequence(db_.anim(second), seq,
+        firing && st.attack_tick >= 0 ? st.attack_tick : st.anim_tick));
+  }
+  return frames;
 }
 
 int AnimSpriteProvider::height(const ObjectState& st) const {
