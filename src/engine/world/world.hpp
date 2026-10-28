@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include "core/map.hpp"
+#include "engine/ai/planner.hpp"
 #include "engine/sim/rules.hpp"
 #include "core/mapfiles.hpp"
 #include "core/visfile.hpp"
@@ -126,6 +127,7 @@ struct World {
   int center_x = 0, center_y = 0;       // world px
   uint32_t center_serial = 0;
   Selection selection;           // local player's selected objects (UI state, not simulation state)
+  std::vector<ai::TownState> ai_towns; // deterministic planner state and town accounting
   std::vector<int> town_speed;    // runtime speed selection; mission BuildSpeed is ignored
   std::vector<int> repair_credits; // current tick supply by town, separate from cash
   int day_clock = 0;

@@ -1,0 +1,20 @@
+trigger(20)
+  conditions
+    localTime == 3
+  actions
+    side(1).tactic(7).attackTown(42)
+end
+
+trigger(21)
+  conditions
+    localTime == 5
+  actions
+    side(1).tactic(7).moveTo(22,19)
+end
+
+trigger(22)
+  conditions
+    localTime == 7
+  actions
+    side(1).tactic(8).setCycledPath(0)
+end
