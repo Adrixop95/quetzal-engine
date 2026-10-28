@@ -208,15 +208,27 @@ push was run by the assistant.
 | Every trigger is evaluated each tick; actions run when all conditions hold; `trigger(N).disable` turns one off | P | inferred from usage (`attacked != -1` plus self-disable) |
 | Triggers enabled by another trigger start disabled; initialised in `GameSim::init()` (not tied to tick 1) | P | initial state undocumented |
 | `localTime` / `globalTime` = ticks since mission start | P | |
-| Timers: start at 0 and count every tick; `set(V)` sets and starts, `stop`, `kill`; `timer(0)` exists from the start | P | |
+| Timers: start at 0 and count every tick; `set(V)` sets and starts, `stop`, `kill`; `timer(0)` exists from the start | engine synthetic / P reference | Timer 0 is initialized before tick 1; stop/start retains values, kill suppresses comparisons. Fixed-width 64-bit timer values; see [campaign audit](campaign_scripts.md) |
 | `side(S).units` = living non-buildings; `towns` = living town halls (outpost / village / town / fortress types); `enemies` = units and town halls of hostile sides | P | |
 | `tactic(N)` = living objects of the side with `[Team#] ScenarioID = N`; `valid` 0/1; `idle` = all idle; `attacked` = id of the last attacker or -1 | P | |
 | `attackTown(id)`, `moveTo(x,y)` = attack-move of the whole group (tiles -> pixels, clamped to the map) | P | |
 | `joinTactic`, `giftToSide`, `kill`, `lock/unlock`, `setPath/setCycledPath/...` (successive points of `[Paths]`) | P | |
 | `setFriendlyTo/NeutralTo/EnemyTo` changes the relation one-way (8x8 matrix) | P | |
 | `addMoney/takeMoney`, `printString`, `centerView`, `cameraActivate(i,v)` (jump to `Camera#`), `victory/defeat` | P | the mission ends for the script side |
-| `boat(N).activate`, `johnka(N).enable`, `submarine(N).go`, `buildCommand`, `moveCommand`, `cameraDeactivate` | not done | counted as `unsupported` |
-| Defences from `[SideN] Defence#` appear as objects (towers); `defence(N).valid` = alive | P | Reference loader creates each defence with a dedicated tactic and optional scenario ID. Camera records are separate; see `rules_ai.md` |
+| `boat(N).activate`, `johnka(N).enable/disable`, `submarine(N).go`, `buildCommand`, `moveCommand`, `cameraDeactivate` | not done | Shared runner/headless/inventory classification; 19 unsupported campaign sites in missions 2, 7, 9 and 15. Build/move/deactivate and Johnka disable are absent from the audited campaign |
+| Defences from `[SideN] Defence#` appear as objects (towers); `defence(N).valid` = alive | engine identity checks / P reference | Explicit defence provenance excludes colliding team scenario IDs and accidental town membership. Dedicated reference tactic behavior remains unimplemented. Camera records are separate; see `rules_ai.md` |
+
+V12 progress (2026-10-28): the [campaign script audit](campaign_scripts.md)
+records every condition/action kind across 15 private campaign scripts (92
+triggers, 129 conditions, 363 action sites). All parse; 19 action sites remain
+unsupported. `script_unit` covers every condition kind, enablement/source order,
+timer lifecycle, path variants, alliances, gifts, defence identity, outcomes and
+replay continuation with synthetic data. Gifting now stops the movement agent
+and rejects invalid recipients; defence provenance and per-side outcomes are
+hashed. These are engine consistency fixes, not measured reference semantics.
+The isolated reference control failed during namespace network setup before
+launch. V02/V05/V10/V11 adapters and mission objective validation remain open;
+V12 is not complete. Camera activation still ignores its second argument.
 
 ## Computer player (`ai/planner.*`, `sim/ai.cpp` adapter)
 Controlled sides have `OnlyComp=1` and are not neutral. The pure planner reads
@@ -269,7 +281,7 @@ result is claimed. All private inputs and probe outputs remain under ignored wor
 ## Saves
 | Rule | Status | Notes |
 |---|---|---|
-| Engine save: mission + tick + hash + camera + hash of the `.scn` + full command log; loading replays deterministically on a fresh world and verifies the hash | engine | `Saves/engine_slot1.azs`, Ctrl+S / Ctrl+L and the pause menu; a different script file is refused |
+| Engine saves: versioned AZS3, bounded transactional parsing, explicit little-endian encoding, content/script identity, atomic slot replacement and refusal of replay hash mismatch before replacing the active world | V construction / synthetic tests | `engine_save` and `engine_save_processes`: malformed inputs, repaired-checksum fuzzing, write-failure preservation, fresh-process 14,400-tick save plus 300 matching continuation ticks, camera metadata and script victory. Ctrl+S / Ctrl+L remain mission-local. [Format, limits and remaining V16 acceptance](engine_saves.md); AZS2 is refused. V03 full-state audit and native Windows/campaign continuation remain unverified |
 | Original `*.sav` format | not done | waiting for the savegame documentation |
 
 ## Resource and production validation (2026-10-26)
@@ -537,6 +549,123 @@ including all three private-data checks. `lockstep_processes` fails at UDP socke
 creation with `Operation not permitted`, matching the pre-change baseline.
 All pre-commit gates pass using cached hook environments inside this worktree.
 
+## V20 malformed-input and sanitizer subset (2026-10-28)
+
+V (construction property): `AZTEC_SANITIZERS=ON` instruments independent targets
+with fail-fast ASan/UBSan. The dedicated Linux CI job builds without private
+inputs and runs the synthetic `unit` suite. Hosted CI execution is pending.
+`fuzz` now exercises every core file loader's file and memory paths, plus engine
+save/log, mission, animation, light-mask, daylight-header, optional CSV and
+playtest loading. See [tests/ROBUSTNESS.md](../tests/ROBUSTNESS.md) for the
+coverage inventory, commands, limits and evidence boundaries.
+
+The expanded corpus runs 117,068 deterministic mutations plus explicit
+regressions. It exposed signed overflow in descriptor speed conversion under
+UBSan; loading now rejects unrepresentable speeds. Footprint rounding uses
+wider arithmetic, optional text metadata is bounded, sparse path indices cannot
+overflow vector sizing, and daylight loading validates header/section ranges
+and clears prior keys. Engine save/log parsing rejects malformed framing and
+preserves the save output or clears the log output on failure.
+
+Local GCC Release and Clang ASan/UBSan synthetic checks passed. Local leak
+checking is unavailable because LeakSanitizer thread inspection is denied;
+CI keeps leak checking enabled. Game-data and socket-process checks skip in
+this environment. This establishes loader regression evidence only: V17-V19
+campaign, packaging and platform acceptance remain dependencies for the rest
+of V20. No reference/game-data run, full campaign soak, safe active-world save
+replacement (V16), or whole-game parity is claimed.
+## V18 release packaging (2026-10-28)
+
+**Independent implementation / construction evidence:** the release workflow
+requires Linux and Windows builds, synthetic CTest and pre-commit before a single
+publish job can attach packages. Separate fresh jobs extract and relocate the
+actual archives before smoke testing. `tools/package_release.py` stages only the
+engine, tracked public rules metadata and package documentation/license. Linux
+bundling collects transitive shared dependencies, Debian copyright notices,
+common license texts, exact source versions and their source archives/patches;
+the host supplies glibc and drivers. Windows uses static SDL2/MSVC runtime linkage
+and carries SDL2 source and license. Publication also includes the exact public
+engine source archive and checksums. No game files, oracle or lifted code are
+inputs. See [PACKAGES.md](PACKAGES.md) for external installation setup and the
+optional separately installed ffmpeg dependency.
+
+Rules resolve beside the executable before the source-tree `docs/data` default;
+`--rules-dir` overrides them. Headless mode also honors `AZTEC_GAME`, matching the
+interactive engine. These are application setup changes, not simulation rule or
+reference parity evidence; no V/M/P simulation label changes.
+
+**Local synthetic evidence:** Release configure/build and full CTest pass:
+17 passed, three absent private-data checks skipped and the denied-socket process
+check skipped. Pre-commit passes using cached hooks inside the worktree. The
+relocated local package passes `tests/test_package.py` with both SDL dummy drivers
+inside `unshare -rn`, using a private synthetic installation and unrelated
+working directory: victory at tick 10, repeated identical reports, bounded SDL
+rendering and useful failures for missing/corrupt archives, corrupt terrain and
+missing rules. No private installation or reference process was used.
+
+**Pending dependency / release evidence:** local staging on Fedora uses host
+libraries and is explicitly marked non-distributable. Debian dependency/source
+collection, clean-runner Linux package execution, static Windows linkage and
+native Windows smoke execution require the release CI jobs; none was run here.
+V17's code/build matrix exists, but green remote gates and branch protection
+remain unverified. GitHub PR refresh failed at the API connection, so no unmerged
+work is assumed available. V18 stays incomplete until both platform package jobs
+pass. This work does not claim campaign playability, device testing or parity.
+## V13 simulation animation producers (2026-10-28, partial)
+
+**Engine construction checks:** body and turret angles are separate 0..255
+simulation fields, initialized from facing and included in state hashes. Older command-log saves with recorded hashes are
+not hash-compatible with this change. Actual
+fixed-point displacement supplies body direction; attack targets supply turret
+aim, including the killing shot before target removal. Turret aim preserves a
+stationary chassis direction. Aircraft return to idle when displacement stops.
+This is an engine policy, not measured original turn rates or turret tracking.
+The existing aligned-direction selector now receives full angles; Bird steering
+cooldown and Cannon hop restart rules remain unresolved under V05/V07.
+
+Rendering, simulation light selection and frame audio use one read-only object
+snapshot, including both angles, transport phase, construction, height and
+independent clocks. Animation ages now advance in simulations rather than in
+`World::begin_tick`, so pause freezes them. Defence construction produces its
+slot-6 overlay while progress is incomplete and clears it at completion. Existing
+HP seeks, fires, death explosions, debris and known-radius rubble remain in use.
+Altitude and destruction radius inputs remain unresolved; no dynamics or radius
+formula is invented here.
+
+**C/R integration:** Boat opening finishes in Open, closing finishes in Closed,
+and turning toggles orientation once and finishes in Closed. Completion uses
+finite frame durations from the installed animation bank through the existing
+`SightData` resource bundle. Missing, holding or malformed sequences never imply
+completion. The transition resets the phase age to zero. V12 still lacks Boat,
+Johnka and submarine activation/travel adapters, so campaign scripts cannot yet
+initiate these phases. Johnka retains its existing orientation loop.
+
+Synthetic tests cover both Boat orientations, exact duration boundaries, stable
+phases, missing resources, pause/resume, off-axis aim and flight direction,
+killing-shot aim, angle hash sensitivity, command-log replay and construction
+completion. Dummy-SDL exact pixels verify that the renderer consumes the body
+angle without mutating state. These are independent implementation checks, not
+reference observations; exact and tolerant reference metrics remain separate in
+`zspr_compare.py` and no new score is reported.
+
+**Blocked reference evidence:** all three attack/death, overlap and night probes
+used the supplied external runtime and installation through the private-copy
+runner, both dummy SDL drivers and `unshare -rn`. Each returned status 1 at
+interface setup: `Cannot open netlink socket: Operation not permitted`.
+The runner inventory is ignored at `work/v13-contract-probes/inventory.json`.
+No game launch, record/replay control, reference pixels or new M/P evidence was
+obtained. V13 remains open for V05-V07/V12 behavior, aircraft altitude, destruction
+radius, synchronized scenes and visibility/minimap acceptance.
+
+Validation: Release build and all 17 runnable CTest entries passed; three private
+checks and restricted UDP skipped in the asset-free configuration. Private
+`test_formats` and `test_engine` passed with a complete private Maps copy inside
+`unshare -rn` and dummy SDL. An initial copy containing only mission 1 failed
+the checks requiring mission 4 and at least 30 maps; completing the private
+fixture resolved those failures. The independent engine rendered mission 1
+with fog and minimap after 24 requested ticks (`work/v13-engine.png`, ignored).
+This is a smoke check, not campaign visibility acceptance. Pre-commit passed
+using locally cached hooks relocated into ignored build output.
 
 ## V02/V03 replay and determinism progress (2026-10-28)
 

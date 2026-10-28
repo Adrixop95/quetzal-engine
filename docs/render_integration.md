@@ -7,11 +7,11 @@ The historical rebuild checklist is not the integration inventory.
 
 | Contract | Implementation and synthetic controls | Evidence / remaining uncertainty |
 | --- | --- | --- |
-| Kind-specific body selection | `AnimSpriteProvider` uses `body_sequence`, full-angle/cycle-ready inputs, and separate transport selectors. Moving Spider/Headtruck legs and Bird flight can continue during attack. | R/C; attack/move phase synchronization with the reference remains pending. The current simulation supplies only eight facing directions. Independent body and firing clocks now preserve locomotion phase across shots; full-angle aim and steering cooldown producers remain pending. |
+| Kind-specific body selection | `AnimSpriteProvider` uses `body_sequence`, full-angle/cycle-ready inputs, and separate transport selectors. Moving Spider/Headtruck legs and Bird flight can continue during attack. | R/C; attack/move phase synchronization with the reference remains pending. The simulation now supplies full angles from displacement and target aim. Independent body and firing clocks preserve locomotion phase across shots; original turn rates and Bird steering cooldown remain pending. |
 | Timed prefix followed by hold | Resource durations remain authoritative through `AnimSet::at_tick`; no unconditional idle fallback on a missing death frame. Only Marine holds its final corpse image. | R/C; synthetic provider controls exercise ticks before, at and after the hold boundary. |
-| Secondary sprites | Ordered base shadow/body then secondary shadow/body; firing completion returns turret to slot 0. Simulation retains `has_fired` for later idle selection. | R/C/T; exact secondary attack pixels pending. Independent turret aim/cooldown behavior remains incomplete. |
+| Secondary sprites | Ordered base shadow/body then secondary shadow/body; firing completion returns turret to slot 0. Simulation retains `has_fired` for later idle selection. | R/C/T; exact secondary attack pixels pending. Independent target aim is produced by the simulation; original tracking rates/cooldown behavior remain incomplete. |
 | Body and shadow heights | Ground body subtracts frame height; Spider height is zero; aircraft uses explicit `Object::render_height`; shadows stay on the ground. | R/C/P history; aircraft altitude producer remains pending, default height is zero. No guessed altitude is claimed verified. |
-| Construction and damage | Construction seeks by HP with a hidden prefix; built buildings continue looping slot 1 independently of HP. Explicit overlay input requests slot 6. Fires 154/155/156 are separate display items at Y+1. | R/C/T; synthetic threshold controls pass. Construction-overlay producer remains pending. Simulation-owned fires use independent effect clocks and replace provider preview decorations when present. |
+| Construction and damage | Construction seeks by HP with a hidden prefix; built buildings continue looping slot 1 independently of HP. Explicit overlay input requests slot 6. Fires 154/155/156 are separate display items at Y+1. | R/C/T; synthetic threshold controls pass. Defence construction now produces the overlay until completion; other overlay states remain unresolved. Simulation-owned fires use independent effect clocks and replace provider preview decorations when present. |
 | Destruction | Known-radius buildings select 116/115/114, stable engine variant, resource timing, and 250-tick retention. Vehicle/aircraft death uses separate 152; ground vehicles also create underlay 113. | R/C/T; radius producer remains unknown (`-1`), so ordinary engine structure deaths use a provisional small-rubble effect. Known radii retain provider-selected rubble without duplicating that effect. Construction cancellations stay hidden. Engine variant choice does not establish original RNG parity. |
 | Shared ordering | Terrain overlays, ordinary bodies, fires, explosions and debris share height=-1 first, ground Y ascending, X descending ordering. Each item completes its own layers. No air-last pass or global shadow pass. | C; synthetic equal-Y/X, altitude and underlay controls. Overlapping reference pixels pending. |
 | Overlay frames | Header cells/hotspots and `overlay_frame` replace tile-coordinate phase guesses. Wind/counter are explicit scene options. | R/C; region strength and unpaused view-counter producer pending (default still wind). |
@@ -118,3 +118,16 @@ SDL drivers and `unshare -rn`; namespace interface setup failed with
 `Cannot open netlink socket: Operation not permitted`. Its log is ignored at
 `work/animation-state-probe/out.txt`. No reference pixels or timing observations
 were obtained, so synchronized reference animation validation remains pending.
+
+## V13 producer follow-up (2026-10-28)
+
+See the [producer status](engine_rules_status.md#v13-simulation-animation-producers-2026-10-28-partial)
+for implementation tests and dependencies. Full body/turret angles now reach
+rendering, audio and simulation lighting through the same object snapshot.
+Finite Boat phases complete from installed frame durations; V12 must still
+initiate them. Pause freezes every object animation clock. Defence construction
+sets and clears its overlay from progress. Aircraft direction comes from actual
+displacement and idle resumes when motion stops; altitude dynamics remain open.
+No new reference pixel comparison or visibility/minimap acceptance was possible:
+all three isolated reference scene probes failed at namespace interface setup.
+The earlier remaining-producer list above records the preceding snapshot.

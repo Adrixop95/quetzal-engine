@@ -7,6 +7,7 @@
 #include <filesystem>
 
 #include "core/mp.hpp"
+#include "core/loader_limits.hpp"
 #include "core/text.hpp"
 #include "engine/assets/game_data.hpp"
 
@@ -69,7 +70,11 @@ bool parse_mission(const Ini& ini, const std::string& base_name, MissionDef& m) 
   add_vessels(mp.johnkas, ObjectSource::Johnka);
   add_vessels(mp.submarines, ObjectSource::Submarine);
   int maxid = -1;
-  for (const MpPath& p : mp.paths) maxid = std::max(maxid, p.id);
+  for (const MpPath& p : mp.paths) {
+    // Sparse path ids become vector indices; record counts alone do not bound them.
+    if (p.id < 0 || size_t(p.id) >= detail::kEntries) { m = MissionDef{}; return false; }
+    maxid = std::max(maxid, p.id);
+  }
   m.paths.assign(size_t(maxid + 1), {});
   for (const MpPath& p : mp.paths) if (p.id >= 0) m.paths[size_t(p.id)] = p.points;
   return true;

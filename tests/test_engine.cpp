@@ -31,6 +31,7 @@
 #include "engine/world/camera.hpp"
 #include "engine/world/type_info.hpp"
 #include "engine/world/world.hpp"
+#include "engine/world/object_state.hpp"
 
 using namespace aztec;
 using namespace aztec::engine;
@@ -882,6 +883,66 @@ static void test_script_path_hash() {
   CHECK(runner.unsupported() == 0);
 }
 
+static void test_animation_producers() {
+  auto rules = std::make_shared<RulesData>(); rules->init_defaults();
+  World initial; initial.terrain.w = initial.terrain.h = 20; initial.terrain.cells.resize(400);
+  Object truck; truck.id = 1; truck.type = 3; truck.hp = 10000;
+  truck.facing = 0; truck.teleport(to_fixed(200), to_fixed(200));
+  Object target = truck; target.id = 2; target.type = 0; target.side = 1;
+  target.teleport(to_fixed(280), to_fixed(230));
+  initial.objects = {truck, target};
+  World world = initial; GameSim sim(rules); sim.init(world);
+  Command attack; attack.type = Pct::Attack; attack.side = 0; attack.ids = {1}; attack.a = 2;
+  sim.submit(attack); world.begin_tick(); sim.tick(world);
+  auto& unit = world.objects[0];
+  const int aim = (256 - path::angle_of(to_fixed(80), to_fixed(30))) & 255;
+  CHECK(unit.body_angle == 0 && unit.turret_angle == aim && (aim & 31) != 0);
+  CHECK(unit.has_fired && unit.attack_tick == 0);
+  const auto snapshot = object_sprite_state(unit, 4);
+  CHECK(snapshot.angle == 0 && snapshot.secondary_angle == aim && snapshot.side_color == 4);
+  const auto hash = sim.state_hash(world);
+  ++unit.turret_angle; CHECK(sim.state_hash(world) != hash); --unit.turret_angle;
+  ++unit.body_angle; CHECK(sim.state_hash(world) != hash); --unit.body_angle;
+  for (int tick = 0; tick < 20; ++tick) { world.begin_tick(); sim.tick(world); }
+  World replayed = initial;
+  auto replay = GameSim::replay(replayed, rules, sim.log(), sim.tick_count());
+  CHECK(replay->state_hash(replayed) == sim.state_hash(world));
+  // A killing shot still records its aim before target removal.
+  world.objects[1].hp = 1; unit.cooldown = 0;
+  sim.teleport(world, 2, 250, 270);
+  world.begin_tick(); sim.tick(world);
+  CHECK(!world.objects[1].alive);
+  CHECK(unit.turret_angle == ((256 - path::angle_of(to_fixed(50), to_fixed(70))) & 255));
+
+  World flight; flight.terrain = initial.terrain;
+  Object bird; bird.id = 1; bird.type = 33; bird.hp = 100;
+  bird.teleport(to_fixed(200), to_fixed(200));
+  flight.objects = {bird}; GameSim air(rules); air.init(flight);
+  auto& flyer = flight.objects[0]; flyer.order = uint8_t(Order::Move);
+  flyer.dest_x = 291; flyer.dest_y = 237;
+  flight.begin_tick(); air.tick(flight);
+  CHECK(flyer.body_moving && (flyer.body_angle & 31) != 0);
+  const int angle = flyer.body_angle;
+  CHECK(object_sprite_state(flyer, 0).angle == angle);
+  flyer.order = uint8_t(Order::Idle);
+  flight.begin_tick(); air.tick(flight);
+  CHECK(!flyer.body_moving && flyer.body_angle == angle);
+  CHECK(flyer.anim_state == int(data::AnimState::Idle));
+
+  World construction; construction.terrain = initial.terrain;
+  Object tower; tower.id = 1; tower.type = 17; tower.hp = 100;
+  tower.teleport(to_fixed(400), to_fixed(400)); construction.objects = {tower};
+  GameSim build(rules); build.init(construction);
+  auto& structure = construction.objects[0];
+  structure.progress = 0; structure.build_total = 3; structure.anim_state = kAnimConstruct;
+  construction.begin_tick(); build.tick(construction);
+  CHECK(structure.construction_overlay && structure.progress < 1000);
+  construction.begin_tick(); build.tick(construction);
+  construction.begin_tick(); build.tick(construction);
+  CHECK(!structure.construction_overlay && structure.progress == 1000);
+  CHECK(structure.body_tick == 0 && structure.anim_tick == 0);
+}
+
 static void test_script_animation_clocks() {
   const auto directory = std::filesystem::temp_directory_path() / "aztec-script-clocks";
   std::filesystem::create_directories(directory);
@@ -908,6 +969,7 @@ static void test_script_animation_clocks() {
     sim.submit(pause);
     w.begin_tick(); sim.tick(w);
     CHECK(w.objects[0].attack_tick == 4 && w.objects[0].body_tick == -1);
+    CHECK(w.objects[0].anim_tick == 0);
     CHECK(w.outcome == kRunning);
     pause.type = Pct::PauseOff;
     sim.submit(pause);
@@ -1663,6 +1725,7 @@ int main(int argc, char** argv) {
     test_projectiles();
     test_descriptor_combat();
     test_script_animation_clocks();
+    test_animation_producers();
     test_script_path_hash();
     test_town_commands();
     test_sprite_metadata();

@@ -14,12 +14,21 @@
 #include "core/ugi.hpp"
 #include "core/userfiles.hpp"
 #include "core/visfile.hpp"
+#include "engine/assets/daylight.hpp"
+#include "engine/assets/mission.hpp"
+#include "engine/data/sprites.hpp"
+#include "engine/data/light_masks.hpp"
+#include "engine/sim/savegame.hpp"
+#include "engine/sim/rules.hpp"
+#include "engine/assets/anim_provider.hpp"
+#include "engine/app/playtest.hpp"
 #include <algorithm>
 #include <climits>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <functional>
+#include <fstream>
 #include <string>
 #include "temp_dir.hpp"
 
@@ -82,6 +91,7 @@ int main() {
   for (const Bytes& seed : {raw, raw16, rle, rle16, alpha, blend}) mutate(seed, [&](const Bytes& d) {
     Sprite s; if (decode_sprite({d.data(), d.size()}, s)) CHECK(to_argb(s, pal).size() == s.opaque.size());
     AlphaSprite a; if (decode_alpha_sprite({d.data(), d.size()}, a)) CHECK(alpha_to_argb(a, pal).size() == a.opaque.size());
+    file.put(d); Sprite preview; load_preview(file.path, preview);
   });
   Bytes ar = archive(0x450, Bytes(512)); file.put(ar);
   Archive a; CHECK(a.open(file.path)); CHECK(load_palette(a, 1, 0, pal));
@@ -91,6 +101,7 @@ int main() {
       for (uint32_t id : {g.lo, g.hi, UINT32_MAX}) { auto item = a.get(g.id, id); (void)item; }
     }
     load_palette(a, 1, UINT32_MAX, pal);
+    load_palette(a, 1, 0, pal);
     SoundBank bank; bank.open(file.path); bank.sound_set(1); bank.subtitle(1);
     std::vector<MusicTrack> tracks; read_music_table(file.path, tracks);
   });
@@ -120,6 +131,13 @@ int main() {
       StrBase strings; strings.parse(t); parse_briefing(t);
       std::vector<KeyBinding> keys; parse_keys_ini(t, keys); RuntimeSettings settings; parse_runtime_settings(t, settings);
       cp1250_to_utf8(t); utf8_to_cp1250(t); ugi_from_name(t);
+      file.put(d);
+      i.load(file.path); load_mp(file.path, m); script::load_script(file.path, s);
+      strings.load(file.path); std::vector<BriefingSection> brief; load_briefing(file.path, brief);
+      load_keys_ini(file.path, keys);
+      engine::MissionDef mission; engine::parse_mission(i, "synthetic", mission);
+      engine::load_mission(file.path, mission);
+      engine::PlaytestScript playtest; std::string error; playtest.load(file.path, error);
     });
   }
   // Non-terminated views, a lone sign and adversarial text counts are regressions.
@@ -138,6 +156,7 @@ int main() {
   std::vector<KeyBinding> keys; file.put(bytes("add lshift")); CHECK(load_keys_ini(file.path, keys));
   for (size_t size : {kPlayerFileSize, size_t(0x158)}) mutate(Bytes(size), [&](const Bytes& d) {
     PlayerFile p; parse_player_file(d, p); SaveHeader h; parse_save_header(d, h);
+    file.put(d); load_player_file(file.path, p); load_save_header(file.path, h);
   });
   // Complete empty save: ten pool counts, two selection levels, UI build block and daylight.
   Bytes original_save(0x158 + 28 + 40 + 4520 + 8);
@@ -146,7 +165,10 @@ int main() {
     SaveGame g; SaveError error;
     if (parse_savegame(d, g, &error)) CHECK(g.bytes == d && g.sections.size() == 12);
     else CHECK(g.bytes.empty() && g.sections.empty() && !error.message.empty());
+    file.put(d); load_savegame(file.path, g, &error);
   });
+  file.put(original_save); CHECK(load_savegame(file.path, decoded_save));
+  file.put(Bytes(0x158)); CHECK(!load_savegame(file.path, decoded_save));
   PlayerFile player; file.put(serialize_player_file(player)); CHECK(load_player_file(file.path, player));
   SaveHeader save; file.put(Bytes(0x158)); CHECK(load_save_header(file.path, save));
   Bytes wav(48); std::copy_n("RIFF", 4, wav.begin()); std::copy_n("WAVEfmt ", 8, wav.begin() + 8);
@@ -160,6 +182,97 @@ int main() {
     CHECK(!read_music_track(file.path, {1, UINT64_MAX, n}, track));
     if (n) CHECK(!read_music_track(file.path, {1, 0, n}, track));
   }
+  for (uint32_t group : {0x460u, 0x3e8u, 0x6u}) mutate(archive(group, wav), [&](const Bytes& d) {
+    file.put(d); SoundBank bank; bank.open(file.path); bank.sound_set(1); bank.subtitle(1);
+    std::vector<MusicTrack> table;
+    if (read_music_table(file.path, table)) for (const auto& t : table) read_music_track(file.path, t, track);
+  });
+  // Engine containers are independent formats, not original simulation snapshots.
+  engine::SaveData saved; saved.mission = "synthetic"; saved.tick = 2;
+  saved.log.push_back({2, {engine::Pct::Move, 0, 1, 2, 0, {1, 2}}});
+  const Bytes save_bytes = engine::serialize_save(saved);
+  CHECK(!save_bytes.empty());
+  for (size_t p : {size_t(4), size_t(60 + saved.mission.size())}) {
+    Bytes bad = save_bytes; word(bad, p, UINT32_MAX);
+    engine::SaveData result = saved;
+    CHECK(!engine::deserialize_save(bad, result)); CHECK(result.mission == saved.mission && result.tick == saved.tick);
+  }
+  Bytes trailing = save_bytes; trailing.push_back(0);
+  engine::SaveData result; CHECK(!engine::deserialize_save(trailing, result));
+  Bytes partial = engine::serialize_log(saved.log); partial[4] = 2;
+  std::vector<engine::LoggedCommand> commands = saved.log;
+  CHECK(!engine::deserialize_log(partial, commands)); CHECK(engine::serialize_log(commands) == engine::serialize_log(saved.log));
+  for (const char* id : {"-1", "16384", "2147483647"}) {
+    CHECK(ini.parse(std::string("[Paths]\nCount=1\n0=") + id + ",1,2"));
+    engine::MissionDef m; CHECK(!engine::parse_mission(ini, "synthetic", m));
+  }
+  mutate(save_bytes, [&](const Bytes& d) {
+    engine::SaveData result;
+    if (engine::deserialize_save(d, result)) CHECK(engine::serialize_save(result) == d);
+    file.put(d); engine::read_save(file.path, result);
+  });
+  mutate(engine::serialize_log(saved.log), [&](const Bytes& d) {
+    std::vector<engine::LoggedCommand> log;
+    if (engine::deserialize_log(d, log)) CHECK(engine::serialize_log(log) == d);
+  });
+  for (uint32_t tag : {0u, 0x52u, 0x10017u}) {
+    Bytes bad = engine::serialize_log(saved.log); word(bad, 16, tag);
+    CHECK(!engine::deserialize_log(bad, commands)); CHECK(engine::serialize_log(commands) == engine::serialize_log(saved.log));
+  }
+  Bytes anim(0x208 + 3 * 32); std::copy_n("Anim", 4, anim.begin());
+  word(anim, 4, 3); word(anim, 8, 1); word(anim, 0x228, 1); word(anim, 0x244, 2);
+  CHECK(data::AnimSet({anim.data(), anim.size()}).frame_count(0) == 1);
+  mutate(anim, [&](const Bytes& d) {
+    data::AnimSet set({d.data(), d.size()});
+    for (int slot : {-1, 0, 127, 128, INT_MAX}) {
+      set.frame(slot, 0); set.frame(slot, INT_MAX); set.loop_sound(slot);
+      set.at_tick(slot, INT64_MAX, true); set.at_tick(slot, -1, false);
+    }
+  });
+  Bytes mask(4 + 20 * 20); word(mask, 0, 20, 2); word(mask, 2, 20, 2);
+  CHECK(data::LightMask({mask.data(), mask.size()}).ok());
+  mutate(mask, [&](const Bytes& d) {
+    data::LightMask light({d.data(), d.size()});
+    for (int x : {INT_MIN, -1, 0, 19, 20, INT_MAX}) { light.sample(x, x); light.sample_pixels(x, x); }
+  });
+  // Invented PE headers only; no executable instructions or original data.
+  Bytes pe(256); pe[0] = 'M'; pe[1] = 'Z'; word(pe, 0x3c, 64); word(pe, 64, 0x4550);
+  word(pe, 70, 1, 2); word(pe, 84, 32, 2);
+  word(pe, 128, 1024); word(pe, 132, 0x4a8f68); word(pe, 136, 96); word(pe, 140, 160);
+  mutate(pe, [&](const Bytes& d) { file.put(d); engine::Daylight light; light.load_from_exe(file.path); });
+  Bytes daylight = pe; daylight.resize(160 + 0x3d0 + 36);
+  for (size_t offset : {size_t(160), size_t(160 + 0x3d0)}) {
+    word(daylight, offset, 7200); word(daylight, offset + 28, 10);
+    // Three invented RGB doubles, each exactly 1.0 in little-endian encoding.
+    for (size_t channel = 0; channel < 3; ++channel) word(daylight, offset + 8 + channel * 8, 0x3ff00000);
+  }
+  engine::Daylight light; file.put(daylight); CHECK(light.load_from_exe(file.path));
+  file.put({}); CHECK(!light.load_from_exe(file.path)); CHECK(!light.loaded());
+  // Optional CSV metadata is also external input. Keep type/parameter ids valid
+  // while making every descriptor field malformed or extreme.
+  const auto directory = file.directory.path();
+  { std::ofstream types(directory / "types.csv"); types << "header\n0,name,0,3,1,1,0\n10,name,2,0,1,1,0\n"; }
+  for (const char* value : {"0", "-1", "2147483647", "-2147483648", "999999999999999999999999", "oops", "\"1,2\""}) {
+    for (const char* family : {"marine", "building"}) {
+      std::ofstream descriptor(directory / (std::string("desc_") + family + ".csv"));
+      descriptor << "header\n" << (std::string(family) == "marine" ? 3 : 0);
+      for (int field = 0; field < 322; ++field) descriptor << ',' << value;
+      descriptor << '\n';
+    }
+    engine::RulesData rules; const bool loaded = rules.load_dir(directory.string());
+    if (std::string(value) == "2147483647" || std::string(value) == "-2147483648" || std::string(value) == "-1") CHECK(!loaded);
+    engine::AnimSpriteProvider visuals; visuals.load_visual_rules(directory.string());
+  }
+  // Keep Marine speed valid so the extreme building dimensions are reached.
+  { std::ofstream marine(directory / "desc_marine.csv"); marine << "header\n3,0,1,0,0,0,0\n"; }
+  {
+    std::ofstream building(directory / "desc_building.csv"); building << "header\n0";
+    for (int field = 0; field < 322; ++field) building << ",2147483647";
+    building << '\n';
+  }
+  engine::RulesData wide_rules; CHECK(wide_rules.load_dir(directory.string()));
+  CHECK(wide_rules.type(10).foot_w == (int64_t(INT_MAX) + 47) / 48);
+  CHECK(wide_rules.type(10).foot_h == wide_rules.type(10).foot_w);
   // Reject oversized declarations even when their payload is absent.
   Bytes huge = raw; word(huge, 4, UINT32_MAX);
   CHECK(!decode_sprite({huge.data(), huge.size()}, sprite));
@@ -182,6 +295,13 @@ int main() {
   CHECK(!script::parse_script(oversized, sc)); CHECK(parse_briefing(oversized).empty());
   CHECK(cp1250_to_utf8(oversized).empty()); CHECK(utf8_to_cp1250(oversized).empty());
   file.put(bytes(oversized)); CHECK(!ini.load(file.path)); CHECK(!script::load_script(file.path, sc));
+  CHECK(!strings.load(file.path)); CHECK(!load_briefing(file.path, brief)); CHECK(!load_keys_ini(file.path, keys));
+  engine::PlaytestScript playtest; std::string error; CHECK(!playtest.load(file.path, error));
+  for (const char* name : {"types.csv", "desc_marine.csv", "desc_building.csv"}) {
+    std::ofstream output(directory / name); output << oversized;
+  }
+  engine::RulesData rules; CHECK(!rules.load_dir(directory.string()));
+  engine::AnimSpriteProvider visuals; CHECK(!visuals.load_visual_rules(directory.string()));
   file.put({}); std::filesystem::resize_file(file.path, 256 * 1024 * 1024 + 1);
   CHECK(!a.open(file.path)); Bytes loaded; CHECK(!read_file(file.path, loaded));
   CHECK(music_allowed_mask(INT_MIN, 0, UINT32_MAX) == 0);

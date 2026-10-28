@@ -40,10 +40,11 @@ struct Object {
   Fixed prev_x = 0, prev_y = 0;  // position at the previous tick (world px * 256)
   Fixed cur_x = 0, cur_y = 0;    // position at the current tick
   uint8_t facing = 0;
+  int body_angle = -1, turret_angle = -1; // 0..255 counter-clockwise; -1 uses facing
   uint16_t anim_state = 0;
-  uint32_t anim_tick = 0;      // ticks since anim_state started; advanced by World::begin_tick()
+  uint32_t anim_tick = 0;      // unpaused simulation ticks since anim_state started
   uint32_t anim_variant = 0;
-  // Render inputs whose producers are not yet modeled by the simulation.
+  // Unresolved altitude/radius inputs are retained without guessed dynamics.
   int render_height = 0, destruction_radius = -1;
   int transport_phase = 0, orientation = 0;
   bool construction_overlay = false;
@@ -60,6 +61,7 @@ struct Object {
   int32_t dest_x = 0, dest_y = 0;  // order destination, world px
   int32_t cooldown = 0;        // ticks until the next shot
   int32_t corpse_ticks = 0;    // ticks since death
+  bool defence = false;        // explicitly placed [SideN] Defence#, separate from team scenario IDs
   bool town_hall = false;      // explicit hall identity, independent of its upgrade type
   int32_t tactic = -1;         // team (tactic) number for Team objects, changed by joinTactic
   int32_t scenario = -1;       // ScenarioID of defences / vessels (script references)
@@ -153,7 +155,7 @@ struct World {
   Object* find_mut(uint32_t id) { return id >= 1 && id <= objects.size() ? &objects[id - 1] : nullptr; }
   // Called by the driver right before each simulation tick: prev := cur for everything.
   void begin_tick() {
-    for (auto& o : objects) { o.prev_x = o.cur_x; o.prev_y = o.cur_y; o.anim_tick++; }
+    for (auto& o : objects) { o.prev_x = o.cur_x; o.prev_y = o.cur_y; }
   }
 };
 
