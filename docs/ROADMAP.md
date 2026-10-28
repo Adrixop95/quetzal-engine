@@ -242,8 +242,8 @@ V10 implementation update (2026-10-28):
 | ID | Tested foundation | Concrete remaining work and size | Dependencies |
 | --- | --- | --- | --- |
 | V13 | Kind-specific render/animation selection, independent aim/body angles, finite Boat completion, pause clocks and Defence construction overlay; `engine_unit`, `render_contracts`, `animation_headless`, `zspr_tools` (#21/#31/#52). | Supply transport initiation, aircraft altitude, turn/steering/hop and destruction inputs from established simulation behavior (L); validate synchronized attack/death/overlap/night scenes and readable fog/minimap (M). | Tasks 04/12/26 partial; V05-V07/V12 and V06 consumers. Keep exact and tolerant pixel metrics separate. [Producer status](engine_rules_status.md#v13-simulation-animation-producers-2026-10-28-partial). |
-| V14 | Anchored panels, scaling/wrapping, minimap/portrait geometry, Menu hit regions, paging/hotkeys and eight synthetic screenshot cases; `ui_screenshots` / `engine_unit` (#48). | Finish available repair/upgrade/mode/group controls, icons/tooltips/messages and sizes against reference (M); exercise briefings/objectives/outcomes/restart/profile/next-mission/final-ending flow for every mission (L). | Task 14 partial; queued [34](../tasks/queue/34-campaign-ui-audio.md); V09/V10/V12/V13. Synthetic layout checks are not live campaign or reference acceptance. |
-| V15 | Tick-driven body/turret/effect frame cues, positional loops/visibility cleanup, music order and numeric event logs; `audio_events` (#39). | Map/dispatch selection/order speech, subtitles, warnings and building/UI announcements; add volume/acknowledgement policies (M); compare mission playback/attenuation and prove audio settings preserve simulation hashes (M). | Task 20 partial; queued 34; V03/V12/V14. [Audio inventory](audio.md) supersedes older missing-loop/music-order status rows. |
+| V14 | Anchored panels, scaling/wrapping, minimap/portrait geometry, Menu hit regions, paging/hotkeys and eight synthetic screenshot cases; `ui_screenshots` / `engine_unit` (#48). Shared briefing/objective review, outcome/retry controls, bounded progression, completion profiles and modal-input checks; `campaign_ui`. | Finish available repair/upgrade/mode/group controls, icons/tooltips/messages and sizes against reference (M); exercise briefings/objectives/outcomes/restart/profile/next-mission/final-ending flow for every mission (L). | Task 14 partial; queued [34](../tasks/queue/34-campaign-ui-audio.md); V09/V10/V12/V13. Synthetic layout checks are not live campaign or reference acceptance. |
+| V15 | Tick-driven body/turret/effect frame cues, positional loops/visibility cleanup, music order and numeric event logs; `audio_events` (#39). Live effects/music/speech controls, speech WAV/caption API, acknowledgement settings and audio-setting hash/replay checks. | Map/dispatch campaign selection/order speech, warnings and building/UI announcements; establish original voice/acknowledgement policies (M); compare per-mission playback/attenuation and obtain campaign/platform hash evidence (M). | Task 20 partial; queued 34; V03/V12/V14. [Audio inventory](audio.md) supersedes older missing-loop/music-order status rows. |
 | V16 | AZS3 bounds/version/content checks, atomic replacement, replay-mismatch refusal and fresh-process 14,400-tick saves plus 300 ticks; `engine_save` / `engine_save_processes` (#53). | Extend compatibility/hash/continuation checks as producers land (M); verify fresh-session campaign saves on Linux/Windows with camera, frontend and progression through mission finish (L). | Task 27 partial; V03 and V04-V15 state. UI remains one mission-local slot. [Save boundaries](engine_saves.md). |
 
 - [x] Implement animation producer corrections and synthetic angle/phase/pause/
@@ -251,9 +251,41 @@ V10 implementation update (2026-10-28):
 - [x] Implement panel geometry/readability controls and synthetic screenshot
   regressions (#48); no original screenshot fixtures or new reference score.
 - [x] Implement scene audio events, loops and mission playlist tests (#39);
-  selection/order speech and subtitles are still missing.
+  selection/order speech routing remains missing; the speech/caption API and
+  live audio controls now have synthetic coverage.
 - [x] Implement save hardening and synthetic fresh-process continuation (#53);
   every-mission save/resume and native campaign continuation remain unverified.
+
+V14/V15 implementation update (2026-10-28; full rows remain open):
+
+- [x] Share briefing text and section headings between front-end and paused
+  objective review; wrap/scroll to the final line using the visible area.
+- [x] Add outcome/retry controls, bounded numeric/path campaign progression,
+  final mission completion feedback and a separate engine completion profile.
+  Synthetic checks cover corrupt/failed profile writes and all fifteen bits;
+  this is not evidence of completing fifteen campaign missions.
+- [x] Add live effects/music/speech controls, acknowledgement/caption settings,
+  explicit speech WAV playback and missing-WAV/muted/no-device subtitle fallback.
+  No campaign speech event/type/race ID mapping is assumed.
+- [x] Verify synthetic overlay bounds/clicks/clipping at four window sizes, real
+  mission-loop modal input/time isolation, audio event logs and 1,200-tick full
+  hash equality under varying audio settings plus command-log replay.
+- [ ] Finish V14 campaign controls, repair/upgrade/group/hotkey feedback,
+  reference layout/visibility, interactive objectives, defeat/retry and every
+  next-mission/profile route. V09/V10/V12/V13 are still incomplete.
+- [ ] Finish V15 selection/order/announcement speech routing, original voice
+  policies and per-mission event acceptance; obtain V03/V12/V14 campaign and
+  platform evidence. State loops/frame sounds/music already have synthetic
+  coverage, but that does not establish required campaign event coverage.
+
+The isolated reference attempt failed before launch at namespace interface setup;
+no reference record/replay or new audio/UI measurement was obtained. Private
+format/engine checks, script inventory and an engine capture/music-log smoke
+check succeeded in a private installation copy with dummy SDL under
+`unshare -rn`. The inventory still reports 19 unsupported transport action sites.
+GitHub PR refresh failed at API connection, so no unmerged work is assumed
+available. See [construction checks and limitations](engine_rules_status.md#v14v15-campaign-presentation-and-audio-2026-10-28-partial)
+and [event mapping](audio.md).
 
 ### Prove and ship v1
 

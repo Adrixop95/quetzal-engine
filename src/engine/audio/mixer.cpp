@@ -38,7 +38,7 @@ Positional positional_gain(float dx, float dist) {
   return p;
 }
 
-uint64_t Mixer::play(std::shared_ptr<const Pcm> pcm, float l, float r, bool loop) {
+uint64_t Mixer::play(std::shared_ptr<const Pcm> pcm, float l, float r, bool loop, bool speech) {
   if (!pcm || pcm->size() < 2) return 0;
   int slot = -1;
   for (int i = 0; i < kMaxVoices; i++) if (!voices_[i].pcm) { slot = i; break; }
@@ -46,7 +46,7 @@ uint64_t Mixer::play(std::shared_ptr<const Pcm> pcm, float l, float r, bool loop
     size_t best = 0;
     for (int i = 0; i < kMaxVoices; i++) { size_t left = voices_[i].pcm->size() / 2 - voices_[i].pos; if (slot < 0 || left < best) { slot = i; best = left; } }
   }
-  voices_[slot] = {std::move(pcm), 0, l, r, loop, ++next_voice_};
+  voices_[slot] = {std::move(pcm), 0, l, r, loop, ++next_voice_, speech};
   return next_voice_;
 }
 
@@ -81,7 +81,8 @@ void Mixer::mix(int16_t* out, int frames) {
     while (offset < frames && v.pcm) {
       int n = int(std::min<size_t>(size_t(frames - offset), total - v.pos));
       const int16_t* samples = v.pcm->data() + v.pos * 2;
-      float gl = v.l * sfx_volume, gr = v.r * sfx_volume;
+      const float volume = v.speech ? speech_volume : sfx_volume;
+      float gl = v.l * volume, gr = v.r * volume;
       for (int i = 0; i < n; ++i) {
         acc[size_t(offset + i) * 2] += int32_t(samples[i * 2] * gl);
         acc[size_t(offset + i) * 2 + 1] += int32_t(samples[i * 2 + 1] * gr);
