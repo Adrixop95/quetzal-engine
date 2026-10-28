@@ -1,6 +1,7 @@
 #include "engine/app/engine.hpp"
 
 #include <algorithm>
+#include <stdexcept>
 #include <cmath>
 #include <cctype>
 #include <cstdio>
@@ -188,6 +189,7 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
     };
     if (o.pre_ticks == 0) emit_audio();
     PauseMenu pause;
+    bool save_requested = false;
     bool leave = false;
     while (!in.quit && !leave) {
       uint64_t now = SDL_GetPerformanceCounter();
@@ -215,12 +217,12 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
       win.output_size(ow, oh);
       int ui = std::max(2, int(std::lround(oh / 360.0)));
       int cur_scale = std::max(1, int(std::lround(oh / 600.0)));
-      int pscale = std::max(1, int(std::lround(oh / 600.0)));
+      int pscale = std::max(1, std::min(ow / 800, oh / 493));
       int view_w = ow;
       if (show_panel) {
         panel.layout(ow, oh, pscale);
         view_w = ow - panel.width();
-        minimap.layout_in(panel.minimap_rect());
+        minimap.layout_in(panel.minimap_rect(), pscale);
       } else {
         minimap.layout(ow, oh, ui);
       }
@@ -241,7 +243,9 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
         for (auto& ch : lo) ch = char(std::tolower(ch));
         exit_reason = (world.outcome == kVictory && o.menu_session && lo.rfind("mission_", 0) == 0) ? PlayExit::Next : PlayExit::ToMenu;
       }
-      if (o.menu_session && show_panel && in.pressed[SDL_BUTTON_LEFT] && in.mx >= ow - panel.width() && in.my < 24 * pscale && in.mx < ow - panel.width() + 100 * pscale) pause.open = true;
+      const SDL_Point menu_point{in.mx, in.my};
+      const SDL_Rect menu_rect = panel.menu_rect();
+      if (o.menu_session && show_panel && in.pressed[SDL_BUTTON_LEFT] && SDL_PointInRect(&menu_point, &menu_rect)) pause.open = true;
       {
         PauseMenu::Action pa = pause.update(in, ow, oh, pscale);
         if (pa == PauseMenu::Action::Resume) pause.open = false;
@@ -250,6 +254,14 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
         if (game && do_save && world.original_save)
           std::fprintf(stderr, "Saving imported worlds as command replay is unsupported\n");
         if (game && do_save && !world.original_save) {
+          save_requested = true;
+          if (pa == PauseMenu::Action::Save) pause.open = false;
+          if (game->has_pending_commands())
+            std::fprintf(stderr, "Save queued until pending commands are processed (resume simulation if paused)\n");
+        }
+        // Command-log saves represent completed ticks; do not omit queued future inputs.
+        if (game && save_requested && !game->has_pending_commands()) {
+          save_requested = false;
           SaveData sd;
           sd.mission = spec; sd.tick = game->tick_count(); sd.hash = game->state_hash(world);
           sd.script_hash = file_hash(data.map_file(world.mission.file_name, "scn"));
@@ -258,8 +270,8 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
           std::error_code sec;
           fs::create_directories(dir, sec);
           std::printf(write_save(dir + "/engine_slot1.azs", sd) ? "saved game (tick %llu)\n" : "save failed (tick %llu)\n", (unsigned long long)sd.tick);
-          if (pa == PauseMenu::Action::Save) pause.open = false;
         }
+        if (do_load) save_requested = false;
         if (game && do_load && world.original_save)
           std::fprintf(stderr, "Loading an engine replay into an imported world is unsupported\n");
         if (game && do_load && !world.original_save) {
@@ -270,18 +282,22 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
           std::string scn;
           if (read_save(path, sd) && sd.mission == spec && load_world(data, spec, fresh, lerr) &&
               (scn = data.map_file(fresh.mission.file_name, "scn"), file_hash(scn) == sd.script_hash)) {
-            auto ns = GameSim::replay(fresh, rules, sd.log, sd.tick, scn);
-            if (ns->state_hash(fresh) != sd.hash) std::fprintf(stderr, "warning: replayed state differs from the saved hash\n");
-            if (audio) audio->stop_effects();
-            world = std::move(fresh);
-            game = ns.get();
-            sim = std::move(ns);
-            cmdui.set_sim(game);
-            cam.x = sd.cam_x; cam.y = sd.cam_y; cam.zoom = sd.cam_zoom;
-            world.selection.clear();
-            world.fog_version++;
-            pause.open = false;
-            std::printf("loaded game (tick %llu)\n", (unsigned long long)sd.tick);
+            try {
+              auto ns = GameSim::replay(fresh, rules, sd.log, sd.tick, scn);
+              if (ns->state_hash(fresh) != sd.hash) throw std::runtime_error("saved replay hash mismatch");
+              if (audio) audio->stop_effects();
+              world = std::move(fresh);
+              game = ns.get();
+              sim = std::move(ns);
+              cmdui.set_sim(game);
+              cam.x = sd.cam_x; cam.y = sd.cam_y; cam.zoom = sd.cam_zoom;
+              world.selection.clear();
+              world.fog_version++;
+              pause.open = false;
+              std::printf("loaded game (tick %llu)\n", (unsigned long long)sd.tick);
+            } catch (const std::exception& error) {
+              std::fprintf(stderr, "load failed: %s\n", error.what());
+            }
           } else {
             std::fprintf(stderr, "load failed (no save for this mission?)\n");
           }
@@ -338,7 +354,7 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
       if (in.hit(SDL_SCANCODE_KP_PLUS)) ci.zoom_steps += 1;
       if (in.hit(SDL_SCANCODE_MINUS) || in.hit(SDL_SCANCODE_KP_MINUS)) ci.zoom_steps -= 1;
       bool on_mm = minimap.contains(in.mx, in.my);
-      bool on_panel = show_panel && in.mx >= ow - panel.width();
+      bool on_panel = show_panel && panel.contains(in.mx, in.my);
       if (!on_mm && !on_panel && in.wheel != 0) { ci.zoom_steps += in.wheel > 0 ? 1 : -1; }
       ci.zoom_pivot_x = on_mm || ci.zoom_steps == 0 || in.wheel == 0 ? view_w / 2.f : float(in.mx);
       ci.zoom_pivot_y = on_mm || ci.zoom_steps == 0 || in.wheel == 0 ? oh / 2.f : float(in.my);
@@ -392,18 +408,14 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
       selui.draw_box(win.renderer());
       pause.draw(win.renderer(), scene.font(), ow, oh, pscale);
       {  // script messages (printString) and end-of-mission banner
-        int ty = 40 * ui;
-        for (const Message& m : world.messages) {
-          int tw = scene.font().width(m.text, ui);
-          scene.font().draw(win.renderer(), (ow - panel.width() - tw) / 2, ty, m.text, ui, {255, 255, 200, 255});
-          ty += 8 * ui;
-        }
+        draw_messages(win.renderer(), scene.font(), world.messages,
+                      SDL_Rect{8 * pscale, 40 * pscale, view_w - 16 * pscale, oh / 4}, pscale);
         if (world.outcome != kRunning) {
           std::string t = world.outcome == kVictory ? "MISSION COMPLETE" : "MISSION FAILED";
           int sc2 = ui * 2, tw = scene.font().width(t, sc2);
-          scene.font().draw(win.renderer(), (ow - panel.width() - tw) / 2, oh / 3, t, sc2, world.outcome == kVictory ? SDL_Color{120, 255, 120, 255} : SDL_Color{255, 110, 110, 255});
+          scene.font().draw(win.renderer(), (view_w - tw) / 2, oh / 3, t, sc2, world.outcome == kVictory ? SDL_Color{120, 255, 120, 255} : SDL_Color{255, 110, 110, 255});
           std::string t2 = o.menu_session ? "ENTER: CONTINUE   ESC: MENU" : "PRESS ESC TO LEAVE";
-          scene.font().draw(win.renderer(), (ow - panel.width() - scene.font().width(t2, ui)) / 2, oh / 3 + 18 * ui, t2, ui, {230, 230, 230, 255});
+          scene.font().draw(win.renderer(), (view_w - scene.font().width(t2, ui)) / 2, oh / 3 + 18 * ui, t2, ui, {230, 230, 230, 255});
         }
       }
       {
@@ -419,7 +431,7 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
           int mx2, my2;
           GetMouse(&mx2, &my2);
           mx2 = int(mx2 * sx); my2 = int(my2 * sy);
-          if (mx2 < ow - panel.width()) {
+          if (!panel.contains(mx2, my2)) {
             const Object* h = pick_object(world, cam.to_world_x(float(mx2)), cam.to_world_y(float(my2)), alpha, 24.f / cam.zoom + 8);
             if (h && h->type >= 0) {
               tip = type_display_name(strings, h->type);
@@ -428,7 +440,7 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
             }
           }
         }
-        const SideState* mss = world.local_side < int(world.side_state.size()) ? &world.side_state[world.local_side] : nullptr;
+        const SideState* mss = world.local_side >= 0 && world.local_side < int(world.side_state.size()) ? &world.side_state[world.local_side] : nullptr;
         if (mss) gold = mss->money;
         panel.draw(win.renderer(), scene.store(), scene.font(), gold);
         {
@@ -452,7 +464,7 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
       if (pan) ck = CursorKind::Pan;
       else if (edge_dx || edge_dy) ck = Cursor::scroll_kind(edge_dx, edge_dy);
       else if (cmdui.attack_move()) ck = CursorKind::Attack;
-      else if (!on_mm && !(show_panel && cx >= ow - panel.width())) {
+      else if (!on_mm && !(show_panel && panel.contains(cx, cy))) {
         const Object* h = pick_object(world, cam.to_world_x(float(cx)), cam.to_world_y(float(cy)), alpha, 24.f / cam.zoom + 8);
         if (h && h->side != world.local_side) ck = CursorKind::Attack;
       }

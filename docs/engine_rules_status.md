@@ -8,7 +8,7 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Rule | Status | Source / notes |
 |---|---|---|
 | 12 Hz step, 24.8 fixed-point positions, state hash after every tick, replay from the command log | V (construction) | no comparison with the original yet; the engine hash differs from the recompilation's hash |
-| State hash covers town race/level and objects (incl. secondary HP, regeneration selector, destinations, orders, construction timers, town membership/hall identity and harvest accumulators/cursors), sides (money, queues including paid costs/town ownership, groups, selected tactic, build pause), day clock, town speeds, repair credits, repairer modes/lists, spawn counter, transient projectiles/effects (flight endpoints, payloads and animation clocks), relations, per-town AI states/known towns/harvest and spending totals, script state and the full movement system (agents, orders, slots, steering caches) | engine | collection sizes are mixed in |
+| State hash contract 2 covers future-affecting mutable state under identical immutable rules/sight inputs | engine construction | Includes queued commands, object/effect previous positions and source, world/script-side identity, town/side/path/resource inputs, per-side outcomes, script program and collection lengths, navigation blocker counts/configuration/cached field costs. Local presentation and diagnostics are excluded; see [audit and limits](determinism.md). This is not a content-compatibility digest or reference hash |
 | Command types (PCT_FRAME_*) and their numbers | V | `docs/object_types.md`. Implemented: PAUSEON/OFF, CREATEGROUP, ADDTOGROUP, MOVE, ATTACK, BUILD, BUILDMODE, DESTROYHERE (list toggle), GARRISON, REPAIRMODE, QUEUEKILL, PAUSEBUILD. Logged only: SELECTGROUP, ATTACKMODE, SELECTBYNO, FOLLOWTEAM |
 | Stop (0x50) and AttackMove (0x51) | P | engine extensions; the original has no such packets |
 | Command coordinates / tiles from packets | engine | clamped into the map before any fixed-point conversion; invalid tiles are ignored |
@@ -536,3 +536,95 @@ read-only game installation and SDL dummy drivers passes 15 of 16 checks,
 including all three private-data checks. `lockstep_processes` fails at UDP socket
 creation with `Operation not permitted`, matching the pre-change baseline.
 All pre-commit gates pass using cached hook environments inside this worktree.
+
+
+## V02/V03 replay and determinism progress (2026-10-28)
+
+**Engine construction / synthetic evidence:** the oracle text parser fails closed
+on malformed or unordered packets and missing input/output files. Injected
+non-NOTHING packets are logged for exact readback checks. The mission runner
+retains all raw pool differences and, when adapters exist, compares normalized
+observations from both reference repeats before comparing engines. The optional
+engine replay observer exposes the before-command boundary without inventing an
+oracle object mapping. `oracle_packets`, `parity_controls` and
+`determinism_state` cover these contracts; see [parity method](parity.md).
+
+The state audit fixed hash omissions, made script timers explicitly 64-bit,
+reset command history on reinitialization and removed host `long double` from
+production/warehouse arithmetic using the same exact binary32 coefficients.
+Hash contract 2 invalidates older saved hashes; the UI refuses a replay mismatch
+before replacing the active world. This is not full V16 save hardening.
+The 14,400-tick synthetic process scenario includes training/RNG spawns,
+movement/combat, command-log replay and fresh-process continuation from tick
+7,201, with viewing/presentation variations. The workflow now compares complete
+synthetic transcripts across GCC, MSVC, MinGW and AppleClang; remote results and
+native Windows validation are still required. See [determinism audit](determinism.md).
+
+**Reference evidence unavailable:** nine isolated corpus attempts failed during
+loopback setup before the reference executable launched. Private outputs are in
+`work/parity/v02-isolated/`. No transient-pool cause, original-versus-lifted
+arithmetic diagnosis, audited reference object/ownership/max-HP observer, packet
+translator or first semantic mismatch was obtained. Tasks 01/11 remain partial;
+the changes above do not depend on those missing adapters. V02 and V03 remain
+open, including reference ordering/RNG and full campaign/platform evidence.
+
+Local validation: GCC 16.2.1 Release build and all 21 runnable CTest entries
+passed; three private-data entries and the UDP process check skipped. Clang
+22.1.8 passed the five focused path/oracle/determinism/tooling checks, with an
+identical 14,400-tick transcript and movement golden digest. All pre-commit hooks
+passed using a copied local cache, including explicit checks of new files.
+The reference wrapper passed a C11 syntax check; no lifted runtime was linked or
+launched here. Open-PR refresh could not reach the GitHub API, so no unmerged
+dependency is assumed present. These results do not establish native Windows,
+remote CI, live rendering/audio or campaign determinism.
+## In-game UI layout (2026-10-28, partial task 14)
+
+**Existing reference evidence (V):** [formats.md](formats.md#cursors-and-interface-selection-of-sprites-from-commonxbe)
+records the 800x600 mission 4 layout: Menu at x=598, a 120x90 minimap at
+(638,70), portraits near x=722, and a 254x208 command card at (546,392).
+Local resource inspection confirms common:282 is a 60x22 two-frame Menu button,
+292 is the 204x493 side background, and 297 is a 254x208 command background.
+These are resource dimensions and historical coordinates, not a new live capture.
+
+**Independent implementation:** shared geometry anchors the minimap/selection
+strip to the right and the command card to the bottom. Menu uses its original
+resource and its actual 60x22 hit region. Maps smaller than the minimap opening
+retain one pixel per tile at UI scale 1; larger maps fit the opening. The first
+selected object's portrait occupies the right column and uses its owner's team
+palette. Command/production controls follow the five-column card cells, with
+paging and all eight queue hit regions retained. This particular allocation of
+commands, production and queue controls is engine presentation (P), pending live
+comparison. The scale is constrained by both window dimensions so a 900-pixel
+window height alone cannot double the panel beyond the available width.
+
+Resource text, selection labels, tooltips and messages now use physical integer
+UI scaling for both installed and fallback fonts. Long text wraps at UTF-8
+character boundaries; tooltips wrap long tokens and cap their height. Messages
+wrap within the visible world area, use font-derived line spacing and keep the
+latest lines when full. Hiding the panel restores the full width for messages
+and mission banners. DirectInput translation includes digit keys and Escape;
+existing configured bindings still suppress conflicting M/X/H engine shortcuts.
+Unsupported gameplay modes remain unavailable.
+
+**Synthetic verification:** `ui_screenshots` renders invented RGB565 panel,
+button and glyph resources through SDL's software renderer with dummy drivers.
+It saves eight synthetic PNGs under the build directory, covering 800x493,
+800x600, 1024x768 and 1600x1200 with installed-font-shaped fixtures and the
+fallback font. It compares independently specified panel silhouettes, Menu and
+command-icon regions, and message glyph rasters with per-channel tolerance 3
+and at most 0.2% differing pixels in each region. A deliberately displaced card
+edge must fail comparison. Geometry assertions cover minimap/portrait anchors;
+long-tooltip bounds and the existing command/replay tests cover additional
+regressions. These checks verify independent rendering contracts, not original
+pixel parity. No game screenshots or pixels are test fixtures.
+
+**Live limitation:** the isolated reference attempt failed at `ip link set lo up`
+with `Cannot open netlink socket: Operation not permitted`, before launch. The
+script and failure log remain in ignored `work/ui-probe/`; isolation was not
+bypassed. Independent-engine static and selected-unit captures succeeded using
+dummy SDL inside `unshare -rn` with a private installation copy. Their visual
+review establishes readability only. Full command icon semantics, font choice,
+selection/group presentation, resource decoration, tooltip timing/appearance,
+message-log history and synchronized reference comparison remain open (P).
+Repair and hall-upgrade UI acceptance also depend on the incomplete town-command
+work described above; this task does not invent those gameplay semantics.

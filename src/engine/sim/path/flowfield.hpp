@@ -25,6 +25,7 @@ class FlowField {
   // Reachable tile closest (Euclid) to tile (x,y) among tiles with finite cost; used for unreachable goals.
   bool closest_reachable(int x, int y, int& ox, int& oy) const;
   u32 version() const { return version_; }
+  u64 state_hash() const { return state_hash_; }
 
  private:
   bool in_bounds(int x, int y) const { return x >= 0 && y >= 0 && x < w_ && y < h_; }
@@ -33,6 +34,7 @@ class FlowField {
   u32 version_ = 0;
   const NavGrid* grid_ = nullptr;
   std::vector<u32> cost_;
+  u64 state_hash_ = 0;
   friend class MoveSystem;
 };
 

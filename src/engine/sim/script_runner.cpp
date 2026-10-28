@@ -62,7 +62,7 @@ std::vector<uint32_t> ScriptRunner::tactic_members(const World& w, int side, int
   return v;
 }
 
-static bool cmp(Cmp c, long a, long b) {
+static bool cmp(Cmp c, int64_t a, int64_t b) {
   switch (c) {
     case Cmp::Eq: return a == b;
     case Cmp::Ne: return a != b;
@@ -83,7 +83,7 @@ bool ScriptRunner::eval(const World& w, const Condition& c) const {
   switch (c.kind) {
     case CondKind::Always: return true;
     case CondKind::LocalTime:
-    case CondKind::GlobalTime: return cmp(c.cmp, long(local_time_), c.value);
+    case CondKind::GlobalTime: return cmp(c.cmp, int64_t(local_time_), c.value);
     case CondKind::Timer: {
       auto it = timers_.find(c.id);
       if (it == timers_.end()) return cmp(c.cmp, 0, c.value);
@@ -105,7 +105,7 @@ bool ScriptRunner::eval(const World& w, const Condition& c) const {
       std::vector<int> seen;
       for (const Object& o : w.objects)
         if (!o.removed && o.alive && o.side == side && o.tactic >= 0 && std::find(seen.begin(), seen.end(), o.tactic) == seen.end()) seen.push_back(o.tactic);
-      return cmp(c.cmp, long(seen.size()), c.value);
+      return cmp(c.cmp, int64_t(seen.size()), c.value);
     }
     case CondKind::SideMoney:
       return cmp(c.cmp, side >= 0 && side < int(w.side_state.size()) ? w.side_state[size_t(side)].money : 0, c.value);
@@ -130,11 +130,11 @@ bool ScriptRunner::eval(const World& w, const Condition& c) const {
     case CondKind::TacticIdle:
     case CondKind::TacticLocked: {
       std::vector<uint32_t> m = tactic_members(w, side, c.id);
-      long v = 0;
+      int64_t v = 0;
       if (c.kind == CondKind::TacticValid) v = m.empty() ? 0 : 1;
       else if (c.kind == CondKind::TacticAttacked) {
         v = -1;
-        for (uint32_t id : m) if (w.find(id)->last_hit_by) { v = long(w.find(id)->last_hit_by); break; }
+        for (uint32_t id : m) if (w.find(id)->last_hit_by) { v = int64_t(w.find(id)->last_hit_by); break; }
       } else if (c.kind == CondKind::TacticIdle) {
         v = 1;
         for (uint32_t id : m) if (w.find(id)->order != uint8_t(Order::Idle)) v = 0;
@@ -145,7 +145,7 @@ bool ScriptRunner::eval(const World& w, const Condition& c) const {
       return cmp(c.cmp, v, c.value);
     }
     case CondKind::DefenceValid: {
-      long v = 0;
+      int64_t v = 0;
       for (const Object& o : w.objects)
         if (!o.removed && o.alive && o.side == side && o.scenario == c.id && o.type >= 0 && type_info(o.type) && type_info(o.type)->kind == 7) v = 1;
       return cmp(c.cmp, v, c.value);
@@ -268,9 +268,27 @@ void ScriptRunner::follow_paths(GameSim& sim, World& w) {
 uint64_t ScriptRunner::state_hash() const {
   uint64_t h = 1469598103934665603ull;
   auto mix = [&](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
+  mix(script_.triggers.size());
+  for (const auto& trigger : script_.triggers) {
+    mix(trigger.id); mix(trigger.conditions.size());
+    for (const auto& c : trigger.conditions) {
+      mix(uint32_t(c.kind)); mix(c.side); mix(c.id); mix(c.ugi);
+      for (int coordinate : c.rect) mix(coordinate);
+      mix(uint32_t(c.cmp)); mix(c.value);
+    }
+    mix(trigger.actions.size());
+    for (const auto& a : trigger.actions) {
+      mix(uint32_t(a.kind)); mix(a.side); mix(a.id); mix(a.a); mix(a.b); mix(a.ugi);
+      mix(a.args.size()); for (int arg : a.args) mix(arg);
+      mix(a.text.size()); for (unsigned char byte : a.text) mix(byte);
+    }
+  }
   mix(local_time_);
+  mix(enabled_.size());
   for (const auto& e : enabled_) { mix(uint64_t(e.first)); mix(e.second); }
+  mix(timers_.size());
   for (const auto& t : timers_) { mix(uint64_t(t.first)); mix(uint64_t(t.second.value)); mix(t.second.running * 2u + t.second.exists); }
+  mix(tactics_.size());
   for (const auto& t : tactics_) {
     mix(uint64_t(t.first.first)); mix(uint64_t(t.first.second));
     mix(t.second.locked); mix(uint64_t(t.second.path + 1)); mix(uint64_t(t.second.path_index));

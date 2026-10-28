@@ -211,3 +211,31 @@ add_executable(test_audio tests/test_audio.cpp)
 target_link_libraries(test_audio aztec_engine_lib)
 add_test(NAME audio_events COMMAND test_audio)
 set_tests_properties(audio_events PROPERTIES LABELS "unit;audio")
+
+# Oracle text parsing and long replay/save continuation use only synthetic worlds.
+add_executable(test_oracle_packets tests/test_oracle_packets.c)
+aztec_warnings(test_oracle_packets)
+add_test(NAME oracle_packets COMMAND test_oracle_packets)
+set_tests_properties(oracle_packets PROPERTIES LABELS "unit")
+add_executable(test_determinism tests/test_determinism.cpp)
+target_link_libraries(test_determinism PRIVATE aztec_engine_lib)
+aztec_warnings(test_determinism)
+target_compile_definitions(test_determinism PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data")
+add_test(NAME determinism_state COMMAND test_determinism)
+set_tests_properties(determinism_state PROPERTIES LABELS "unit")
+if(Python3_Interpreter_FOUND)
+  add_test(NAME determinism_processes COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_determinism_processes.py $<TARGET_FILE:test_determinism>)
+  set_tests_properties(determinism_processes PROPERTIES LABELS "unit" TIMEOUT 150)
+  add_test(NAME parity_controls COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tools/parity_report.py self-test)
+  set_tests_properties(parity_controls PROPERTIES LABELS "unit" TIMEOUT 20)
+endif()
+
+# Synthetic UI captures stay in the build tree; no original screenshots are fixtures.
+add_executable(test_ui_screenshots tests/test_ui_screenshots.cpp)
+target_link_libraries(test_ui_screenshots PRIVATE aztec_engine_lib)
+target_compile_definitions(test_ui_screenshots PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data")
+aztec_warnings(test_ui_screenshots)
+add_test(NAME ui_screenshots COMMAND test_ui_screenshots ${CMAKE_CURRENT_BINARY_DIR}/ui-screenshots)
+set_tests_properties(ui_screenshots PROPERTIES LABELS "unit" TIMEOUT 30
+  ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
