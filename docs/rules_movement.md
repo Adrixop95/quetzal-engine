@@ -242,3 +242,59 @@ local planning and occupancy constraints described above. Everything in integers
 - *Lockstep determinism*: no `float`, no `std::unordered_*`, no dependence on pointers; sorts have full keys (ties by id/coordinates). `MoveSystem::state_hash` for network comparisons;
   test `test_path` is the reference for the hash value.
 - *Limits*: no tracking of moving targets (follow/attack-move), formations of a given shape (only the order relative to the direction of approach is kept), vehicles with a turning radius, water units.
+
+## 8. V05 partial integration (2026-10-28)
+
+The engine now consumes the established Marine d11 low byte for terrain class:
+nonzero is Small, zero Large. Spider, Truck and Headtruck use Large. This fixes
+Bear being classified Large and Knight/Bizon/Snowman/Spider being Small. The
+class has its own provenance tag; the collision disc remains provisional at
+14/20 px. Missing Marine descriptors retain a Small placeholder. Descriptor
+speeds take precedence over historical mid-run averages: Marine d5,
+Headtruck/Spider d7 and Zeppelin/Truck d5, expressed as px/tick and converted to
+24.8. Bird speed has no established getter in this integration and retains its
+placeholder. Historical averages remain available only as a fallback, with M
+provenance; they do not measure an exact per-tick velocity.
+
+Aircraft remain outside ground navigation and contact resolution. Their direct
+movement now uses the full fixed-point displacement instead of discarding
+fractional position, supports both move and attack-move destinations, and
+restores idle animation on arrival. This is an engine correction, not evidence
+of reference steering, formation, firing or tile-waypoint timing. Johnka no
+longer receives an invented ground agent. Boat/Johnka scripted routes remain
+unimplemented; ordinary player and tactic move orders leave them stationary.
+
+`engine_unit` adds invented CSV descriptors to check parameter lookup, class
+flag byte selection, speed provenance and precedence. Integration fixtures check
+Bear crossing a small-only gate while Knight and Spider stop on the reachable
+side, overlapping aircraft crossing blocked terrain, fractional air starting
+positions, attack-move arrival, stationary vessels and per-command replay hashes.
+Existing `path` and `path_bench_smoke` checks retain crowded/narrow/unreachable
+route coverage. These verify independent engine behavior only. No new reference
+radii or footprint values, vehicle turning rules or collision policy are inferred.
+
+V02 normalized observers and the complete V04 initialization audit are not
+available as completed dependencies. An isolated reference attempt used:
+
+```sh
+ZPATH_GAME_DIR=/home/adrox/aztec-re/game \
+ZPATH_RUNTIME=/home/adrox/aztec-re/build/aztec_recomp \
+  sh tools/zpath_run.sh corr1 30 explored work/v05-reference-corridor 5
+```
+
+The runner created a private game copy with read-only resource symlinks and
+ordinary Maps/Saves directories, selected both dummy SDL drivers, and invoked
+`timeout` plus `unshare -rn`. It exited 1 at namespace interface setup with
+`Cannot open netlink socket: Operation not permitted`. The runtime did not
+launch; no positions or path decisions were measured. Private inputs and the
+failure output remain ignored under `work/v05-reference-corridor/`. V05 remains
+open pending successful reference record/replay and audited object identity,
+then boat/air, speed, radius, real footprint, collision and path comparisons.
+The archived observations in section 5 retain their original evidence limits.
+
+Validation: Release configure/build passed with the compiler cache inside this
+worktree. Baseline and post-change CTest each passed 17 entries, with three
+private-data checks and the socket-restricted process check skipped. The final
+additional class-to-navigation fixture passed in a separate `engine_unit` run.
+All pre-commit hooks passed. These outcomes do not close the reference-dependent
+parts of V05.

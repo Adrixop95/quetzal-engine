@@ -6,6 +6,7 @@
 #include <fstream>
 #include <functional>
 #include <sstream>
+#include <tuple>
 
 #include "engine/world/type_info.hpp"
 #include "engine/sim/sight.hpp"
@@ -138,11 +139,13 @@ void RulesData::init_defaults() {
     const TypeInfo* ti = type_info(t);
     r.kind = ti ? ti->kind : -1;
     r.structure = ti && ti->is_structure();
-    r.mobile = r.kind == 0 || r.kind == 1 || r.kind == 4 || r.kind == 6 || r.kind == 10;
+    r.mobile = r.kind == 0 || r.kind == 1 || r.kind == 4 || r.kind == 6;
     r.nonorganic = r.structure || r.kind == 1 || r.kind == 4 || r.kind == 6 || r.kind == 9;
     r.flier = r.kind == 3 || r.kind == 5;
     r.armed = r.kind == 0 || r.kind == 1 || r.kind == 6 || r.kind == 7 || r.kind == 9 || r.kind == 10;
-    r.large = r.kind == 4 || r.kind == 6 || t == 5 || t == 57;
+    // Boats and Johnka use scripted routes, never the ground movement system.
+    r.large = r.kind == 1 || r.kind == 4 || r.kind == 6;
+    if (r.large) r.class_src = Src::Verified;
     r.speed = 8 * 256;
     r.radius_px = r.large ? 20 : 14;
     r.range_px = is_melee(t) ? 56 : 288;
@@ -179,6 +182,18 @@ bool RulesData::load_dir(const std::string& dir) {
         }
   }
   if (const char* game = std::getenv("AZTEC_GAME")) load_sight(game);
+  // Established getters only (rules_summary.md). Bird speed remains unresolved.
+  for (auto [kind, family, field] : {std::tuple{1, "spider", 7}, {3, "zeppelin", 5},
+                                   {4, "truck", 5}, {6, "headtruck", 7}}) {
+    for (const auto& row : read_csv(dir + "/desc_" + family + ".csv"))
+      for (int id = 0; id < kNumTypes; ++id)
+        if (kind_param[id] == std::pair{kind, num(row, 0)} && row.size() > size_t(field + 1)) {
+          int speed = num(row, field + 1);
+          if (speed > 0 && speed <= (1 << 14)) {
+            types_[id].speed = speed * 256; types_[id].speed_src = Src::Verified;
+          }
+        }
+  }
   // Marine d1 is primary/max HP; d4 is independent secondary HP.
   auto marine = read_csv(dir + "/desc_marine.csv");
   auto building = read_csv(dir + "/desc_building.csv");
@@ -199,6 +214,11 @@ bool RulesData::load_dir(const std::string& dir) {
           t.hp_src = Src::Verified;
           t.speed = num(r, 6) * 256;  // d5 (column index shifts by one for the leading param column)
           t.speed_src = Src::Verified;
+          if (r.size() > 12) {
+            t.large = (uint32_t(num(r, 12)) & 255u) == 0;  // d11 low byte, not the organic/hypno bytes
+            t.class_src = Src::Verified;
+            t.radius_px = t.large ? 20 : 14;  // still a provisional collision disc
+          }
         }
     } else if (t.structure && t.kind == 2) {
       for (auto& r : building)
@@ -317,7 +337,9 @@ bool RulesData::load_dir(const std::string& dir) {
     int id = num(r, 0);
     if (id < 0 || id >= kNumTypes || r.size() < 3) continue;
     int v = parse_fixed256(r[2]);
-    if (v > 0) { types_[id].speed = v; types_[id].speed_src = Src::Measured; }
+    if (v > 0 && types_[id].speed_src != Src::Verified) {
+      types_[id].speed = v; types_[id].speed_src = Src::Measured;
+    }
   }
   for (auto& r : read_csv(dir + "/duel_damage.csv")) {
     // attacker,attacker_ugi,target,target_ugi,damage,interval,hits

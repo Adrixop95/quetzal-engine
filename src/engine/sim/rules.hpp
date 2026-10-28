@@ -54,7 +54,8 @@ struct TypeRules {
   int weapon_id = -1;
   int physical_armor = 0;
   bool nonorganic = false, category_f4 = false, category_e8 = false, hypno = false;
-  int speed = 0;      Src speed_src = Src::Placeholder;   // fixed 24.8 px per tick; measured (speed_measured.csv) or Marine d5
+  Src class_src = Src::Placeholder;
+  int speed = 0;      Src speed_src = Src::Placeholder;   // fixed 24.8 px per tick; descriptor preferred over historical averages
   int radius_px = 14; Src radius_src = Src::Placeholder;
   int vision_mask = 0; Src sight_src = Src::Placeholder;
   int range_px = 56;  Src range_src = Src::Placeholder;
