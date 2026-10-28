@@ -57,7 +57,14 @@ jobs:
       - name: Build core, engine, tools, and tests
         run: cmake --build build_ci --parallel $(nproc)
       - name: Run tests (game-data tests skip without a local installation)
+        env:
+          AZTEC_DETERMINISM_TRACE: ${{ github.workspace }}/build_ci/determinism.trace
         run: ctest --test-dir build_ci --output-on-failure
+      - uses: actions/upload-artifact@v4
+        with:
+          name: determinism-linux-gcc
+          path: build_ci/determinism.trace
+          if-no-files-found: error
 
   portable:
     name: ${{ matrix.compiler }} synthetic tests
@@ -138,4 +145,28 @@ jobs:
         env:
           SDL_VIDEODRIVER: dummy
           SDL_AUDIODRIVER: dummy
+          AZTEC_DETERMINISM_TRACE: ${{ github.workspace }}/build_ci/determinism.trace
         run: ctest --test-dir build_ci -C Release -L unit --output-on-failure
+      - uses: actions/upload-artifact@v4
+        with:
+          name: determinism-${{ matrix.compiler }}
+          path: build_ci/determinism.trace
+          if-no-files-found: error
+
+  determinism:
+    name: Compare synthetic tick traces across compilers and platforms
+    needs: [build, portable]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: determinism-*
+          path: build_traces
+      - name: Require identical state and object fields at every tick
+        run: >-
+          python3 tests/test_determinism_processes.py --compare
+          build_traces/determinism-linux-gcc/determinism.trace
+          build_traces/determinism-MSVC/determinism.trace
+          build_traces/determinism-MinGW/determinism.trace
+          build_traces/determinism-AppleClang/determinism.trace

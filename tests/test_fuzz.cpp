@@ -188,10 +188,11 @@ int main() {
     if (read_music_table(file.path, table)) for (const auto& t : table) read_music_track(file.path, t, track);
   });
   // Engine containers are independent formats, not original simulation snapshots.
-  engine::SaveData saved; saved.mission = "synthetic";
+  engine::SaveData saved; saved.mission = "synthetic"; saved.tick = 2;
   saved.log.push_back({2, {engine::Pct::Move, 0, 1, 2, 0, {1, 2}}});
   const Bytes save_bytes = engine::serialize_save(saved);
-  for (size_t p : {size_t(4), size_t(8 + saved.mission.size() + 32)}) {
+  CHECK(!save_bytes.empty());
+  for (size_t p : {size_t(4), size_t(60 + saved.mission.size())}) {
     Bytes bad = save_bytes; word(bad, p, UINT32_MAX);
     engine::SaveData result = saved;
     CHECK(!engine::deserialize_save(bad, result)); CHECK(result.mission == saved.mission && result.tick == saved.tick);
@@ -200,7 +201,7 @@ int main() {
   engine::SaveData result; CHECK(!engine::deserialize_save(trailing, result));
   Bytes partial = engine::serialize_log(saved.log); partial[4] = 2;
   std::vector<engine::LoggedCommand> commands = saved.log;
-  CHECK(!engine::deserialize_log(partial, commands)); CHECK(commands.empty());
+  CHECK(!engine::deserialize_log(partial, commands)); CHECK(engine::serialize_log(commands) == engine::serialize_log(saved.log));
   for (const char* id : {"-1", "16384", "2147483647"}) {
     CHECK(ini.parse(std::string("[Paths]\nCount=1\n0=") + id + ",1,2"));
     engine::MissionDef m; CHECK(!engine::parse_mission(ini, "synthetic", m));
@@ -216,7 +217,7 @@ int main() {
   });
   for (uint32_t tag : {0u, 0x52u, 0x10017u}) {
     Bytes bad = engine::serialize_log(saved.log); word(bad, 16, tag);
-    CHECK(!engine::deserialize_log(bad, commands)); CHECK(commands.empty());
+    CHECK(!engine::deserialize_log(bad, commands)); CHECK(engine::serialize_log(commands) == engine::serialize_log(saved.log));
   }
   Bytes anim(0x208 + 3 * 32); std::copy_n("Anim", 4, anim.begin());
   word(anim, 4, 3); word(anim, 8, 1); word(anim, 0x228, 1); word(anim, 0x244, 2);

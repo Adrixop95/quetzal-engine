@@ -19,6 +19,22 @@ data::AnimState state_of(const ObjectState& st) {
 int angle_of(const ObjectState& st) { return st.angle < 0 ? (st.facing & 7) * 32 : st.angle; }
 }
 
+bool AnimSpriteProvider::boat_phase_complete(int phase, int orientation, uint32_t tick) const {
+  if (phase != int(data::BoatPhase::Opening) && phase != int(data::BoatPhase::Closing) &&
+      phase != int(data::BoatPhase::Turning)) return false;
+  const auto sequence = data::boat_sequence(static_cast<data::BoatPhase>(phase), orientation);
+  const auto animation = db_.anim(23);
+  const int count = animation.frame_count(sequence.slot);
+  if (!count) return false;
+  uint64_t duration = 0;
+  for (int frame = 0; frame < count; ++frame) {
+    const int ticks = animation.frame(sequence.slot, frame).duration;
+    if (ticks <= 0) return false;
+    duration += uint32_t(ticks);
+  }
+  return tick >= duration;
+}
+
 data::SpriteRef AnimSpriteProvider::frame_for(const ObjectState& st) const {
   const int kind = kind_of(st);
   if (kind == 8 || st.type_id == -2)

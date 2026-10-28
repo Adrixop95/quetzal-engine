@@ -5,6 +5,24 @@ Use a feature branch from develop. This PUBLIC GPL-3.0 repository must never
 receive game assets, Aztec.exe, generated/lifted C or decompiled source.
 A clean clone builds and tests without any of those private inputs.
 
+For prebuilt Linux/Windows releases, see [PACKAGES.md](PACKAGES.md): extraction,
+external game-data setup, bundled rules/dependencies, optional ffmpeg and licenses.
+The release workflow stages packages with `tools/package_release.py` and checks
+the extracted archives in separate fresh runner jobs using `tests/test_package.py`.
+To exercise local staging without downloading distro dependency sources:
+
+```sh
+python3 tools/package_release.py --binary build/aztec_engine --dest build/package-local --runtime local
+unshare -rn env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy python3 tests/test_package.py build/package-local
+```
+
+Use a fresh staging destination each time. Local mode uses host libraries and is
+not a redistributable release. Linux release bundling requires Ubuntu/Debian,
+enabled deb-src indexes and network access for exact dependency sources; Windows
+release staging requires the static SDL2 source/license paths from vcpkg. Neither
+release mode reads private game data. Package rules resolve beside the executable;
+source builds fall back to `docs/data`. Both modes accept `--rules-dir` overrides.
+
 ## Dependencies and independent build
 
 Linux is the primary local development path. CI also builds the independent

@@ -6,14 +6,13 @@ namespace aztec::engine {
 
 static const int kPanelId = 292;         // common.xbe 204x493 panel (palette 48)
 static const int kPanelW = 204, kPanelH = 493;
-static const int kBar = 24;              // top bar (menu button / gold)
 static const int kStone = 445;           // first row of the repeatable stone strip at the bottom
 
-static SpriteKey key() {
+static SpriteKey key(int id = kPanelId) {
   SpriteKey k;
   k.archive = ArchiveId::Common;
   k.group = 0x44c;
-  k.index = kPanelId;
+  k.index = id;
   k.shade = 0;
   return k;
 }
@@ -27,7 +26,7 @@ bool Panel::init(SpriteStore& store) {
 void Panel::layout(int out_w, int out_h, int scale) {
   scale_ = std::max(1, scale);
   rect_ = {out_w - kPanelW * scale_, 0, kPanelW * scale_, out_h};
-  mini_ = {rect_.x + 12 * scale_, 28 * scale_, 180 * scale_, 176 * scale_};
+  mini_ = in_game_panel_layout(rect_, scale_).minimap;
 }
 
 void Panel::draw(SDL_Renderer* r, SpriteStore& store, const Font& font, int gold, const std::vector<std::string>& info,
@@ -50,44 +49,54 @@ void Panel::draw(SDL_Renderer* r, SpriteStore& store, const Font& font, int gold
     SDL_RenderCopy(r, tex, &ss, &dd);
     y += h;
   }
-  int ts = std::max(1, sc * 2 / 2);
-  font.draw(r, rect_.x + 14 * sc, (kBar - 5 * ts) / 2 * sc, "MENU", ts, {235, 220, 170, 255});
+  const auto layout = in_game_panel_layout(rect_, sc);
+  auto sprite = [&](int id, SDL_Rect box) {
+    const auto& image = store.get(key(id));
+    if (!image.ok()) return false;
+    SDL_Rect source = image.frame_rect(0);
+    SDL_RenderCopy(r, store.atlas().page(image.region.page), &source, &box);
+    return true;
+  };
+  // The short command card is a separate 254x208 resource, anchored to the bottom.
+  if (!sprite(297, layout.card)) {
+    SDL_SetRenderDrawColor(r, 45, 40, 32, 255);
+    SDL_RenderFillRect(r, &layout.card);
+  }
+  int ts = font.ui_scale(sc);
+  if (!sprite(282, layout.menu))
+    font.draw(r, layout.menu.x + 4 * sc, layout.menu.y + 4 * sc, "MENU", ts, {235, 220, 170, 255});
   std::string g = std::to_string(gold);
-  font.draw(r, rect_.x + (kPanelW - 24) * sc - font.width(g, ts), (kBar - 5 * ts) / 2 * sc, g, ts, {250, 220, 90, 255});
-  int lh = std::max(12, font.height(ts * 2)) + 2 * sc;
-  int y0 = 214 * sc + 8 * sc;
-  for (size_t i = 0; i < info.size(); i++)
-    font.draw(r, rect_.x + 24 * sc, y0 + int(i) * lh, info[i], ts * 2, i == 0 ? SDL_Color{255, 240, 190, 255} : SDL_Color{230, 230, 230, 255});
+  font.draw(r, rect_.x + (kPanelW - 12) * sc - font.width(g, ts),
+            rect_.y + std::max(0, (22 * sc - font.height(ts)) / 2), g, ts, {250, 220, 90, 255});
+  int y0 = layout.summary.y;
+  for (const auto& line : info) {
+    if (y0 + font.height(ts) > layout.summary.y + layout.summary.h) break;
+    font.draw(r, layout.summary.x, y0, line, ts, {255, 240, 190, 255});
+    y0 += font.height(ts) + 2 * sc;
+  }
   if (!tooltip.empty()) draw_tooltip(r, font, tooltip);
+}
+
+bool Panel::contains(int x, int y) const {
+  SDL_Point point{x, y};
+  const auto card = in_game_panel_layout(rect_, scale_).card;
+  return SDL_PointInRect(&point, &rect_) || SDL_PointInRect(&point, &card);
 }
 
 void Panel::draw_tooltip(SDL_Renderer* r, const Font& font, const std::string& tip) const {
   int sc = scale_;
-  int ts = std::max(1, sc);
+  int ts = font.ui_scale(sc);
   int lh = font.height(ts) + 4 * sc;
-  int maxw = std::max(80 * sc, std::min(360 * sc, rect_.x - 16 * sc));
-  std::vector<std::string> lines;
-  std::string line, word;
-  auto flush = [&] { if (!line.empty()) lines.push_back(line); line.clear(); };
-  auto append = [&] {
-    if (word.empty()) return;
-    if (!line.empty() && font.width(line + " " + word, ts) > maxw) flush();
-    if (!line.empty()) line += ' ';
-    line += word;
-    word.clear();
-  };
-  for (char c : tip) {
-    if (c == ' ' || c == '\n') {
-      append();
-      if (c == '\n') flush();
-    } else word += c;
-  }
-  append(); flush();
+  const int edge = in_game_panel_layout(rect_, sc).card.x;
+  int maxw = std::max(sc, std::min(360 * sc, edge - 20 * sc));
+  auto lines = font.wrap(tip, ts, maxw);
+  const int limit = std::max(1, (rect_.h - 24 * sc) / lh);
+  if (int(lines.size()) > limit) lines.resize(size_t(limit));
   int tw = 0;
   for (const auto& text : lines) tw = std::max(tw, font.width(text, ts));
   tw += 12 * sc;
   int th = int(lines.size()) * lh + 8 * sc;
-  SDL_Rect b{std::max(0, rect_.x - tw - 4 * sc), std::max(0, rect_.y + rect_.h - th - 8 * sc), tw, th};
+  SDL_Rect b{std::max(0, edge - tw - 4 * sc), std::max(0, rect_.y + rect_.h - th - 8 * sc), tw, th};
   SDL_SetRenderDrawColor(r, 20, 16, 10, 240);
   SDL_RenderFillRect(r, &b);
   SDL_SetRenderDrawColor(r, 200, 170, 100, 255);

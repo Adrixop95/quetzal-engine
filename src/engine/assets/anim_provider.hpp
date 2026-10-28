@@ -24,6 +24,8 @@ class AnimSpriteProvider : public SpriteProvider {
   int height(const ObjectState& st) const override;
   bool hides_missing(const ObjectState& st) const override;
   bool load_visual_rules(const std::string& directory);
+  // Missing, malformed or holding phases cannot establish completion.
+  bool boat_phase_complete(int phase, int orientation, uint32_t tick) const;
 
  private:
   bool make(const ObjectState& st, SpriteDraw& out, bool shadow) const;

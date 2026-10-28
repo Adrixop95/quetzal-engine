@@ -3,6 +3,7 @@
 // of the next tick in a fixed order (by side, then submission order), and every applied command is logged
 // so a game can be replayed or restored deterministically.
 #pragma once
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -41,6 +42,12 @@ struct Command {
 };
 
 struct LoggedCommand { uint64_t tick = 0; Command cmd; };
+
+// Resource budgets shared by save and standalone log readers.
+inline constexpr size_t kMaxLogBytes = 32 * 1024 * 1024;
+inline constexpr size_t kMaxLogCommands = 200000;
+inline constexpr size_t kMaxCommandIds = 4096;
+bool valid_command(const Command& command);
 
 // Serialises a command log (little endian) for replay files / snapshots.
 std::vector<uint8_t> serialize_log(const std::vector<LoggedCommand>& log);

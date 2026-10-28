@@ -65,3 +65,21 @@ ASan/UBSan runs therefore used `ASAN_OPTIONS=detect_leaks=0`; this is not leak
 verification. CI retains `detect_leaks=1` and still needs a hosted run. Private
 game-data and socket-process tests skip here; those skips do not establish
 release acceptance, campaign parity, or completion of roadmap V20.
+The test has a 55-second CTest timeout. Internal loader budgets are centralized
+in `src/core/loader_limits.hpp`: 256 MiB per binary file or music track, 1 MiB
+per text input, 4 million decoded sprite pixels, 16 million grid cells, and
+16,384 aggregate mission records or music table entries. Archive offset tables
+share a 256 MiB budget across groups. Inputs exceeding these limits fail through
+the existing APIs. WAV data payloads retain the documented clamping behavior
+for partial track reads.
+
+Engine replay-save checks are separate from the original-save container tests.
+`engine_save` and `engine_save_processes` cover AZS3 and AZC1 malformed inputs,
+repaired-checksum mutations, fixed-seed fuzzing, bounded ticks/counts/files,
+transactional outputs, content identity, replay mismatch refusal, atomic slot
+replacement and fresh-process continuation. The process check injects a real
+short write with `RLIMIT_FSIZE` on POSIX. See [engine_saves.md](../docs/engine_saves.md)
+for the format and acceptance boundaries. To run these under sanitizers, use
+the configuration above with `-DAZTEC_GEN_DIR= -DGAME_DIR=`, build target
+`test_engine_save`, then run `ctest -R '^engine_save(_processes)?$'` in that build
+directory with `UBSAN_OPTIONS=halt_on_error=1`. Builds stay inside the worktree.

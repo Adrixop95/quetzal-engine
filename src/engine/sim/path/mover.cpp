@@ -274,7 +274,9 @@ void MoveSystem::tick() {
 u64 MoveSystem::state_hash() const {
   u64 h = 1469598103934665603ull;
   auto mix = [&](u64 v) { h = (h ^ v) * 1099511628211ull; };
-  mix(tick_);
+  mix(tick_); mix(grid_.state_hash());
+  mix(cfg_.avoid_horizon); mix(cfg_.overlap_iterations); mix(cfg_.wall_penalty);
+  mix(cfg_.slot_gap); mix(cfg_.stuck_window);
   mix(agents_.size());
   for (const Agent& a : agents_) {
     mix(a.id); mix((u32)a.pos.x); mix((u32)a.pos.y); mix((u32)a.vel.x); mix((u32)a.vel.y); mix((u32)a.prev_pos.x); mix((u32)a.prev_pos.y);
@@ -286,6 +288,7 @@ u64 MoveSystem::state_hash() const {
   mix(orders_.size());
   for (const auto& o : orders_) {
     mix((u32)o->refs); mix((u32)o->goal.x); mix((u32)o->goal.y); mix((u32)o->goal_cell.x); mix((u32)o->goal_cell.y); mix(o->have[0]); mix(o->have[1]);
+    for (int k = 0; k < 2; ++k) if (o->have[k]) mix(o->ff[k].state_hash());
   }
   return h;
 }

@@ -6,9 +6,19 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pre-commit
+      - run: pre-commit run --all-files
+
   build:
     strategy:
       fail-fast: false
@@ -16,49 +26,121 @@ jobs:
         include:
           - os: ubuntu-24.04
             name: linux-x86_64
-            experimental: false
           - os: windows-2022
             name: windows-x86_64
-            experimental: true
-          - os: macos-14
-            name: macos-arm64
-            experimental: true
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.experimental }}
     steps:
       - uses: actions/checkout@v4
-      - name: Install SDL2 (Linux)
+      - name: Install Linux build dependencies and source indexes
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build g++ libsdl2-dev
-      - name: Install SDL2 (macOS)
-        if: runner.os == 'macOS'
-        run: brew install sdl2 cmake ninja
-      - name: Install SDL2 (Windows)
-        if: runner.os == 'Windows'
-        run: vcpkg install sdl2:x64-windows
-      - name: Configure
-        shell: bash
         run: |
-          EXTRA=""
-          if [ "$RUNNER_OS" = "Windows" ]; then EXTRA="-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"; fi
-          cmake -S . -B build_release -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR= $EXTRA
+          sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
+          sudo apt-get update
+          # Keep installed binary/source versions available in the current apt indexes.
+          sudo apt-get upgrade -y
+          sudo apt-get install -y cmake ninja-build g++ libsdl2-dev
+      - name: Install static SDL2 for Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          # Build from source so the exact SDL source tree is available to redistribute.
+          VCPKG_BINARY_SOURCES: clear
+        run: '& "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install sdl2:x64-windows-static'
+      - name: Configure Linux without private inputs
+        if: runner.os == 'Linux'
+        run: cmake -S . -B build_release -G Ninja -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR= -DGAME_DIR=
+      - name: Configure Windows without private inputs
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: >-
+          cmake -S . -B build_release -A x64
+          "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DAZTEC_GEN_DIR= -DGAME_DIR=
       - name: Build
         run: cmake --build build_release --config Release --parallel 2
-      - name: Test
-        run: ctest --test-dir build_release --build-config Release --output-on-failure
-      - name: Package
-        shell: bash
+      - name: Synthetic tests
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: ctest --test-dir build_release -C Release -L "unit|smoke" --output-on-failure
+      - name: Stage Linux package with runtime libraries, notices and corresponding sources
+        if: runner.os == 'Linux'
+        run: python3 tools/package_release.py --binary build_release/aztec_engine --dest build_release/package --runtime debian
+      - name: Stage Windows package with static SDL2 and its source/license
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          mkdir -p dist
-          cp LICENSE README.md dist/
-          find build_release -name 'aztec_engine' -o -name 'aztec_engine.exe' | head -1 | xargs -I{} cp {} dist/
-          tar -czf quetzal-engine-${{ matrix.name }}.tar.gz -C dist .
+          $sdlSource = Get-ChildItem "$env:VCPKG_INSTALLATION_ROOT/buildtrees/sdl2/src" -Directory | Where-Object { Test-Path "$($_.FullName)/CMakeLists.txt" } | Select-Object -First 1
+          if (!$sdlSource) { throw 'SDL2 source tree not found' }
+          python tools/package_release.py --binary build_release/Release/aztec_engine.exe --dest build_release/package --runtime windows-static --sdl-source "$($sdlSource.FullName)" --sdl-license "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows-static/share/sdl2/copyright"
+      - name: Archive Linux package
+        if: runner.os == 'Linux'
+        run: tar -czf build_release/quetzal-engine-${{ matrix.name }}.tar.gz -C build_release/package .
+      - name: Archive Windows package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path build_release/package/* -DestinationPath build_release/quetzal-engine-${{ matrix.name }}.zip
       - uses: actions/upload-artifact@v4
         with:
           name: quetzal-engine-${{ matrix.name }}
-          path: quetzal-engine-${{ matrix.name }}.tar.gz
-      - name: Attach to GitHub release
+          path: |
+            build_release/quetzal-engine-*.tar.gz
+            build_release/quetzal-engine-*.zip
+          if-no-files-found: error
+
+  smoke:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            name: linux-x86_64
+          - os: windows-2022
+            name: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: quetzal-engine-${{ matrix.name }}
+          path: build_smoke/download
+      - name: Extract and smoke-test Linux on a fresh runner without build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p build_smoke/package
+          tar -xzf build_smoke/download/*.tar.gz -C build_smoke/package
+          sudo unshare -rn env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy python3 tests/test_package.py build_smoke/package
+      - name: Extract and smoke-test Windows on a fresh runner without vcpkg
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Expand-Archive build_smoke/download/*.zip build_smoke/package
+          python tests/test_package.py build_smoke/package
+
+  publish:
+    needs: [lint, build, smoke]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: quetzal-engine-*
+          path: build_publish
+          merge-multiple: true
+      - name: Archive corresponding public engine source
+        run: git archive --format=tar.gz --prefix=quetzal-engine/ HEAD > build_publish/quetzal-engine-source.tar.gz
+      - name: Checksums
+        run: cd build_publish && sha256sum quetzal-engine-* > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-with-source-and-checksums
+          path: build_publish/*
+      - name: Publish only after every platform and lint gate succeeds
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: quetzal-engine-${{ matrix.name }}.tar.gz
+          files: build_publish/*
