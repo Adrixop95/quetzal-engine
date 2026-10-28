@@ -60,8 +60,21 @@ def land(name):
     env = f"LAND_ROOT={LAND}"
     r = lrun(f"{env} python3 {ORCH} harvest {name} {branch} '{name}'")
     if "prepared" not in r.stdout:
-        log("harvest produced nothing for", name, r.stdout[-200:], r.stderr[-200:])
-        return
+        conflicted = lrun("git diff --name-only --diff-filter=U").stdout.split()
+        if "did not apply" not in r.stdout or not conflicted:
+            log("harvest produced nothing for", name, r.stdout[-200:], r.stderr[-200:])
+            return
+        log("patch of", name, "conflicts with develop in", " ".join(conflicted), "- asking Codex to resolve")
+        codex_in_land("This worktree holds a task patch applied with git apply --3way onto the latest develop; it has conflict markers in: "
+                      + " ".join(conflicted) + ". Resolve every conflict preserving the intent of BOTH sides (the task adds a feature, develop gained "
+                      "other features in the same files). Remove all markers, make the project build and tests pass (cmake -S . -B build_sup "
+                      "-DAZTEC_GEN_DIR= && cmake --build build_sup && ctest --test-dir build_sup), keep everything English. Do NOT run git "
+                      "write commands; leave the resolved files in the working tree.")
+        bad = verify_land(conflicted)
+        if bad:
+            log("could not resolve patch conflicts for", name, bad)
+            lrun("git reset -q --hard; git checkout -q --detach origin/develop")
+            return
     lrun("cmake -S . -B build_sup -DAZTEC_GEN_DIR= -DCMAKE_BUILD_TYPE=Release >/dev/null && cmake --build build_sup --parallel 8 2>&1 | tail -3")
     if lrun("ctest --test-dir build_sup >/dev/null 2>&1").returncode != 0:
         out = lrun("ctest --test-dir build_sup --output-on-failure 2>&1 | tail -30").stdout
