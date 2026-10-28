@@ -59,6 +59,16 @@ static void malformed() {
     auto v = bytes; write_le(v.data() + offset, UINT32_MAX); repair_checksum(v);
     CHECK(!deserialize_save(v, decoded)); check_save(v);
   }
+  // Malformed fields must be rejected even when the container checksum is valid.
+  auto nul_name = bytes; nul_name[16] = 0; repair_checksum(nul_name);
+  CHECK(!deserialize_save(nul_name, decoded)); check_save(nul_name);
+  for (size_t offset : {size_t(48 + s.mission.size()), size_t(52 + s.mission.size()),
+                         size_t(56 + s.mission.size())}) {
+    auto invalid_camera = bytes;
+    write_le(invalid_camera.data() + offset, std::numeric_limits<float>::quiet_NaN());
+    repair_checksum(invalid_camera);
+    CHECK(!deserialize_save(invalid_camera, decoded)); check_save(invalid_camera);
+  }
   auto extra = bytes; extra.push_back(0); repair_checksum(extra);
   CHECK(!deserialize_save(extra, decoded));
   auto old = bytes; old[3] = '2'; repair_checksum(old); CHECK(!deserialize_save(old, decoded));
@@ -86,6 +96,14 @@ static void malformed() {
     auto v = log; write_le(v.data() + offset, UINT32_MAX);
     std::vector<LoggedCommand> out; CHECK(!deserialize_log(v, out)); check_log(v);
   }
+  // Reject a bad second command without publishing the already parsed first one.
+  auto partial = log;
+  const size_t second = 8 + 28 + 4 * s.log.front().cmd.ids.size();
+  write_le(partial.data() + second + 8, uint32_t(0x52));
+  check_log(partial);
+  auto preserved = s.log;
+  CHECK(!deserialize_log(partial, preserved));
+  CHECK(serialize_log(preserved) == log);
   log.push_back(0); std::vector<LoggedCommand> out; CHECK(!deserialize_log(log, out));
   // Fixed-seed fuzzing is repeatable and never launches a replay from random bytes.
   std::mt19937 rng(0x415a5333);
