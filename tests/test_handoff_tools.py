@@ -4,6 +4,7 @@
 Run: python3 -m unittest discover -s tests -p test_handoff_tools.py
 """
 import importlib.util
+import io
 import os
 from pathlib import Path
 import shutil
@@ -37,6 +38,65 @@ class HandoffToolsTest(unittest.TestCase):
     def script(self, name, *args):
         return subprocess.run(["sh", str(self.root / "tools" / name), *args],
                               cwd="/tmp", env=self.env, text=True, capture_output=True)
+
+    def harvest(self, fail=None, existing=False, empty=False):
+        task = {"name": "sight", "workdir": str(self.root)}
+        calls = []
+
+        def command(cmd):
+            calls.append(cmd)
+            code = 1 if cmd == fail else 0
+            if cmd.startswith("git show-ref"):
+                code = 0 if existing else 1
+            if cmd == "git diff --cached --quiet":
+                code = 0 if empty else 1
+            output = "synthetic patch\n" if cmd == "git diff --cached --binary" else ""
+            return subprocess.CompletedProcess(cmd, code, output, "command failed" if code else "")
+
+        (self.root / "work/codex").mkdir(parents=True, exist_ok=True)
+        output = io.StringIO()
+        with patch.object(ORCH, "ROOT", str(self.root)), \
+                patch.object(ORCH, "load", return_value=task), \
+                patch.object(ORCH, "refresh", side_effect=lambda t: t), \
+                patch.object(ORCH, "sh", side_effect=command), \
+                patch.object(ORCH, "save") as save, \
+                patch.object(ORCH.os, "chdir"), \
+                patch("sys.stdout", output):
+            error = None
+            try:
+                ORCH.harvest("sight", "feature/sight", "Sight rules")
+            except RuntimeError as exc:
+                error = exc
+        return calls, output.getvalue(), save, error
+
+    def test_harvest_retries_existing_integrated_branch(self):
+        for existing in (False, True):
+            calls, output, save, error = self.harvest(existing=existing)
+            self.assertIsNone(error)
+            self.assertTrue("prepared" in output)
+            self.assertTrue("git checkout -q -f -B feature/sight origin/develop" in calls)
+            self.assertEqual("git merge-base --is-ancestor feature/sight origin/develop" in calls, existing)
+            self.assertTrue(save.call_args.args[0]["harvested"])
+
+    def test_harvest_stops_on_git_failure(self):
+        for failure in ("git add -A -- . ':!.build*' ':!build*' ':!work'",
+                        "git diff --cached --binary", "git reset -q", "git fetch -q origin",
+                        "git merge-base --is-ancestor feature/sight origin/develop",
+                        "git checkout -q -f -B feature/sight origin/develop",
+                        "git apply --3way " + str(self.root / "work/codex/sight.patch")):
+            with self.subTest(failure=failure):
+                calls, output, save, error = self.harvest(fail=failure, existing=True)
+                self.assertIsNotNone(error)
+                self.assertEqual(calls[-1], failure)
+                self.assertNotIn("prepared", output)
+                save.assert_not_called()
+
+    def test_harvest_rejects_empty_staged_diff(self):
+        calls, output, save, error = self.harvest(existing=True, empty=True)
+        self.assertIsNotNone(error)
+        self.assertEqual(calls[-1], "git diff --cached --quiet")
+        self.assertNotIn("prepared", output)
+        save.assert_not_called()
 
     def test_queue_preference_and_legacy_fallback(self):
         legacy = self.root / "work/codex/queue"
