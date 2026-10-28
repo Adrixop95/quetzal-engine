@@ -6,6 +6,7 @@
 #include "engine/data/animation_slots.hpp"
 #include "engine/render/colors.hpp"
 #include "engine/world/type_info.hpp"
+#include "engine/world/object_state.hpp"
 #include "engine/data/light_masks.hpp"
 
 namespace aztec::engine {
@@ -305,26 +306,7 @@ int SceneRenderer::hp_max(int type) const {
 }
 
 ObjectState SceneRenderer::object_state(const Object& o) const {
-  ObjectState st;
-  st.type_id = o.type;
-  if (o.type < 0 && o.source == ObjectSource::Boat) st.type_id = -2;
-  if (o.type < 0 && o.source == ObjectSource::Johnka) st.type_id = -3;
-  st.hp = o.hp; st.max_hp = o.hp_max;
-  st.moving = o.cur_x != o.prev_x || o.cur_y != o.prev_y;
-  st.initial_turret = !o.has_fired;
-  st.height = o.render_height;
-  st.destruction_radius = o.destruction_radius;
-  st.construction_overlay = o.construction_overlay;
-  st.transport_phase = o.transport_phase; st.orientation = o.orientation;
-  st.side = o.side;
-  st.side_color = world_.side_color(o.side);
-  st.facing = o.facing;
-  st.anim_state = o.anim_state;
-  st.anim_tick = o.anim_tick;
-  st.body_tick = o.body_tick; st.attack_tick = o.attack_tick;
-  st.anim_variant = o.anim_variant;
-  st.progress = o.progress;
-  return st;
+  return object_sprite_state(o, world_.side_color(o.side));
 }
 
 bool SceneRenderer::visible_in_fog(const Object& o, Vec2f p) const {

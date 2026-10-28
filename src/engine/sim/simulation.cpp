@@ -8,6 +8,7 @@ namespace aztec::engine {
 void WanderSimulation::tick(World& w) {
   w.tick++;
   for (Object& o : w.objects) {
+    ++o.anim_tick;
     if (o.source != ObjectSource::Team && o.source != ObjectSource::Town) continue;
     if (const TypeInfo* ti = type_info(o.type); ti && ti->is_structure()) continue;  // structures stay put
     uint32_t r = next();

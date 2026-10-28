@@ -11,6 +11,9 @@
 #include "engine/assets/anim_provider.hpp"
 #include "engine/render/light_grid.hpp"
 #include "engine/render/scene_renderer.hpp"
+#include "engine/sim/game_sim.hpp"
+#include "engine/sim/sight.hpp"
+#include "engine/world/object_state.hpp"
 
 using namespace aztec;
 using namespace aztec::engine;
@@ -50,6 +53,11 @@ static void provider_controls() {
         for (int slot = 0; slot < 128; ++slot)
           put(bytes, 0x208 + (slot * 4 + 2) * 32 + 28, 10);
       }
+      if (id == 23) {
+        // Both orientations: finite opening/closing/turning, looping stable phases.
+        for (int slot : {1, 3, 4, 6, 8, 9})
+          put(bytes, 0x208 + (slot * 4 + 2) * 32 + 28, 3);
+      }
       archive.insert(archive.end(), bytes.begin(), bytes.end());
     }
   }
@@ -57,6 +65,49 @@ static void provider_controls() {
   std::string path = (directory.path() / "animations.xbe").string();
   { std::ofstream file(path, std::ios::binary); file.write(reinterpret_cast<const char*>(archive.data()), archive.size()); }
   AnimSpriteProvider provider; CHECK(provider.open(path));
+  for (int orientation : {0, 1}) {
+    for (int phase : {1, 3, 4}) {
+      CHECK(!provider.boat_phase_complete(phase, orientation, 4));
+      CHECK(provider.boat_phase_complete(phase, orientation, 5));
+    }
+    CHECK(!provider.boat_phase_complete(0, orientation, 100));
+    CHECK(!provider.boat_phase_complete(2, orientation, 100));
+  }
+  AnimSpriteProvider missing;
+  CHECK(!missing.boat_phase_complete(1, 0, 100));
+  for (uint32_t duration : {0u, uint32_t(-1)}) {
+    auto invalid = archive;
+    const auto start = read_le<uint32_t>(invalid.data() + 20 + 23 * 4);
+    put(invalid, start + 0x208 + (1 * 4 + 2) * 32 + 28, duration);
+    const auto invalid_path = (directory.path() / "invalid.xbe").string();
+    { std::ofstream file(invalid_path, std::ios::binary); file.write(reinterpret_cast<const char*>(invalid.data()), invalid.size()); }
+    AnimSpriteProvider held; CHECK(held.open(invalid_path));
+    CHECK(!held.boat_phase_complete(1, 0, 100));
+  }
+  auto inputs = std::make_shared<SightData>(); CHECK(inputs->sprites.open(path));
+  auto rules = std::make_shared<RulesData>(); rules->init_defaults(); rules->set_sight(inputs);
+  for (int orientation : {0, 1}) {
+    for (int phase : {1, 3, 4}) {
+      World world; world.terrain.w = world.terrain.h = 2; world.terrain.cells.resize(4);
+      Object boat; boat.id = 1; boat.source = ObjectSource::Boat;
+      boat.orientation = orientation; boat.transport_phase = phase;
+      world.objects.push_back(boat);
+      GameSim sim(rules); sim.init(world);
+      Command pause; pause.type = Pct::PauseOn; sim.submit(pause);
+      for (int tick = 0; tick < 8; ++tick) { world.begin_tick(); sim.tick(world); }
+      CHECK(world.objects[0].anim_tick == 0 && world.objects[0].transport_phase == phase);
+      pause.type = Pct::PauseOff; sim.submit(pause);
+      for (int tick = 0; tick < 4; ++tick) { world.begin_tick(); sim.tick(world); }
+      CHECK(world.objects[0].transport_phase == phase);
+      world.begin_tick(); sim.tick(world);
+      const auto& result = world.objects[0];
+      CHECK(result.transport_phase == (phase == 1 ? 2 : 0));
+      CHECK(result.orientation == (phase == 4 ? orientation ^ 1 : orientation));
+      CHECK(result.anim_tick == 0);
+      for (int tick = 0; tick < 8; ++tick) { world.begin_tick(); sim.tick(world); }
+      CHECK(result.transport_phase == (phase == 1 ? 2 : 0));
+    }
+  }
   // Every initialized type has a built/idle body and a supported walk path.
   // The synthetic tables deliberately supply every slot; selection remains kind-specific.
   for (int type = 0; type < 90; ++type) {
@@ -212,7 +263,7 @@ static void headless_controls() {
   auto anim = animation(4);
   for (int slot = 0; slot < 128; ++slot) {
     const size_t p = 0x208 + (slot * 4 + 1) * 32;
-    put(anim, p, 1); put(anim, p + 32, 2); put(anim, p + 32 + 28, 10);
+    put(anim, p, slot == 10 ? 2 : 1); put(anim, p + 32, 2); put(anim, p + 32 + 28, 10);
   }
   archive.insert(archive.end(), anim.begin(), anim.end());
   write("Units", archive);
@@ -241,6 +292,10 @@ static void headless_controls() {
       return result;
     };
     auto first = pixels(0); CHECK((first[24 * 64 + 32] & 0xffffff) == 0xff0000);
+    world.objects[0].body_angle = 32;
+    CHECK((pixels(0)[24 * 64 + 32] & 0xffffff) == 0x00ff00);
+    CHECK(world.objects[0].facing == 0 && world.objects[0].body_angle == 32);
+    world.objects[0].body_angle = 0;
     world.objects[0].attack_tick = 9; // beyond the legacy eight-tick attack state
     auto firing = pixels(1); CHECK((firing[24 * 64 + 32] & 0xffffff) == 0x00ff00);
     for (int i = 0; i < 20; ++i) CHECK(pixels(float(i) / 20) == firing);

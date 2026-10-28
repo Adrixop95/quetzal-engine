@@ -15,10 +15,13 @@ class Simulation {
   virtual void tick(World& w) = 0;
 };
 
-// No game logic: just advances the tick counter.
+// No game logic: advances only the tick counter and animation clocks.
 class NullSimulation : public Simulation {
  public:
-  void tick(World& w) override { w.tick++; }
+  void tick(World& w) override {
+    w.tick++;
+    for (auto& o : w.objects) ++o.anim_tick;
+  }
 };
 
 // Test driver for interpolation: moves unit-typed objects on small deterministic random walks.
