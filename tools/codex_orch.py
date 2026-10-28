@@ -151,8 +151,11 @@ def harvest(name, branch, title):
     open(pf, "w").write(patch)
     land = os.environ.get("LAND_ROOT", ROOT)
     os.chdir(land)
-    r = sh("git fetch -q origin && git checkout -q -f -b %s origin/develop && git apply --3way %s" % (branch, pf))
+    r = sh("git fetch -q origin && git checkout -q -f -B %s origin/develop && git apply --3way %s" % (branch, pf))
     print(r.stdout, r.stderr)
+    if r.returncode:
+        print("FAILED: the patch did not apply on origin/develop")
+        return
     print("Branch", branch, "prepared with the patch applied; review, build, test, then commit and open the PR "
           "(git add the files; git commit; git push -u origin %s; gh pr create --base develop --title '%s')" % (branch, title))
     t["harvested"] = True
