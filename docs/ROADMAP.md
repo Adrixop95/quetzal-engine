@@ -87,7 +87,7 @@ estimates. Reference-dependent work may grow when evidence changes.
 | V07 | Complete required damage classes, regeneration/combat state interactions, range geometry, firing/reload scheduling, composite weapons and projectile impact timing. Resolve trajectory, interception, burn, splash/friendly damage, death and corpse semantics with focused scenarios. | XL | Tasks [02](../tasks/queue/02-descriptor-combat.md), [18](../tasks/queue/18-projectile-collision.md); projectile replay exists, unresolved descriptor weapons are disabled. V02/V04-V06. |
 | V08 | Validate economy clock phase, activation/suspension, construction placement/completion and training/spawn timing. Replace side-wide queues and provisional refunds with measured town-local production behavior. | L | Task [03](../tasks/queue/03-economy-production.md); resource-map income, price formulas and prerequisites already have synthetic coverage. V02/V04. |
 | V09 | Complete repair priority/allocation and destruction service using harvested credits; finish hall upgrades and non-map farms/mines, costs, timers, build-tree changes and command/UI integration. Verify save/replay through completion. | L | Tasks [05](../tasks/queue/05-town-commands.md), [17](../tasks/queue/17-town-upgrades-structures.md); garrison extraction/list toggles exist, service and upgrades remain incomplete. V08. |
-| V10 | Implement campaign-required attack modes, group/follow/selection command semantics and evidenced population/difficulty rules. Remove invented limits such as AI cap 80; do not infer a universal cap from queue limits. | L | Task [16](../tasks/queue/16-population-difficulty.md); several original command types are only logged. V02/V04/V08. |
+| V10 | Implement campaign-required attack modes, group/follow/selection command semantics and evidenced population/difficulty rules. Remove invented limits such as AI cap 80; do not infer a universal cap from queue limits. | L | Task [16](../tasks/queue/16-population-difficulty.md); partial selection/follow integration and queue-limit correction below. V02/V04/V08 remain incomplete. |
 | V11 | Implement deterministic town planning, strategist speed selection, defence reactions and autonomous attack waves. Exercise economy/build orders and sustained opposition in mission scenarios and a repeated 20-minute run. | XL | Tasks [06](../tasks/queue/06-ai-mission-behavior.md), [13](../tasks/queue/13-ai-from-rules.md); current AI is a purchase skeleton. V05-V10. |
 | V12 | Audit every campaign script condition/action and implement required boat/Johnka/submarine, build/move and camera commands. Verify trigger enablement/order, timers, paths, alliances, gifts, defence identity and victory/defeat against mission objectives. Require zero unsupported required actions. | XL | `script_unit` now covers trigger order/timers, all condition kinds, paths, gifts, identities and replay. [Campaign audit](campaign_scripts.md): all 15 scripts parse; 19 transport action sites remain unsupported. Camera semantics and objective/reference validation remain open; V02/V05/V10/V11 adapters are incomplete. |
 
@@ -105,6 +105,21 @@ V08/V09 implementation update (2026-10-28):
 - [ ] V09 acceptance: reference-aligned service timing, complete protection/HP
   transitions, hall upgrade/non-map placement and completion comparisons through
   saves. V08 remains incomplete. See the [evidence inventory](engine_rules_status.md#v08v09-economy-and-town-service-update-2026-10-28-partial).
+
+V10 implementation update (2026-10-28):
+
+- [x] Implement deterministic control-group recall, side-local tactic selection,
+  persistent ground/air follow orders, stance interruption/resumption, ownership
+  and cycle checks, and synthetic replay/save continuation across viewing sides.
+  Engine payload and centroid conventions remain distinct from reference facts.
+- [x] Confirm AI cap 80 is absent and remove the invented eight-entry production
+  cutoff in favor of the inspected town queue capacity 50. Retain synthetic
+  population-above-110 and parsed Difficulty 0/100 engine checks.
+- [ ] Complete V10 acceptance: campaign controls, reference formation/attachment
+  and selection modifiers, mode-specific group distances and inheritance, live
+  population/difficulty observations. V02/V04/V08 remain prerequisites; the private
+  isolated reference attempt failed before launch at loopback setup. See the
+  [V10 evidence inventory](engine_rules_status.md#v10-command-integration-2026-10-28-partial).
 
 ### Make the campaign usable and resumable
 

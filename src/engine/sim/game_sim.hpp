@@ -13,7 +13,7 @@
 
 namespace aztec::engine {
 
-enum class Order : uint8_t { Idle = 0, Move = 1, Attack = 2, AttackMove = 3 };
+enum class Order : uint8_t { Idle = 0, Move = 1, Attack = 2, AttackMove = 3, Follow = 4 };
 
 // Extra animation state used for buildings under construction (anim_state values 0..5 are data::AnimState).
 constexpr int kAnimConstruct = 6;
@@ -74,6 +74,7 @@ class GameSim : public Simulation {
   void service_towns(World& w);
   bool mark_eligible(const Object& o, const TownState& town) const;
   void run_orders(World& w);
+  void follow_tactics(World& w);
   void advance_effects(World& w);
   void fire(World& w, const Object& source, Object& target, int damage);
   void fire_weapon(World& w, const WeaponRules& weapon, const Object& source, Object& target, int damage);
