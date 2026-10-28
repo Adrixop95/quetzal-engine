@@ -1,3 +1,4 @@
+#include "core/endian.hpp"
 #include "core/loader_limits.hpp"
 #include "core/sprite_alpha.hpp"
 
@@ -5,7 +6,7 @@
 
 namespace aztec {
 
-static uint32_t r32(const uint8_t* p) { uint32_t v; std::memcpy(&v, p, 4); return v; }
+static uint32_t r32(const uint8_t* p) { return read_le<uint32_t>(p); }
 static int r16(const uint8_t* p) { return p[0] | p[1] << 8; }
 
 bool decode_alpha_sprite(Item item, AlphaSprite& s) {

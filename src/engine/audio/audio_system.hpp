@@ -1,6 +1,6 @@
 // Sound effects + music through SDL audio. Silent (but functional) when no audio device is available.
 #pragma once
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include <map>
 #include <functional>
 #include <memory>

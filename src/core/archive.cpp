@@ -1,3 +1,4 @@
+#include "core/endian.hpp"
 #include "core/loader_limits.hpp"
 #include "core/archive.hpp"
 
@@ -6,11 +7,7 @@
 
 namespace aztec {
 
-static uint32_t rd32(const uint8_t* p) {
-  uint32_t v;
-  std::memcpy(&v, p, 4);  // data is little-endian; fine on all supported hosts
-  return v;
-}
+static uint32_t rd32(const uint8_t* p) { return read_le<uint32_t>(p); }
 
 bool Archive::open(const std::string& path) {
   groups_.clear();

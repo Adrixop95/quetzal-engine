@@ -1,6 +1,6 @@
 // SDL window + renderer wrapper: windowed / borderless / exclusive fullscreen, any size and aspect.
 #pragma once
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include <string>
 
 namespace aztec::engine {

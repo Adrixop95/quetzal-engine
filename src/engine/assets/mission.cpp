@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 
@@ -80,7 +81,9 @@ std::string resolve_mission(const std::string& maps_dir, const std::string& spec
   bool numeric = !spec.empty() && spec.find_first_not_of("0123456789") == std::string::npos;
   std::string name = numeric ? "mission_" + spec : spec;
   std::string stem = name;
-  if (stem.size() > 3 && (stem.substr(stem.size() - 3) == ".mp" || stem.substr(stem.size() - 3) == ".MP"))
+  std::string ext = fs::path(stem).extension().string();
+  for (char& c : ext) c = char(std::tolower(static_cast<unsigned char>(c)));
+  if (ext == ".mp")
     stem.resize(stem.size() - 3);
   return find_file_ci(maps_dir, stem + ".mp");
 }

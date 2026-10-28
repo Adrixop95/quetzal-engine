@@ -10,7 +10,7 @@
 #include "core/script.hpp"
 #include "core/ugi.hpp"
 #include "core/visfile.hpp"
-#include <dirent.h>
+#include <filesystem>
 #include "core/audio.hpp"
 #include "core/mp.hpp"
 #include "core/sprite_alpha.hpp"
@@ -65,9 +65,10 @@ int main(int argc, char** argv) {
   {
     CHECK(ugi_from_name("ugi_abdula") >= 0);
     int nvis = 0, nscn = 0, nmit = 0;
-    if (DIR* d = opendir(maps.c_str())) {
-      while (dirent* e = readdir(d)) {
-        std::string n = e->d_name;
+    {
+      std::error_code ec;
+      for (const auto& entry : std::filesystem::directory_iterator(maps, ec)) {
+        std::string n = entry.path().filename().string();
         if (n.size() < 5 || n[0] == 'z') continue;  // z*: scratch maps of test tools
         std::string ext = n.substr(n.size() - 4), base = maps + n.substr(0, n.size() - 4);
         if (ext == ".vis") {
@@ -86,7 +87,6 @@ int main(int argc, char** argv) {
           CHECK(ok); nmit += ok;
         }
       }
-      closedir(d);
     }
     std::printf("vis=%d scn=%d mit=%d\n", nvis, nscn, nmit);
   }
@@ -119,9 +119,10 @@ int main(int argc, char** argv) {
   // every .mp: full schema vs the files' own counts
   {
     int n = 0;
-    if (DIR* d = opendir(maps.c_str())) {
-      while (dirent* e = readdir(d)) {
-        std::string nm = e->d_name;
+    {
+      std::error_code ec;
+      for (const auto& entry : std::filesystem::directory_iterator(maps, ec)) {
+        std::string nm = entry.path().filename().string();
         if (nm.size() < 4 || nm[0] == 'z' || nm.substr(nm.size() - 3) != ".mp") continue;
         MpFile mp;
         bool ok = load_mp(maps + nm, mp);
@@ -136,7 +137,6 @@ int main(int argc, char** argv) {
         CHECK(mp.map_w > 0 && mp.map_h > 0);
         n++;
       }
-      closedir(d);
     }
     std::printf("mp=%d\n", n);
     CHECK(n >= 30);

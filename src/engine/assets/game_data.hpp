@@ -16,14 +16,14 @@ class GameData {
   const Archive& tiles(int tileset) const { return tileset == 1 ? tiles1_ : tiles0_; }
   // Finds `Maps/<name>.<ext>` ignoring case (the data mixes `Mission_4.map` with `mission_4.mp`). Empty if absent.
   std::string map_file(const std::string& name, const std::string& ext) const;
-  std::string maps_dir() const { return root_ + "/Maps"; }
+  std::string maps_dir() const;
 
  private:
   std::string root_;
   Archive pal_, units_, tiles0_, tiles1_, common_, fnts_, light_;
 };
 
-// Case-insensitive lookup of `file` inside `dir`; returns the full path or "".
+// Case-insensitive lookup of every path component in `dir/file`; returns the full path or "".
 std::string find_file_ci(const std::string& dir, const std::string& file);
 
 }  // namespace aztec::engine

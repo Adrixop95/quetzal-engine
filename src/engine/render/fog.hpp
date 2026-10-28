@@ -2,7 +2,7 @@
 // (0 lit, 152 unexplored, in between = explored/remembered). Rendered as a one-texel-per-tile
 // texture stretched with linear filtering, so shading is smooth across tile borders.
 #pragma once
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include <cstdint>
 #include <vector>
 #include "engine/world/camera.hpp"

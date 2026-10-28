@@ -22,6 +22,7 @@
 #include "engine/platform/clock.hpp"
 #include "engine/sim/game_sim.hpp"
 #include "engine/sim/savegame.hpp"
+#include "core/endian.hpp"
 #include "engine/sim/simulation.hpp"
 #include "engine/world/camera.hpp"
 #include "engine/world/type_info.hpp"
@@ -58,7 +59,7 @@ static void test_sprite_metadata() {
 
   // A timed prefix must play before a later hold frame, also when looping.
   std::vector<uint8_t> bytes(0x208 + 4 * 32, 0);
-  auto put = [&](size_t offset, uint32_t value) { std::memcpy(bytes.data() + offset, &value, 4); };
+  auto put = [&](size_t offset, uint32_t value) { aztec::write_le(bytes.data() + offset, value); };
   std::memcpy(bytes.data(), "Anim", 4); put(4, 3); put(8, 1);
   put(0x208 + 32, 123); put(0x208 + 32 + 28, 2);
   put(0x208 + 64, 456);
@@ -207,7 +208,7 @@ static void test_pure() {
   CHECK(tp.pick(s, out) && out.key.index == 77);
   s.type_id = 6;
   CHECK(!tp.pick(s, out));
-  CHECK(type_info(0) && std::string(type_info(0)->name) == "FOOTMAN" && type_info(10)->is_structure() && !type_info(90));
+  CHECK(aztec::engine::type_info(0) && std::string(aztec::engine::type_info(0)->name) == "FOOTMAN" && aztec::engine::type_info(10)->is_structure() && !aztec::engine::type_info(90));
 
   // deterministic wander
   World a, b;
@@ -423,7 +424,7 @@ static void test_data(const std::string& dir) {
 static std::vector<uint32_t> side_units(const World& w, int side, bool mobile_only) {
   std::vector<uint32_t> v;
   for (const Object& o : w.objects) {
-    const TypeInfo* ti = type_info(o.type);
+    const TypeInfo* ti = aztec::engine::type_info(o.type);
     if (o.side == side && o.type >= 0 && ti && (!mobile_only || !ti->is_structure())) v.push_back(o.id);
   }
   return v;
@@ -683,10 +684,10 @@ static void test_script_path_hash() {
 }
 
 static void test_script_animation_clocks() {
-  char directory[] = "/tmp/aztec-script-clocks-XXXXXX";
-  if (!mkdtemp(directory)) { CHECK(false); return; }
-  const auto path = std::filesystem::path(directory) / "clocks.scn";
-  FILE* file = std::fopen(path.c_str(), "w");
+  const auto directory = std::filesystem::temp_directory_path() / "aztec-script-clocks";
+  std::filesystem::create_directories(directory);
+  const auto path = directory / "clocks.scn";
+  FILE* file = std::fopen(path.string().c_str(), "w");
   if (!file) { CHECK(false); std::filesystem::remove(directory); return; }
   std::fputs("trigger(0) conditions localTime == 1 actions side(local).victory end\n", file);
   CHECK(std::fclose(file) == 0);

@@ -2,7 +2,7 @@
 // (like a hardware cursor: it never lags behind the 12 Hz simulation or the world rendering).
 // Images come from Res/common.xbe (see README for the id table); animated cursors cycle at 80 ms/frame like the original.
 #pragma once
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include <cstdint>
 #include <vector>
 #include "engine/render/sprite_store.hpp"

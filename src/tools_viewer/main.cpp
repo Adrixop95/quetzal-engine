@@ -1,5 +1,5 @@
 // Read-only mission inspector. No world creation or simulation is needed.
-#include <SDL2/SDL.h>
+#include <SDL.h>
 
 #include <algorithm>
 #include <cctype>

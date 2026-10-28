@@ -3,7 +3,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <unistd.h>
+#include "temp_dir.hpp"
 #include "engine/audio/scene_audio.hpp"
 
 using namespace aztec;
@@ -56,9 +56,8 @@ static Bytes animation() {
   return b;
 }
 int main() {
-  char name[] = "/tmp/aztec-audio-XXXXXX";
-  char* temp = mkdtemp(name); if (!temp) return 1;
-  const std::filesystem::path root(temp);
+  TempDir directory;
+  const auto& root = directory.path();
   std::filesystem::create_directory(root / "Res");
   std::filesystem::create_directory(root / "Music");
   Bytes set(4); put(set, 0, 1);
@@ -155,6 +154,30 @@ int main() {
   std::filesystem::remove(root / "Res/Snd.xbe");
   AudioSystem music_only; CHECK(!music_only.init(root.string(), false));
   music_only.start_music(2, 0, 0); CHECK(music_only.current_track() == 2);
-  std::filesystem::remove_all(root);
+  // Skip invalid and empty tracks, decoding little-endian WAV bytes into native samples.
+  Bytes empty = wav(); empty.resize(44); put(empty, 4, 36); put(empty, 40, 0);
+  Bytes signed_wav = wav();
+  signed_wav[44] = 0x34; signed_wav[45] = 0x12; // left = 4660, right = -4660
+  signed_wav[46] = 0xcc; signed_wav[47] = 0xed;
+  write(root / "Music/music.xbe", archive({{0x460, {Bytes{0}, empty, signed_wav, wav()}}}));
+  AudioSystem fallback; CHECK(!fallback.init(root.string(), false));
+  std::vector<AudioEvent> music_events;
+  fallback.event_sink = [&](const AudioEvent& e) { music_events.push_back(e); };
+  fallback.set_volumes(1, 1);
+  fallback.start_music(0, 15, 99);
+  CHECK(fallback.current_track() == 3 && music_events.size() == 1);
+  CHECK(music_events.back().kind == AudioEvent::Kind::Music && music_events.back().sound == 3);
+  fallback.mixer().mix(samples, 8);
+  CHECK(samples[0] == 4660 && samples[1] == -4660 && samples[2] == 0);
+  fallback.update(); CHECK(fallback.current_track() == 4);
+  fallback.mixer().mix(samples, 8); fallback.update();
+  CHECK(fallback.current_track() == 3); // wrap and skip both invalid tracks again
+  fallback.stop_music();
+  CHECK(music_events.back().kind == AudioEvent::Kind::MusicStop && music_events.back().sound == 3);
+  music_events.clear();
+  fallback.start_music(0, 3, 0); // every allowed track is invalid
+  CHECK(fallback.current_track() == 0 && !fallback.mixer().music_playing() && music_events.empty());
+  fallback.start_music(1, 15, 0); // an exact invalid track must not select another
+  CHECK(fallback.current_track() == 0 && music_events.empty());
   return failures ? 1 : 0;
 }

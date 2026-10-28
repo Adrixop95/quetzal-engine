@@ -6,14 +6,15 @@
 #include <cstring>
 
 #include "core/mapfiles.hpp"
+#include "core/endian.hpp"
 
 namespace aztec::engine {
 
 namespace {
 struct Section { uint32_t va, vsize, raw, rsize; };
 
-uint32_t u32(const std::vector<uint8_t>& d, size_t o) { uint32_t v = 0; if (o + 4 <= d.size()) std::memcpy(&v, d.data() + o, 4); return v; }
-uint16_t u16(const std::vector<uint8_t>& d, size_t o) { uint16_t v = 0; if (o + 2 <= d.size()) std::memcpy(&v, d.data() + o, 2); return v; }
+uint32_t u32(const std::vector<uint8_t>& d, size_t o) { return o <= d.size() && d.size() - o >= 4 ? read_le<uint32_t>(d.data() + o) : 0; }
+uint16_t u16(const std::vector<uint8_t>& d, size_t o) { return o <= d.size() && d.size() - o >= 2 ? read_le<uint16_t>(d.data() + o) : 0; }
 
 // Entry layout: i32 time, 3 x f64 RGB, i32 level, i32 coefficient (36 bytes, packed).
 std::vector<DayKey> read_table(const std::vector<uint8_t>& d, const std::vector<Section>& secs, uint32_t base, uint32_t va) {
@@ -25,7 +26,7 @@ std::vector<DayKey> read_table(const std::vector<uint8_t>& d, const std::vector<
     for (int i = 0; i < 64 && off + 36 <= d.size(); i++, off += 36) {
       DayKey k;
       k.time = int(u32(d, off));
-      for (int c = 0; c < 3; c++) std::memcpy(&k.rgb[c], d.data() + off + 4 + 8 * c, 8);
+      for (int c = 0; c < 3; c++) k.rgb[c] = read_le<double>(d.data() + off + 4 + 8 * c);
       k.level = int(u32(d, off + 28));
       k.coeff = int(u32(d, off + 32));
       bool sane = k.time >= 0 && k.time <= Daylight::kDayTicks && k.level >= 0 && k.level < 20;

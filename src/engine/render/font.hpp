@@ -1,6 +1,6 @@
 // Tiny built-in 3x5 bitmap font (A-Z, 0-9, punctuation) for labels and HUD. No external font files.
 #pragma once
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include <string>
 #include "engine/render/sprite_store.hpp"
 

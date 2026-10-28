@@ -152,6 +152,7 @@ class PlaythroughTests(unittest.TestCase):
             self.assertTrue(summary['missions'][0]['deterministic'])
             self.assertTrue((output / 'aztec_engine').is_file())
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "the runner needs unshare and POSIX signals")
     def test_runner_crash_and_wall_timeout(self):
         args = type('Args', (), dict(engine=ENGINE, rules_dir=ROOT / 'docs/data', max_ticks=10,
                     order_interval=120, no_auto_orders=False, orders_dir=None, timeout=1))()

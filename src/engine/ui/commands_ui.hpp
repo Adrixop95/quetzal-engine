@@ -1,6 +1,6 @@
 // Input and right-hand panel presentation. Gameplay changes are submitted as simulation commands.
 #pragma once
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include <array>
 #include <string>
 #include <vector>

@@ -6,7 +6,8 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <unistd.h>
+#include "temp_dir.hpp"
+#include "core/endian.hpp"
 #include "engine/assets/anim_provider.hpp"
 #include "engine/render/light_grid.hpp"
 #include "engine/render/scene_renderer.hpp"
@@ -16,7 +17,7 @@ using namespace aztec::engine;
 static int failures = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAIL %d: %s\n", __LINE__, #c); ++failures; } } while (0)
 using Bytes = std::vector<uint8_t>;
-static void put(Bytes& b, size_t pos, uint32_t value) { std::memcpy(b.data() + pos, &value, 4); }
+static void put(Bytes& b, size_t pos, uint32_t value) { write_le(b.data() + pos, value); }
 static Bytes animation(int id) {
   Bytes bytes(0x208 + 128 * 4 * 32);
   std::memcpy(bytes.data(), "Anim", 4); put(bytes, 4, 3);
@@ -52,11 +53,10 @@ static void provider_controls() {
       archive.insert(archive.end(), bytes.begin(), bytes.end());
     }
   }
-  char path[] = "/tmp/aztec-render-XXXXXX";
-  int fd = mkstemp(path); CHECK(fd >= 0); if (fd < 0) return;
-  close(fd);
+  TempDir directory;
+  std::string path = (directory.path() / "animations.xbe").string();
   { std::ofstream file(path, std::ios::binary); file.write(reinterpret_cast<const char*>(archive.data()), archive.size()); }
-  AnimSpriteProvider provider; CHECK(provider.open(path)); unlink(path);
+  AnimSpriteProvider provider; CHECK(provider.open(path));
   // Every initialized type has a built/idle body and a supported walk path.
   // The synthetic tables deliberately supply every slot; selection remains kind-specific.
   for (int type = 0; type < 90; ++type) {
@@ -186,9 +186,8 @@ static void ordering_controls() {
 }
 // A real SceneRenderer check with invented raw RGB565 sprites. No game data is used.
 static void headless_controls() {
-  char path[] = "/tmp/aztec-animation-XXXXXX";
-  const auto* directory = mkdtemp(path); CHECK(directory != nullptr);
-  if (!directory) return;
+  TempDir directory;
+  const auto& path = directory.path();
   namespace fs = std::filesystem;
   fs::create_directory(fs::path(path) / "Res");
   auto write = [&](const std::string& name, const Bytes& bytes) {
@@ -206,7 +205,7 @@ static void headless_controls() {
     put(sprite, 0, 0xe0ac0000); put(sprite, 4, 8 | (8 << 16));
     put(sprite, 8, 0x11); put(sprite, 16, 8 | (8 << 16)); put(sprite, 20, 4 | (4 << 16));
     uint16_t color = i == 0 ? 0xf800 : 0x07e0;
-    for (size_t p = 24; p < sprite.size(); p += 2) std::memcpy(sprite.data() + p, &color, 2);
+    for (size_t p = 24; p < sprite.size(); p += 2) write_le(sprite.data() + p, color);
     archive.insert(archive.end(), sprite.begin(), sprite.end());
   }
   put(archive, 44, uint32_t(archive.size()));
@@ -219,15 +218,15 @@ static void headless_controls() {
   write("Units", archive);
   for (const auto* name : {"Pal", "Tiles0", "Tiles1", "common", "fnts", "light"}) write(name, Bytes(4));
   const int initialized = SDL_Init(SDL_INIT_VIDEO); CHECK(initialized == 0);
-  if (initialized != 0) { fs::remove_all(path); return; }
+  if (initialized != 0) return;
   {
     Window win; WindowOptions options; options.width = options.height = 64;
     options.software = true; options.vsync = false;
     const bool created = win.create(options); CHECK(created);
-    if (!created) { fs::remove_all(path); return; }
-    GameData assets; std::string error; CHECK(assets.open(path, error));
+    if (!created) { SDL_Quit(); return; }
+    GameData assets; std::string error; CHECK(assets.open(path.string(), error));
     auto provider = std::make_shared<AnimSpriteProvider>();
-    CHECK(provider->open(std::string(path) + "/Res/Units.xbe"));
+    CHECK(provider->open((path / "Res" / "Units.xbe").string()));
     World world; Object unit; unit.type = 0; unit.id = 1;
     unit.teleport(to_fixed(32), to_fixed(32)); unit.attack_tick = 0; unit.body_tick = 0;
     unit.has_fired = true; world.objects.push_back(unit);
@@ -249,7 +248,7 @@ static void headless_controls() {
     world.objects[0].attack_tick = 12;
     CHECK(pixels(0) == first); // resource duration completes, returning to idle
   }
-  SDL_Quit(); fs::remove_all(path);
+  SDL_Quit();
 }
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--headless") headless_controls();

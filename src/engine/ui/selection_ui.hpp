@@ -1,6 +1,6 @@
 // Mouse selection of the local player's objects: click or drag a box with the left button.
 #pragma once
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include "engine/platform/input.hpp"
 #include "engine/world/camera.hpp"
 #include "engine/world/world.hpp"

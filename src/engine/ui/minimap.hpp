@@ -1,7 +1,7 @@
 // Minimap: the mission's .spr preview (or a texture averaged from terrain tiles when absent),
 // object dots and the camera rectangle. Click/drag with the left button to move the camera.
 #pragma once
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include "engine/assets/game_data.hpp"
 #include "engine/platform/input.hpp"
 #include "engine/render/fog.hpp"
