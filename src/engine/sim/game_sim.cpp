@@ -920,6 +920,15 @@ void GameSim::script_order(World& w, const std::vector<uint32_t>& ids, int pxx, 
   if (!agents.empty()) mover_->order_move(agents.data(), int(agents.size()), {to_fixed(pxx), to_fixed(pyy)});
 }
 
+void GameSim::script_stop(World& w, const std::vector<uint32_t>& ids) {
+  for (uint32_t id : ids) {
+    Object* o = w.find_mut(id);
+    if (!o || o->removed || !o->alive) continue;
+    o->order = uint8_t(Order::Idle); o->target = 0; o->resume = 0;
+    if (o->mover >= 0) mover_->stop(uint32_t(o->mover));
+  }
+}
+
 void GameSim::script_kill(World& w, uint32_t id) {
   Object* o = w.find_mut(id);
   if (o && o->alive) kill(w, *o);
@@ -960,7 +969,7 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(o.body_tick); mix(o.attack_tick); mix(o.body_moving); mix(o.anim_tick);
     mix(o.facing); mix(o.anim_state); mix(uint32_t(o.corpse_ticks));
     mix(uint32_t(o.dest_x)); mix(uint32_t(o.dest_y)); mix(o.resume); mix(uint32_t(o.build_elapsed)); mix(uint32_t(o.build_total));
-    mix(uint32_t(o.town)); mix(o.town_hall);
+    mix(uint32_t(o.town)); mix(o.town_hall); mix(o.defence);
     mix(uint32_t(o.secondary_hp)); mix(o.regen_alternate);
     mix(uint32_t(o.hp_max)); mix(uint32_t(o.tactic)); mix(uint32_t(o.scenario)); mix(o.last_hit_by); mix(uint32_t(o.mover)); mix(o.anim_variant);
   }
@@ -988,6 +997,7 @@ uint64_t GameSim::state_hash(const World& w) const {
   mix(script_.state_hash());
   for (int a = 0; a < 8; a++) for (int b = 0; b < 8; b++) mix(w.relation[a][b]);
   mix(w.outcome);
+  for (uint8_t result : w.side_outcome) mix(result);
   if (mover_) mix(mover_->state_hash());
   return h;
 }
