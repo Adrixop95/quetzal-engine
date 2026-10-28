@@ -30,6 +30,7 @@ class ScriptRunner {
   // Condition helpers are public for tests.
   bool eval(const World& w, const script::Condition& c) const;
   uint64_t state_hash() const;
+  static bool supports(script::ActKind kind);
   size_t unsupported() const { return unsupported_; }
   // AI hook: advances units of tactics that follow a path.
   void follow_paths(GameSim& sim, World& w);

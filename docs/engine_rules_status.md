@@ -208,15 +208,27 @@ push was run by the assistant.
 | Every trigger is evaluated each tick; actions run when all conditions hold; `trigger(N).disable` turns one off | P | inferred from usage (`attacked != -1` plus self-disable) |
 | Triggers enabled by another trigger start disabled; initialised in `GameSim::init()` (not tied to tick 1) | P | initial state undocumented |
 | `localTime` / `globalTime` = ticks since mission start | P | |
-| Timers: start at 0 and count every tick; `set(V)` sets and starts, `stop`, `kill`; `timer(0)` exists from the start | P | |
+| Timers: start at 0 and count every tick; `set(V)` sets and starts, `stop`, `kill`; `timer(0)` exists from the start | engine synthetic / P reference | Timer 0 is initialized before tick 1; stop/start retains values, kill suppresses comparisons. Fixed-width 64-bit timer values; see [campaign audit](campaign_scripts.md) |
 | `side(S).units` = living non-buildings; `towns` = living town halls (outpost / village / town / fortress types); `enemies` = units and town halls of hostile sides | P | |
 | `tactic(N)` = living objects of the side with `[Team#] ScenarioID = N`; `valid` 0/1; `idle` = all idle; `attacked` = id of the last attacker or -1 | P | |
 | `attackTown(id)`, `moveTo(x,y)` = attack-move of the whole group (tiles -> pixels, clamped to the map) | P | |
 | `joinTactic`, `giftToSide`, `kill`, `lock/unlock`, `setPath/setCycledPath/...` (successive points of `[Paths]`) | P | |
 | `setFriendlyTo/NeutralTo/EnemyTo` changes the relation one-way (8x8 matrix) | P | |
 | `addMoney/takeMoney`, `printString`, `centerView`, `cameraActivate(i,v)` (jump to `Camera#`), `victory/defeat` | P | the mission ends for the script side |
-| `boat(N).activate`, `johnka(N).enable`, `submarine(N).go`, `buildCommand`, `moveCommand`, `cameraDeactivate` | not done | counted as `unsupported` |
-| Defences from `[SideN] Defence#` appear as objects (towers); `defence(N).valid` = alive | P | Reference loader creates each defence with a dedicated tactic and optional scenario ID. Camera records are separate; see `rules_ai.md` |
+| `boat(N).activate`, `johnka(N).enable/disable`, `submarine(N).go`, `buildCommand`, `moveCommand`, `cameraDeactivate` | not done | Shared runner/headless/inventory classification; 19 unsupported campaign sites in missions 2, 7, 9 and 15. Build/move/deactivate and Johnka disable are absent from the audited campaign |
+| Defences from `[SideN] Defence#` appear as objects (towers); `defence(N).valid` = alive | engine identity checks / P reference | Explicit defence provenance excludes colliding team scenario IDs and accidental town membership. Dedicated reference tactic behavior remains unimplemented. Camera records are separate; see `rules_ai.md` |
+
+V12 progress (2026-10-28): the [campaign script audit](campaign_scripts.md)
+records every condition/action kind across 15 private campaign scripts (92
+triggers, 129 conditions, 363 action sites). All parse; 19 action sites remain
+unsupported. `script_unit` covers every condition kind, enablement/source order,
+timer lifecycle, path variants, alliances, gifts, defence identity, outcomes and
+replay continuation with synthetic data. Gifting now stops the movement agent
+and rejects invalid recipients; defence provenance and per-side outcomes are
+hashed. These are engine consistency fixes, not measured reference semantics.
+The isolated reference control failed during namespace network setup before
+launch. V02/V05/V10/V11 adapters and mission objective validation remain open;
+V12 is not complete. Camera activation still ignores its second argument.
 
 ## Computer player (`ai/planner.*`, `sim/ai.cpp` adapter)
 Controlled sides have `OnlyComp=1` and are not neutral. The pure planner reads

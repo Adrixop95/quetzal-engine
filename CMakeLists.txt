@@ -212,6 +212,26 @@ target_link_libraries(test_audio aztec_engine_lib)
 add_test(NAME audio_events COMMAND test_audio)
 set_tests_properties(audio_events PROPERTIES LABELS "unit;audio")
 
+# Read-only campaign script inventory plus asset-independent trigger contracts.
+add_executable(aztec_script_audit tools/script_audit.cpp)
+target_link_libraries(aztec_script_audit PRIVATE aztec_engine_lib)
+aztec_warnings(aztec_script_audit)
+add_executable(test_scripts tests/test_scripts.cpp)
+target_link_libraries(test_scripts PRIVATE aztec_engine_lib)
+aztec_warnings(test_scripts)
+add_test(NAME script_unit COMMAND test_scripts)
+set_tests_properties(script_unit PROPERTIES LABELS "unit")
+add_test(NAME script_campaign_inventory COMMAND aztec_script_audit --game ${CMAKE_SOURCE_DIR}/game --optional)
+set_tests_properties(script_campaign_inventory PROPERTIES SKIP_RETURN_CODE 77 LABELS "game-data")
+if(GAME_DIR)
+  set_tests_properties(script_campaign_inventory PROPERTIES ENVIRONMENT "GAME_DIR=${GAME_DIR}")
+endif()
+if(Python3_Interpreter_FOUND)
+  add_test(NAME script_audit COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tests/test_script_audit.py
+    $<TARGET_FILE:aztec_script_audit>)
+  set_tests_properties(script_audit PROPERTIES LABELS "unit" TIMEOUT 20)
+endif()
+
 # Oracle text parsing and long replay/save continuation use only synthetic worlds.
 add_executable(test_oracle_packets tests/test_oracle_packets.c)
 aztec_warnings(test_oracle_packets)

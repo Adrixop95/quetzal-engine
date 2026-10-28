@@ -54,6 +54,7 @@ class GameSim : public Simulation {
   const ScriptRunner& script() const { return script_; }
   // Used by the script runner (tactic orders).
   void script_order(World& w, const std::vector<uint32_t>& ids, int px, int py, bool attack_move);
+  void script_stop(World& w, const std::vector<uint32_t>& ids);
   void script_kill(World& w, uint32_t id);
   // Debug/editor helper (not a lockstep command): moves an object and its movement agent instantly.
   void teleport(World& w, uint32_t id, int px, int py);

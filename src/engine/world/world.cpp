@@ -26,8 +26,9 @@ bool load_world(const GameData& data, const std::string& spec, World& w, std::st
     o.id = next_id++;
     o.type = p.type;
     o.source = p.source;
+    o.defence = p.defence;
     o.side = p.side;
-    if (p.source == ObjectSource::Town)
+    if (p.source == ObjectSource::Town && !p.defence)
       for (size_t i = 0; i < w.mission.towns.size(); ++i)
         if (w.mission.towns[i].index == p.group) o.town = int(i);
     o.hp = p.hp;

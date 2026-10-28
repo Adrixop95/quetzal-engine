@@ -110,15 +110,6 @@ void drive(GameSim& sim, const World& w) {
   }
 }
 
-bool unsupported(ActKind kind) {
-  switch (kind) {
-    case ActKind::BoatActivate: case ActKind::JohnkaEnable: case ActKind::JohnkaDisable:
-    case ActKind::SubmarineGo: case ActKind::SideBuildCommand: case ActKind::SideMoveCommand:
-    case ActKind::SideCameraDeactivate: return true;
-    default: return false;
-  }
-}
-
 struct Report {
   std::string mission, status = "error", error;
   uint64_t ticks = 0, hash = 0, trace = 1469598103934665603ull;
@@ -151,7 +142,7 @@ void audit(const Script& script, const World& w, Report& report) {
     bool objective = false;
     for (const auto& a : t.actions) {
       if (a.kind == ActKind::SideVictory && (a.side == kLocal || a.side == w.script_side)) objective = victory = true;
-      if (unsupported(a.kind)) report.script_errors.push_back("unsupported action at line " + std::to_string(a.line));
+      if (!ScriptRunner::supports(a.kind)) report.script_errors.push_back("unsupported action at line " + std::to_string(a.line));
       if ((a.kind == ActKind::TriggerEnable || a.kind == ActKind::TriggerDisable) && !script.find(a.id))
         report.script_errors.push_back("missing trigger " + std::to_string(a.id) + " at line " + std::to_string(a.line));
     }
