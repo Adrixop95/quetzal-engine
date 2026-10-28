@@ -65,3 +65,55 @@ The generator removes mission 1's inherited footmen and places each generated to
 Recommended category matrix: footman/archer/rifleman against barracks (14), watch tower (17), eagle (33) and zeppelin (7), plus a footman ground-target control. Use separate maps or distant slots, no inherited units, initial separation both inside and outside weapon range, and repeat with explicit target/town orders as well as idle acquisition. Ordinary buildings can be skipped by normal global tactic assignment even when the weapon can damage them. A zero-hit result alone does not verify immunity.
 
 On 2026-10-25 the corrected custom-map experiment was attempted in the restricted worktree environment. `unshare -rn` started, but interface configuration was denied and the supplied runtime aborted at UDP socket creation (`RaiseException e06d7363`). New category, population and timing observations remain open; see `rules_summary.md`. Decompilation and x86 inspection were still possible. Keep all private maps, dumps, screenshots, Ghidra projects and generated source under ignored `work/` (or temporary directories), never in a commit.
+
+## Projectile measurement protocol
+
+The 2026-10-28 projectile probe used a private game copy with read-only resource
+symlinks, ordinary Maps/Saves directories and copied player/settings files.
+The supplied `/home/adrox/aztec-re/build/aztec_recomp` was selected through
+`ZSTAT_RUNTIME`. After generating `zprojectile` with archer type 27 at (8,8)
+and enemy footman type 0 at (10,8), the following run failed:
+
+```sh
+ZSTAT_GAME_DIR="$PWD/work/projectile-game" \
+ZSTAT_RUNTIME=/home/adrox/aztec-re/build/aztec_recomp RT_UNIT_EVERY=1 \
+  sh tools/zstat_run.sh zprojectile work/projectile-probe 12000
+```
+
+The runner returned status 1 at `ip link set lo up` inside `unshare -rn`:
+`Cannot open netlink socket: Operation not permitted`. The game did not launch,
+and no unit log was produced. Private inputs, script and failure output remain
+under `work/projectile-game/` and `work/projectile-probe/`. No projectile,
+collision, burn or damage rule can be inferred from this run. Rerun on a host
+where the documented namespace setup succeeds; do not bypass isolation.
+
+Use these controls when measurements become possible:
+
+1. Establish a successful record/replay control before interpreting weapon
+   results. Capture commands, per-tick unit HP/positions and synchronized
+   projectile observations. The existing unit log covers units, not projectile
+   altitude or collision events; it cannot establish a ballistic arc alone.
+2. For Arrow, Axe and BallExpl, repeat stationary shots at several measured
+   separations on clear ground. Record launch/impact ticks, ground position and
+   render height separately. Repeat with a moving target and a source killed
+   during flight to distinguish snapshot aim, tracking and flight cancellation.
+3. Compare each clear-ground control with the same endpoints and an intervening
+   terrain feature, structure or unit. Vary obstacle placement and height
+   independently. Do not equate movement passability with projectile collision
+   without observations. Record the actual impact location and all HP changes.
+4. For flame, observe a single launch through the end of all damage events,
+   separating travel, impact animation and subsequent burn ticks. Repeat after
+   moving the victim and after source death. Structure damage-fire animations
+   alone do not establish damage-over-time behavior.
+5. Measure splash on each victim independently: physical armor, structure,
+   airborne, organic/nonorganic and overlapping category flags. Use a direct
+   target and neighbours at several distances, including the observed radius
+   boundary, with allied/neutral controls. Keep reloads and overlapping shots
+   out of the measurement window and account for regeneration. A payload
+   computed for the direct target is not evidence of identical neighbour damage.
+
+Only after these observations should integer trajectory parameters, collision
+ordering, burn schedules and per-victim damage calculations replace the engine
+placeholders. Add synthetic boundary and command-replay tests for each measured
+rule, including state-hash coverage for any new flight or burn state. Keep
+unmeasured weapon families explicitly unresolved.

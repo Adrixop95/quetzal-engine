@@ -101,6 +101,52 @@ static void initialization(std::shared_ptr<const RulesData> rules) {
   CHECK(w.visibility.sides[0].v == std::vector<uint8_t>(1600, 24));
   CHECK(w.visibility.sides[1].v == std::vector<uint8_t>(1600, 0));
 }
+// Object membership uses mission town IDs; queues and planner state use vector positions.
+static void sparse_towns(std::shared_ptr<const RulesData> rules) {
+  auto w = world();
+  for (int ti = 0; ti < 2; ++ti) {
+    w.mission.towns[ti].index = 4 + ti * 5;
+    w.objects[ti].town = w.mission.towns[ti].index;
+    w.objects[ti].town_hall = true;
+  }
+  object(w, 0, 0, 4, 10, 8);
+  CHECK(ai::development(w, *rules, 0) == 1);
+  auto intel = ai::intelligence(w, *rules, 0);
+  CHECK(intel.size() == 2 && intel[0].town == 0 && intel[1].town == 1);
+  CHECK(intel[0].counts[11] == 1 && intel[1].counts[11] == 1);
+  ai::TownState attack; attack.phase = 2; attack.target_town = 1;
+  attack.known_towns = {1}; attack.elapsed = 1;
+  auto decision = ai::step(w, *rules, 0, attack, {});
+  CHECK(issued(decision, Pct::AttackMove) && issued(decision, Pct::AttackMove)->ids == std::vector<uint32_t>{3});
+
+  w.mission.sides[1].only_comp = false;
+  GameSim sim(rules); sim.init(w);
+  w.ai_towns[0].phase = 7; w.ai_towns[0].spent = 20000;
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.side_state[0].queue.size() == 1);
+  if (w.side_state[0].queue.empty()) return;
+  auto& q = w.side_state[0].queue.front();
+  CHECK(q.type == 12 && q.town == 0);
+  CHECK(w.ai_towns[0].spent > 20000 && w.ai_towns[1].spent == 0);
+  auto phase = w.ai_towns[0].phase;
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.ai_towns[0].phase == phase); // queued construction suspends the planner
+  q.remaining = 1;
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.side_state[0].queue.empty());
+  CHECK(w.objects.back().type == 12 && w.objects.back().town == 4);
+  w.side_state[0].build_paused = true;
+  const auto before = w.ai_towns;
+  const auto money = w.side_state;
+  for (int i = 0; i < kDayTicks; ++i) { w.begin_tick(); sim.tick(w); }
+  for (int ti = 0; ti < 2; ++ti) {
+    auto gain = w.ai_towns[ti].harvested - before[ti].harvested;
+    CHECK(gain > 0 && gain == w.side_state[ti].money - money[ti].money);
+  }
+  auto hash = sim.state_hash(w);
+  ++w.ai_towns[0].spent; CHECK(sim.state_hash(w) != hash); --w.ai_towns[0].spent;
+  ++w.mission.towns[0].type; CHECK(sim.state_hash(w) != hash);
+}
 static void scripted(std::shared_ptr<const RulesData> rules) {
   auto a = world(); a.objects[0].scenario = 42;
   object(a, 0, 1, 1, 25, 26, 7); object(a, 0, 1, 1, 26, 26, 8);
@@ -134,6 +180,8 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
     a.begin_tick(); b.begin_tick(); sa.tick(a); sb.tick(b);
     if ((t + 1) % 3600 == 0) std::fprintf(stderr, "Skirmish tick %d: %zu objects\n", t + 1, a.objects.size());
     if (sa.state_hash(a) != sb.state_hash(b)) { CHECK(false); return; }
+    for (const auto& side : a.side_state) for (const auto& q : side.queue)
+      construction |= rules->type(q.type).structure;
     for (const auto& o : a.objects) {
       construction |= o.progress < 1000;
       movement |= o.order == uint8_t(Order::AttackMove) || o.order == uint8_t(Order::Attack);
@@ -150,6 +198,6 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
 }
 int main(int argc, char** argv) {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
-  if (argc > 1 && std::string(argv[1]) == "--smoke") smoke(rules); else { unit(*rules); initialization(rules); scripted(rules); }
+  if (argc > 1 && std::string(argv[1]) == "--smoke") smoke(rules); else { unit(*rules); initialization(rules); sparse_towns(rules); scripted(rules); }
   return failures ? 1 : 0;
 }
