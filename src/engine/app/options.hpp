@@ -4,6 +4,9 @@
 
 namespace aztec::engine {
 
+// Installed packages keep rules beside the executable, independent of the working directory.
+std::string default_rules_dir();
+
 struct Options {
   std::string game_dir = "game";
   std::string original_save;        // --load-original FILE
@@ -25,7 +28,7 @@ struct Options {
   float sfx_volume = 0.8f, music_volume = 0.6f;
   std::string script;              // --script FILE: headless playtest (see app/playtest.hpp)
   int cmd_x = -1, cmd_y = -1; bool cmd_attack_move = false;  // --cmd-move / --cmd-attack-move X,Y (tiles) for the --select group
-  std::string rules_dir;           // --rules-dir DIR with the docs/data CSVs (default: ../docs/data next to the game dir)
+  std::string rules_dir;           // --rules-dir DIR; otherwise packaged rules or source-tree docs/data
   bool sim = true;                 // --no-sim: static world (no game logic)
   int select_x0 = -1, select_y0 = 0, select_x1 = 0, select_y1 = 0;  // --select X0,Y0,X1,Y1 (screenshot mode)
   bool light = true;               // time-of-day tint (needs Aztec.exe next to Res/)

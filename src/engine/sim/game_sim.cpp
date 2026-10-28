@@ -6,6 +6,7 @@
 #include <stdexcept>
 
 #include "engine/world/type_info.hpp"
+#include "engine/world/object_state.hpp"
 #include "engine/sim/sight.hpp"
 
 namespace aztec::engine {
@@ -95,6 +96,7 @@ void GameSim::init(World& w) {
       o.secondary_hp = r.secondary_hp;
       o.progress = 1000;
       o.gold_harvest = {}; o.repair_harvest = {}; o.harvest_ready = false;
+      o.body_angle = o.facing * 32; o.turret_angle = o.body_angle;
     }
     if (o.removed || !o.alive) continue;
     attach_agent(o);
@@ -191,6 +193,7 @@ uint32_t GameSim::spawn(World& w, int type, int side, int pxx, int pyy, int hp, 
   o.side = side;
   o.source = ObjectSource::Team;
   o.facing = 6;
+  o.body_angle = o.turret_angle = o.facing * 32;
   const TypeRules& r = rules_->type(type);
   o.hp_max = r.hp_max > 0 ? r.hp_max : std::max(hp, 1);
   o.hp = hp > 0 ? hp : o.hp_max;
@@ -201,6 +204,7 @@ uint32_t GameSim::spawn(World& w, int type, int side, int pxx, int pyy, int hp, 
     o.progress = 0; o.build_elapsed = 0; o.build_total = std::max(1, r.time);
     o.hp = 1;
     o.anim_state = kAnimConstruct;
+    o.construction_overlay = r.kind == 7;
   }
   w.objects.push_back(o);
   Object& ref = w.objects.back();
@@ -747,6 +751,11 @@ void GameSim::run_orders(World& w) {
       if (ag && moving) mover_->stop(uint32_t(o.mover));
       int f = facing_from(px(t->cur_x) - px(o.cur_x), px(t->cur_y) - px(o.cur_y));
       if (f >= 0) o.facing = uint8_t(f);
+      const int ax = t->cur_x - o.cur_x, ay = t->cur_y - o.cur_y;
+      if (ax || ay) {
+        o.turret_angle = (256 - path::angle_of(ax, ay)) & 255;
+        if (!data::kTypeAnims[o.type].anim2) o.body_angle = o.turret_angle;
+      }
       if (o.cooldown == 0) {
         // Descriptor damage/reload feed provisional projectile flight; direct weapons hit immediately.
         o.cooldown = std::max(1, shot.reload + 1);
@@ -883,6 +892,47 @@ void GameSim::sync_movement(World& w) {
   }
 }
 
+void GameSim::update_animation_state(World& w) {
+  for (Object& o : w.objects) {
+    if (o.removed || !o.alive) continue;
+    const auto& r = rules_->type(o.type);
+    const bool turret = o.type >= 0 && o.type < 90 && data::kTypeAnims[o.type].anim2 != 0;
+    if (o.body_angle < 0) o.body_angle = o.facing * 32;
+    if (o.turret_angle < 0) o.turret_angle = o.body_angle;
+    // Use actual displacement, including the final flight step. This is an
+    // engine steering policy; turn rates and Bird cooldown remain unmeasured.
+    const int dx = o.cur_x - o.prev_x, dy = o.cur_y - o.prev_y;
+    if (dx || dy) o.body_angle = (256 - path::angle_of(dx, dy)) & 255;
+    if (r.flier && !(o.anim_state == kAnimAttack && o.anim_tick < 8))
+      o.set_anim(o.body_moving ? kAnimMove : kAnimIdle);
+    if (o.order == uint8_t(Order::Attack)) {
+      const Object* target = w.find(o.target);
+      if (target && target->alive && !target->removed) {
+        const int tx = target->cur_x - o.cur_x, ty = target->cur_y - o.cur_y;
+        if (tx || ty) {
+          const int aim = (256 - path::angle_of(tx, ty)) & 255;
+          o.turret_angle = aim;
+          if (!turret && !o.body_moving) o.body_angle = aim;
+        }
+      }
+    } else if (!turret) o.turret_angle = o.body_angle;
+    o.facing = uint8_t(data::direction_from_angle(o.body_angle));
+    if (r.kind == 7) o.construction_overlay = o.progress < 1000;
+    // V12 supplies phase initiation and travel. Here only established finite
+    // resource phases complete; absent resources never imply an instant phase.
+    const bool boat = r.kind == 8 || o.source == ObjectSource::Boat;
+    const auto* inputs = rules_->sight();
+    if (boat && inputs && inputs->sprites.boat_phase_complete(o.transport_phase, o.orientation, o.anim_tick)) {
+      if (o.transport_phase == int(data::BoatPhase::Opening)) o.transport_phase = int(data::BoatPhase::Open);
+      else {
+        if (o.transport_phase == int(data::BoatPhase::Turning)) o.orientation ^= 1;
+        o.transport_phase = int(data::BoatPhase::Closed);
+      }
+      o.anim_tick = 0;
+    }
+  }
+}
+
 // The persistent side grid stores brightness, with an explored ceiling of 32.
 void GameSim::update_fog(World& w) {
   const SightData* inputs = rules_->sight();
@@ -891,11 +941,7 @@ void GameSim::update_fog(World& w) {
   std::vector<uint8_t> glow(size_t(mw) * mh, inputs->daylight[w.mission.tileset != 0][w.day_clock]);
   for (const Object& o : w.objects) {
     if (o.removed || !o.alive) continue;
-    ObjectState st;
-    st.type_id = o.type; st.facing = o.facing; st.anim_state = o.anim_state;
-    st.anim_tick = o.anim_tick; st.body_tick = o.body_tick; st.attack_tick = o.attack_tick;
-    st.anim_variant = o.anim_variant; st.moving = o.body_moving;
-    st.hp = o.hp; st.max_hp = o.hp_max; st.progress = o.progress;
+    const auto st = object_sprite_state(o, w.side_color(o.side));
     int mask = inputs->sprites.light_mask(st);
     if (mask >= 1 && mask <= 16)
       stamp_sight(glow, mw, mh, inputs->mask(mask), px(o.cur_x), px(o.cur_y), false);
@@ -942,7 +988,11 @@ void GameSim::tick(World& w) {
   }
   pending_.clear();
   if (paused_) return;
-  for (auto& o : w.objects) if (!o.removed && o.attack_tick >= 0) ++o.attack_tick;
+  for (auto& o : w.objects) {
+    if (o.removed) continue;
+    ++o.anim_tick;
+    if (o.attack_tick >= 0) ++o.attack_tick;
+  }
   if (script_.loaded() && !w.original_save) script_.tick(*this, w);
   w.day_clock = (w.day_clock + 1) % kDayTicks;
   economy(w);
@@ -959,6 +1009,7 @@ void GameSim::tick(World& w) {
     o.body_tick = moving == o.body_moving ? o.body_tick + 1 : 0;
     o.body_moving = moving;
   }
+  update_animation_state(w);
   update_fog(w);
 }
 
@@ -977,6 +1028,15 @@ void GameSim::script_order(World& w, const std::vector<uint32_t>& ids, int pxx, 
     if (o->mover >= 0) agents.push_back(uint32_t(o->mover));
   }
   if (!agents.empty()) mover_->order_move(agents.data(), int(agents.size()), {to_fixed(pxx), to_fixed(pyy)});
+}
+
+void GameSim::script_stop(World& w, const std::vector<uint32_t>& ids) {
+  for (uint32_t id : ids) {
+    Object* o = w.find_mut(id);
+    if (!o || o->removed || !o->alive) continue;
+    o->order = uint8_t(Order::Idle); o->target = 0; o->resume = 0;
+    if (o->mover >= 0) mover_->stop(uint32_t(o->mover));
+  }
 }
 
 void GameSim::script_kill(World& w, uint32_t id) {
@@ -1038,9 +1098,10 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(uint32_t(o.render_height)); mix(uint32_t(o.destruction_radius));
     mix(uint32_t(o.transport_phase)); mix(uint32_t(o.orientation)); mix(o.construction_overlay); mix(o.has_fired);
     mix(o.body_tick); mix(o.attack_tick); mix(o.body_moving); mix(o.anim_tick);
+    mix(uint32_t(o.body_angle)); mix(uint32_t(o.turret_angle));
     mix(o.facing); mix(o.anim_state); mix(uint32_t(o.corpse_ticks));
     mix(uint32_t(o.dest_x)); mix(uint32_t(o.dest_y)); mix(o.resume); mix(uint32_t(o.build_elapsed)); mix(uint32_t(o.build_total));
-    mix(uint32_t(o.town)); mix(o.town_hall);
+    mix(uint32_t(o.town)); mix(o.town_hall); mix(o.defence);
     mix(uint32_t(o.secondary_hp)); mix(o.regen_alternate);
     mix(uint32_t(o.hp_max)); mix(uint32_t(o.tactic)); mix(uint32_t(o.scenario)); mix(o.last_hit_by); mix(uint32_t(o.mover)); mix(o.anim_variant);
   }

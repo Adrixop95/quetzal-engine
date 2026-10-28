@@ -54,6 +54,7 @@ class GameSim : public Simulation {
   const ScriptRunner& script() const { return script_; }
   // Used by the script runner (tactic orders).
   void script_order(World& w, const std::vector<uint32_t>& ids, int px, int py, bool attack_move);
+  void script_stop(World& w, const std::vector<uint32_t>& ids);
   void script_kill(World& w, uint32_t id);
   // Debug/editor helper (not a lockstep command): moves an object and its movement agent instantly.
   void teleport(World& w, uint32_t id, int px, int py);
@@ -78,6 +79,7 @@ class GameSim : public Simulation {
   void fire_weapon(World& w, const WeaponRules& weapon, const Object& source, Object& target, int damage);
   void decoration(World& w, int anim, int slot, Fixed x, Fixed y, int height, int side, uint32_t source = 0);
   void sync_movement(World& w);
+  void update_animation_state(World& w);
   void update_fog(World& w);
   void run_ai(World& w);   // sim/ai.cpp
   void kill(World& w, Object& o);

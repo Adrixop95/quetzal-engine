@@ -3,8 +3,21 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <SDL.h>
 
 namespace aztec::engine {
+
+std::string default_rules_dir() {
+  char* base = SDL_GetBasePath();
+  if (base) {
+    const auto path = std::filesystem::path(base) / "rules";
+    SDL_free(base);
+    std::error_code ec;
+    if (std::filesystem::is_directory(path, ec)) return path.string();
+  }
+  return "docs/data";
+}
 
 const char* usage_text() {
   return "usage: aztec_engine [options] [MISSION]\n"
@@ -22,7 +35,7 @@ const char* usage_text() {
          "  --no-fog           disable fog of war from .vis (F8 toggles)\n"
          "  --no-panel         no original right-hand panel\n"
          "  --no-light         no time-of-day tint;  --time T  fixed day clock (0..7199)\n"
-         "  --rules-dir DIR    docs/data CSVs for the game rules;  --no-sim  no game logic\n"
+         "  --rules-dir DIR    override packaged rules (source builds use docs/data);  --no-sim  no game logic\n"
          "  --script FILE      playtest script: synthetic clicks/keys, screenshots, expectations (virtual time)\n"
          "  --no-menu          start the default mission directly instead of the front-end menu\n"
          "  --audio-log FILE  write playback events as text\n"
@@ -37,6 +50,7 @@ const char* usage_text() {
 
 bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& usage) {
   usage = false;
+  o.rules_dir = default_rules_dir();
   if (const char* g = std::getenv("AZTEC_GAME")) o.game_dir = g;
   for (int i = 1; i < argc; i++) {
     std::string a = argv[i];

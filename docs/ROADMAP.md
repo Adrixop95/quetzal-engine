@@ -89,7 +89,7 @@ estimates. Reference-dependent work may grow when evidence changes.
 | V09 | Complete repair priority/allocation and destruction service using harvested credits; finish hall upgrades and non-map farms/mines, costs, timers, build-tree changes and command/UI integration. Verify save/replay through completion. | L | Tasks [05](../tasks/queue/05-town-commands.md), [17](../tasks/queue/17-town-upgrades-structures.md); garrison extraction/list toggles exist, service and upgrades remain incomplete. V08. |
 | V10 | Implement campaign-required attack modes, group/follow/selection command semantics and evidenced population/difficulty rules. Remove invented limits such as AI cap 80; do not infer a universal cap from queue limits. | L | Task [16](../tasks/queue/16-population-difficulty.md); several original command types are only logged. V02/V04/V08. |
 | V11 | Implement deterministic town planning, strategist speed selection, defence reactions and autonomous attack waves. Exercise economy/build orders and sustained opposition in mission scenarios and a repeated 20-minute run. | XL | Tasks [06](../tasks/queue/06-ai-mission-behavior.md), [13](../tasks/queue/13-ai-from-rules.md); current AI is a purchase skeleton. V05-V10. |
-| V12 | Audit every campaign script condition/action and implement required boat/Johnka/submarine, build/move and camera commands. Verify trigger enablement/order, timers, paths, alliances, gifts, defence identity and victory/defeat against mission objectives. Require zero unsupported required actions. | XL | `engine_unit` has script replay checks; semantics remain P and the script runner counts unsupported actions. V02/V05/V10/V11; inventory and synthetic fixtures can precede adapters. |
+| V12 | Audit every campaign script condition/action and implement required boat/Johnka/submarine, build/move and camera commands. Verify trigger enablement/order, timers, paths, alliances, gifts, defence identity and victory/defeat against mission objectives. Require zero unsupported required actions. | XL | `script_unit` now covers trigger order/timers, all condition kinds, paths, gifts, identities and replay. [Campaign audit](campaign_scripts.md): all 15 scripts parse; 19 transport action sites remain unsupported. Camera semantics and objective/reference validation remain open; V02/V05/V10/V11 adapters are incomplete. |
 
 V08/V09 implementation update (2026-10-28):
 
@@ -110,25 +110,55 @@ V08/V09 implementation update (2026-10-28):
 
 | ID | Task and completion evidence | Size | Existing basis / dependencies |
 | --- | --- | --- | --- |
-| V13 | Finish simulation producers for required transport/animation phases, turret aim, steering, aircraft altitude and construction/destruction effects. Validate attack/death/overlap/night scenes and readable visibility/minimap behavior. Track exact and tolerant pixel metrics separately. | L | Tasks [04](../tasks/queue/04-render-contracts.md), [12](../tasks/queue/12-animation-states.md); `render_contracts`, `animation_headless` and `zspr_tools` cover existing integration. V05-V07/V12. |
+| V13 | Finish simulation producers for required transport/animation phases, turret aim, steering, aircraft altitude and construction/destruction effects. Validate attack/death/overlap/night scenes and readable visibility/minimap behavior. Track exact and tolerant pixel metrics separately. | L | Tasks [04](../tasks/queue/04-render-contracts.md), [12](../tasks/queue/12-animation-states.md); `render_contracts`, `animation_headless` and `zspr_tools` cover existing integration. Implemented portions in this worktree: full angles/aim, finite Boat phase completion, pause clocks and Defence construction overlay; see [status](engine_rules_status.md#v13-simulation-animation-producers-2026-10-28-partial). Altitude, transport initiation and reference scene/visibility acceptance remain open. V05-V07/V12. |
 | V14 | Verify all campaign controls and feedback: command panels, build/repair/upgrade controls, groups, hotkeys, tooltips, messages, objectives, briefings, outcome screens and next-mission/profile progression. Fix unavailable actions and unreadable UI across supported window sizes. | L | Task [14](../tasks/queue/14-ui-parity.md); front end, panels and next-mission flow exist but have no full campaign acceptance run. V09/V10/V12/V13. |
 | V15 | Complete required speech/subtitles, unit/order/combat/building/UI events, state loops, volume controls, visibility attenuation and mission music. Test event logs and confirm audio settings never change simulation results. | M | Task [20](../tasks/queue/20-audio-parity.md); mixer/banks/frame sounds exist, event coverage and selection policies remain partial. V03/V12/V14. |
-| V16 | Harden engine save/load: version/content compatibility, bounded parsing, safe writes, explicit encoding and refusal of replay hash mismatch before replacing the active world. Load from a fresh session, retain mission/camera/progression and verify continued play after long saves on both platforms. | L | `engine_unit` checks AZS2/log roundtrips; current UI uses one mission-local slot and accepts a replay hash mismatch with a warning. `savegame` tests the original container, not end-to-end engine saving. V03 and every new simulation state producer. |
+| V16 | Harden engine save/load: version/content compatibility, bounded parsing, safe writes, explicit encoding and refusal of replay hash mismatch before replacing the active world. Load from a fresh session, retain mission/camera/progression and verify continued play after long saves on both platforms. | L | [AZS3 hardening](engine_saves.md) implemented: bounded parsing, version/content checks, atomic writes and replay-mismatch refusal. `engine_save` / `engine_save_processes` cover synthetic fuzzing, write failures and fresh-process 14,400-tick saves with 300 continuation ticks. Still open: V03 full-state audit, every new simulation state producer, native Windows and campaign/frontend/progression continuation; UI remains one mission-local slot. |
 
 ### Prove and ship v1
 
 | ID | Task and completion evidence | Size | Existing basis / dependencies |
 | --- | --- | --- | --- |
 | V17 | Make native Linux and Windows builds/tests required CI gates. Resolve GCC/POSIX assumptions, SDL discovery, paths/case handling and serialization portability; isolate optional POSIX networking or supply a Windows adapter so default builds succeed. | L | Task [09](../tasks/queue/09-portability.md); current build CI is Linux-only, Windows release job is experimental and `aztec_net` uses POSIX UDP. Can proceed alongside simulation work. |
-| V18 | Produce self-contained engine packages with external-data setup instructions, rules metadata, dependencies and licenses; smoke-test on clean Linux/Windows machines without the oracle/generated source. Check missing or malformed data produces useful errors. | M | Release workflow exists but currently packages the executable, README and license only. V17; audit runtime data lookup and optional ffmpeg requirements. |
+| V18 | Produce self-contained engine packages with external-data setup instructions, rules metadata, dependencies and licenses; smoke-test on clean Linux/Windows machines without the oracle/generated source. Check missing or malformed data produces useful errors. | M | Packaging, external-data/license instructions and separate clean-runner smoke jobs implemented; local synthetic staging verified. Native CI/package evidence remains pending, so this row is not complete. V17; see [package evidence](#v18-package-evidence). |
 | V19 | Add the full campaign harness and mission coverage matrix: completion route, expected outcome, unsupported actions, unreachable objectives, timeout/crash reports, paired tick hashes and mid-mission saves. Cover all 15 missions, defeat/retry and final progression with automated scenarios plus interactive acceptance. | XL | Task [19](../tasks/queue/19-campaign-playthrough.md); no playthrough harness exists. Historical corpus has only nine recordings over bounded intervals. Harness/inventory can start now; successful completion depends on V03-V16. |
-| V20 | Fix campaign/soak failures, run malformed-input and sanitizer checks, and complete required tests on hosts that permit sockets and private game-data runs. Publish an English release checklist with platform, mission and save/load results and outstanding limitations. | L | `fuzz` and [ROBUSTNESS.md](../tests/ROBUSTNESS.md) cover loaders, not all runtime failures. V17-V19; no skipped or denied test may stand in for required release evidence. |
+| V20 | Fix campaign/soak failures, run malformed-input and sanitizer checks, and complete required tests on hosts that permit sockets and private game-data runs. Publish an English release checklist with platform, mission and save/load results and outstanding limitations. | L | Malformed-input/local ASan/UBSan subset completed below; hosted sanitizer CI pending. [ROBUSTNESS.md](../tests/ROBUSTNESS.md) records coverage and limits. V17-V19 remain dependencies for campaign/release work; no skipped or denied test may stand in for required release evidence. |
+
+V20 partial evidence (2026-10-28; the full row remains open):
+
+- [x] Extend synthetic malformed-input checks across every core loader and
+  selected engine adapters; fix the descriptor overflow and validation gaps
+  covered by the regressions. GCC Release and Clang ASan/UBSan checks passed.
+- [x] Add a fail-fast ASan/UBSan build option and dedicated Linux synthetic CI job.
+- [ ] Obtain hosted sanitizer CI results, including leak detection. Local leak
+  inspection is denied by the sandbox; only ASan/UBSan ran successfully here.
+- [ ] Complete V17-V19 dependencies, campaign/soak fixes, required private-data
+  and socket checks, and the platform/mission/save-load release checklist.
 
 Start V01-V03, V17 and the V19 mission inventory early. Use V02 to prioritize
 first behavioral divergences rather than assigning causality from engine hashes.
 Economy, scripts, AI and their UI depend on one another; split the XL rows into
 reviewable scenarios and update status after each merged change. Close the
 campaign matrix and fresh-process save continuations before declaring v1.
+
+### V18 package evidence
+
+- [x] Implement Linux dependency/source/notice bundling, static Windows packaging,
+  packaged rules lookup, external-data instructions and gated publication with
+  engine source and checksums. ffmpeg is documented as optional and external.
+- [x] Verify local relocated staging from an unrelated working directory with
+  synthetic victory/repeatability, SDL dummy rendering, missing/corrupt archives,
+  corrupt terrain and missing rules. No original data or oracle is used.
+- [ ] Obtain green Linux and Windows release builds and extracted-package smoke
+  runs on fresh CI runners. This Linux development host is Fedora; local staging
+  uses host libraries and does not verify Debian bundling or native Windows.
+- [ ] Reconcile V17's required native checks and branch protection with actual CI
+  results. The checkout contains portability code and a native build matrix, but
+  GitHub PR status could not be refreshed (API connection failed). No unmerged
+  dependency or successful remote run is assumed.
+
+V18 remains unchecked until the clean-platform evidence exists. Packaging work
+does not establish campaign completion, original-game parity or native devices.
 
 ## Deferred work and fidelity follow-ups
 

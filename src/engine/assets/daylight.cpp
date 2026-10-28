@@ -21,8 +21,8 @@ std::vector<DayKey> read_table(const std::vector<uint8_t>& d, const std::vector<
   std::vector<DayKey> out;
   for (const Section& s : secs) {
     uint32_t rva = va - base;
-    if (rva < s.va || rva >= s.va + std::max(s.vsize, s.rsize)) continue;
-    size_t off = s.raw + (rva - s.va);
+    if (va < base || rva < s.va || rva - s.va >= std::max(s.vsize, s.rsize)) continue;
+    size_t off = size_t(s.raw) + (rva - s.va);
     for (int i = 0; i < 64 && off + 36 <= d.size(); i++, off += 36) {
       DayKey k;
       k.time = int(u32(d, off));
@@ -44,14 +44,18 @@ std::vector<DayKey> read_table(const std::vector<uint8_t>& d, const std::vector<
 }  // namespace
 
 bool Daylight::load_from_exe(const std::string& path) {
+  keys_[0].clear(); keys_[1].clear();
   std::vector<uint8_t> d;
   if (!read_file(path, d) || d.size() < 0x100 || d[0] != 'M' || d[1] != 'Z') return false;
-  uint32_t pe = u32(d, 0x3c);
+  size_t pe = u32(d, 0x3c);
+  if (pe > d.size() || d.size() - pe < 24) return false;
   if (u32(d, pe) != 0x4550) return false;
   int nsec = u16(d, pe + 6), opt = u16(d, pe + 20);
+  if (opt < 32 || size_t(opt) > d.size() - pe - 24) return false;
   uint32_t base = u32(d, pe + 24 + 28);
   std::vector<Section> secs;
   size_t o = pe + 24 + opt;
+  if (size_t(nsec) > (d.size() - o) / 40) return false;
   for (int i = 0; i < nsec; i++, o += 40) secs.push_back({u32(d, o + 12), u32(d, o + 8), u32(d, o + 20), u32(d, o + 16)});
   keys_[0] = read_table(d, secs, base, 0x4a8f68);
   keys_[1] = read_table(d, secs, base, 0x4a9338);

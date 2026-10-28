@@ -16,6 +16,49 @@ bool is_town_building(int t) {
   return false;
 }
 
+bool ScriptRunner::supports(ActKind kind) {
+  switch (kind) {
+    case ActKind::BoatActivate:
+    case ActKind::JohnkaEnable:
+    case ActKind::JohnkaDisable:
+    case ActKind::SubmarineGo:
+    case ActKind::SideBuildCommand:
+    case ActKind::SideMoveCommand:
+    case ActKind::SideCameraDeactivate:
+      return false;
+    case ActKind::TriggerEnable:
+    case ActKind::TriggerDisable:
+    case ActKind::TimerSet:
+    case ActKind::TimerStart:
+    case ActKind::TimerStop:
+    case ActKind::TimerKill:
+    case ActKind::CenterView:
+    case ActKind::PrintString:
+    case ActKind::PrintStringR:
+    case ActKind::SideVictory:
+    case ActKind::SideDefeat:
+    case ActKind::SideCameraActivate:
+    case ActKind::SideSetFriendlyTo:
+    case ActKind::SideSetNeutralTo:
+    case ActKind::SideSetEnemyTo:
+    case ActKind::SideAddMoney:
+    case ActKind::SideTakeMoney:
+    case ActKind::TacticAttackTown:
+    case ActKind::TacticMoveTo:
+    case ActKind::TacticJoinTactic:
+    case ActKind::TacticSetPath:
+    case ActKind::TacticSetInvertedPath:
+    case ActKind::TacticSetCycledPath:
+    case ActKind::TacticSetCycledInvertedPath:
+    case ActKind::TacticLock:
+    case ActKind::TacticUnlock:
+    case ActKind::TacticKill:
+    case ActKind::TacticGiftToSide:
+      return true;
+  }
+  return false;
+}
+
 bool ScriptRunner::load(const std::string& path) {
   Script s;
   if (!load_script(path, s)) return false;
@@ -28,6 +71,7 @@ void ScriptRunner::set(Script s) { script_ = std::move(s); }
 void ScriptRunner::init(const World&) {
   enabled_.clear();
   timers_.clear();
+  timers_[0] = Timer{};
   tactics_.clear();
   local_time_ = 0;
   unsupported_ = 0;
@@ -147,7 +191,7 @@ bool ScriptRunner::eval(const World& w, const Condition& c) const {
     case CondKind::DefenceValid: {
       int64_t v = 0;
       for (const Object& o : w.objects)
-        if (!o.removed && o.alive && o.side == side && o.scenario == c.id && o.type >= 0 && type_info(o.type) && type_info(o.type)->kind == 7) v = 1;
+        if (!o.removed && o.alive && o.side == side && o.defence && c.id >= 0 && o.scenario == c.id && o.type >= 0 && type_info(o.type) && type_info(o.type)->kind == 7) v = 1;
       return cmp(c.cmp, v, c.value);
     }
     case CondKind::IsFriendly: case CondKind::IsNeutral: case CondKind::IsEnemy: {
@@ -229,7 +273,10 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
       break;
     case ActKind::TacticGiftToSide: {
       int to = resolve_side(w, a.a);
-      for (uint32_t id : tactic_members(w, side, a.id)) {
+      if (to < 0 || to >= int(w.side_state.size())) break;
+      auto members = tactic_members(w, side, a.id);
+      sim.script_stop(w, members);
+      for (uint32_t id : members) {
         Object* o = w.find_mut(id);
         o->side = to;
         o->order = uint8_t(Order::Idle);
@@ -301,7 +348,6 @@ void ScriptRunner::tick(GameSim& sim, World& w) {
   local_time_++;
   for (auto& kv : timers_)
     if (kv.second.exists && kv.second.running) kv.second.value++;
-  if (timers_.find(0) == timers_.end()) timers_[0] = Timer{};   // implicit timer 0 runs from mission start
   for (const Trigger& t : script_.triggers) {
     auto it = enabled_.find(t.id);
     if (it != enabled_.end() && !it->second) continue;

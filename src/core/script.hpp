@@ -86,5 +86,8 @@ bool parse_script(std::string_view text, Script& out);
 bool load_script(const std::string& path, Script& out);
 
 const char* cmp_text(Cmp c);
+// Stable names for audit output; no script text or asset strings are emitted.
+const char* condition_name(CondKind kind);
+const char* action_name(ActKind kind);
 
 }  // namespace aztec::script
