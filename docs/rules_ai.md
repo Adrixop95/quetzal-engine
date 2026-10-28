@@ -85,6 +85,42 @@ Marine Think (`0x433db0`) asks its owning tactic for movement/target updates, dr
 
 **O:** Exact composition scoring and force-release thresholds need further planner reading and live verification. The 100-entry assignment arrays do not limit the number of live units on a side.
 
+## Tactic attack modes
+
+**V (local instruction/data inspection, 2026-10-28):** UI callbacks
+`0x443490`, `0x4435e0`, `0x443730`, `0x443880` submit mode values 2, 1, 3, 0.
+Their tooltip slots correspond to string ordinals 226, 227, 228, 229 in the user's
+text database. These establish the following numeric contract; stand ground,
+defend and hunt are informal task descriptions, not the recovered enumeration.
+
+| Mode | Meaning | Reference group distance |
+|---|---|---|
+| 0 | Direct control | 4 tiles |
+| 1 | Defensive | 8 tiles |
+| 2 | Aggressive | 8 tiles |
+| 3 | Balanced (constructor default) | 6 tiles |
+
+The constructor (`0x44f5c0`) selects 3. Packet dispatch (`0x4577b0`, case 0x1f)
+looks up the tactic identity and invokes its mode setter. The setter (`0x454350`)
+stores the mode, clears combat assignment and propagates to qualifying attached
+tactics. This is group state, not a global side bonus or a weapon property.
+`0x4516b0` returns the distance table above; `0x454820` applies it to member/target
+displacement from the tactic origin in tile coordinates using the reference norm.
+It must not be substituted for the per-type visibility mask or firing range.
+
+Mode 0 suppresses target-following movement (`0x455b10`). Defensive mode also
+suppresses that following branch while the tactic follows its path (state 3).
+Modes 2/3 permit the corresponding combat update on a path (`0x455ad0`). Enemy
+notification (`0x455570`) distinguishes ordinary scans from forced notification;
+mode 1 does not add an ordinary scan's enemy tactic through that branch.
+These gates do not specify the entire formation/assignment policy or prove that
+mode 0 refuses to fire an available weapon.
+
+**Engine / O:** the engine implements mode commands and basic movement/acquisition
+gates, with the remaining tactic-model and live-measurement boundaries recorded in
+[engine status](engine_rules_status.md#population-difficulty-and-tactic-modes-2026-10-28-partial-task-16).
+No live stance observation succeeded under the required namespace isolation.
+
 ## Defence# and Camera# mission entries
 
 **V:** `[SideN] DefenceCount` and `Defence#` are read by `0x430410`. Entries accept three integers and an optional fourth (default -1). The loader creates an object at the supplied coordinates, requires building kind with the Defence discriminator, creates a dedicated tactic, places/completes the object, attaches it to that tactic and assigns the optional scenario ID. Invalid object categories are discarded. These entries describe preplaced defensive objects; they are not build-order waypoints. They participate in tactic control and can be addressed through scenario/script state.

@@ -3,6 +3,7 @@
 
 Run: python3 -m unittest discover -s tests -p test_handoff_tools.py
 """
+import contextlib
 import importlib.util
 import io
 import os
@@ -38,6 +39,46 @@ class HandoffToolsTest(unittest.TestCase):
     def script(self, name, *args):
         return subprocess.run(["sh", str(self.root / "tools" / name), *args],
                               cwd="/tmp", env=self.env, text=True, capture_output=True)
+
+    def test_harvest_retry_and_failures(self):
+        task = {"workdir": str(self.root)}
+        (self.root / "work/codex").mkdir(parents=True)
+        branch = "feature/codex-population"
+        for failed_step in (None, "checkout", "git fetch", "git apply", "git add", "git diff", "git reset"):
+            with self.subTest(failed_step=failed_step):
+                commands = []
+                output = io.StringIO()
+
+                def run(cmd):
+                    commands.append(cmd)
+                    failure = failed_step and failed_step in cmd
+                    code = int(bool(failure))
+                    if cmd == "git diff --cached --quiet" and not failure:
+                        code = 1
+                    text = "synthetic patch\n" if cmd == "git diff --cached --binary" else ""
+                    return subprocess.CompletedProcess(cmd, code, text,
+                                                       "simulated failure" if failure else "")
+
+                with patch.object(ORCH, "ROOT", str(self.root)), \
+                     patch.object(ORCH, "load", return_value=dict(task)), \
+                     patch.object(ORCH, "refresh", side_effect=lambda value: value), \
+                     patch.object(ORCH, "save") as save, \
+                     patch.object(ORCH, "sh", side_effect=run), \
+                     patch.object(ORCH.os, "chdir"), contextlib.redirect_stdout(output):
+                    if failed_step:
+                        with self.assertRaisesRegex(RuntimeError, "simulated failure"):
+                            ORCH.harvest("population", branch, "Population")
+                        save.assert_not_called()
+                        self.assertNotIn("prepared", output.getvalue())
+                    else:
+                        ORCH.harvest("population", branch, "Population")
+                        self.assertTrue("git checkout -q -f -B " + branch + " origin/develop" in commands)
+                        self.assertTrue("git apply --3way " + str(self.root / "work/codex/population.patch") in commands)
+                        self.assertEqual(commands[-1], "git diff --cached --quiet")
+                        self.assertTrue("prepared with the patch applied" in output.getvalue())
+                        self.assertTrue(save.call_args.args[0]["harvested"])
+                        self.assertEqual((self.root / "work/codex/population.patch").read_text(),
+                                         "synthetic patch\n")
 
     def harvest(self, fail=None, existing=False, empty=False):
         task = {"name": "sight", "workdir": str(self.root)}

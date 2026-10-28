@@ -17,6 +17,7 @@ Generate `docs/data/rules.json` with `python3 -I tools/build_rules.py`. Numeric 
 | Effective projectile hit interval | G | Historical duel intervals are observations, not universal reload values |
 | Sight data and visibility test | V | Per-type light-mask IDs, interpolated brightness >32, daylight dependent. Marine d6 is a mask ID, not pixels; `0x432f80`, `0x47d070`, `0x402490` |
 | Auto-engage | V | Tactic visibility/hostility scan, kill-time assignment, bounded arrays of 100 per side; scan every 15..23 ticks. Marine pursuit reference is retained only within 1152 units of the reference approximate pixel norm; `0x454820`, `0x451c30`, `0x433db0` |
+| Attack modes | V numeric contract / O live behavior | Direct 0, defensive 1, aggressive 2, balanced 3 (default); group distances 4/8/8/6 tiles, distinct from sight/weapon range. See [AI rules](rules_ai.md#tactic-attack-modes) for gates and engine limits |
 | One scalar sight/auto-engage radius per type | G | Historical 3..8-tile estimates are insufficient: daylight, masks, group bounds and weapon eligibility all matter |
 | MapExplorer | V | Computer town intelligence; nearby-town box abs(dx),abs(dy)<8 tiles. This is not unit sight; `0x432050`, `0x449980` |
 | Buildings and air cannot be damaged | G | Rejected as a general rule: footman base damage is 150 against structures, zero against air; archer is 300 against structures and 800 against air. Ordinary buildings are omitted by normal global combat assignment |
@@ -30,7 +31,7 @@ Generate `docs/data/rules.json` with `python3 -I tools/build_rules.py`. Numeric 
 | Repair and destroy | V | Town repairer modes 0/1/2, marked building lists, per-tick credits and damage-priority groups; destroy command toggles a listed building, not immediate deletion |
 | Garrison command | V | Extract live mobile members from the selected town into a new selected tactic; `0x448350` |
 | Building boarding/capacity | O | No verified boarding mechanism or capacity field; do not invent slots from the command name |
-| Population cap | O | No verified universal cap; queue capacity 50 and assignment arrays 100 are separate limits. Rewrite cap 80 is a placeholder |
+| Population cap | O | No verified universal cap; queue capacity 50 and assignment arrays 100 are separate limits. Unsupported rewrite AI cap 80 has been removed; synthetic production above 110 is not reference evidence |
 | Town upgrades / prerequisites | V | Hall changes install race/level build tree; ordinary prerequisites are town-local, advanced-race prerequisites side-wide; `0x459bb0`, `0x411ac0` |
 | Generic armor/damage upgrades | O | No verified stat bonus beyond descriptor/weapon data and build-tree unlocks |
 | Tendency / BuildSpeed / Difficulty mission keys | V | No Tendency/BuildSpeed reads in town loader; map Difficulty is not used by inspected price/time paths. Computer strategist actively chooses normal/fast speed |

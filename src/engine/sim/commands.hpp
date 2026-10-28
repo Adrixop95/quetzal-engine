@@ -21,6 +21,8 @@ enum class Pct : uint8_t {
 
 // Field use per type:
 //   Move/AttackMove: ids, a,b = world px.   Attack: ids, a = target object id.   Stop: ids.
+//   AttackMode: a = 0 direct / 1 defensive / 2 aggressive / 3 balanced; ids = owned mobile members.
+//     Also updates living mobile members of their nonnegative tactics on the same side.
 //   Garrison: b = town section number; extract its live mobile members into a fresh tactic.
 //   RepairMode: a = 0 off / 1 repair / 2 destroy, b = town section number.
 //   DestroyHere: b = town section number, ids = buildings to toggle in its current repairer list.
