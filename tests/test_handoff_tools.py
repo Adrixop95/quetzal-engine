@@ -3,7 +3,9 @@
 
 Run: python3 -m unittest discover -s tests -p test_handoff_tools.py
 """
+import contextlib
 import importlib.util
+import io
 import os
 from pathlib import Path
 import shutil
@@ -37,6 +39,42 @@ class HandoffToolsTest(unittest.TestCase):
     def script(self, name, *args):
         return subprocess.run(["sh", str(self.root / "tools" / name), *args],
                               cwd="/tmp", env=self.env, text=True, capture_output=True)
+
+    def test_harvest_retry_and_failures(self):
+        task = {"workdir": str(self.root)}
+        (self.root / "work/codex").mkdir(parents=True)
+        branch = "feature/codex-population"
+        for failed_step in (None, "checkout", "git fetch", "git apply", "git add", "git diff", "git reset"):
+            with self.subTest(failed_step=failed_step):
+                commands = []
+                output = io.StringIO()
+
+                def run(cmd):
+                    commands.append(cmd)
+                    failure = failed_step and failed_step in cmd
+                    text = "synthetic patch\n" if cmd == "git diff --cached --binary" else ""
+                    return subprocess.CompletedProcess(cmd, int(bool(failure)), text,
+                                                       "simulated failure" if failure else "")
+
+                with patch.object(ORCH, "ROOT", str(self.root)), \
+                     patch.object(ORCH, "load", return_value=dict(task)), \
+                     patch.object(ORCH, "refresh", side_effect=lambda value: value), \
+                     patch.object(ORCH, "save") as save, \
+                     patch.object(ORCH, "sh", side_effect=run), \
+                     patch.object(ORCH.os, "chdir"), contextlib.redirect_stdout(output):
+                    if failed_step:
+                        with self.assertRaisesRegex(RuntimeError, "simulated failure"):
+                            ORCH.harvest("population", branch, "Population")
+                        save.assert_not_called()
+                        self.assertNotIn("prepared", output.getvalue())
+                    else:
+                        ORCH.harvest("population", branch, "Population")
+                        self.assertTrue("git checkout -q -f -B " + branch in commands[-1])
+                        self.assertTrue("git apply --3way" in commands[-1])
+                        self.assertTrue("prepared with the patch applied" in output.getvalue())
+                        self.assertTrue(save.call_args.args[0]["harvested"])
+                        self.assertEqual((self.root / "work/codex/population.patch").read_text(),
+                                         "synthetic patch\n")
 
     def test_queue_preference_and_legacy_fallback(self):
         legacy = self.root / "work/codex/queue"

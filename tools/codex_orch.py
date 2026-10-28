@@ -15,6 +15,7 @@ import glob
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -138,20 +139,30 @@ def resume(name, prompt=None):
 
 
 def harvest(name, branch, title):
+    def checked(cmd):
+        result = sh(cmd)
+        if result.returncode:
+            raise RuntimeError("Harvest command failed: " + cmd + "\n" + result.stdout + result.stderr)
+        return result
+
     t = refresh(load(name))
     wd = t["workdir"]
     os.chdir(wd)
-    sh("git add -A -- . ':!.build*' ':!build*' ':!work'")
-    patch = sh("git diff --cached --binary").stdout
-    sh("git reset -q")
+    checked("git add -A -- . ':!.build*' ':!build*' ':!work'")
+    patch = checked("git diff --cached --binary").stdout
+    checked("git reset -q")
     if not patch.strip():
         print("no changes in", wd)
         return
     pf = os.path.join(ROOT, "work/codex", name + ".patch")
-    open(pf, "w").write(patch)
+    with open(pf, "w") as stream:
+        stream.write(patch)
     land = os.environ.get("LAND_ROOT", ROOT)
     os.chdir(land)
-    r = sh("git fetch -q origin && git checkout -q -f -b %s origin/develop && git apply --3way %s" % (branch, pf))
+    # A failed landing leaves this task's local branch behind. Retry its patch
+    # against current develop; this only resets the local landing branch.
+    r = checked("git fetch -q origin && git checkout -q -f -B %s origin/develop && git apply --3way %s" %
+                (shlex.quote(branch), shlex.quote(pf)))
     print(r.stdout, r.stderr)
     print("Branch", branch, "prepared with the patch applied; review, build, test, then commit and open the PR "
           "(git add the files; git commit; git push -u origin %s; gh pr create --base develop --title '%s')" % (branch, title))

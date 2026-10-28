@@ -15,6 +15,12 @@ inline int64_t d2(const Object& a, const Object& b) {
   int64_t dx = px(a.cur_x) - px(b.cur_x), dy = px(a.cur_y) - px(b.cur_y);
   return dx * dx + dy * dy;
 }
+// Mobile weapon reach starts at the source collision disc, not its centre.
+// Omitting that radius can make melee reach shorter than non-overlapping discs.
+int64_t weapon_reach(const TypeRules& source, const TypeRules& target, int range) {
+  const int target_extent = target.structure ? std::max(target.foot_w, target.foot_h) * 24 : target.radius_px;
+  return int64_t(range) + target_extent + (source.mobile ? source.radius_px : 0);
+}
 // 8-direction facing from a vector: 0 = east, counter-clockwise (2 = north), as used by the animation tables.
 int facing_from(int dx, int dy) {
   if (dx == 0 && dy == 0) return -1;
@@ -245,6 +251,11 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o, int radius
     const auto shot = rules_->attack(o.type, t.type, !w.hostile(o.side, t.side));
     if (!shot.damage_known || !shot.getters_known || shot.damage <= 0) continue;
     int64_t d = d2(o, t);
+    if (o.attack_mode == AttackMode::Direct) {
+      const auto& tr = rules_->type(t.type);
+      const int64_t reach = weapon_reach(rules_->type(o.type), tr, shot.range_px);
+      if (d > reach * reach) continue;
+    }
     if (d < bd || (d == bd && best && t.id < best->id)) { bd = d; best = &t; }
   }
   return best;
@@ -288,6 +299,33 @@ void GameSim::apply(World& w, const Command& c) {
       for (Object* o : own_ids(true)) {
         if (o->id == t->id || !rules_->type(o->type).armed) continue;
         o->order = uint8_t(Order::Attack); o->target = t->id; o->resume = 0;
+        if (o->attack_mode == AttackMode::Direct && o->mover >= 0) mover_->stop(uint32_t(o->mover));
+      }
+      break;
+    }
+    case Pct::AttackMode: {
+      if (!ss || c.a < 0 || c.a > 3) break;
+      const auto members = own_ids(true);
+      std::vector<int> tactics;
+      for (const Object* o : members) if (o->tactic >= 0) tactics.push_back(o->tactic);
+      for (Object& o : w.objects) {
+        if (o.removed || !o.alive || o.side != c.side || o.type < 0) continue;
+        const auto& r = rules_->type(o.type);
+        if (!(r.mobile || r.flier)) continue;
+        const bool selected = std::find(c.ids.begin(), c.ids.end(), o.id) != c.ids.end();
+        const bool attached = o.tactic >= 0 && std::find(tactics.begin(), tactics.end(), o.tactic) != tactics.end();
+        if (!selected && !attached) continue;
+        o.attack_mode = AttackMode(c.a);
+        // Clear combat assignment on a mode change; preserve the movement destination.
+        if (o.order == uint8_t(Order::Attack)) {
+          o.order = uint8_t(o.resume == 2 ? Order::Move : o.resume ? Order::AttackMove : Order::Idle);
+          o.target = 0; o.resume = 0;
+          if (o.mover >= 0) {
+            uint32_t aid = uint32_t(o.mover);
+            if (o.order == uint8_t(Order::Idle)) mover_->stop(aid);
+            else mover_->order_move(&aid, 1, {to_fixed(o.dest_x), to_fixed(o.dest_y)});
+          }
+        }
       }
       break;
     }
@@ -391,7 +429,7 @@ void GameSim::apply(World& w, const Command& c) {
       }
       break;
     }
-    default: break;  // AttackMode, SelectGroup, ...: recorded but not implemented
+    default: break;  // SelectGroup, ...: recorded but not implemented
   }
 }
 
@@ -611,11 +649,13 @@ void GameSim::run_orders(World& w) {
     if (o.order == uint8_t(Order::AttackMove) && ag && !moving) o.order = uint8_t(Order::Idle);
 
     if (!r.armed) continue;
-    // acquire targets: idle units and attack-moving units react to enemies in sight
-    if (o.order == uint8_t(Order::Idle) || o.order == uint8_t(Order::AttackMove)) {
+    // Mode gates are independent of the provisional nearest-visible-enemy policy.
+    const bool engage_moving = o.attack_mode == AttackMode::Aggressive || o.attack_mode == AttackMode::Balanced;
+    if (o.order == uint8_t(Order::Idle) ||
+        (engage_moving && (o.order == uint8_t(Order::AttackMove) || o.order == uint8_t(Order::Move)))) {
       if ((tick_ + o.id) % 4 == 0) {
         if (const Object* e = nearest_enemy(w, o, r.sight_px)) {
-          o.resume = o.order == uint8_t(Order::AttackMove) ? 1 : 0;
+          o.resume = o.order == uint8_t(Order::Move) ? 2 : o.order == uint8_t(Order::AttackMove) ? 1 : 0;
           o.order = uint8_t(Order::Attack);
           o.target = e->id;
         }
@@ -626,7 +666,7 @@ void GameSim::run_orders(World& w) {
     if (!t || t->removed || !t->alive) {
       o.target = 0;
       if (o.resume && ag) {
-        o.order = uint8_t(Order::AttackMove); o.resume = 0;
+        o.order = uint8_t(o.resume == 2 ? Order::Move : Order::AttackMove); o.resume = 0;
         uint32_t aid = uint32_t(o.mover);
         mover_->order_move(&aid, 1, {to_fixed(o.dest_x), to_fixed(o.dest_y)});
       } else {
@@ -635,10 +675,9 @@ void GameSim::run_orders(World& w) {
       continue;
     }
     const TypeRules& tr = rules_->type(t->type);
-    int treach = tr.structure ? std::max(tr.foot_w, tr.foot_h) * 24 : tr.radius_px;
     const auto shot = rules_->attack(o.type, t->type, !w.hostile(o.side, t->side));
     if (!shot.damage_known || !shot.getters_known || shot.damage <= 0) continue;
-    int64_t reach = int64_t(shot.range_px) + treach;
+    const int64_t reach = weapon_reach(r, tr, shot.range_px);
     if (d2(o, *t) <= reach * reach) {
       if (ag && moving) mover_->stop(uint32_t(o.mover));
       int f = facing_from(px(t->cur_x) - px(o.cur_x), px(t->cur_y) - px(o.cur_y));
@@ -650,7 +689,7 @@ void GameSim::run_orders(World& w) {
         o.anim_state = kAnimAttack; o.anim_tick = 0; o.attack_tick = 0;
         fire(w, o, *t, shot.damage);
       }
-    } else if (ag && ((tick_ + o.id) % 6 == 0 || !moving)) {
+    } else if (o.attack_mode != AttackMode::Direct && ag && ((tick_ + o.id) % 6 == 0 || !moving)) {
       uint32_t aid = uint32_t(o.mover);
       mover_->order_move(&aid, 1, {t->cur_x, t->cur_y});
     }
@@ -884,7 +923,7 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(uint32_t(o.town)); mix(o.harvest_ready);
     for (const auto* h : {&o.gold_harvest, &o.repair_harvest}) { mix(h->accumulated); mix(h->last_clock); mix(h->cursor); }
     mix(o.id); mix(uint32_t(o.type)); mix(uint32_t(o.side)); mix(uint32_t(o.hp)); mix(uint32_t(o.cur_x)); mix(uint32_t(o.cur_y));
-    mix(o.order); mix(o.target); mix(uint32_t(o.cooldown)); mix(o.alive); mix(o.removed); mix(uint32_t(o.progress));
+    mix(uint8_t(o.attack_mode)); mix(o.order); mix(o.target); mix(uint32_t(o.cooldown)); mix(o.alive); mix(o.removed); mix(uint32_t(o.progress));
     mix(uint32_t(o.render_height)); mix(uint32_t(o.destruction_radius));
     mix(uint32_t(o.transport_phase)); mix(uint32_t(o.orientation)); mix(o.construction_overlay); mix(o.has_fired);
     mix(o.body_tick); mix(o.attack_tick); mix(o.body_moving); mix(o.anim_tick);
