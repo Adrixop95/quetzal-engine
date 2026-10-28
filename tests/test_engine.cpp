@@ -208,7 +208,7 @@ static void test_pure() {
   CHECK(tp.pick(s, out) && out.key.index == 77);
   s.type_id = 6;
   CHECK(!tp.pick(s, out));
-  CHECK(type_info(0) && std::string(type_info(0)->name) == "FOOTMAN" && type_info(10)->is_structure() && !type_info(90));
+  CHECK(aztec::engine::type_info(0) && std::string(aztec::engine::type_info(0)->name) == "FOOTMAN" && aztec::engine::type_info(10)->is_structure() && !aztec::engine::type_info(90));
 
   // deterministic wander
   World a, b;
@@ -424,7 +424,7 @@ static void test_data(const std::string& dir) {
 static std::vector<uint32_t> side_units(const World& w, int side, bool mobile_only) {
   std::vector<uint32_t> v;
   for (const Object& o : w.objects) {
-    const TypeInfo* ti = type_info(o.type);
+    const TypeInfo* ti = aztec::engine::type_info(o.type);
     if (o.side == side && o.type >= 0 && ti && (!mobile_only || !ti->is_structure())) v.push_back(o.id);
   }
   return v;
