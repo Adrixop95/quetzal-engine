@@ -1,0 +1,15 @@
+trigger(0)
+  conditions
+    localTime == 1000
+  actions
+    side(0).takeMoney(1000000)
+    side(1).takeMoney(1000000)
+end
+
+trigger(1)
+  conditions
+    localTime == 1200
+  actions
+    side(0).addMoney(2000)
+    side(1).addMoney(2000)
+end

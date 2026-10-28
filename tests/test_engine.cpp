@@ -1167,6 +1167,133 @@ static void test_population_difficulty_modes() {
   }
 }
 
+static void test_group_follow_commands() {
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  World initial = production_world();
+  initial.mission.file_name = "synthetic-follow";
+  for (int i = 0; i < 5; ++i) production_object(initial, 0, -1, 6 + i * 4, 10);
+  initial.objects[0].tactic = initial.objects[1].tactic = 10;
+  initial.objects[2].tactic = 20;
+  initial.objects[3].tactic = 30;
+  initial.objects[4].side = 1; initial.objects[4].tactic = 20;
+  World w = initial; GameSim sim(rules); sim.init(w);
+  auto send = [&](Pct type, int a, std::vector<uint32_t> ids = {}, int b = 0) {
+    Command c; c.type = type; c.a = a; c.b = b; c.ids = std::move(ids);
+    sim.submit(c); production_steps(sim, w, 1);
+  };
+  send(Pct::CreateGroup, 2, {1, 1, 5, 999});
+  CHECK(w.side_state[0].groups[2] == std::vector<uint32_t>{1});
+  send(Pct::AddToGroup, 2, {2, 1});
+  CHECK(w.side_state[0].groups[2] == (std::vector<uint32_t>{1, 2}));
+  send(Pct::SelectGroup, 2);
+  CHECK(w.selection.ids == (std::vector<uint32_t>{1, 2}));
+  CHECK(w.side_state[0].selected_tactic == 10);
+  Command recall; recall.type = Pct::SelectGroup; recall.a = 2; sim.submit(recall);
+  Command selected_move; selected_move.type = Pct::Move; selected_move.a = 700; selected_move.b = 500;
+  sim.submit(selected_move); production_steps(sim, w, 1);
+  CHECK(w.objects[0].dest_x == 700 && w.objects[1].dest_x == 700);
+  CHECK(w.objects[2].order == uint8_t(Order::Idle));
+  send(Pct::Stop, 0);
+  send(Pct::AttackMode, 0); // empty ids use deterministic command selection
+  CHECK(w.objects[0].attack_mode == AttackMode::Direct && w.objects[1].attack_mode == AttackMode::Direct);
+  CHECK(w.objects[2].attack_mode == AttackMode::Balanced);
+  send(Pct::SelectByNo, 20);
+  CHECK(w.side_state[0].selected_ids == std::vector<uint32_t>{3});
+  CHECK(w.selection.ids == std::vector<uint32_t>{3}); // foreign tactic 20 is excluded
+  send(Pct::SelectByNo, 999);
+  send(Pct::SelectByNo, 10, {}, 1); // unresolved modifier branch is rejected
+  CHECK(w.side_state[0].selected_ids == std::vector<uint32_t>{3});
+  send(Pct::FollowTeam, 10); // tactic 20 follows tactic 10
+  CHECK(w.objects[2].follow_tactic == 10 && w.objects[2].order == uint8_t(Order::Follow));
+  send(Pct::FollowTeam, 20, {1}); // would introduce a cycle
+  CHECK(w.objects[0].follow_tactic == -1 && w.objects[1].follow_tactic == -1);
+  send(Pct::FollowTeam, 20); // self-follow
+  send(Pct::FollowTeam, 999);
+  send(Pct::FollowTeam, 30, {}, 1);
+  CHECK(w.objects[2].follow_tactic == 10);
+  Command move; move.type = Pct::Move; move.ids = {1, 2}; move.a = 1000; move.b = 900;
+  sim.submit(move); production_steps(sim, w, 45);
+  CHECK(w.objects[2].dest_y > 10 * 48 + 24);
+  CHECK(w.objects[2].cur_y > initial.objects[2].cur_y);
+  CHECK(w.objects[2].follow_tactic == 10);
+
+  SaveData save; save.mission = initial.mission.file_name; save.tick = sim.tick_count();
+  save.hash = sim.state_hash(w); save.log = sim.log(); save.content_hash = 123;
+  SaveData decoded; CHECK(deserialize_save(serialize_save(save), decoded));
+  World fresh = initial; fresh.local_side = 1;
+  std::string error;
+  auto replay = replay_save(decoded, fresh, rules, 123, "", error);
+  CHECK(replay != nullptr);
+  if (replay) {
+    CHECK(replay->state_hash(fresh) == sim.state_hash(w));
+    CHECK(fresh.selection.ids.empty()); // viewing side changes only local presentation
+    for (int i = 0; i < 80; ++i) {
+      production_steps(sim, w, 1); production_steps(*replay, fresh, 1);
+      CHECK(replay->state_hash(fresh) == sim.state_hash(w));
+    }
+  }
+  auto hash = sim.state_hash(w);
+  w.objects[2].follow_tactic = 30;
+  CHECK(hash != sim.state_hash(w)); w.objects[2].follow_tactic = 10;
+  w.side_state[0].selected_ids.clear();
+  CHECK(hash != sim.state_hash(w)); w.side_state[0].selected_ids = {3};
+  send(Pct::Stop, 0); CHECK(w.objects[2].follow_tactic == -1);
+  send(Pct::FollowTeam, 10);
+  sim.script_kill(w, 1); sim.script_kill(w, 2); production_steps(sim, w, 1);
+  CHECK(w.objects[2].follow_tactic == -1 && w.objects[2].order == uint8_t(Order::Idle));
+  send(Pct::SelectGroup, 2); CHECK(w.selection.ids.empty()); // dead stored members are filtered
+  CHECK(w.side_state[0].selected_ids.empty() && w.side_state[0].selected_tactic == -1);
+
+  // Ground combat respects stance gates and resumes following; air followers also move.
+  for (int type : {0, 33}) for (int mode = 0; mode < 4; ++mode) {
+    World fight = initial;
+    fight.objects[0].type = type;
+    fight.objects[1].tactic = 11; // follow expands only the source tactic
+    fight.objects[4].teleport(fight.objects[0].cur_x + to_fixed(60), fight.objects[0].cur_y);
+    fight.relation[0][1] = kEnemy;
+    GameSim fs(rules); fs.init(fight);
+    Command stance; stance.type = Pct::AttackMode; stance.a = mode; stance.ids = {1}; fs.submit(stance);
+    Command follow; follow.type = Pct::FollowTeam; follow.a = 20; follow.ids = {1}; fs.submit(follow);
+    production_steps(fs, fight, 4);
+    const bool engages = rules->type(type).armed && mode >= 2;
+    CHECK(fight.objects[0].order == uint8_t(engages ? Order::Attack : Order::Follow));
+    if (type == 33) CHECK(fight.objects[0].cur_x > initial.objects[0].cur_x);
+    if (engages) {
+      CHECK(fight.objects[0].resume == 3);
+      if (mode == 2) {
+        stance.a = 1; fs.submit(stance); production_steps(fs, fight, 1);
+        CHECK(fight.objects[0].order == uint8_t(Order::Follow) && fight.objects[0].target == 0);
+      }
+      fs.script_kill(fight, 5); production_steps(fs, fight, 1);
+      CHECK(fight.objects[0].order == uint8_t(Order::Follow));
+    }
+    CHECK(fight.objects[0].follow_tactic == 20);
+    Command move_order; move_order.type = Pct::Move; move_order.ids = {1}; move_order.a = 1200; move_order.b = 800;
+    fs.submit(move_order); production_steps(fs, fight, 1);
+    CHECK(fight.objects[0].follow_tactic == -1);
+  }
+
+  // Queue capacity is a town-local production constraint, never a side population cap.
+  World queue = production_world(); queue.side_state.resize(8); queue.side_state[0].money = 100000;
+  production_object(queue, 11, 0, 4, 4);
+  production_object(queue, 11, 1, 30, 30);
+  GameSim qs(rules); qs.init(queue);
+  Command pause; pause.type = Pct::PauseBuild; pause.a = 1; qs.submit(pause);
+  Command buy; buy.type = Pct::Build; buy.a = 0; buy.ids = {1};
+  for (int i = 0; i < 51; ++i) qs.submit(buy);
+  production_steps(qs, queue, 1);
+  CHECK(queue.side_state[0].queue.size() == 50);
+  buy.ids = {2};
+  for (int i = 0; i < 51; ++i) qs.submit(buy);
+  production_steps(qs, queue, 1);
+  CHECK(queue.side_state[0].queue.size() == 100);
+  CHECK(std::count_if(queue.side_state[0].queue.begin(), queue.side_state[0].queue.end(),
+                     [](const QueueItem& q) { return q.town == 0; }) == 50);
+  int paid = 0; for (const auto& q : queue.side_state[0].queue) paid += q.paid;
+  CHECK(queue.side_state[0].money == 100000 - paid);
+}
+
 static void test_production() {
   auto rules = std::make_shared<RulesData>();
   CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
@@ -1609,7 +1736,7 @@ static void test_parallel_town_production() {
   buy.ids = {1}; for (int i = 0; i < 9; ++i) capacity_sim.submit(buy);
   buy.ids = {2}; capacity_sim.submit(buy);
   production_steps(capacity_sim, capacity, 1);
-  CHECK(capacity.side_state[0].queue.size() == 9 && capacity.side_state[0].money == 9100);
+  CHECK(capacity.side_state[0].queue.size() == 10 && capacity.side_state[0].money == 9000);
   CHECK(capacity.side_state[0].queue.back().town == 1 && capacity.side_state[0].queue.back().remaining == 99);
 
   World ui_world = production_world();
@@ -2045,6 +2172,7 @@ int main(int argc, char** argv) {
     test_audio_pure();
     test_commands_ui();
     test_population_difficulty_modes();
+    test_group_follow_commands();
   } else {
     std::string dir = test_game_dir(argc, argv);
     if (!test_game_dir_exists(dir)) return 77;

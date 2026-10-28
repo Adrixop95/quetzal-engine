@@ -140,6 +140,48 @@ integrated sources/tests, and enumerates landed PRs and remaining work.
 | ID | Tested foundation | Concrete remaining work and size | Dependencies |
 | --- | --- | --- | --- |
 | V04 | Descriptor initialization for all public kinds, separate secondary HP, armor/weapon mappings, countdown recovery and removal of mission-maximum HP fallbacks; synthetic placement/regeneration/save-replay checks and private engine initialization checks for missions 1–15. | Complete V02 identity/field comparison and campaign-wide live initialization/transition evidence (L); establish automatic facility service and Hypno damage/conversion/ownership behavior (L). | Task 02 partial; queued [31](../tasks/queue/31-initial-state-parity.md); V02 identity observers for comparison. See [V04 evidence](engine_rules_status.md#v04-initialization-and-regeneration-2026-10-28-partial). |
+| V04 | Validate initialization for all campaign object kinds: ownership, town/tactic identity, descriptor HP, secondary HP and regeneration transitions/overshoot. Replace mission-maximum HP fallbacks and establish missing weapon/armor mappings, including Hypno behavior. | L | Descriptor combat tests cover selected arithmetic and Marine fields; task [02](../tasks/queue/02-descriptor-combat.md), V02. |
+| V05 | Implement and compare required movement classes, boat/air movement, speeds, radii, footprints, collisions and path decisions. Exercise crowded routes, narrow passages and unreachable destinations without hangs. | XL | Partial: descriptor ground classes/speeds and fixed-point air orders have synthetic integration/replay checks. `path`, `path_bench_smoke`, `zpath_tools` cover engine routes. Reference probe denied namespace setup; boat routes, Bird speeds, radii, footprints, collisions and WaveSearch comparison remain open. V02/V04 are incomplete; see [movement progress](rules_movement.md#8-v05-partial-integration-2026-10-28). |
+| V06 | Replace simulation sight/fog and nearest-enemy acquisition placeholders with per-type masks, daylight, exploration, visibility thresholds and tactic/weapon eligibility. Verify target and town selection under fog. | L | Task [15](../tasks/queue/15-sight-fog-rules.md); renderer light masks already exist but do not establish AI sight. V02/V04. |
+| V07 | Complete required damage classes, regeneration/combat state interactions, range geometry, firing/reload scheduling, composite weapons and projectile impact timing. Resolve trajectory, interception, burn, splash/friendly damage, death and corpse semantics with focused scenarios. | XL | Tasks [02](../tasks/queue/02-descriptor-combat.md), [18](../tasks/queue/18-projectile-collision.md); projectile replay exists, unresolved descriptor weapons are disabled. V02/V04-V06. |
+| V08 | Validate economy clock phase, activation/suspension, construction placement/completion and training/spawn timing. Replace side-wide queues and provisional refunds with measured town-local production behavior. | L | Task [03](../tasks/queue/03-economy-production.md); resource-map income, price formulas and prerequisites already have synthetic coverage. V02/V04. |
+| V09 | Complete repair priority/allocation and destruction service using harvested credits; finish hall upgrades and non-map farms/mines, costs, timers, build-tree changes and command/UI integration. Verify save/replay through completion. | L | Tasks [05](../tasks/queue/05-town-commands.md), [17](../tasks/queue/17-town-upgrades-structures.md); garrison extraction/list toggles exist, service and upgrades remain incomplete. V08. |
+| V10 | Implement campaign-required attack modes, group/follow/selection command semantics and evidenced population/difficulty rules. Remove invented limits such as AI cap 80; do not infer a universal cap from queue limits. | L | Task [16](../tasks/queue/16-population-difficulty.md); several original command types are only logged. V02/V04/V08. |
+| V11 | Implement deterministic town planning, strategist speed selection, defence reactions and autonomous attack waves. Exercise economy/build orders and sustained opposition in mission scenarios and a repeated 20-minute run. | XL | Tasks [06](../tasks/queue/06-ai-mission-behavior.md), [13](../tasks/queue/13-ai-from-rules.md); deterministic town planner is integrated; reinforcement and sustained-opposition checks are implemented below. V05-V10 remain incomplete. |
+| V10 | Implement campaign-required attack modes, group/follow/selection command semantics and evidenced population/difficulty rules. Remove invented limits such as AI cap 80; do not infer a universal cap from queue limits. | L | Task [16](../tasks/queue/16-population-difficulty.md); partial selection/follow integration and queue-limit correction below. V02/V04/V08 remain incomplete. |
+| V11 | Implement deterministic town planning, strategist speed selection, defence reactions and autonomous attack waves. Exercise economy/build orders and sustained opposition in mission scenarios and a repeated 20-minute run. | XL | Tasks [06](../tasks/queue/06-ai-mission-behavior.md), [13](../tasks/queue/13-ai-from-rules.md); current AI is a purchase skeleton. V05-V10. |
+| V12 | Audit every campaign script condition/action and implement required boat/Johnka/submarine, build/move and camera commands. Verify trigger enablement/order, timers, paths, alliances, gifts, defence identity and victory/defeat against mission objectives. Require zero unsupported required actions. | XL | `script_unit` now covers trigger order/timers, all condition kinds, paths, gifts, identities and replay. [Campaign audit](campaign_scripts.md): all 15 scripts parse; 19 transport action sites remain unsupported. Camera semantics and objective/reference validation remain open; V02/V05/V10/V11 adapters are incomplete. |
+
+V11 implementation evidence (2026-10-28; full acceptance remains open):
+
+- [x] Exercise deterministic town states, economic preferences, town-local orders
+  with shared cash, strategist speed boundaries/pricing, and defence reinforcement
+  dispatch during production. Preserve script tactics and active combat orders.
+- [x] Run the synthetic mission cash-pressure scenario for 14,400 ticks twice
+  across viewing sides and compare every tick with command-log replay. Each
+  five-minute interval contains autonomous waves, firing, casualties and births;
+  both towns remain productive using explicitly synthetic durable halls.
+- [ ] Complete V05-V10 contracts and reference-aligned mission comparisons.
+  The isolated reference probe failed at namespace loopback setup before launch;
+  no new reference observation or campaign acceptance is claimed. Composition,
+  placement, threat entry, release thresholds and side-plan arbitration remain
+  provisional. See the [AI evidence inventory](engine_rules_status.md).
+
+V08/V09 implementation update (2026-10-28):
+
+- [x] Independent town production progression and selected-town production UI,
+  with synthetic simultaneous training and cancellation checks.
+- [x] Harvested-credit repair/destruction allocation, priority boundaries and
+  save/replay through service completion, verified by synthetic checks against
+  inspected allocation facts. Existing hall upgrades and build-tree checks pass.
+- [ ] V08 acceptance: measured clock phase, activation/suspension, placement,
+  training/spawn ticks, reference queue semantics and refunds. V02 adapters and
+  V04 HP parity remain dependencies; namespace loopback setup denied the private
+  reference attempt before launch.
+- [ ] V09 acceptance: reference-aligned service timing, complete protection/HP
+  transitions, hall upgrade/non-map placement and completion comparisons through
+  saves. V08 remains incomplete. See the [evidence inventory](engine_rules_status.md#v08v09-economy-and-town-service-update-2026-10-28-partial).
+| V04 | Marine d1/d4 separation, selected other descriptor HP, arithmetic/regeneration checks and town/defence provenance; `engine_unit` / `script_unit` (#19/#25/#51). | Audit all campaign object ownership/town/tactic initialization and remove mission-maximum HP fallbacks (L); establish regeneration state/overshoot, missing weapon/armor fields and Hypno behavior (L). | Task 02 partial; queued [31](../tasks/queue/31-initial-state-parity.md); V02 identity observers for comparison. |
 | V05 | Descriptor ground classes/speeds, fixed-point air orders and replay; `engine_unit`, `path`, `path_bench_smoke`, `zpath_tools` (#50). | Establish boat/Johnka routes and Bird speed (L); implement measured radii/footprints/reservations/vehicle turns (L); compare WaveSearch, crowded/narrow/unreachable paths (L). | Tasks 23 and 01/02 partial; V02/V04. [Movement progress](rules_movement.md#8-v05-partial-integration-2026-10-28). |
 | V06 | Resource-loaded per-type masks, daylight/glow, strict brightness >32, exploration and eligibility gate; `engine_unit` sight checks (#43). | Integrate raw-brightness/border conventions with renderer/fog/selection consumers and resource loading paths (M); replace nearest/lower-ID/four-tick acquisition with measured tactic bounds, scans and assignment (L); compare day/night target/town choices (M). | Task 15 partial; V02/V04/V10. Missing-resource six-tile fallback remains P. [Sight notes](sight_fog.md). |
 | V07 | Selected descriptor damage/reload, projectile state/impact/replay and effect metadata; `engine_unit` (#19/#18). #35 added measurement docs only. | Establish missing weapon/category mappings and range/regeneration interactions (L); measure/implement composite scheduling and launch/impact timing (L); measure trajectory/interception/burn/per-victim splash and death/corpse behavior (XL). | Tasks 02/18 partial; V02/V04-V06. Known unresolved descriptor weapons remain disabled. |
@@ -179,6 +221,21 @@ Other campaign simulation progress and remaining acceptance:
 - [ ] V09 acceptance: reference-aligned service timing, complete protection/HP
   transitions, hall upgrade/non-map placement and completion comparisons through
   saves. V08 remains incomplete. See the [evidence inventory](engine_rules_status.md#v08v09-economy-and-town-service-update-2026-10-28-partial).
+
+V10 implementation update (2026-10-28):
+
+- [x] Implement deterministic control-group recall, side-local tactic selection,
+  persistent ground/air follow orders, stance interruption/resumption, ownership
+  and cycle checks, and synthetic replay/save continuation across viewing sides.
+  Engine payload and centroid conventions remain distinct from reference facts.
+- [x] Confirm AI cap 80 is absent and remove the invented eight-entry production
+  cutoff in favor of the inspected town queue capacity 50. Retain synthetic
+  population-above-110 and parsed Difficulty 0/100 engine checks.
+- [ ] Complete V10 acceptance: campaign controls, reference formation/attachment
+  and selection modifiers, mode-specific group distances and inheritance, live
+  population/difficulty observations. V02/V04/V08 remain prerequisites; the private
+  isolated reference attempt failed before launch at loopback setup. See the
+  [V10 evidence inventory](engine_rules_status.md#v10-command-integration-2026-10-28-partial).
 
 ### Make the campaign usable and resumable
 

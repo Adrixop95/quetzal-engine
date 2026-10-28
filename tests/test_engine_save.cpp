@@ -72,6 +72,8 @@ static void malformed() {
   auto extra = bytes; extra.push_back(0); repair_checksum(extra);
   CHECK(!deserialize_save(extra, decoded));
   auto old = bytes; old[3] = '2'; repair_checksum(old); CHECK(!deserialize_save(old, decoded));
+  auto old_replay = bytes; write_le(old_replay.data() + 8, uint32_t(1)); repair_checksum(old_replay);
+  CHECK(!deserialize_save(old_replay, decoded)); check_save(old_replay);
   for (auto name : {"", "../mission_1", "/mission_1", "mission.mp", "a b"}) {
     auto bad = s; bad.mission = name; CHECK(serialize_save(bad).empty());
   }

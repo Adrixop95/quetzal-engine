@@ -258,7 +258,10 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
     if (!in.hit(sc)) continue;
     cancel_mode();
     if (in.ctrl) { Command c; c.type = in.shift ? Pct::AddToGroup : Pct::CreateGroup; c.a = k; issue_to_selection(w, c); }
-    else if (w.local_side >= 0 && w.local_side < int(w.side_state.size())) w.selection.ids = w.side_state[w.local_side].groups[k];
+    else if (w.local_side >= 0 && w.local_side < int(w.side_state.size())) {
+      Command c; c.type = Pct::SelectGroup; c.side = uint8_t(w.local_side); c.a = k;
+      sim_->submit(std::move(c));
+    }
   }
   if (bound_hit(in, SDL_SCANCODE_P)) { Command c; c.type = sim_->paused() ? Pct::PauseOff : Pct::PauseOn; c.side = uint8_t(w.local_side); sim_->submit(c); }
 

@@ -30,6 +30,9 @@ int facing_from(int dx, int dy) {
   int a = path::angle_of(dx, dy);          // 256-step, 0 = +x, clockwise on screen (64 = down)
   return ((256 - a + 16) >> 5) & 7;
 }
+Order resumed_order(uint8_t resume) {
+  return resume == 3 ? Order::Follow : resume == 2 ? Order::Move : resume == 1 ? Order::AttackMove : Order::Idle;
+}
 }  // namespace
 
 GameSim::GameSim(std::shared_ptr<const RulesData> rules) : rules_(std::move(rules)) {}
@@ -71,7 +74,7 @@ void GameSim::init(World& w) {
       if (o.town_hall && o.town == t.index && o.side == t.side) { state.hall = o.id; break; }
     w.town_state.push_back(state);
   }
-  for (SideState& s : w.side_state) s.selected_tactic = -1;
+  for (SideState& s : w.side_state) { s.selected_tactic = -1; s.selected_ids.clear(); }
   nav_ = path::NavGrid();
   if (w.passability.w == w.terrain.w && w.passability.h == w.terrain.h && !w.passability.v.empty())
     nav_.load_dat(w.passability.w, w.passability.h, w.passability.v.data());
@@ -272,18 +275,29 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o) const {
 // ---- commands ----------------------------------------------------------------------------------------------------
 
 void GameSim::apply(World& w, const Command& c) {
+  SideState* ss = c.side < w.side_state.size() ? &w.side_state[c.side] : nullptr;
+  const auto& command_ids = c.ids.empty() && ss ? ss->selected_ids : c.ids;
   auto own_ids = [&](bool need_mobile) {
     std::vector<Object*> v;
-    for (uint32_t id : c.ids) {
+    for (uint32_t id : command_ids) {
       Object* o = w.find_mut(id);
       if (!o || o->removed || !o->alive || o->side != c.side || o->type < 0) continue;
       const TypeRules& r = rules_->type(o->type);
       if (need_mobile && !(r.mobile || r.flier)) continue;
-      v.push_back(o);
+      if (std::find(v.begin(), v.end(), o) == v.end()) v.push_back(o);
     }
     return v;
   };
-  SideState* ss = c.side < w.side_state.size() ? &w.side_state[c.side] : nullptr;
+  auto select = [&](std::vector<uint32_t> ids) {
+    ss->selected_ids = std::move(ids);
+    ss->selected_tactic = -1;
+    if (!ss->selected_ids.empty()) {
+      int tactic = w.find(ss->selected_ids.front())->tactic;
+      if (tactic >= 0 && std::all_of(ss->selected_ids.begin(), ss->selected_ids.end(),
+          [&](uint32_t id) { return w.find(id)->tactic == tactic; })) ss->selected_tactic = tactic;
+    }
+    if (w.local_side == c.side) w.selection.ids = ss->selected_ids;
+  };
   switch (c.type) {
     case Pct::PauseOn: paused_ = true; break;
     case Pct::PauseOff: paused_ = false; break;
@@ -296,6 +310,7 @@ void GameSim::apply(World& w, const Command& c) {
       for (Object* o : v) {
         o->order = uint8_t(c.type == Pct::Move ? Order::Move : Order::AttackMove);
         o->dest_x = cx; o->dest_y = cy; o->target = 0; o->resume = 0;
+        o->follow_tactic = -1;
         if (o->mover >= 0) agents.push_back(uint32_t(o->mover));
       }
       if (!agents.empty()) mover_->order_move(agents.data(), int(agents.size()), {to_fixed(cx), to_fixed(cy)});
@@ -307,6 +322,7 @@ void GameSim::apply(World& w, const Command& c) {
       for (Object* o : own_ids(true)) {
         if (o->id == t->id || !rules_->type(o->type).armed) continue;
         o->order = uint8_t(Order::Attack); o->target = t->id; o->resume = 0;
+        o->follow_tactic = -1;
         if (o->attack_mode == AttackMode::Direct && o->mover >= 0) mover_->stop(uint32_t(o->mover));
       }
       break;
@@ -320,13 +336,13 @@ void GameSim::apply(World& w, const Command& c) {
         if (o.removed || !o.alive || o.side != c.side || o.type < 0) continue;
         const auto& r = rules_->type(o.type);
         if (!(r.mobile || r.flier)) continue;
-        const bool selected = std::find(c.ids.begin(), c.ids.end(), o.id) != c.ids.end();
+        const bool selected = std::find(command_ids.begin(), command_ids.end(), o.id) != command_ids.end();
         const bool attached = o.tactic >= 0 && std::find(tactics.begin(), tactics.end(), o.tactic) != tactics.end();
         if (!selected && !attached) continue;
         o.attack_mode = AttackMode(c.a);
         // Clear combat assignment on a mode change; preserve the movement destination.
         if (o.order == uint8_t(Order::Attack)) {
-          o.order = uint8_t(o.resume == 2 ? Order::Move : o.resume ? Order::AttackMove : Order::Idle);
+          o.order = uint8_t(resumed_order(o.resume));
           o.target = 0; o.resume = 0;
           if (o.mover >= 0) {
             uint32_t aid = uint32_t(o.mover);
@@ -340,6 +356,7 @@ void GameSim::apply(World& w, const Command& c) {
     case Pct::Stop:
       for (Object* o : own_ids(true)) {
         o->order = uint8_t(Order::Idle); o->target = 0; o->resume = 0;
+        o->follow_tactic = -1;
         if (o->mover >= 0) mover_->stop(uint32_t(o->mover));
       }
       break;
@@ -387,8 +404,56 @@ void GameSim::apply(World& w, const Command& c) {
         }
         if (!extracted.empty()) {
           ss->selected_tactic = tactic;
+          ss->selected_ids = extracted;
           if (w.local_side == c.side) w.selection.ids = std::move(extracted);
         }
+      }
+      break;
+    }
+    case Pct::SelectGroup: {
+      if (!ss || c.a < 0 || c.a >= 10 || c.b != 0) break;
+      std::vector<uint32_t> ids;
+      for (uint32_t id : ss->groups[c.a]) {
+        const Object* o = w.find(id);
+        if (o && o->alive && !o->removed && o->type >= 0 && o->side == c.side) ids.push_back(id);
+      }
+      select(std::move(ids));
+      break;
+    }
+    case Pct::SelectByNo: {
+      if (!ss || c.a < 0 || c.b != 0) break;
+      std::vector<uint32_t> ids;
+      for (const Object& o : w.objects)
+        if (o.alive && !o.removed && o.type >= 0 && o.side == c.side && o.tactic == c.a) ids.push_back(o.id);
+      if (!ids.empty()) select(std::move(ids));
+      break;
+    }
+    case Pct::FollowTeam: {
+      if (!ss || c.a < 0 || c.b != 0) break;
+      auto mobile = [&](const Object& o) {
+        return o.alive && !o.removed && o.type >= 0 && o.side == c.side &&
+            (rules_->type(o.type).mobile || rules_->type(o.type).flier);
+      };
+      if (std::none_of(w.objects.begin(), w.objects.end(), [&](const Object& o) {
+            return mobile(o) && o.tactic == c.a;
+          })) break;
+      std::vector<int> sources;
+      for (const Object* o : own_ids(true))
+        if (o->tactic >= 0 && std::find(sources.begin(), sources.end(), o->tactic) == sources.end()) sources.push_back(o->tactic);
+      // Reject the entire order if any leader path reaches a source tactic.
+      std::vector<int> reachable{c.a};
+      for (size_t i = 0; i < reachable.size(); ++i)
+        for (const Object& o : w.objects)
+          if (mobile(o) && o.tactic == reachable[i] && o.follow_tactic >= 0 &&
+              std::find(reachable.begin(), reachable.end(), o.follow_tactic) == reachable.end()) reachable.push_back(o.follow_tactic);
+      if (std::any_of(sources.begin(), sources.end(), [&](int t) {
+            return std::find(reachable.begin(), reachable.end(), t) != reachable.end();
+          })) break;
+      for (Object& o : w.objects) {
+        if (!mobile(o) || std::find(sources.begin(), sources.end(), o.tactic) == sources.end()) continue;
+        o.follow_tactic = c.a; o.order = uint8_t(Order::Follow); o.target = 0; o.resume = 0;
+        o.dest_x = o.dest_y = -1;
+        if (o.mover >= 0) mover_->stop(uint32_t(o.mover));
       }
       break;
     }
@@ -431,14 +496,14 @@ void GameSim::apply(World& w, const Command& c) {
         w.find_mut(id)->town = w.mission.towns[size_t(ti)].index;
         w.find_mut(id)->build_total = std::max(1, mi->time);
       } else if (std::count_if(ss->queue.begin(), ss->queue.end(),
-                               [ti](const QueueItem& q) { return q.town == ti; }) < 8) {
+                               [ti](const QueueItem& q) { return q.town == ti; }) < 50) {
         ss->money -= mi->price;
         if (ti >= 0 && ti < int(w.ai_towns.size())) w.ai_towns[ti].spent += mi->price;
         ss->queue.push_back({c.a, std::max(1, mi->time), std::max(1, mi->time), ti, mi->price});
       }
       break;
     }
-    default: break;  // SelectGroup, ...: recorded but not implemented
+    default: break;
   }
 }
 
@@ -675,7 +740,42 @@ void GameSim::economy(World& w) {
 
 // ---- orders, combat ----------------------------------------------------------------------------------------------
 
+void GameSim::follow_tactics(World& w) {
+  // Engine policy: track the live mobile leader centroid, replanning at six-tick
+  // intervals. Reference formation anchors and attachment flags remain unresolved.
+  for (Object& o : w.objects) {
+    if (!o.alive || o.removed || o.follow_tactic < 0) continue;
+    int64_t x = 0, y = 0, count = 0;
+    for (const Object& leader : w.objects) {
+      if (!leader.alive || leader.removed || leader.type < 0 || leader.side != o.side ||
+          leader.tactic != o.follow_tactic) continue;
+      const auto& r = rules_->type(leader.type);
+      if (!(r.mobile || r.flier)) continue;
+      x += px(leader.cur_x); y += px(leader.cur_y); ++count;
+    }
+    if (!count || o.tactic == o.follow_tactic) {
+      o.follow_tactic = -1;
+      if (o.order == uint8_t(Order::Follow) || o.resume == 3) {
+        o.order = uint8_t(Order::Idle); o.target = 0; o.resume = 0;
+        if (o.mover >= 0) mover_->stop(uint32_t(o.mover));
+      }
+      continue;
+    }
+    if (o.order != uint8_t(Order::Follow)) continue;
+    int dx = int(x / count), dy = int(y / count);
+    if ((tick_ + o.id) % 6 != 0 && o.dest_x >= 0) continue;
+    const bool changed = o.dest_x != dx || o.dest_y != dy;
+    o.dest_x = dx; o.dest_y = dy;
+    if (o.mover >= 0 && changed) {
+      const path::Vec2 goal{to_fixed(dx), to_fixed(dy)};
+      uint32_t aid = uint32_t(o.mover);
+      mover_->order_move(&aid, 1, goal);
+    }
+  }
+}
+
 void GameSim::run_orders(World& w) {
+  follow_tactics(w);
   for (size_t i = 0; i < w.objects.size(); i++) {
     Object& o = w.objects[i];
     if (o.removed || o.type < 0) continue;
@@ -695,13 +795,15 @@ void GameSim::run_orders(World& w) {
     path::Agent* ag = o.mover >= 0 ? &mover_->agents_mut()[size_t(o.mover)] : nullptr;
     bool moving = ag && ag->state == path::AgentState::Moving;
 
-    if ((o.order == uint8_t(Order::Move) || (r.flier && o.order == uint8_t(Order::AttackMove))) && !moving) {
+    if ((o.order == uint8_t(Order::Move) ||
+         (r.flier && (o.order == uint8_t(Order::AttackMove) || o.order == uint8_t(Order::Follow)))) && !moving) {
       if (r.flier) {
         path::Vec2 delta{to_fixed(o.dest_x) - o.cur_x, to_fixed(o.dest_y) - o.cur_y};
         int step = std::max(1, r.speed);
         if (path::len2(delta) <= int64_t(step) * step) {
           o.cur_x = to_fixed(o.dest_x); o.cur_y = to_fixed(o.dest_y);
-          o.order = uint8_t(Order::Idle); o.set_anim(kAnimIdle);
+          if (o.order != uint8_t(Order::Follow)) o.order = uint8_t(Order::Idle);
+          o.set_anim(kAnimIdle);
         }
         else {
           path::Vec2 v = path::with_length(delta, step);
@@ -719,10 +821,12 @@ void GameSim::run_orders(World& w) {
     // Mode gates are independent of the provisional nearest-visible-enemy policy.
     const bool engage_moving = o.attack_mode == AttackMode::Aggressive || o.attack_mode == AttackMode::Balanced;
     if (o.order == uint8_t(Order::Idle) ||
-        (engage_moving && (o.order == uint8_t(Order::AttackMove) || o.order == uint8_t(Order::Move)))) {
+        (engage_moving && (o.order == uint8_t(Order::AttackMove) || o.order == uint8_t(Order::Move) ||
+                           o.order == uint8_t(Order::Follow)))) {
       if ((tick_ + o.id) % 4 == 0) {
         if (const Object* e = nearest_enemy(w, o)) {
-          o.resume = o.order == uint8_t(Order::Move) ? 2 : o.order == uint8_t(Order::AttackMove) ? 1 : 0;
+          o.resume = o.order == uint8_t(Order::Follow) ? 3 :
+              o.order == uint8_t(Order::Move) ? 2 : o.order == uint8_t(Order::AttackMove) ? 1 : 0;
           o.order = uint8_t(Order::Attack);
           o.target = e->id;
         }
@@ -732,10 +836,12 @@ void GameSim::run_orders(World& w) {
     Object* t = w.find_mut(o.target);
     if (!t || t->removed || !t->alive) {
       o.target = 0;
-      if (o.resume && ag) {
-        o.order = uint8_t(o.resume == 2 ? Order::Move : Order::AttackMove); o.resume = 0;
-        uint32_t aid = uint32_t(o.mover);
-        mover_->order_move(&aid, 1, {to_fixed(o.dest_x), to_fixed(o.dest_y)});
+      if (o.resume) {
+        o.order = uint8_t(resumed_order(o.resume)); o.resume = 0;
+        if (ag) {
+          uint32_t aid = uint32_t(o.mover);
+          mover_->order_move(&aid, 1, {to_fixed(o.dest_x), to_fixed(o.dest_y)});
+        }
       } else {
         o.order = uint8_t(Order::Idle);
       }
@@ -1023,6 +1129,7 @@ void GameSim::script_order(World& w, const std::vector<uint32_t>& ids, int pxx, 
     if (!(r.mobile || r.flier)) continue;
     o->order = uint8_t(attack_move ? Order::AttackMove : Order::Move);
     o->dest_x = pxx; o->dest_y = pyy; o->target = 0; o->resume = 0;
+    o->follow_tactic = -1;
     if (o->mover >= 0) agents.push_back(uint32_t(o->mover));
   }
   if (!agents.empty()) mover_->order_move(agents.data(), int(agents.size()), {to_fixed(pxx), to_fixed(pyy)});
@@ -1033,6 +1140,7 @@ void GameSim::script_stop(World& w, const std::vector<uint32_t>& ids) {
     Object* o = w.find_mut(id);
     if (!o || o->removed || !o->alive) continue;
     o->order = uint8_t(Order::Idle); o->target = 0; o->resume = 0;
+    o->follow_tactic = -1;
     if (o->mover >= 0) mover_->stop(uint32_t(o->mover));
   }
 }
@@ -1092,7 +1200,7 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(uint32_t(o.town)); mix(o.harvest_ready);
     for (const auto* h : {&o.gold_harvest, &o.repair_harvest}) { mix(h->accumulated); mix(h->last_clock); mix(h->cursor); }
     mix(o.id); mix(uint32_t(o.type)); mix(uint32_t(o.side)); mix(uint32_t(o.hp)); mix(uint32_t(o.cur_x)); mix(uint32_t(o.cur_y));
-    mix(uint8_t(o.attack_mode)); mix(o.order); mix(o.target); mix(uint32_t(o.cooldown)); mix(o.alive); mix(o.removed); mix(uint32_t(o.progress));
+    mix(uint8_t(o.attack_mode)); mix(uint32_t(o.follow_tactic)); mix(o.order); mix(o.target); mix(uint32_t(o.cooldown)); mix(o.alive); mix(o.removed); mix(uint32_t(o.progress));
     mix(uint32_t(o.render_height)); mix(uint32_t(o.destruction_radius));
     mix(uint32_t(o.transport_phase)); mix(uint32_t(o.orientation)); mix(o.construction_overlay); mix(o.has_fired);
     mix(o.body_tick); mix(o.attack_tick); mix(o.body_moving); mix(o.anim_tick);
@@ -1120,6 +1228,7 @@ uint64_t GameSim::state_hash(const World& w) const {
   mix(w.side_state.size());
   for (const SideState& s : w.side_state) {
     mix(uint32_t(s.selected_tactic));
+    mix(s.selected_ids.size()); for (uint32_t id : s.selected_ids) mix(id);
     mix(uint32_t(s.money)); mix(s.build_paused); mix(s.queue.size());
     for (const QueueItem& q : s.queue) { mix(uint32_t(q.type)); mix(uint32_t(q.remaining)); mix(uint32_t(q.total)); mix(uint32_t(q.town)); mix(uint32_t(q.paid)); }
     for (const auto& g : s.groups) { mix(g.size()); for (uint32_t id : g) mix(id); }

@@ -152,3 +152,24 @@ Validation: Release build, ten synthetic CTest entries (including the AI skirmis
 and both private game-data entries passed. The game-data checks used dummy SDL
 inside `unshare -rn` with a private installation copy. Pre-commit hooks were run
 from a locally cached environment; remote fetching was unavailable.
+
+## V11 sustained-opposition update (2026-10-28, partial)
+
+The planner now sends idle autonomous reinforcements to an ongoing town alert,
+including while production is busy, without resetting the current plan or active
+combat orders. This remains an explicit fallback policy. Shared-cash town tests
+check independent speed selection and pricing; the synthetic mission cash-pressure
+scenario and repeated 14,400-tick soak require autonomous waves, firing, losses
+and production in every five-minute interval. Deliberately durable synthetic halls
+keep both sides alive; this does not measure campaign balance. Every tick matches
+across viewing sides and command-log replay. See the computer-player inventory in
+[engine_rules_status.md](engine_rules_status.md) for counts and evidence limits.
+
+Release build, synthetic CTest and pre-commit gates pass; four private-data checks
+and restricted UDP process creation skip in the default suite. Separate format
+and engine checks pass with the private game copy under dummy SDL and
+`unshare -rn`. The isolated reference mission probe fails at loopback setup
+before launch. Separate paired engine mission 1/4 smoke reports match but end
+in defeat at ticks 1196/1474; neither completes the twenty-minute horizon or a
+winning route. V05-V10/reference observer dependencies and full V11 campaign
+acceptance remain open; only the evidenced V11 subitems are ticked.
