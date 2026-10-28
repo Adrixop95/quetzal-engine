@@ -20,6 +20,7 @@ struct Options {
   bool edge_scroll = true;
   bool hud = true;
   bool fog = true;
+  std::string audio_log;           // --audio-log FILE: successful playback events
   bool audio = true;               // --no-audio
   float sfx_volume = 0.8f, music_volume = 0.6f;
   std::string script;              // --script FILE: headless playtest (see app/playtest.hpp)

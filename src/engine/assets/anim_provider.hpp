@@ -16,6 +16,7 @@ class AnimSpriteProvider : public SpriteProvider {
   bool pick_shadow(const ObjectState& st, SpriteDraw& out) const override { return make(st, out, true); }
   // Raw frame lookup (also used by tests/tools).
   data::SpriteRef frame_for(const ObjectState& st) const;
+  std::vector<data::SpriteRef> sound_frames(const ObjectState& st) const;
   std::vector<SpriteDraw> parts(const ObjectState& st) const override;
   std::vector<SpriteItem> items(const ObjectState& st) const override;
   int light_mask(const ObjectState& st) const override { return frame_for(st).light; }
