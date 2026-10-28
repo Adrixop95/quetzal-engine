@@ -11,7 +11,7 @@ int kind_of(const ObjectState& st) {
   return st.type_id >= 0 && st.type_id < 90 ? data::kTypeAnims[st.type_id].kind : -1;
 }
 data::AnimState state_of(const ObjectState& st) {
-  return st.anim_state >= 0 && st.anim_state <= int(data::AnimState::Icon)
+  return st.anim_state >= 0 && st.anim_state <= int(data::AnimState::Construct)
       ? static_cast<data::AnimState>(st.anim_state) : data::AnimState::Idle;
 }
 int angle_of(const ObjectState& st) { return st.angle < 0 ? (st.facing & 7) * 32 : st.angle; }
@@ -19,44 +19,61 @@ int angle_of(const ObjectState& st) { return st.angle < 0 ? (st.facing & 7) * 32
 
 data::SpriteRef AnimSpriteProvider::frame_for(const ObjectState& st) const {
   const int kind = kind_of(st);
-  if (kind < 0) {
-    if (st.type_id == -2) return data::SpriteDb::sprite_for_sequence(db_.anim(23),
-        data::boat_sequence(static_cast<data::BoatPhase>(std::clamp(st.transport_phase, 0, 4)), st.orientation), int(st.anim_tick));
-    if (st.type_id == -3) return data::SpriteDb::sprite_for_sequence(db_.anim(29),
-        data::johnka_sequence(st.orientation), int(st.anim_tick));
-    return {};
-  }
+  if (kind == 8 || st.type_id == -2)
+    return data::SpriteDb::sprite_for_sequence(db_.anim(23),
+        data::boat_sequence(static_cast<data::BoatPhase>(std::clamp(st.transport_phase, 0, 4)), st.orientation), int64_t(st.anim_tick));
+  if (kind == 10 || st.type_id == -3)
+    return data::SpriteDb::sprite_for_sequence(db_.anim(29),
+        data::johnka_sequence(st.orientation), int64_t(st.anim_tick));
+  if (kind < 0) return {};
   const auto state = state_of(st);
   auto a = db_.anim(db_.anim_id(st.type_id));
   if (kind == 2 || kind == 7) {
     if (state == data::AnimState::Die) {
       if (st.progress < 1000 || st.destruction_radius < 0) return {};
-      return db_.anim(data::destruction_anim(st.destruction_radius)).at_tick(int(st.anim_variant % 20), int(st.anim_tick), false);
+      return db_.anim(data::destruction_anim(st.destruction_radius)).at_tick(int(st.anim_variant % 20), int64_t(st.anim_tick), false);
     }
-    if (st.anim_state == 6 || st.progress < 1000) {
+    if (state == data::AnimState::Construct || st.progress < 1000) {
       const int frame = data::construction_frame(a.frame_count(0), st.hp, st.max_hp);
       return frame < 0 ? data::SpriteRef{} : a.frame(0, frame);
     }
   }
-  const auto body_state = state == data::AnimState::Attack && (kind == 1 || kind == 3 || kind == 5 || kind == 6)
-      ? (st.moving ? data::AnimState::Move : data::AnimState::Idle) : state;
+  // Locomotion and built loops keep their phase when a weapon fires. Older
+  // producers can still supply a single state clock through anim_tick.
+  const int64_t body_tick = st.body_tick >= 0 ? st.body_tick : st.anim_tick;
+  const int64_t attack_tick = st.attack_tick >= 0 ? st.attack_tick : st.anim_tick;
+  auto body_state = state;
+  if (state == data::AnimState::Attack || (st.attack_tick >= 0 &&
+      (state == data::AnimState::Idle || state == data::AnimState::Move))) {
+    body_state = st.moving ? data::AnimState::Move : data::AnimState::Idle;
+    // Spider/Headtruck fire with the turret; aircraft fire while flying.
+    if (kind == 0 || kind == 4 || kind == 9 ||
+        (kind == 7 && !data::kTypeAnims[st.type_id].anim2)) {
+      auto attack = data::body_sequence(kind, data::AnimState::Attack, angle_of(st));
+      auto firing = data::SpriteDb::sprite_for_sequence(a, attack, attack_tick);
+      if (firing.valid()) return firing;
+    }
+  }
+  const bool aligned = st.cycle_ready && (angle_of(st) & 31) == 0;
   const auto sequence = data::body_sequence(kind, body_state, angle_of(st), int(st.anim_variant),
-                                           st.cycle_ready, data::kTypeAnims[st.type_id].anim2 != 0);
-  auto r = data::SpriteDb::sprite_for_sequence(a, sequence, int(st.anim_tick));
+                                           aligned, data::kTypeAnims[st.type_id].anim2 != 0);
+  const int64_t tick = body_state == data::AnimState::Idle || body_state == data::AnimState::Move
+      ? body_tick : st.anim_tick;
+  auto r = data::SpriteDb::sprite_for_sequence(a, sequence, tick);
   // Only Marine corpses hold their final death image. Never resurrect a vehicle
   // through an idle fallback when its death sequence is absent.
   if (!r.valid() && state == data::AnimState::Die && kind == 0)
     return a.frame(sequence.slot, a.frame_count(sequence.slot) - 1);
-  if (!r.valid() && (state == data::AnimState::Attack || state == data::AnimState::Fidget || (kind == 9 && state == data::AnimState::Move)))
+  if (!r.valid() && (state == data::AnimState::Fidget || (kind == 9 && body_state == data::AnimState::Move)))
     return data::SpriteDb::sprite_for_sequence(a, data::body_sequence(kind, data::AnimState::Idle,
-        angle_of(st), 0, st.cycle_ready, data::kTypeAnims[st.type_id].anim2 != 0), 0);
+        angle_of(st), 0, aligned, data::kTypeAnims[st.type_id].anim2 != 0), body_tick);
   return r;
 }
 
 int AnimSpriteProvider::height(const ObjectState& st) const {
   const int kind = kind_of(st);
   if (kind == 3 || kind == 5) return st.height;
-  if (kind == 1 || st.type_id < 0) return 0;
+  if (kind == 1 || kind == 8 || kind == 10 || st.type_id < 0) return 0;
   return frame_for(st).yoff;
 }
 bool AnimSpriteProvider::hides_missing(const ObjectState& st) const {
@@ -99,9 +116,12 @@ std::vector<SpriteDraw> AnimSpriteProvider::parts(const ObjectState& st) const {
   const int second = db_.anim_id(st.type_id, 1);
   if (second && st.progress >= 1000) {
     const int angle = st.secondary_angle < 0 ? angle_of(st) : st.secondary_angle;
-    auto seq = data::turret_sequence(state, angle, st.initial_turret);
-    auto r = data::SpriteDb::sprite_for_sequence(db_.anim(second), seq, int(st.anim_tick));
-    if (!r.valid() && state == data::AnimState::Attack)
+    const bool firing = state == data::AnimState::Attack || (st.attack_tick >= 0 &&
+        (state == data::AnimState::Idle || state == data::AnimState::Move));
+    const auto seq = data::turret_sequence(firing ? data::AnimState::Attack : state, angle, st.initial_turret);
+    const int64_t tick = st.attack_tick >= 0 ? st.attack_tick : st.anim_tick;
+    auto r = data::SpriteDb::sprite_for_sequence(db_.anim(second), seq, tick);
+    if (!r.valid() && firing)
       r = data::SpriteDb::sprite_for_sequence(db_.anim(second), data::turret_sequence(data::AnimState::Idle, angle), 0);
     add(r, height(st));
   }
@@ -119,7 +139,7 @@ std::vector<SpriteDraw> AnimSpriteProvider::parts(const ObjectState& st) const {
 std::vector<SpriteItem> AnimSpriteProvider::items(const ObjectState& st) const {
   std::vector<SpriteItem> result{{0, 0, height(st), parts(st), light_mask(st)}};
   auto decoration = [&](int anim, int slot, int h, int dy, bool loop) {
-    const auto frame = db_.anim(anim).at_tick(slot, int(st.anim_tick), loop);
+    const auto frame = db_.anim(anim).at_tick(slot, int64_t(st.anim_tick), loop);
     if (!frame.valid()) return;
     SpriteItem item;
     item.height = h; item.dy = dy; item.light = frame.light;
@@ -180,7 +200,8 @@ bool AnimSpriteProvider::load_visual_rules(const std::string& directory) {
   return loaded;
 }
 int AnimSpriteProvider::vision_mask(const ObjectState& st) const {
-  if (st.type_id == -2 || st.type_id == -3) return data::kTransportVisionMask;
+  if (kind_of(st) == 8 || kind_of(st) == 10 || st.type_id == -2 || st.type_id == -3)
+    return data::kTransportVisionMask;
   return st.type_id >= 0 && st.type_id < 90 ? vision_[st.type_id] : 0;
 }
 }  // namespace aztec::engine

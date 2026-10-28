@@ -21,7 +21,7 @@ Two implementations serve different purposes:
 - `src/engine/` is independently written C++20: SDL rendering with an atlas,
   camera zoom/scroll, interpolation, terrain/overlays, sprites, fog and minimap;
   selection, movement/attack commands, groups, production menus, construction,
-  combat, training, script execution and a computer-player skeleton. Front-end,
+  combat, training, script execution and a deterministic computer town planner. Front-end,
   briefings, ffmpeg intro playback, audio mixer, command-log saves/replay and
   scripted playtests exist. Features working internally do not establish parity.
   The `MoveSystem` interface isolates deterministic pathfinding and collision work.
@@ -80,7 +80,7 @@ not d4 (secondary HP); economy depends on resource maps and day-clock events;
 prices/times depend on town level and chosen speed; visibility uses interpolated
 light masks; normal tactic assignment can omit ordinary buildings even when a
 weapon can damage them. The engine still has placeholder HP loading, damage,
-range, income, training/refunds, AI selection and cap behavior. Garrison, repair,
+range, income, training/refunds, AI composition, placement and tactic assignment. Garrison, repair,
 town upgrades, several commands/scripts and RNG parity remain incomplete.
 Original WaveSearch equivalence, projectile timing and complex weapons remain
 open; networking is not implemented in the independent engine.
@@ -119,9 +119,10 @@ sprite mapping. The first six items have complete prompts in `tasks/queue/`.
 5. Implement verified garrison/repair/destroy and town upgrades with stable command
    semantics and complete deterministic state hashing. Do not invent boarding
    capacities or a universal population cap from unrelated queue limits.
-6. Replace the AI purchase skeleton with documented town states and tactic
-   behavior, retaining explicit uncertainty around planner scoring. Extend mission
-   script coverage with per-command evidence and deterministic scenarios.
+6. Validate the deterministic AI town planner against the reference. Town states,
+   economic requests, autonomous waves and defence reactions now have synthetic
+   coverage; composition, placement, threat entry and launch thresholds remain
+   explicit fallback policies. Complete town queues/commands and tactic assignment.
 7. Differentially validate movement classes, collisions and WaveSearch behavior;
    then close remaining command ordering and RNG gaps before lockstep transport.
 8. Add network protocol/lobby support, original-save interoperability, remaining
@@ -132,3 +133,18 @@ Before each task: read its evidence docs, build/test the baseline, inspect curre
 code rather than assuming this snapshot is current, and record what was actually
 verified. Afterward: update status labels and leave an English summary of changed
 files and checks. Archive the task after its PR merges as described in tasks/README.md.
+
+## AI implementation update
+
+The planner in `src/engine/ai/` is a pure world/state-to-command function integrated
+through `sim/ai.cpp`. AI state and per-town harvest/spending accounting participate
+in simulation hashes and command-log replay. `ai_unit` covers decisions and
+synthetic `.scn` orders; `ai_skirmish` compares two 14,400-tick runs and replay.
+See the computer-player section in `engine_rules_status.md` for evidence boundaries
+and missing task 01/05 dependencies. A private isolated reference probe failed at
+namespace network setup; no reference parity was verified.
+
+Validation: Release build, ten synthetic CTest entries (including the AI skirmish),
+and both private game-data entries passed. The game-data checks used dummy SDL
+inside `unshare -rn` with a private installation copy. Pre-commit hooks were run
+from a locally cached environment; remote fetching was unavailable.

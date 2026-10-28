@@ -38,8 +38,9 @@ struct ObjectState {
   int side = 0;
   int side_color = 0;     // [SideN] Color, for team-colour palettes
   int facing = 0;         // 0..7: east=0, counter-clockwise
-  int anim_state = 0;     // data::AnimState (0 idle, 1 move, 2 attack, 3 die, 4 fidget, 5 icon)
+  int anim_state = 0;     // data::AnimState (0 idle, 1 move, 2 attack, 3 die, 4 fidget, 5 icon, 6 construct)
   uint32_t anim_tick = 0; // simulation ticks since the animation started
+  int64_t body_tick = -1, attack_tick = -1;  // optional independent simulation clocks; -1 uses anim_tick
   uint32_t anim_variant = 0;  // stable per-object random value (death/fidget sequence choice)
   int angle = -1, secondary_angle = -1;  // full 0..255 angles; -1 uses facing * 32
   bool cycle_ready = true, initial_turret = true, moving = false;

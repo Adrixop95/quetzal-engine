@@ -38,11 +38,19 @@ void GameSim::attach_agent(Object& o) {
 }
 
 void GameSim::init(World& w) {
-  tick_ = 0;
-  w.day_clock = (w.mission.start_time % kDayTicks + kDayTicks) % kDayTicks;
+  tick_ = w.original_save ? w.tick : 0;
+  if (!w.original_save) w.day_clock = (w.mission.start_time % kDayTicks + kDayTicks) % kDayTicks;
+  w.ai_towns.assign(w.mission.towns.size(), {});
   w.town_speed.assign(w.mission.towns.size(), 1);
   w.repair_credits.assign(w.mission.towns.size(), 0);
   w.effects.clear();
+  // Reference computer intelligence starts with visibility value 24 (rules_ai.md).
+  // Imported saves retain their recorded fog instead of restarting intelligence.
+  if (!w.original_save) {
+    for (const auto& side : w.mission.sides)
+      if (side.only_comp && !side.neutral && side.index >= 0 && side.index < int(w.visibility.sides.size()))
+        std::fill(w.visibility.sides[side.index].v.begin(), w.visibility.sides[side.index].v.end(), uint8_t(24));
+  }
   w.town_state.clear();
   for (const TownDef& t : w.mission.towns) {
     TownState state;
@@ -62,7 +70,7 @@ void GameSim::init(World& w) {
   paused_ = false;
   spawn_counter_ = 0;
   rng_ = 12345;
-  if (script_.loaded()) script_.init(w);
+  if (script_.loaded() && !w.original_save) script_.init(w);
   // largest mission hp per type = fallback maximum
   std::vector<int> seen(kNumTypes, 0);
   for (const Object& o : w.objects)
@@ -70,11 +78,14 @@ void GameSim::init(World& w) {
   for (Object& o : w.objects) {
     if (o.type < 0 || o.type >= kNumTypes) { o.type = -1; o.alive = true; continue; }   // unknown types become inert markers
     const TypeRules& r = rules_->type(o.type);
-    o.hp_max = r.hp_src == Src::Verified ? r.hp_max : std::max(seen[size_t(o.type)], r.structure ? r.hp_max : 1);
-    if (o.hp <= 0) o.hp = o.hp_max;
-    o.secondary_hp = r.secondary_hp;
-    o.progress = 1000;
-    o.gold_harvest = {}; o.repair_harvest = {}; o.harvest_ready = false;
+    if (!w.original_save) {
+      o.hp_max = r.hp_src == Src::Verified ? r.hp_max : std::max(seen[size_t(o.type)], r.structure ? r.hp_max : 1);
+      if (o.hp <= 0) o.hp = o.hp_max;
+      o.secondary_hp = r.secondary_hp;
+      o.progress = 1000;
+      o.gold_harvest = {}; o.repair_harvest = {}; o.harvest_ready = false;
+    }
+    if (o.removed || !o.alive) continue;
     attach_agent(o);
     if (r.structure) {
       int x0, y0, x1, y1;
@@ -305,11 +316,13 @@ void GameSim::apply(World& w, const Command& c) {
         if (c.b < 0 || c.c < 0 || c.b >= w.terrain.w || c.c >= w.terrain.h) break;
         if (!can_place(w, c.side, c.a, c.b, c.c, &why)) break;
         ss->money -= mi->price;
+        if (ti >= 0 && ti < int(w.ai_towns.size())) w.ai_towns[ti].spent += mi->price;
         uint32_t id = spawn(w, c.a, c.side, c.b * kTilePx + kTilePx / 2, c.c * kTilePx + kTilePx / 2, 0, true);
         w.find_mut(id)->town = ti;
         w.find_mut(id)->build_total = std::max(1, mi->time);
       } else if (ss->queue.size() < 8) {
         ss->money -= mi->price;
+        if (ti >= 0 && ti < int(w.ai_towns.size())) w.ai_towns[ti].spent += mi->price;
         ss->queue.push_back({c.a, std::max(1, mi->time), std::max(1, mi->time), ti, mi->price});
       }
       break;
@@ -369,7 +382,7 @@ std::vector<MenuItem> GameSim::menu(const World& w, int side, int town) const {
   const TownDef& t = w.mission.towns[size_t(ti)];
   for (const BuildItem& it : rules_->build_list(t.race, t.type)) {
     const TypeRules& r = rules_->type(it.type);
-    if (r.structure && !it.construct) continue;    // town upgrades: not implemented
+    if (r.structure && !it.construct && is_town_building(it.type)) continue; // hall upgrades await town-command support
     MenuItem m;
     bool computer = false, hostile_all = true, have_other = false;
     for (const auto& sd : w.mission.sides) {
@@ -378,7 +391,7 @@ std::vector<MenuItem> GameSim::menu(const World& w, int side, int town) const {
     }
     hostile_all = hostile_all && have_other;
     int speed = ti < int(w.town_speed.size()) ? w.town_speed[ti] : 1;
-    m.type = it.type; m.construct = it.construct;
+    m.type = it.type; m.construct = r.structure; // farms/mines/defences also require independent placement
     m.price = production_value(r.price, t.type, speed, computer, hostile_all, false);
     m.time = production_value(r.time, t.type, speed, computer, hostile_all, true);
     const char* why = "";
@@ -440,7 +453,7 @@ void GameSim::economy(World& w) {
       o.build_elapsed++;
       o.progress = std::min(1000, o.build_elapsed * 1000 / std::max(1, o.build_total));
       o.hp = std::max(1, int(int64_t(o.hp_max) * o.progress / 1000));
-      if (o.progress >= 1000) { o.anim_state = kAnimIdle; o.anim_tick = 0; }
+      if (o.progress >= 1000) { o.anim_state = kAnimIdle; o.anim_tick = 0; o.body_tick = -1; }
     } else if (o.side >= 0 && o.side < int(w.side_state.size())) {
       if (!o.harvest_ready) {
         // The first active tick follows creation/completion of the accumulator.
@@ -472,6 +485,7 @@ void GameSim::economy(World& w) {
         if (warehouse) gain = int(static_cast<long double>(gain) * 1.3333333730697632L);
       }
       w.side_state[o.side].money += gain;
+      if (o.town >= 0 && o.town < int(w.ai_towns.size())) w.ai_towns[o.town].harvested += gain;
       int repair_rate = int(((int64_t(h.repair_rate) * 65536 / 100) + 128) >> 8);
       int credits = harvest_tick(o.repair_harvest, repair_rate, w.day_clock, h.repair_period);
       if (o.town >= 0 && o.town < int(w.repair_credits.size())) w.repair_credits[o.town] += credits * 100;
@@ -551,7 +565,7 @@ void GameSim::run_orders(World& w) {
         // Descriptor damage/reload feed provisional projectile flight; direct weapons hit immediately.
         o.cooldown = std::max(1, shot.reload + 1);
         o.has_fired = true;
-        o.anim_state = kAnimAttack; o.anim_tick = 0;
+        o.anim_state = kAnimAttack; o.anim_tick = 0; o.attack_tick = 0;
         fire(w, o, *t, shot.damage);
       }
     } else if (ag && ((tick_ + o.id) % 6 == 0 || !moving)) {
@@ -718,7 +732,8 @@ void GameSim::tick(World& w) {
   }
   pending_.clear();
   if (paused_) return;
-  if (script_.loaded()) script_.tick(*this, w);
+  for (auto& o : w.objects) if (!o.removed && o.attack_tick >= 0) ++o.attack_tick;
+  if (script_.loaded() && !w.original_save) script_.tick(*this, w);
   w.day_clock = (w.day_clock + 1) % kDayTicks;
   economy(w);
   run_ai(w);
@@ -727,6 +742,12 @@ void GameSim::tick(World& w) {
   maintain_town_marks(w);
   mover_->tick();
   sync_movement(w);
+  for (auto& o : w.objects) {
+    if (o.removed || !o.alive) continue;
+    const bool moving = o.cur_x != o.prev_x || o.cur_y != o.prev_y;
+    o.body_tick = moving == o.body_moving ? o.body_tick + 1 : 0;
+    o.body_moving = moving;
+  }
   if (tick_ % 4 == 0) update_fog(w);
 }
 
@@ -766,6 +787,12 @@ uint64_t GameSim::state_hash(const World& w) const {
   uint64_t h = 1469598103934665603ull;
   auto mix = [&](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
   mix(w.day_clock);
+  mix(w.ai_towns.size());
+  for (const auto& s : w.ai_towns) {
+    mix(s.phase); mix(s.science_timer); mix(s.target_town); mix(s.remaining);
+    mix(s.defence_enabled); mix(s.elapsed); mix(s.harvested); mix(s.spent); mix(s.last_alert);
+    mix(s.known_towns.size()); for (int town : s.known_towns) mix(town);
+  }
   mix(w.town_speed.size()); for (int speed : w.town_speed) mix(speed);
   mix(w.repair_credits.size()); for (int credits : w.repair_credits) mix(credits);
   mix(tick_); mix(rng_); mix(paused_); mix(spawn_counter_); mix(w.objects.size());
@@ -776,6 +803,7 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(o.order); mix(o.target); mix(uint32_t(o.cooldown)); mix(o.alive); mix(o.removed); mix(uint32_t(o.progress));
     mix(uint32_t(o.render_height)); mix(uint32_t(o.destruction_radius));
     mix(uint32_t(o.transport_phase)); mix(uint32_t(o.orientation)); mix(o.construction_overlay); mix(o.has_fired);
+    mix(o.body_tick); mix(o.attack_tick); mix(o.body_moving); mix(o.anim_tick);
     mix(o.facing); mix(o.anim_state); mix(uint32_t(o.corpse_ticks));
     mix(uint32_t(o.dest_x)); mix(uint32_t(o.dest_y)); mix(o.resume); mix(uint32_t(o.build_elapsed)); mix(uint32_t(o.build_total));
     mix(uint32_t(o.town)); mix(o.town_hall);

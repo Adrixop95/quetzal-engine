@@ -22,10 +22,11 @@ add_test(NAME formats COMMAND test_formats ${CMAKE_SOURCE_DIR}/game)
 
 # ---- clean C++20 engine (src/engine): loads the original data files, no recompiled code
 add_library(aztec_engine_lib
+  src/engine/save_import.cpp
   src/engine/assets/game_data.cpp src/engine/assets/mission.cpp src/engine/assets/anim_provider.cpp src/engine/assets/daylight.cpp
   src/engine/platform/input.cpp src/engine/platform/window.cpp
   src/engine/world/world.cpp src/engine/world/camera.cpp src/engine/world/type_info.cpp
-  src/engine/sim/simulation.cpp src/engine/sim/commands.cpp src/engine/sim/savegame.cpp src/engine/sim/rules.cpp src/engine/sim/game_sim.cpp src/engine/sim/script_runner.cpp src/engine/sim/ai.cpp
+  src/engine/sim/simulation.cpp src/engine/sim/commands.cpp src/engine/sim/savegame.cpp src/engine/sim/rules.cpp src/engine/sim/game_sim.cpp src/engine/sim/script_runner.cpp src/engine/sim/ai.cpp src/engine/ai/planner.cpp
   src/engine/render/atlas.cpp src/engine/render/sprite_store.cpp src/engine/render/font.cpp
   src/engine/render/png.cpp src/engine/render/fog.cpp src/engine/render/scene_renderer.cpp
   src/engine/ui/cursor.cpp src/engine/ui/panel.cpp src/engine/ui/names.cpp src/engine/ui/selection_ui.cpp src/engine/ui/commands_ui.cpp src/engine/ui/frontend.cpp src/engine/ui/minimap.cpp src/engine/ui/hud.cpp
@@ -36,6 +37,18 @@ target_compile_options(aztec_engine_lib PRIVATE -Wall -Wextra)
 target_link_libraries(aztec_engine_lib PUBLIC aztec_core aztec_path SDL2::SDL2)
 add_executable(aztec_engine src/engine/app/main.cpp)
 target_link_libraries(aztec_engine aztec_engine_lib)
+
+# Independent two-peer lockstep and plain POSIX UDP transport.
+add_library(aztec_net src/engine/net/lockstep.cpp src/engine/net/udp.cpp)
+target_link_libraries(aztec_net PUBLIC aztec_engine_lib)
+target_compile_options(aztec_net PRIVATE -Wall -Wextra)
+add_executable(test_lockstep tests/test_lockstep.cpp)
+target_link_libraries(test_lockstep aztec_net)
+add_test(NAME lockstep COMMAND test_lockstep)
+set_tests_properties(lockstep PROPERTIES LABELS "unit;network" TIMEOUT 20)
+add_executable(lockstep_peer tests/lockstep_peer.cpp)
+target_link_libraries(lockstep_peer aztec_net)
+
 add_executable(aztec_map_viewer src/tools_viewer/main.cpp)
 target_link_libraries(aztec_map_viewer aztec_engine_lib)
 target_compile_options(aztec_map_viewer PRIVATE -Wall -Wextra)
@@ -83,6 +96,9 @@ add_test(NAME path_bench_smoke COMMAND path_bench --smoke)
 set_tests_properties(path_bench_smoke PROPERTIES LABELS "unit;benchmark" TIMEOUT 20)
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
+  add_test(NAME lockstep_processes COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_lockstep_processes.py $<TARGET_FILE:lockstep_peer>)
+  set_tests_properties(lockstep_processes PROPERTIES LABELS "network" TIMEOUT 25 SKIP_RETURN_CODE 77)
   add_test(NAME map_viewer COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_map_viewer.py $<TARGET_FILE:aztec_map_viewer>)
   set_tests_properties(map_viewer PROPERTIES LABELS "unit" TIMEOUT 20)
   add_test(NAME zpath_tools COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_zpath_tools.py $<TARGET_FILE:path_bench>)
@@ -118,7 +134,32 @@ target_link_libraries(test_render_contracts aztec_engine_lib)
 target_compile_definitions(test_render_contracts PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data")
 add_test(NAME render_contracts COMMAND test_render_contracts)
 set_tests_properties(render_contracts PROPERTIES LABELS "unit")
+add_test(NAME animation_headless COMMAND test_render_contracts --headless)
+set_tests_properties(animation_headless PROPERTIES LABELS "unit"
+  ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
 if(Python3_Interpreter_FOUND)
   add_test(NAME zspr_tools COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_zspr_tools.py)
   set_tests_properties(zspr_tools PROPERTIES LABELS "unit")
+endif()
+
+# Synthetic deterministic AI checks; twenty simulated minutes without renderer or game assets.
+add_executable(test_ai tests/test_ai.cpp)
+target_link_libraries(test_ai aztec_engine_lib)
+target_compile_definitions(test_ai PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data"
+  AZTEC_AI_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/ai_orders.scn")
+add_test(NAME ai_unit COMMAND test_ai)
+add_test(NAME ai_skirmish COMMAND test_ai --smoke)
+set_tests_properties(ai_unit PROPERTIES LABELS "unit")
+set_tests_properties(ai_skirmish PROPERTIES LABELS "smoke" TIMEOUT 180
+  ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+
+# Original-save adapter checks: synthetic stream plus optional private installation.
+add_executable(test_save_import tests/test_save_import.cpp)
+target_link_libraries(test_save_import aztec_engine_lib)
+add_test(NAME save_import COMMAND test_save_import)
+set_tests_properties(save_import PROPERTIES LABELS "unit")
+add_test(NAME save_import_private COMMAND test_save_import --private ${CMAKE_SOURCE_DIR}/game)
+set_tests_properties(save_import_private PROPERTIES SKIP_RETURN_CODE 77 LABELS "game-data")
+if(GAME_DIR)
+  set_tests_properties(save_import_private PROPERTIES ENVIRONMENT "GAME_DIR=${GAME_DIR}")
 endif()

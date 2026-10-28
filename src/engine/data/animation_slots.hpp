@@ -5,7 +5,7 @@
 
 namespace aztec::data {
 
-enum class AnimState { Idle, Move, Attack, Die, Fidget, Icon };
+enum class AnimState { Idle, Move, Attack, Die, Fidget, Icon, Construct };
 
 struct AnimSequence {
   int slot = -1;
@@ -32,6 +32,7 @@ constexpr AnimSequence body_sequence(int kind, AnimState state, int angle,
       case AnimState::Die: return {17 + v % 3, -1, false};
       case AnimState::Fidget: return {20 + v % 3, -1, false};
       case AnimState::Icon: return {23, v, false};
+      case AnimState::Construct: return {};
     }
   }
   if (state == AnimState::Icon) {

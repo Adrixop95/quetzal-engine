@@ -7,7 +7,7 @@ The historical rebuild checklist is not the integration inventory.
 
 | Contract | Implementation and synthetic controls | Evidence / remaining uncertainty |
 | --- | --- | --- |
-| Kind-specific body selection | `AnimSpriteProvider` uses `body_sequence`, full-angle/cycle-ready inputs, and separate transport selectors. Moving Spider/Headtruck legs and Bird flight can continue during attack. | R/C; attack/move phase synchronization with the reference remains pending. The current simulation supplies only eight facing directions and one animation clock. |
+| Kind-specific body selection | `AnimSpriteProvider` uses `body_sequence`, full-angle/cycle-ready inputs, and separate transport selectors. Moving Spider/Headtruck legs and Bird flight can continue during attack. | R/C; attack/move phase synchronization with the reference remains pending. The current simulation supplies only eight facing directions. Independent body and firing clocks now preserve locomotion phase across shots; full-angle aim and steering cooldown producers remain pending. |
 | Timed prefix followed by hold | Resource durations remain authoritative through `AnimSet::at_tick`; no unconditional idle fallback on a missing death frame. Only Marine holds its final corpse image. | R/C; synthetic provider controls exercise ticks before, at and after the hold boundary. |
 | Secondary sprites | Ordered base shadow/body then secondary shadow/body; firing completion returns turret to slot 0. Simulation retains `has_fired` for later idle selection. | R/C/T; exact secondary attack pixels pending. Independent turret aim/cooldown behavior remains incomplete. |
 | Body and shadow heights | Ground body subtracts frame height; Spider height is zero; aircraft uses explicit `Object::render_height`; shadows stay on the ground. | R/C/P history; aircraft altitude producer remains pending, default height is zero. No guessed altitude is claimed verified. |
@@ -77,3 +77,44 @@ math, scan stability, descriptor HP and mobile Cannon/building probe placement.
 Probe maps clear inherited troops and scenario actions. These validate independent implementation, not game
 parity. Final pre-commit checks include new files explicitly because git metadata
 is read-only; changes remain uncommitted.
+
+## Remaining animation states (2026-10-27)
+
+`GameSim` supplies independent body and attack ages in simulation ticks. The
+renderer samples installed frame durations at 12 Hz, including timed prefixes,
+holds and one-shot completion. Firing can finish after the legacy eight-tick
+simulation animation tag returns to idle; body cycles do not restart on a shot.
+Construction completion starts the built loop at tick zero. These visual clocks
+are included in replay state hashes; weapon scheduling remains provisional.
+Normal Boat/Johnka UGI ids now use the same scripted selectors, zero height and
+vision mask as their render-only transport ids. Explicit construction state 6
+is recognized without relying on the progress fallback. Unaligned aircraft and
+Truck motion seeks the direction frame until cycle readiness and alignment hold.
+
+Synthetic controls cover idle and supported movement for all 90 initialized
+types (Camera intentionally has no body), independent turret/body ages, long
+firing sequences, corpse retention, construction, direction alignment and clocks
+beyond 32-bit ticks. `animation_headless` renders invented RGB565 sprites through
+`SceneRenderer` with dummy SDL drivers. It checks exact pixels across attack
+completion and repeated renders at different interpolation fractions, and checks
+that drawing does not advance simulation clocks. These are implementation checks,
+not reference pixel parity.
+
+Missing dependencies remain explicit: this checkout has no gather/cast orders or
+animation-state producers, and the mapping establishes no dedicated gather/cast
+slots. Economy harvesting is an accumulator, not a unit gather action. No slots
+are guessed for these names. Boat/Johnka phase transitions, independent turret
+aim, Bird steering cooldown, Cannon hop restarts and aircraft altitude still need
+simulation producers.
+
+Release build and all nine independent CTest checks passed; the two configured
+game-data entries skipped. Both game-data binaries subsequently passed against a
+private game copy inside `unshare -rn` with dummy SDL drivers. The independent
+engine also rendered mission 1 after 24 simulation ticks in that namespace:
+`work/animation-engine.png` (800x600), with output in `work/animation-engine.log`.
+These local artifacts remain ignored. Pre-commit passed using the existing cache.
+The private reference probe used symlinked assets, private writable state, dummy
+SDL drivers and `unshare -rn`; namespace interface setup failed with
+`Cannot open netlink socket: Operation not permitted`. Its log is ignored at
+`work/animation-state-probe/out.txt`. No reference pixels or timing observations
+were obtained, so synchronized reference animation validation remains pending.

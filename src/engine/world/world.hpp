@@ -3,9 +3,12 @@
 // previous and current tick position so the renderer can interpolate between 12 Hz ticks.
 #pragma once
 #include <cstdint>
+#include <memory>
+#include "core/savegame.hpp"
 #include <string>
 #include <vector>
 #include "core/map.hpp"
+#include "engine/ai/planner.hpp"
 #include "engine/sim/rules.hpp"
 #include "core/mapfiles.hpp"
 #include "core/visfile.hpp"
@@ -42,6 +45,8 @@ struct Object {
   int transport_phase = 0, orientation = 0;
   bool construction_overlay = false;
   bool has_fired = false;
+  int64_t body_tick = -1, attack_tick = -1;  // independent visual clocks, advanced only by GameSim
+  bool body_moving = false;
   // --- simulation state (written only by the Simulation) ---
   int32_t hp_max = 0;
   int32_t secondary_hp = 0;    // Marine d4, independent of primary/max HP
@@ -101,6 +106,9 @@ struct Selection {
 };
 
 struct World {
+  // Retains unresolved original research, script and pool state without inventing semantics.
+  std::shared_ptr<const SaveGame> original_save;
+  std::vector<uint32_t> original_unit_ids; // imported engine ID minus one -> sparse original pool ID
   MissionDef mission;
   TerrainMap terrain;
   Grid<uint8_t> passability;     // may be empty
@@ -119,6 +127,7 @@ struct World {
   int center_x = 0, center_y = 0;       // world px
   uint32_t center_serial = 0;
   Selection selection;           // local player's selected objects (UI state, not simulation state)
+  std::vector<ai::TownState> ai_towns; // deterministic planner state and town accounting
   std::vector<int> town_speed;    // runtime speed selection; mission BuildSpeed is ignored
   std::vector<int> repair_credits; // current tick supply by town, separate from cash
   int day_clock = 0;
