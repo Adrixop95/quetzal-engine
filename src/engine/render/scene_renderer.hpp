@@ -50,6 +50,7 @@ class SceneRenderer {
   Fog& fog() { return fog_; }
   SpriteStore& store() { return store_; }
   int default_palette() const;
+  bool visible_in_fog(const Object& o, Vec2f p) const;
 
  private:
   void draw_terrain(const Camera& cam);
@@ -59,7 +60,7 @@ class SceneRenderer {
   int hp_max(int type) const;  // best known: highest hp of that type in the mission
   mutable std::unordered_map<int, int> hp_max_;
   ObjectState object_state(const Object& o) const;
-  bool visible_in_fog(const Object& o, Vec2f p) const;
+
   void flush(int page);
   void queue(int page, float x0, float y0, float x1, float y1, const SDL_Rect& src);
 
