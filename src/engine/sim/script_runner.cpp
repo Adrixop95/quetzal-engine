@@ -315,9 +315,27 @@ void ScriptRunner::follow_paths(GameSim& sim, World& w) {
 uint64_t ScriptRunner::state_hash() const {
   uint64_t h = 1469598103934665603ull;
   auto mix = [&](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
+  mix(script_.triggers.size());
+  for (const auto& trigger : script_.triggers) {
+    mix(trigger.id); mix(trigger.conditions.size());
+    for (const auto& c : trigger.conditions) {
+      mix(uint32_t(c.kind)); mix(c.side); mix(c.id); mix(c.ugi);
+      for (int coordinate : c.rect) mix(coordinate);
+      mix(uint32_t(c.cmp)); mix(c.value);
+    }
+    mix(trigger.actions.size());
+    for (const auto& a : trigger.actions) {
+      mix(uint32_t(a.kind)); mix(a.side); mix(a.id); mix(a.a); mix(a.b); mix(a.ugi);
+      mix(a.args.size()); for (int arg : a.args) mix(arg);
+      mix(a.text.size()); for (unsigned char byte : a.text) mix(byte);
+    }
+  }
   mix(local_time_);
+  mix(enabled_.size());
   for (const auto& e : enabled_) { mix(uint64_t(e.first)); mix(e.second); }
+  mix(timers_.size());
   for (const auto& t : timers_) { mix(uint64_t(t.first)); mix(uint64_t(t.second.value)); mix(t.second.running * 2u + t.second.exists); }
+  mix(tactics_.size());
   for (const auto& t : tactics_) {
     mix(uint64_t(t.first.first)); mix(uint64_t(t.first.second));
     mix(t.second.locked); mix(uint64_t(t.second.path + 1)); mix(uint64_t(t.second.path_index));

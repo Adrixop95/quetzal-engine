@@ -60,6 +60,8 @@ static const Glyph kGlyphs[] = {
     {']', "011001001001011"},
     {'?', "111001010000010"},
     {'!', "010010010000010"},
+    {'<', "001010100010001"},
+    {'>', "100010001010100"},
     {'*', "101010111010101"},
 };
 
@@ -90,7 +92,8 @@ const StoredSprite* Font::glyph(unsigned char cp) const {
 }
 
 int Font::width(const std::string& s0, int scale) const {
-  if (!original_) return int(s0.size()) * 4 * scale - scale;
+  if (s0.empty()) return 0;
+  if (!original_) return int(utf8_to_cp1250(s0).size()) * 4 * scale - scale;
   std::string s = utf8_to_cp1250(s0);
   int w = 0, e = eff(scale);
   for (unsigned char ch : s) {
@@ -98,6 +101,38 @@ int Font::width(const std::string& s0, int scale) const {
     w += g ? glyph_advance(*g, e) : 4 * e;
   }
   return w;
+}
+
+std::vector<std::string> Font::wrap(const std::string& text, int scale, int max_width) const {
+  std::vector<std::string> lines;
+  std::string line, word;
+  auto append = [&] {
+    if (word.empty()) return;
+    if (!line.empty() && width(line + " " + word, scale) > max_width) {
+      lines.push_back(line); line.clear();
+    }
+    if (!line.empty()) line += ' ';
+    // Split long tokens only at UTF-8 character boundaries.
+    for (size_t i = 0; i < word.size();) {
+      size_t end = i + 1;
+      while (end < word.size() && (static_cast<unsigned char>(word[end]) & 0xc0) == 0x80) ++end;
+      auto ch = word.substr(i, end - i);
+      if (!line.empty() && width(line + ch, scale) > max_width) {
+        lines.push_back(line); line.clear();
+      }
+      line += ch; i = end;
+    }
+    word.clear();
+  };
+  for (char c : text) {
+    if (c == ' ' || c == '\n') {
+      append();
+      if (c == '\n') { lines.push_back(line); line.clear(); }
+    } else word += c;
+  }
+  append();
+  if (!line.empty()) lines.push_back(line);
+  return lines;
 }
 
 void Font::draw(SDL_Renderer* r, int x, int y, const std::string& s0, int scale, SDL_Color c, bool shadow) const {
@@ -123,7 +158,7 @@ void Font::draw(SDL_Renderer* r, int x, int y, const std::string& s0, int scale,
     return;
   }
   if (!tex_) return;
-  const std::string& s = s0;
+  const std::string s = utf8_to_cp1250(s0);
   for (int pass = shadow ? 0 : 1; pass < 2; pass++) {
     SDL_Color col = pass == 0 ? SDL_Color{0, 0, 0, 200} : c;
     SDL_SetTextureColorMod(tex_, col.r, col.g, col.b);
