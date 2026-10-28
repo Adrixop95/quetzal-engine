@@ -1,12 +1,23 @@
 """Two asset-free, headless engine peers using real IPv4 UDP sockets."""
 
+import errno
 import os
 import selectors
+import socket
 import subprocess
 import sys
 
 
 def run(binary):
+    # Restricted hosts may deny sockets; peer/protocol failures must still fail.
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.bind(("127.0.0.1", 0))
+    except OSError as error:
+        if error.errno not in (errno.EPERM, errno.EACCES):
+            raise
+        print(f"SKIP: IPv4 UDP sockets are not permitted: {error}")
+        sys.exit(77)
     env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
     peers = []
     try:

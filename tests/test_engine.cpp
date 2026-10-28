@@ -651,10 +651,10 @@ static void test_sim(const std::string& dir) {
 }
 
 static void test_script_animation_clocks() {
-  char directory[] = "/tmp/aztec-script-clocks-XXXXXX";
-  if (!mkdtemp(directory)) { CHECK(false); return; }
-  const auto path = std::filesystem::path(directory) / "clocks.scn";
-  FILE* file = std::fopen(path.c_str(), "w");
+  const auto directory = std::filesystem::temp_directory_path() / "aztec-script-clocks";
+  std::filesystem::create_directories(directory);
+  const auto path = directory / "clocks.scn";
+  FILE* file = std::fopen(path.string().c_str(), "w");
   if (!file) { CHECK(false); std::filesystem::remove(directory); return; }
   std::fputs("trigger(0) conditions localTime == 1 actions side(local).victory end\n", file);
   CHECK(std::fclose(file) == 0);
