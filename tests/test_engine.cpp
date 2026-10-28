@@ -400,7 +400,9 @@ static void test_commands_ui() {
   Input target; target.mx = 400; target.my = 300;
   target.pressed[SDL_BUTTON_LEFT] = true; target.buttons[SDL_BUTTON_LEFT] = true;
   CHECK(ui.update(target, w, cam, 1, mm, true, panel));
-  CHECK(!ui.wants_left_click() && sim.state_hash(w) == before);
+  // Submission changes the pending-command hash before it changes world orders.
+  CHECK(!ui.wants_left_click() && sim.state_hash(w) != before);
+  CHECK(w.objects[0].order == uint8_t(Order::Idle) && sim.log().empty());
   tick();
   CHECK(sim.log().back().cmd.type == Pct::Move && sim.log().back().cmd.a == 400);
   // A consumed targeting press must not start a new selection when the button is released.

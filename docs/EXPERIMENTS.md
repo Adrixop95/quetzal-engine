@@ -118,6 +118,30 @@ placeholders. Add synthetic boundary and command-replay tests for each measured
 rule, including state-hash coverage for any new flight or burn state. Keep
 unmeasured weapon families explicitly unresolved.
 
+
+## Packet replay and determinism audit
+
+The current parity runner requires a rebuilt private reference runtime that logs
+injected non-NOTHING packets to `RT_CMD_LOG`; older runtimes returned before that
+recording point. Exact frame/side/dword readback is checked before repeatability.
+See [parity.md](parity.md#v02-replay-audit-2026-10-28) for the fail-closed parser,
+normalized repeatability requirements and the before-command observer boundary.
+Raw pool differences remain diagnostics, with excluded fields unaudited.
+
+The 2026-10-28 isolated probe used:
+
+```sh
+python3 tools/parity_report.py run \
+  --corpus /home/adrox/aztec-re/work/corpus \
+  --game /home/adrox/aztec-re/game \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --output work/parity/v02-isolated --timeout 45
+```
+
+All nine recorded missions failed during loopback setup; no runtime simulation
+was observed. Do not reuse that output directory for a retry or count these
+failures as reference repeatability. Synthetic long replay, command ordering,
+RNG-stream and hash checks are documented separately in [determinism.md](determinism.md).
 ## UI capture controls
 
 `ctest --test-dir build -R ui_screenshots --output-on-failure` needs no game

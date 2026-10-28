@@ -2,6 +2,7 @@
 // See docs/engine_rules_status.md for which rules are verified against the original and which are placeholders.
 #pragma once
 #include <memory>
+#include <functional>
 #include <string>
 #include <vector>
 #include "engine/sim/commands.hpp"
@@ -34,9 +35,11 @@ class GameSim : public Simulation {
   // Queues a command for the next tick (all clients submit the same commands in the same order in lockstep play).
   void submit(Command c) { pending_.push_back(std::move(c)); }
   bool paused() const { return paused_; }
+  bool has_pending_commands() const { return !pending_.empty(); }
   uint64_t tick_count() const { return tick_; }
   const std::vector<LoggedCommand>& log() const { return log_; }
-  // FNV-1a hash of the complete simulation state (objects, sides, queues, movement system, rng).
+  // Hash contract 2: future-affecting mutable state, given identical rules/sight inputs.
+  // Excludes local selection, camera, audio and diagnostics. Includes queued commands.
   uint64_t state_hash(const World& w) const;
 
   // Queries for the UI.
@@ -55,10 +58,13 @@ class GameSim : public Simulation {
   // Debug/editor helper (not a lockstep command): moves an object and its movement agent instantly.
   void teleport(World& w, uint32_t id, int px, int py);
 
+  // Throws std::invalid_argument for unordered, zero-tick or out-of-horizon logs.
   // Re-runs a logged game from a fresh world (snapshot restore = deterministic replay). The world must be freshly loaded.
+  // Called at tick t before begin_tick and command submission: state after t-1, including tick 1's initial state.
+  using ReplayObserver = std::function<void(uint64_t, const World&, const GameSim&)>;
   static std::unique_ptr<GameSim> replay(World& fresh, std::shared_ptr<const RulesData> rules,
                                          const std::vector<LoggedCommand>& log, uint64_t until_tick,
-                                         const std::string& scn_path = "");
+                                         const std::string& scn_path = "", ReplayObserver before_commands = {});
 
  private:
   void apply(World& w, const Command& c);
@@ -83,7 +89,8 @@ class GameSim : public Simulation {
   const Object* town_hall(const World& w, int town) const;
   int upgrade_level(int race, int type) const;
   bool finish_structure(World& w, int side, const QueueItem& item);
-  uint32_t next_rand() { rng_ = rng_ * 1664525u + 1013904223u; return rng_ >> 8; }
+  // Only spawn variants and effect slots consume this stream; audio has its own stream.
+  uint32_t next_visual_rand() { visual_rng_ = visual_rng_ * 1664525u + 1013904223u; return visual_rng_ >> 8; }
 
   std::shared_ptr<const RulesData> rules_;
   path::NavGrid nav_;
@@ -92,7 +99,7 @@ class GameSim : public Simulation {
   std::vector<Command> pending_;
   std::vector<LoggedCommand> log_;
   bool paused_ = false;
-  uint32_t rng_ = 12345;
+  uint32_t visual_rng_ = 12345;
   uint32_t spawn_counter_ = 0;
   uint64_t tick_ = 0;
 };

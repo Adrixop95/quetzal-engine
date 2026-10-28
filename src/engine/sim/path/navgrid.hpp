@@ -31,6 +31,7 @@ class NavGrid {
   // Wall proximity: true when any 8-neighbour is blocked (used as a path cost penalty so routes keep off walls).
   bool near_wall(int x, int y, MoveClass c) const;
   u32 version() const { return version_; }
+  u64 state_hash() const;
 
   // Circle (fixed units) vs blocked tiles: true when a disc of radius r centred at p touches a blocked tile.
   bool disc_hits(Vec2 p, i32 r, MoveClass c) const;
@@ -46,6 +47,8 @@ class NavGrid {
   u32 version_ = 0;
   std::vector<u8> terrain_;
   std::vector<u16> dyn_;
+  mutable u32 hash_version_ = 0;
+  mutable u64 cached_hash_ = 0;
 };
 
 }  // namespace aztec::path

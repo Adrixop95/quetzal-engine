@@ -5,6 +5,7 @@
 #include <cstring>
 #include <fstream>
 #include <functional>
+#include <limits>
 #include <sstream>
 
 #include "engine/world/type_info.hpp"
@@ -118,13 +119,19 @@ int harvest_tick(HarvestState& s, int rate, int clock, int period, const std::ve
 }
 
 int production_value(int base, int hall, int speed, bool computer, bool hostile_all, bool time) {
-  // Preserve float32 constants, then evaluate the x87 expression before truncation.
-  constexpr float price_k[] = {2.f / 3.f, 1.f, 2.f};
-  constexpr float time_k[] = {2.f, 1.f, 2.f / 3.f};
+  // Exact binary32 constants, represented over 2^24. Split the 80-bit product
+  // before multiplying the second coefficient; this also works without __int128.
+  if (base <= 0) return 0;
+  constexpr uint64_t one = uint64_t(1) << 24, mask = one - 1;
+  constexpr uint64_t price_k[] = {11184811, one, 2 * one};
+  constexpr uint64_t time_k[] = {2 * one, one, 11184811};
   int index = hostile_all ? 0 : std::clamp(speed, 0, 2);
-  float k = hall == 0 ? (time ? 1.5f : 1.f) : (time ? time_k[index] : price_k[index]);
-  float f = computer && !hostile_all ? 0.8f : 1.f;
-  return int(static_cast<long double>(base) * k * f + 0.5L);
+  uint64_t k = hall == 0 ? (time ? one * 3 / 2 : one) : (time ? time_k[index] : price_k[index]);
+  uint64_t f = computer && !hostile_all ? 13421773 : one;
+  uint64_t product = uint64_t(base) * k;
+  uint64_t high = (product >> 24) * f, low = (product & mask) * f;
+  uint64_t value = (high >> 24) + (((high & mask) * one + low + (uint64_t(1) << 47)) >> 48);
+  return int(std::min(value, uint64_t(std::numeric_limits<int>::max())));
 }
 
 void RulesData::init_defaults() {

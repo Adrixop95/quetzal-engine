@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <limits>
+#include <stdexcept>
 
 #include "engine/world/type_info.hpp"
 #include "engine/sim/sight.hpp"
@@ -46,6 +47,9 @@ void GameSim::attach_agent(Object& o) {
 
 void GameSim::init(World& w) {
   tick_ = w.original_save ? w.tick : 0;
+  w.tick = tick_;
+  pending_.clear();
+  log_.clear();
   if (!w.original_save) w.day_clock = (w.mission.start_time % kDayTicks + kDayTicks) % kDayTicks;
   w.ai_towns.assign(w.mission.towns.size(), {});
   w.town_speed.assign(w.mission.towns.size(), 1);
@@ -76,7 +80,7 @@ void GameSim::init(World& w) {
   if (w.side_state.size() < 8) w.side_state.resize(8);
   paused_ = false;
   spawn_counter_ = 0;
-  rng_ = 12345;
+  visual_rng_ = 12345;
   if (script_.loaded() && !w.original_save) script_.init(w);
   // largest mission hp per type = fallback maximum
   std::vector<int> seen(kNumTypes, 0);
@@ -191,7 +195,7 @@ uint32_t GameSim::spawn(World& w, int type, int side, int pxx, int pyy, int hp, 
   o.hp_max = r.hp_max > 0 ? r.hp_max : std::max(hp, 1);
   o.hp = hp > 0 ? hp : o.hp_max;
   o.secondary_hp = r.secondary_hp;
-  o.anim_variant = next_rand();
+  o.anim_variant = next_visual_rand();
   o.teleport(to_fixed(pxx), to_fixed(pyy));
   if (constructing) {
     o.progress = 0; o.build_elapsed = 0; o.build_total = std::max(1, r.time);
@@ -218,15 +222,15 @@ void GameSim::kill(World& w, Object& o) {
   o.corpse_ticks = 0;
   const TypeRules& r = rules_->type(o.type);
   if (r.kind == 1 || r.kind == 3 || r.kind == 4 || r.kind == 5 || r.kind == 6 || r.kind == 9) {
-    decoration(w, data::kVehicleExplosionAnim, int(next_rand() % 3), o.cur_x, o.cur_y, o.render_height, o.side);
-    if (!r.flier) decoration(w, data::kVehicleDebrisAnim, int(next_rand() % 20), o.cur_x, o.cur_y, -1, o.side);
+    decoration(w, data::kVehicleExplosionAnim, int(next_visual_rand() % 3), o.cur_x, o.cur_y, o.render_height, o.side);
+    if (!r.flier) decoration(w, data::kVehicleDebrisAnim, int(next_visual_rand() % 20), o.cur_x, o.cur_y, -1, o.side);
     o.removed = true;
   }
   if (r.structure) {
     // Known-radius rubble is drawn by the object provider; retain the provisional
     // small-rubble effect only when its radius is unavailable.
     if (o.destruction_radius < 0 && o.progress >= 1000)
-      decoration(w, 116, int(next_rand() % 20), o.cur_x, o.cur_y, -1, o.side);
+      decoration(w, 116, int(next_visual_rand() % 20), o.cur_x, o.cur_y, -1, o.side);
     int x0, y0, x1, y1;
     footprint(r, px(o.cur_x) / kTilePx, px(o.cur_y) / kTilePx, x0, y0, x1, y1);
     nav_.add_block(x0, y0, x1 - x0 + 1, y1 - y0 + 1, -1);
@@ -606,7 +610,9 @@ void GameSim::economy(World& w) {
         for (const auto& other : w.objects)
           if (!other.removed && other.alive && other.side == o.side && other.town == o.town && other.progress >= 1000 &&
               (other.type == 18 || other.type == 40 || other.type == 70)) warehouse = true;
-        if (warehouse) gain = int(static_cast<long double>(gain) * 1.3333333730697632L);
+        // Exact rational form of the specified binary32 multiplier; no host long-double precision.
+        if (warehouse) gain = int(std::min(int64_t(std::numeric_limits<int>::max()),
+                                          int64_t(gain) * 11184811 / 8388608));
       }
       w.side_state[o.side].money += gain;
       int repair_rate = int(((int64_t(h.repair_rate) * 65536 / 100) + 128) >> 8);
@@ -784,7 +790,7 @@ void GameSim::advance_effects(World& w) {
       continue;
     }
     e.x = e.end_x; e.y = e.end_y;
-    if (e.impact_anim) decoration(w, e.impact_anim, int(next_rand() % 3), e.x, e.y, 0, e.side);
+    if (e.impact_anim) decoration(w, e.impact_anim, int(next_visual_rand() % 3), e.x, e.y, 0, e.side);
     if (e.shockwave == data::kShockwaveAnim) decoration(w, e.shockwave, 0, e.x, e.y, 0, e.side);
     for (auto& o : w.objects) {
       if (!o.alive || o.removed) continue;
@@ -938,9 +944,29 @@ void GameSim::teleport(World& w, uint32_t id, int pxx, int pyy) {
 uint64_t GameSim::state_hash(const World& w) const {
   uint64_t h = 1469598103934665603ull;
   auto mix = [&](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
+  // Hash contract 2: fixed-width integer values, ordered containers and explicit sizes.
+  // Rules and loaded sight resources must be identical (content compatibility is separate).
+  mix(2); mix(w.tick); mix(w.script_side); mix(bool(w.original_save));
+  mix(w.terrain.w); mix(w.terrain.h); mix(w.mission.tileset);
+  mix(w.resources.w); mix(w.resources.h); mix(w.resources.v.size());
+  for (auto value : w.resources.v) mix(value);
+  mix(w.mission.sides.size());
+  for (const auto& s : w.mission.sides) {
+    mix(s.index); mix(s.race); mix(s.start_x); mix(s.start_y); mix(s.neutral); mix(s.only_comp);
+    mix(s.disabled.size()); for (int type : s.disabled) mix(type);
+  }
+  mix(w.mission.paths.size());
+  for (const auto& path : w.mission.paths) {
+    mix(path.size()); for (const auto& point : path) { mix(point.first); mix(point.second); }
+  }
+  mix(pending_.size());
+  for (const auto& c : pending_) {
+    mix(uint8_t(c.type)); mix(c.side); mix(uint32_t(c.a)); mix(uint32_t(c.b)); mix(uint32_t(c.c));
+    mix(c.ids.size()); for (uint32_t id : c.ids) mix(id);
+  }
   mix(w.day_clock);
   mix(w.mission.towns.size());
-  for (const TownDef& t : w.mission.towns) { mix(uint32_t(t.index)); mix(uint32_t(t.type)); mix(uint32_t(t.race)); }
+  for (const TownDef& t : w.mission.towns) { mix(uint32_t(t.index)); mix(uint32_t(t.type)); mix(uint32_t(t.race)); mix(t.side); mix(t.x); mix(t.y); mix(t.scenario_id); }
   mix(w.ai_towns.size());
   for (const auto& s : w.ai_towns) {
     mix(s.phase); mix(s.science_timer); mix(s.target_town); mix(s.remaining);
@@ -949,8 +975,9 @@ uint64_t GameSim::state_hash(const World& w) const {
   }
   mix(w.town_speed.size()); for (int speed : w.town_speed) mix(speed);
   mix(w.repair_credits.size()); for (int credits : w.repair_credits) mix(credits);
-  mix(tick_); mix(rng_); mix(paused_); mix(spawn_counter_); mix(w.objects.size());
+  mix(tick_); mix(visual_rng_); mix(paused_); mix(spawn_counter_); mix(w.objects.size());
   for (const Object& o : w.objects) {
+    mix(uint8_t(o.source)); mix(uint32_t(o.prev_x)); mix(uint32_t(o.prev_y));
     mix(uint32_t(o.town)); mix(o.harvest_ready);
     for (const auto* h : {&o.gold_harvest, &o.repair_harvest}) { mix(h->accumulated); mix(h->last_clock); mix(h->cursor); }
     mix(o.id); mix(uint32_t(o.type)); mix(uint32_t(o.side)); mix(uint32_t(o.hp)); mix(uint32_t(o.cur_x)); mix(uint32_t(o.cur_y));
@@ -969,6 +996,7 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(uint32_t(e.kind)); mix(e.source); mix(e.target); mix(uint32_t(e.side));
     mix(e.anim); mix(e.slot); mix(e.angle); mix(uint32_t(e.x)); mix(uint32_t(e.y));
     mix(uint32_t(e.end_x)); mix(uint32_t(e.end_y)); mix(uint32_t(e.height));
+    mix(uint32_t(e.prev_x)); mix(uint32_t(e.prev_y));
     mix(e.age); mix(e.lifetime); mix(e.speed); mix(e.damage); mix(e.splash_px);
     mix(e.impact_anim); mix(e.shockwave); mix(e.flight); mix(e.loop);
   }
@@ -984,21 +1012,32 @@ uint64_t GameSim::state_hash(const World& w) const {
     for (const QueueItem& q : s.queue) { mix(uint32_t(q.type)); mix(uint32_t(q.remaining)); mix(uint32_t(q.total)); mix(uint32_t(q.town)); mix(uint32_t(q.paid)); }
     for (const auto& g : s.groups) { mix(g.size()); for (uint32_t id : g) mix(id); }
   }
-  for (const VisFile::Layer& l : w.visibility.sides) { uint64_t sum = 0; for (uint8_t v : l.v) sum = sum * 31 + v; mix(sum); }
+  mix(w.visibility.sides.size());
+  for (const VisFile::Layer& l : w.visibility.sides) {
+    mix(l.w); mix(l.h); mix(l.v.size()); for (uint8_t value : l.v) mix(value);
+  }
   mix(script_.state_hash());
   for (int a = 0; a < 8; a++) for (int b = 0; b < 8; b++) mix(w.relation[a][b]);
   mix(w.outcome);
+  for (uint8_t outcome : w.side_outcome) mix(outcome);
   if (mover_) mix(mover_->state_hash());
   return h;
 }
 
 std::unique_ptr<GameSim> GameSim::replay(World& fresh, std::shared_ptr<const RulesData> rules, const std::vector<LoggedCommand>& log,
-                                         uint64_t until_tick, const std::string& scn_path) {
+                                         uint64_t until_tick, const std::string& scn_path, ReplayObserver before_commands) {
+  uint64_t previous = 0;
+  for (const auto& entry : log) {
+    if (!entry.tick || entry.tick < previous || entry.tick > until_tick)
+      throw std::invalid_argument("command log is unordered or outside replay horizon");
+    previous = entry.tick;
+  }
   auto sim = std::make_unique<GameSim>(std::move(rules));
-  if (!scn_path.empty()) sim->attach_script(scn_path);
+  if (!scn_path.empty() && !sim->attach_script(scn_path)) throw std::invalid_argument("cannot load replay script");
   sim->init(fresh);
   size_t i = 0;
   for (uint64_t t = 1; t <= until_tick; t++) {
+    if (before_commands) before_commands(t, fresh, *sim);
     while (i < log.size() && log[i].tick == t) sim->submit(log[i++].cmd);
     fresh.begin_tick();
     sim->tick(fresh);

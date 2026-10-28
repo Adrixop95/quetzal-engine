@@ -35,7 +35,7 @@ class ScriptRunner {
   void follow_paths(GameSim& sim, World& w);
 
  private:
-  struct Timer { bool running = true; long value = 0; bool exists = true; };
+  struct Timer { bool running = true; int64_t value = 0; bool exists = true; };
   void run(GameSim& sim, World& w, const script::Action& a);
   std::vector<uint32_t> tactic_members(const World& w, int side, int tactic) const;
   int resolve_side(const World& w, int s) const { return s == script::kLocal ? w.script_side : s; }

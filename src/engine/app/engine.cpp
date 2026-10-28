@@ -1,6 +1,7 @@
 #include "engine/app/engine.hpp"
 
 #include <algorithm>
+#include <stdexcept>
 #include <cmath>
 #include <cctype>
 #include <cstdio>
@@ -188,6 +189,7 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
     };
     if (o.pre_ticks == 0) emit_audio();
     PauseMenu pause;
+    bool save_requested = false;
     bool leave = false;
     while (!in.quit && !leave) {
       uint64_t now = SDL_GetPerformanceCounter();
@@ -252,6 +254,14 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
         if (game && do_save && world.original_save)
           std::fprintf(stderr, "Saving imported worlds as command replay is unsupported\n");
         if (game && do_save && !world.original_save) {
+          save_requested = true;
+          if (pa == PauseMenu::Action::Save) pause.open = false;
+          if (game->has_pending_commands())
+            std::fprintf(stderr, "Save queued until pending commands are processed (resume simulation if paused)\n");
+        }
+        // Command-log saves represent completed ticks; do not omit queued future inputs.
+        if (game && save_requested && !game->has_pending_commands()) {
+          save_requested = false;
           SaveData sd;
           sd.mission = spec; sd.tick = game->tick_count(); sd.hash = game->state_hash(world);
           sd.script_hash = file_hash(data.map_file(world.mission.file_name, "scn"));
@@ -260,8 +270,8 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
           std::error_code sec;
           fs::create_directories(dir, sec);
           std::printf(write_save(dir + "/engine_slot1.azs", sd) ? "saved game (tick %llu)\n" : "save failed (tick %llu)\n", (unsigned long long)sd.tick);
-          if (pa == PauseMenu::Action::Save) pause.open = false;
         }
+        if (do_load) save_requested = false;
         if (game && do_load && world.original_save)
           std::fprintf(stderr, "Loading an engine replay into an imported world is unsupported\n");
         if (game && do_load && !world.original_save) {
@@ -272,18 +282,22 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
           std::string scn;
           if (read_save(path, sd) && sd.mission == spec && load_world(data, spec, fresh, lerr) &&
               (scn = data.map_file(fresh.mission.file_name, "scn"), file_hash(scn) == sd.script_hash)) {
-            auto ns = GameSim::replay(fresh, rules, sd.log, sd.tick, scn);
-            if (ns->state_hash(fresh) != sd.hash) std::fprintf(stderr, "warning: replayed state differs from the saved hash\n");
-            if (audio) audio->stop_effects();
-            world = std::move(fresh);
-            game = ns.get();
-            sim = std::move(ns);
-            cmdui.set_sim(game);
-            cam.x = sd.cam_x; cam.y = sd.cam_y; cam.zoom = sd.cam_zoom;
-            world.selection.clear();
-            world.fog_version++;
-            pause.open = false;
-            std::printf("loaded game (tick %llu)\n", (unsigned long long)sd.tick);
+            try {
+              auto ns = GameSim::replay(fresh, rules, sd.log, sd.tick, scn);
+              if (ns->state_hash(fresh) != sd.hash) throw std::runtime_error("saved replay hash mismatch");
+              if (audio) audio->stop_effects();
+              world = std::move(fresh);
+              game = ns.get();
+              sim = std::move(ns);
+              cmdui.set_sim(game);
+              cam.x = sd.cam_x; cam.y = sd.cam_y; cam.zoom = sd.cam_zoom;
+              world.selection.clear();
+              world.fog_version++;
+              pause.open = false;
+              std::printf("loaded game (tick %llu)\n", (unsigned long long)sd.tick);
+            } catch (const std::exception& error) {
+              std::fprintf(stderr, "load failed: %s\n", error.what());
+            }
           } else {
             std::fprintf(stderr, "load failed (no save for this mission?)\n");
           }
