@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 
 #include "engine/assets/anim_provider.hpp"
@@ -35,6 +36,34 @@
 namespace fs = std::filesystem;
 
 namespace aztec::engine {
+
+// Fingerprint inputs rather than installation paths. Optional missing files are explicit.
+static bool current_save_content(const GameData& data, const World& world, const std::string& spec,
+                                 const std::string& rules_dir, uint64_t& hash) {
+  std::vector<std::pair<std::string, std::string>> files;
+  files.emplace_back("mission", resolve_mission(data.maps_dir(), spec));
+  for (const char* ext : {"map", "dat", "rm", "vis", "scn"}) {
+    auto path = data.map_file(world.mission.file_name, ext);
+    if (path.empty() && std::string(ext) == "map") path = data.map_file(world.mission.map_name, ext);
+    files.emplace_back(ext, path);
+  }
+  if (!rules_dir.empty()) {
+    std::error_code ec;
+    std::vector<std::pair<std::string, std::string>> csv;
+    for (const auto& entry : fs::directory_iterator(rules_dir, ec)) {
+      if (entry.path().extension() == ".csv")
+        csv.emplace_back(entry.path().filename().string(), entry.path().string());
+    }
+    if (ec) return false;
+    std::sort(csv.begin(), csv.end());
+    files.insert(files.end(), csv.begin(), csv.end());
+    // RulesData currently loads simulation sight only through AZTEC_GAME.
+    const char* sight_root = std::getenv("AZTEC_GAME");
+    for (const char* name : {"Res/Light.xbe", "Res/Units.xbe", "Aztec.exe"})
+      files.emplace_back(name, sight_root ? find_file_ci(sight_root, name) : "");
+  }
+  return save_content_hash(files, hash);
+}
 
 static bool save_screenshot(SDL_Renderer* r, const std::string& path) {
   int w, h;
@@ -96,8 +125,9 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
 
     auto rules = std::make_shared<RulesData>();
     bool rules_ok = false;
+    std::string loaded_rules_dir;
     for (const std::string& rp : {o.rules_dir, o.game_dir + "/../docs/data", std::string("docs/data")})
-      if (!rp.empty() && (rules_ok = rules->load_dir(rp))) break;
+      if (!rp.empty() && (rules_ok = rules->load_dir(rp))) { loaded_rules_dir = rp; break; }
     if (!rules_ok) { rules->init_defaults(); std::fprintf(stderr, "note: docs/data not found, using placeholder rules\n"); }
     GameSim* game = nullptr;
     if (!sim) {
@@ -115,6 +145,8 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
       if (!scn.empty() && !game->attach_script(scn)) std::fprintf(stderr, "warning: cannot parse %s\n", scn.c_str());
     }
     sim->init(world);
+    uint64_t session_content = 0;
+    const bool save_content_ok = current_save_content(data, world, spec, loaded_rules_dir, session_content);
     if (world.original_save)
       std::fprintf(stderr, "Original save imported with partial resume: orders, research execution and script state are unsupported; see docs/savegame.md\n");
 
@@ -251,13 +283,16 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
           std::fprintf(stderr, "Saving imported worlds as command replay is unsupported\n");
         if (game && do_save && !world.original_save) {
           SaveData sd;
-          sd.mission = spec; sd.tick = game->tick_count(); sd.hash = game->state_hash(world);
+          sd.mission = world.mission.file_name; sd.content_hash = session_content; sd.tick = game->tick_count(); sd.hash = game->state_hash(world);
           sd.script_hash = file_hash(data.map_file(world.mission.file_name, "scn"));
           sd.cam_x = cam.x; sd.cam_y = cam.y; sd.cam_zoom = cam.zoom; sd.log = game->log();
           std::string dir = data.root() + "/Saves";
           std::error_code sec;
           fs::create_directories(dir, sec);
-          std::printf(write_save(dir + "/engine_slot1.azs", sd) ? "saved game (tick %llu)\n" : "save failed (tick %llu)\n", (unsigned long long)sd.tick);
+          uint64_t current_content = 0;
+          bool saved = save_content_ok && current_save_content(data, world, spec, loaded_rules_dir, current_content) &&
+              current_content == session_content && write_save(dir + "/engine_slot1.azs", sd);
+          std::printf(saved ? "saved game (tick %llu)\n" : "save failed (tick %llu)\n", (unsigned long long)sd.tick);
           if (pa == PauseMenu::Action::Save) pause.open = false;
         }
         if (game && do_load && world.original_save)
@@ -266,12 +301,16 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
           SaveData sd;
           std::string path = data.root() + "/Saves/engine_slot1.azs";
           World fresh;
-          std::string lerr;
-          std::string scn;
-          if (read_save(path, sd) && sd.mission == spec && load_world(data, spec, fresh, lerr) &&
-              (scn = data.map_file(fresh.mission.file_name, "scn"), file_hash(scn) == sd.script_hash)) {
-            auto ns = GameSim::replay(fresh, rules, sd.log, sd.tick, scn);
-            if (ns->state_hash(fresh) != sd.hash) std::fprintf(stderr, "warning: replayed state differs from the saved hash\n");
+          std::string lerr = "Invalid or incompatible save";
+          std::unique_ptr<GameSim> ns;
+          uint64_t current_content = 0;
+          if (save_content_ok && read_save(path, sd) && sd.mission == world.mission.file_name &&
+              current_save_content(data, world, spec, loaded_rules_dir, current_content) &&
+              current_content == session_content && load_world(data, spec, fresh, lerr)) {
+            ns = replay_save(sd, fresh, rules, current_content,
+                             data.map_file(fresh.mission.file_name, "scn"), lerr);
+          }
+          if (ns) {
             if (audio) audio->stop_effects();
             world = std::move(fresh);
             game = ns.get();
@@ -283,7 +322,7 @@ static PlayExit play_mission(Window& win, GameData& data, const Options& o, Audi
             pause.open = false;
             std::printf("loaded game (tick %llu)\n", (unsigned long long)sd.tick);
           } else {
-            std::fprintf(stderr, "load failed (no save for this mission?)\n");
+            std::fprintf(stderr, "Load failed: %s\n", lerr.c_str());
           }
         }
         if (pa == PauseMenu::Action::Restart) { exit_reason = PlayExit::Restart; leave = true; }

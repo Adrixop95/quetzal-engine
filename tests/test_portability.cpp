@@ -29,12 +29,12 @@ int main() {
   CHECK(read_le<double>(bytes.data() + 1) == -2.0);
 
   SaveData save;
-  save.mission = "x"; save.tick = 0x0102030405060708;
+  save.mission = "x"; save.tick = 0x010203;
   save.cam_x = 1.0f;
   auto encoded = serialize_save(save);
-  CHECK(encoded[4] == 1 && encoded[5] == 0);
-  CHECK(encoded[9] == 8 && encoded[16] == 1);
-  CHECK(encoded[33] == 0 && encoded[35] == 0x80 && encoded[36] == 0x3f);
+  CHECK(encoded[4] == kSaveFormatVersion && encoded[5] == 0);
+  CHECK(encoded[17] == 3 && encoded[19] == 1 && encoded[24] == 0);
+  CHECK(encoded[49] == 0 && encoded[51] == 0x80 && encoded[52] == 0x3f);
   SaveData decoded;
   CHECK(deserialize_save(encoded, decoded) && decoded.tick == save.tick && decoded.cam_x == 1.0f);
 
