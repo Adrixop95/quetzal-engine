@@ -1,0 +1,60 @@
+{
+  "id": "l1_price_mine",
+  "layer": "L1",
+  "map": {
+    "template": "mission_1",
+    "generator": "make_zstat",
+    "passability": "clear_interior",
+    "resources": "empty_control"
+  },
+  "setup": {
+    "sides": [
+      0,
+      1
+    ],
+    "money": 10000,
+    "preplaced_objects": [
+      {
+        "id": "hall",
+        "type": 10,
+        "x": 16,
+        "y": 16,
+        "side": 0
+      },
+      {
+        "id": "warehouse",
+        "type": 18,
+        "x": 20,
+        "y": 20,
+        "side": 0
+      }
+    ],
+    "tech": "record_and_hold_constant",
+    "controls": [
+      "Disable income and maintenance; record exact money before and after acceptance.",
+      "Repeat slow, normal and fast branches at each legal town level; keep refunds outside the window."
+    ]
+  },
+  "input": [
+    {
+      "tick": 12,
+      "command": "build",
+      "town": "hall",
+      "type": 13,
+      "x": 26,
+      "y": 16
+    }
+  ],
+  "observe": {
+    "first_tick": 1,
+    "last_tick": 720,
+    "fields": [
+      "money",
+      "paid",
+      "queue_length"
+    ]
+  },
+  "tolerance": 0,
+  "evidence": "P",
+  "mechanic": "price"
+}

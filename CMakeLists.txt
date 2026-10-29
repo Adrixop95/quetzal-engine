@@ -288,3 +288,18 @@ aztec_warnings(test_ui_screenshots)
 add_test(NAME ui_screenshots COMMAND test_ui_screenshots ${CMAKE_CURRENT_BINARY_DIR}/ui-screenshots)
 set_tests_properties(ui_screenshots PROPERTIES LABELS "unit" TIMEOUT 30
   ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+
+# L1 specifications and measurement bookkeeping use synthetic inputs in CI.
+if(Python3_Interpreter_FOUND)
+  add_test(NAME parity_rules COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_rules.py)
+  set_tests_properties(parity_rules PROPERTIES LABELS "unit;parity" TIMEOUT 20)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_test(NAME parity_rules_private COMMAND ${Python3_EXECUTABLE} -I
+      ${CMAKE_CURRENT_SOURCE_DIR}/tools/parity_rules.py probe
+      --game ${CMAKE_CURRENT_SOURCE_DIR}/game --runtime ${CMAKE_CURRENT_BINARY_DIR}/aztec_recomp
+      --id l1_speed_cannon --output ${CMAKE_CURRENT_SOURCE_DIR}/work/parity/ctest-l1)
+    set_tests_properties(parity_rules_private PROPERTIES LABELS "game-data;parity"
+      SKIP_RETURN_CODE 77 TIMEOUT 60)
+  endif()
+endif()

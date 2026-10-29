@@ -1,0 +1,60 @@
+{
+  "id": "l1_income_mine",
+  "layer": "L1",
+  "map": {
+    "template": "mission_1",
+    "generator": "make_zstat",
+    "passability": "clear_interior",
+    "resources": "empty_control"
+  },
+  "setup": {
+    "sides": [
+      0,
+      1
+    ],
+    "money": 10000,
+    "preplaced_objects": [
+      {
+        "id": "hall",
+        "type": 10,
+        "x": 16,
+        "y": 16,
+        "side": 0
+      },
+      {
+        "id": "mine",
+        "type": 13,
+        "x": 26,
+        "y": 16,
+        "side": 0
+      },
+      {
+        "id": "warehouse",
+        "type": 18,
+        "x": 20,
+        "y": 20,
+        "side": 0
+      }
+    ],
+    "tech": "record_and_hold_constant",
+    "controls": [
+      "Empty resource map is the zero-yield control only.",
+      "Repeat with separately recorded nonzero resource patches and day boundaries; compare farm/maintenance controls.",
+      "Validate active state, ownership and resource footprint before measuring."
+    ]
+  },
+  "input": [],
+  "observe": {
+    "first_tick": 1,
+    "last_tick": 720,
+    "fields": [
+      "money",
+      "town_income",
+      "active",
+      "day_clock"
+    ]
+  },
+  "tolerance": 0,
+  "evidence": "P",
+  "mechanic": "income"
+}

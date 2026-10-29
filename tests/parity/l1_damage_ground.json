@@ -1,0 +1,60 @@
+{
+  "id": "l1_damage_ground",
+  "layer": "L1",
+  "map": {
+    "template": "mission_1",
+    "generator": "make_zstat",
+    "passability": "clear_interior",
+    "resources": "empty_control"
+  },
+  "setup": {
+    "sides": [
+      0,
+      1
+    ],
+    "money": 10000,
+    "preplaced_objects": [
+      {
+        "id": "source",
+        "type": 4,
+        "x": 16,
+        "y": 16,
+        "side": 0
+      },
+      {
+        "id": "target",
+        "type": 0,
+        "x": 20,
+        "y": 16,
+        "side": 1
+      }
+    ],
+    "tech": "record_and_hold_constant",
+    "controls": [
+      "Stop the target and disable autonomous AI, repair and regeneration.",
+      "Record target categories and armor; type names alone do not establish an armor class.",
+      "Measure one explicit hit and retain a ground-target control; no hits do not establish immunity."
+    ]
+  },
+  "input": [
+    {
+      "tick": 12,
+      "command": "attack",
+      "object": "source",
+      "target": "target"
+    }
+  ],
+  "observe": {
+    "first_tick": 1,
+    "last_tick": 720,
+    "fields": [
+      "hp",
+      "armor",
+      "damage_class",
+      "shot_count"
+    ]
+  },
+  "tolerance": 0,
+  "evidence": "P",
+  "mechanic": "damage_armor"
+}

@@ -1,0 +1,57 @@
+{
+  "id": "l1_reload_cannon",
+  "layer": "L1",
+  "map": {
+    "template": "mission_1",
+    "generator": "make_zstat",
+    "passability": "clear_interior",
+    "resources": "empty_control"
+  },
+  "setup": {
+    "sides": [
+      0,
+      1
+    ],
+    "money": 10000,
+    "preplaced_objects": [
+      {
+        "id": "source",
+        "type": 4,
+        "x": 16,
+        "y": 16,
+        "side": 0
+      },
+      {
+        "id": "target",
+        "type": 14,
+        "x": 20,
+        "y": 16,
+        "side": 1
+      }
+    ],
+    "tech": "record_and_hold_constant",
+    "controls": [
+      "Keep target alive and stationary; disable repair.",
+      "Measure launch-to-launch intervals independently of impact delays."
+    ]
+  },
+  "input": [
+    {
+      "tick": 12,
+      "command": "attack",
+      "object": "source",
+      "target": "target"
+    }
+  ],
+  "observe": {
+    "first_tick": 1,
+    "last_tick": 720,
+    "fields": [
+      "shot_count",
+      "hp"
+    ]
+  },
+  "tolerance": 0,
+  "evidence": "P",
+  "mechanic": "reload"
+}
