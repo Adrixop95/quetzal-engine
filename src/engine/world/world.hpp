@@ -2,6 +2,7 @@
 // Positions are fixed point (pixel * 256) so the sim stays deterministic; every object keeps its
 // previous and current tick position so the renderer can interpolate between 12 Hz ticks.
 #pragma once
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include "core/savegame.hpp"
@@ -88,14 +89,25 @@ struct Object {
   void teleport(Fixed x, Fixed y) { prev_x = cur_x = x; prev_y = cur_y = y; }
 };
 
-struct QueueItem { int type = 0; int remaining = 0; int total = 0; int town = -1; int paid = 0; };
+inline constexpr int kProductionQueueCapacity = 50; // waiting items per town; active work is separate
+
+struct QueueItem {
+  int type = 0, remaining = 0, total = 0, town = -1, paid = 0;
+  bool started = false, paused = false;
+  int tile_x = -1, tile_y = -1; // explicit map placement; negative for automatic production
+  uint32_t object = 0;         // live construction, created when payment succeeds
+
+  int refund() const {
+    const int completed = std::clamp(int(int64_t(total - remaining) * 256 / std::max(1, total)), 0, 256);
+    return started ? int(int64_t(paid) * (256 - completed) / 256) : 0;
+  }
+};
 
 // Per-side economy and command state.
 struct SideState {
   int money = 0;
   int32_t selected_tactic = -1; // deterministic command selection; separate from local UI selection
   std::vector<uint32_t> selected_ids; // command selection; local viewing side does not affect it
-  bool build_paused = false;
   std::vector<QueueItem> queue;         // training / construction queue (production time in ticks)
   std::vector<uint32_t> groups[10];     // control groups 0..9
 };

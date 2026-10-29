@@ -135,7 +135,7 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
   }
   if (!attacker) s.last_alert = 0;
   for (const auto& q : w.side_state[t.side].queue) busy |= q.town == town;
-  if (busy || w.side_state[t.side].build_paused) return d;
+  if (busy) return d;
   const int dev = development(w, rules, town);
   bool poor = income(w, state, town) < 2 * (state.spent * 256 / int64_t(state.elapsed + 1));
   auto buy = [&](const Offer* o) {

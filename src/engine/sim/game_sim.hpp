@@ -45,7 +45,7 @@ class GameSim : public Simulation {
 
   // Queries for the UI.
   std::vector<MenuItem> menu(const World& w, int side, int town = -1) const;
-  bool can_place(const World& w, int side, int type, int tx, int ty, const char** why = nullptr) const;
+  bool can_place(const World& w, int side, int type, int tx, int ty, const char** why = nullptr, const QueueItem* reservation = nullptr) const;
   const RulesData& rules() const { return *rules_; }
   // Footprint rectangle (tiles) of a structure type centred on tile (tx, ty).
   static void footprint(const TypeRules& r, int tx, int ty, int& x0, int& y0, int& x1, int& y1);
@@ -87,12 +87,13 @@ class GameSim : public Simulation {
   void kill(World& w, Object& o);
   uint32_t spawn(World& w, int type, int side, int px, int py, int hp, bool constructing);
   void attach_agent(Object& o);
-  bool menu_ok(const World& w, int side, const BuildItem& it, int town, const char** why) const;
+  bool menu_ok(const World& w, int side, const BuildItem& it, int town, const char** why, const QueueItem* reservation = nullptr) const;
   const Object* nearest_enemy(const World& w, const Object& o) const;
   int town_index(const World& w, int side) const;
   int producing_town(const World& w, int side, const std::vector<uint32_t>& ids) const;
   const Object* town_hall(const World& w, int town) const;
   int upgrade_level(int race, int type) const;
+  void cancel_production(World& w, SideState& side, size_t index);
   bool finish_structure(World& w, int side, const QueueItem& item);
   // Only spawn variants and effect slots consume this stream; audio has its own stream.
   uint32_t next_visual_rand() { visual_rng_ = visual_rng_ * 1664525u + 1013904223u; return visual_rng_ >> 8; }
