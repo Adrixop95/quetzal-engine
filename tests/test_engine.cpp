@@ -458,8 +458,8 @@ static void test_commands_ui() {
   w.mission.sides.push_back(SideDef{});
   w.mission.towns.push_back(TownDef{});
   w.mission.towns.back().type = 1;
-  Object unit; unit.id = 1; unit.type = 0; unit.teleport(to_fixed(200), to_fixed(200));
-  Object town; town.id = 2; town.type = 10; town.teleport(to_fixed(600), to_fixed(600));
+  Object unit; unit.id = 1; unit.type = 0; unit.town = 0; unit.teleport(to_fixed(200), to_fixed(200));
+  Object town; town.id = 2; town.type = 11; town.town = 0; town.town_hall = true; town.teleport(to_fixed(600), to_fixed(600));
   Object enemy; enemy.id = 3; enemy.type = 0; enemy.side = 1; enemy.teleport(to_fixed(700), to_fixed(600));
   w.objects = {unit, town, enemy};
   GameSim sim(rules); sim.init(w);
@@ -526,11 +526,11 @@ static void test_commands_ui() {
   tick();
   CHECK(w.side_state[0].money == 1900 && w.side_state[0].queue.size() == 1);
   click(l.pause); tick();
-  CHECK(w.side_state[0].build_paused);
+  CHECK(w.side_state[0].queue.front().paused);
   int remaining = w.side_state[0].queue.front().remaining;
   tick(); CHECK(w.side_state[0].queue.front().remaining == remaining);
   click(l.queue[0]); tick();
-  CHECK(w.side_state[0].queue.empty() && w.side_state[0].money == 2000);
+  CHECK(w.side_state[0].queue.empty() && w.side_state[0].money == 1999);
   // Construction is a targeting mode and submits Build only when a valid tile is clicked.
   auto menu = sim.menu(w, 0);
   panel.h = 493;
@@ -1292,6 +1292,11 @@ static void test_group_follow_commands() {
                      [](const QueueItem& q) { return q.town == 0; }) == 50);
   int paid = 0; for (const auto& q : queue.side_state[0].queue) paid += q.paid;
   CHECK(queue.side_state[0].money == 100000 - paid);
+  // Started work no longer occupies a waiting slot.
+  buy.ids = {1}; qs.submit(buy); qs.submit(buy); production_steps(qs, queue, 1);
+  CHECK(queue.side_state[0].queue.size() == 101);
+  CHECK(std::count_if(queue.side_state[0].queue.begin(), queue.side_state[0].queue.end(),
+                     [](const QueueItem& q) { return q.town == 0 && !q.started; }) == 50);
 }
 
 static void test_production() {
@@ -1395,25 +1400,26 @@ static void test_production() {
   w.side_state[0].money = 199;
   Command buy; buy.type = Pct::Build; buy.a = 0; buy.ids = {2};
   sim.submit(buy); production_steps(sim, w, 1);
-  CHECK(w.side_state[0].queue.empty() && w.side_state[0].money == 199);
+  CHECK(w.side_state[0].queue.size() == 1 && w.side_state[0].queue[0].paid == 0 && w.side_state[0].money == 199);
   w.side_state[0].money = 200;
-  sim.submit(buy); production_steps(sim, w, 1);
+  production_steps(sim, w, 1); // the waiting order starts when funded
   CHECK(w.side_state[0].money == 0 && w.side_state[0].queue.front().town == 1);
   production_steps(sim, w, 66);
   CHECK(w.side_state[0].queue.empty() && w.objects.back().type == 0 && w.objects.back().town == 1);
   CHECK(w.side_state[0].money == 0); // no second charge at spawn
 
   sim.submit(buy); production_steps(sim, w, 1);
-  CHECK(w.side_state[0].queue.empty()); // still cannot afford another unit
+  CHECK(w.side_state[0].queue.size() == 1 && !w.side_state[0].queue[0].started); // waits for money
   w.side_state[0].money = 200;
-  sim.submit(buy); production_steps(sim, w, 1);
+  production_steps(sim, w, 1); // the waiting order starts when funded
   fast.a = 0; sim.submit(fast);
   Command cancel; cancel.type = Pct::QueueKill; sim.submit(cancel);
   production_steps(sim, w, 1);
-  CHECK(w.side_state[0].money == 200 && w.side_state[0].queue.empty()); // refund the paid price
+  CHECK(w.side_state[0].money == 197 && w.side_state[0].queue.empty()); // refund unbuilt work at the paid price
   fast.a = 2;
 
   World construction = production_world();
+  production_object(construction, 11, 0, 5, 5); construction.objects.back().town_hall = true;
   GameSim bs(rules); bs.init(construction); construction.side_state[0].money = 5000;
   Command build; build.type = Pct::Build; build.a = 14; build.b = 15; build.c = 15;
   bs.submit(fast); production_steps(bs, construction, 1); // invalid member is ignored
@@ -1422,21 +1428,21 @@ static void test_production() {
   MenuItem barracks;
   for (const auto& m : bs.menu(construction, 0)) if (m.type == 14) barracks = m;
   bs.submit(build); production_steps(bs, construction, 1);
-  CHECK(construction.objects.size() == 1 && construction.objects[0].town == 0);
-  CHECK(construction.objects[0].build_total == barracks.time && construction.side_state[0].money == 5000 - barracks.price);
+  CHECK(construction.objects.size() == 2 && construction.objects[1].town == 0);
+  CHECK(construction.objects[1].build_total == barracks.time && construction.side_state[0].money == 5000 - barracks.price);
   int cash = construction.side_state[0].money;
   bs.submit(build); production_steps(bs, construction, 1);
-  CHECK(construction.objects.size() == 1 && construction.side_state[0].money == cash);
+  CHECK(construction.objects.size() == 2 && construction.side_state[0].money == cash);
 
   // Construction completes on its final countdown tick; harvest starts on the following tick.
-  int elapsed = construction.objects[0].build_elapsed;
+  int elapsed = construction.objects[1].build_elapsed;
   production_steps(bs, construction, barracks.time - elapsed - 1);
-  CHECK(construction.objects[0].progress < 1000 && !construction.objects[0].harvest_ready);
+  CHECK(construction.objects[1].progress < 1000 && !construction.objects[1].harvest_ready);
   production_steps(bs, construction, 1);
-  CHECK(construction.objects[0].progress == 1000 && construction.objects[0].hp == construction.objects[0].hp_max);
-  CHECK(!construction.objects[0].harvest_ready);
+  CHECK(construction.objects[1].progress == 1000 && construction.objects[1].hp == construction.objects[1].hp_max);
+  CHECK(!construction.objects[1].harvest_ready);
   production_steps(bs, construction, 1);
-  CHECK(construction.objects[0].harvest_ready);
+  CHECK(construction.objects[1].harvest_ready);
 
   // Synthetic command-log roundtrip across a full day, including price selection and harvest cursors.
   World replay_world = farm_fresh; replay_world.side_state.resize(8); replay_world.side_state[0].money = 1000;
@@ -1529,7 +1535,7 @@ static void test_town_production() {
     Command buy; buy.type = Pct::Build; buy.a = type; buy.ids = {1}; buy.b = -999; buy.c = -999;
     sim.submit(buy); sim.submit(buy); production_steps(sim, w, 1);
     CHECK(w.side_state[0].queue.size() == 2 && w.side_state[0].queue[0].paid == m.price);
-    CHECK(w.side_state[0].money == 10000 - 2 * m.price);
+    CHECK(w.side_state[0].money == 10000 - m.price);
     CHECK(w.objects.size() == fresh.objects.size() && item(sim, w, 0, type).enabled);
     production_steps(sim, w, m.time - 2);
     CHECK(w.objects.size() == fresh.objects.size());
@@ -1561,7 +1567,7 @@ static void test_town_production() {
     CHECK(replay->state_hash(fresh) == sim.state_hash(w));
   }
 
-  // Repeatable structures still obey the per-town queue capacity and charge only accepted requests.
+  // Repeatable structures obey the per-town queue capacity; only the started (first) item is charged, waiting orders are unpaid.
   World capacity = production_world();
   capacity.side_state.resize(8); capacity.side_state[0].money = 100000;
   production_object(capacity, 11, 0, 10, 10); capacity.objects[0].town_hall = true;
@@ -1573,12 +1579,12 @@ static void test_town_production() {
   for (int i = 0; i < 51; ++i) capacity_sim.submit(mine);
   production_steps(capacity_sim, capacity, 1);
   CHECK(capacity.side_state[0].queue.size() == 50);
-  CHECK(capacity.side_state[0].money == 100000 - 50 * mine_price);
+  CHECK(capacity.side_state[0].money == 100000 - mine_price);
   Command cancel_mine; cancel_mine.type = Pct::QueueKill;
   capacity_sim.submit(cancel_mine); capacity_sim.submit(mine);
   production_steps(capacity_sim, capacity, 1);
   CHECK(capacity.side_state[0].queue.size() == 50);
-  CHECK(capacity.side_state[0].money == 100000 - 50 * mine_price);
+  CHECK(capacity.side_state[0].money > 100000 - 2 * mine_price && capacity.side_state[0].money <= 100000 - mine_price);   // cancel refunds part of the started item, the next one starts and pays
 
   // A blocked map retains the completed queue item; cancellation releases it.
   World blocked = production_world();
@@ -1600,28 +1606,29 @@ static void test_town_production() {
   production_object(cancelled, 10, 0, 10, 10); cancelled.objects[0].town_hall = true;
   GameSim cancel_sim(rules); cancel_sim.init(cancelled);
   request.a = 19; cancel_sim.submit(request); production_steps(cancel_sim, cancelled, 1);
+  int cancellation_cash = cancelled.side_state[0].money + cancelled.side_state[0].queue.front().refund();
   cancel_sim.submit(remove); production_steps(cancel_sim, cancelled, 1);
   CHECK(cancelled.objects[0].type == 10 && cancelled.mission.towns[0].type == 0);
-  CHECK(cancelled.side_state[0].money == 10000 && item(cancel_sim, cancelled, 0, 24).enabled);
+  CHECK(cancelled.side_state[0].money == cancellation_cash && item(cancel_sim, cancelled, 0, 24).enabled);
 
   World w = production_world(); production_object(w, 11, 0, 10, 10);
   w.objects[0].town_hall = true;
   GameSim sim(rules); sim.init(w); w.side_state[0].money = 0;
-  CHECK(!item(sim, w, 0, 12).enabled);
+  CHECK(item(sim, w, 0, 12).enabled); // ordering does not require immediate cash
   w.side_state[0].money = 10000; w.mission.sides[0].disabled = {12};
   CHECK(!item(sim, w, 0, 12).enabled);
   w.mission.sides[0].disabled.clear();
   Command buy; buy.type = Pct::Build; buy.a = 12; buy.ids = {999};
   sim.submit(buy); production_steps(sim, w, 1); CHECK(w.side_state[0].queue.empty());
   buy.ids = {1}; sim.submit(buy); production_steps(sim, w, 1);
-  int paid = w.side_state[0].queue[0].paid;
+  int refund = w.side_state[0].queue[0].refund();
   // A dead hall suspends its timer without spawning at an unrelated side start.
   int remaining = w.side_state[0].queue[0].remaining;
   sim.script_kill(w, 1); production_steps(sim, w, 200);
   CHECK(w.objects.size() == 1 && w.side_state[0].queue[0].remaining == remaining);
   int money = w.side_state[0].money;
   Command cancel; cancel.type = Pct::QueueKill; sim.submit(cancel); production_steps(sim, w, 1);
-  CHECK(w.side_state[0].queue.empty() && w.side_state[0].money == money + paid);
+  CHECK(w.side_state[0].queue.empty() && w.side_state[0].money == money + refund);
 }
 
 static void test_town_service() {
@@ -1765,7 +1772,7 @@ static void test_parallel_town_production() {
   buy.ids = {1}; for (int i = 0; i < 9; ++i) capacity_sim.submit(buy);
   buy.ids = {2}; capacity_sim.submit(buy);
   production_steps(capacity_sim, capacity, 1);
-  CHECK(capacity.side_state[0].queue.size() == 10 && capacity.side_state[0].money == 9000);
+  CHECK(capacity.side_state[0].queue.size() == 10 && capacity.side_state[0].money == 9800);
   CHECK(capacity.side_state[0].queue.back().town == 1 && capacity.side_state[0].queue.back().remaining == 99);
 
   World ui_world = production_world();
@@ -1784,6 +1791,128 @@ static void test_parallel_town_production() {
   CHECK(ui_sim.log().back().cmd.type == Pct::QueueKill && ui_sim.log().back().cmd.a == 1);
   CHECK(ui_world.side_state[0].queue.size() == 1 && ui_world.side_state[0].queue[0].town == 0);
 
+  // The panel admits orders beyond its eight visible slots and scrolls to cancel them.
+  buy.ids = {2}; for (int i = 0; i < 9; ++i) ui_sim.submit(buy);
+  production_steps(ui_sim, ui_world, 1);
+  click.mx = layout.production[0].x + 1; click.my = layout.production[0].y + 1;
+  ui.update(click, ui_world, camera, 1, minimap, false, panel);
+  production_steps(ui_sim, ui_world, 1);
+  CHECK(ui_world.side_state[0].queue.size() == 11);
+  Input scroll; scroll.mx = layout.queue[0].x + 1; scroll.my = layout.queue[0].y + 1; scroll.wheel = -1;
+  CHECK(ui.update(scroll, ui_world, camera, 1, minimap, false, panel));
+  click.mx = layout.queue[7].x + 1; click.my = layout.queue[7].y + 1;
+  ui.update(click, ui_world, camera, 1, minimap, false, panel);
+  production_steps(ui_sim, ui_world, 1);
+  CHECK(ui_sim.log().back().cmd.type == Pct::QueueKill && ui_sim.log().back().cmd.a == 10);
+  CHECK(ui_world.side_state[0].queue.size() == 10);
+
+}
+
+// Reproduces construction bypassing town production and payment for waiting orders.
+static void test_mixed_production_queue() {
+  auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  World w = production_world();
+  production_object(w, 11, 0, 5, 5); w.objects.back().town_hall = true;
+  production_object(w, 11, 1, 30, 30); w.objects.back().town_hall = true;
+  production_object(w, 14, 0, 10, 5);
+  w.side_state.resize(8); w.side_state[0].money = 10000;
+  World initial = w; GameSim sim(rules); sim.init(w);
+  Command buy; buy.type = Pct::Build; buy.a = 0; buy.ids = {1};
+  sim.submit(buy);
+  buy.a = 1; buy.ids = {3}; sim.submit(buy); // another building in the same town
+  buy.a = 15; buy.b = 18; buy.c = 18; sim.submit(buy);
+  buy.a = 0; buy.ids = {2}; sim.submit(buy);
+  production_steps(sim, w, 1);
+  CHECK(w.objects.size() == 3); // waiting construction must not start independently
+  CHECK(w.side_state[0].queue.size() == 4);
+  CHECK(w.side_state[0].money == 9800); // one paid item per town
+  Command cancel; cancel.type = Pct::QueueKill; cancel.a = 1;
+  sim.submit(cancel); production_steps(sim, w, 1);
+  CHECK(w.side_state[0].money == 9800); // a waiting order has no payment to refund
+  Command pause; pause.type = Pct::PauseBuild; pause.a = 1; pause.ids = {1};
+  sim.submit(pause);
+  int first = w.side_state[0].queue[0].remaining;
+  int other = w.side_state[0].queue.back().remaining;
+  production_steps(sim, w, 3);
+  CHECK(w.side_state[0].queue[0].remaining == first);
+  CHECK(w.side_state[0].queue.back().remaining == other - 3);
+  // Pausing holds the active item and every later item in that town only.
+  CHECK(w.side_state[0].queue[1].paid == 0 && !w.side_state[0].queue[1].started);
+  auto changes_queue_hash = [&](auto change) {
+    World altered = w; change(altered.side_state[0].queue[0]);
+    CHECK(sim.state_hash(w) != sim.state_hash(altered));
+  };
+  changes_queue_hash([](auto& q) { q.started = !q.started; });
+  changes_queue_hash([](auto& q) { q.paused = !q.paused; });
+  changes_queue_hash([](auto& q) { ++q.tile_x; });
+  changes_queue_hash([](auto& q) { ++q.tile_y; });
+  changes_queue_hash([](auto& q) { ++q.object; });
+  pause.a = 0; sim.submit(pause);
+  production_steps(sim, w, first);
+  CHECK(w.side_state[0].queue.size() == 1 && w.side_state[0].queue[0].type == 15);
+  CHECK(!w.side_state[0].queue[0].started && w.objects.size() == 5);
+  production_steps(sim, w, 1);
+  CHECK(w.objects.size() == 6 && w.objects.back().type == 15 && w.objects.back().progress < 1000);
+  auto& q = w.side_state[0].queue.front();
+  CHECK(q.started && q.object == w.objects.back().id);
+  production_steps(sim, w, 10);
+  int progress = w.objects.back().progress;
+  pause.a = 1; sim.submit(pause); production_steps(sim, w, 5);
+  CHECK(w.objects.back().progress == progress);
+  World paused_replay = initial;
+  auto paused_sim = GameSim::replay(paused_replay, rules, sim.log(), sim.tick_count());
+  CHECK(paused_sim->state_hash(paused_replay) == sim.state_hash(w));
+  int refund = q.refund(), cash = w.side_state[0].money;
+  CHECK(refund > 0 && refund < q.paid);
+  pause.a = 2; sim.submit(pause); production_steps(sim, w, 1);
+  CHECK(w.side_state[0].queue.empty() && w.objects.back().removed);
+  CHECK(w.side_state[0].money == cash + refund);
+  CHECK(sim.can_place(w, 0, 15, 18, 18));
+  auto replay = GameSim::replay(initial, rules, sim.log(), sim.tick_count());
+  CHECK(replay->state_hash(initial) == sim.state_hash(w));
+
+  // FIFO waits for money; later cheap orders never overtake the unaffordable head.
+  World poor = production_world(); production_object(poor, 11, 0, 5, 5);
+  poor.objects.back().town_hall = true;
+  GameSim ps(rules); ps.init(poor);
+  buy.ids = {1}; buy.a = 14; buy.b = 18; buy.c = 18; ps.submit(buy);
+  buy.a = 0; ps.submit(buy); production_steps(ps, poor, 2);
+  CHECK(poor.side_state[0].queue.size() == 2 && poor.objects.size() == 1);
+  CHECK(poor.side_state[0].queue[0].paid == 0 && poor.side_state[0].queue[1].paid == 0);
+  poor.side_state[0].money = 100;
+  production_steps(ps, poor, 1);
+  CHECK(poor.side_state[0].money == 100 && !poor.side_state[0].queue[1].started);
+  cancel.a = 0; ps.submit(cancel); production_steps(ps, poor, 1);
+  CHECK(poor.side_state[0].money == 0 && poor.side_state[0].queue[0].started);
+  // Cancellation of a paid item returns only its unbuilt fraction, once.
+  production_steps(ps, poor, 49);
+  CHECK(poor.side_state[0].queue[0].refund() == 50);
+  ps.submit(cancel); production_steps(ps, poor, 1);
+  ps.submit(cancel); production_steps(ps, poor, 1);
+  CHECK(poor.side_state[0].queue.empty() && poor.side_state[0].money == 50);
+
+  // A waiting item's price and duration use the speed when it starts.
+  World priced = production_world(); production_object(priced, 11, 0, 5, 5);
+  priced.objects.back().town_hall = true;
+  GameSim price_sim(rules); price_sim.init(priced); priced.side_state[0].money = 1000;
+  buy.a = 0; price_sim.submit(buy); price_sim.submit(buy); production_steps(price_sim, priced, 1);
+  Command speed; speed.type = Pct::BuildMode; speed.a = 2; speed.ids = {1};
+  price_sim.submit(speed); production_steps(price_sim, priced, 1);
+  CHECK(priced.side_state[0].queue[0].paid == 100 && priced.side_state[0].queue[0].total == 100);
+  CHECK(priced.side_state[0].queue[1].paid == 0);
+  price_sim.submit(cancel); production_steps(price_sim, priced, 1);
+  CHECK(priced.side_state[0].queue[0].paid == 200 && priced.side_state[0].queue[0].total == 67);
+
+  World destroyed = production_world(); production_object(destroyed, 11, 0, 5, 5);
+  destroyed.objects.back().town_hall = true;
+  GameSim ds(rules); ds.init(destroyed); destroyed.side_state[0].money = 10000;
+  buy.a = 14; ds.submit(buy); production_steps(ds, destroyed, 1);
+  uint32_t building = destroyed.side_state[0].queue[0].object;
+  CHECK(building != 0);
+  int after_payment = destroyed.side_state[0].money;
+  ds.script_kill(destroyed, building);
+  ds.submit(cancel); production_steps(ds, destroyed, 1);
+  CHECK(destroyed.side_state[0].queue.empty() && destroyed.side_state[0].money == after_payment);
 }
 
 static void test_campaign_initialization(const std::string& dir) {
@@ -2190,6 +2319,7 @@ int main(int argc, char** argv) {
     test_town_production();
     test_town_service();
     test_parallel_town_production();
+    test_mixed_production_queue();
     test_projectiles();
     test_object_initialization();
     test_descriptor_combat();

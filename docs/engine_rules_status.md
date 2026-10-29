@@ -76,7 +76,7 @@ and `engine` checks pass with the complete private map copy under dummy SDL in
 | Simulation fog brightness and exploration | V formulas / synthetic checks | Every active tick: global daylight plus saturated glow (maximum 152), minimum side vision darkness, nonnegative difference; previous exploration capped at 32. Raw brightness replaces invented 0/96/152 states. Renderer integration remains separate |
 | Building construction: placement on free tiles, progress = adjusted build time, stages = animation slot 0 | V formula/stages, engine placement | Hall/speed/computer time applies to placed construction. Original placement/worker and exact completion semantics remain open |
 | Building footprint in tiles | P | desc d4/d5 (px) rounded up, centred on the clicked tile |
-| Town production: first item per town progresses independently, one completion per town per tick | engine / V capacity, P pause, refund and spawn policies | Shared insertion-ordered storage retains town ownership and actual payment. Capacity 50 per town; side-wide pause and full paid-cost cancellation remain provisional. Missing/incomplete halls suspend timers. See V08/V09 validation below |
+| Town production: construction and units share one active item per town | V inspected control flow / engine regression, P exact timing and spawn | FIFO waiting orders are unpaid; payment and speed/time selection happen at start. Capacity is 50 waiting items plus active work. Active pause is town-local; cancellation refunds unbuilt paid work. Missing/incomplete halls suspend timers. See task 36 below for evidence and limits |
 | Building income and repair supply | V formulas / synthetic checks | Descriptor occupancy cells equal to 2 weight resource channels A/B with d60/d61; periodic/scheduled 7200-tick clock from StartTime. Gold and d62/d320 repair supplies have separate accumulators. Completed same-town warehouse applies once to farms only. Missing resource map contributes zero terrain bytes |
 | Starting money = side `StartMoney` | V | `.mp` |
 | Garrison | engine / V semantic fact | Extracts live mobile town members into a fresh tactic and selects it. Explicit mission town membership and hall identity, invalid-owner checks, empty/repeated extraction, hash and save/replay checks. Reference packet field layout and live comparison remain unverified |
@@ -606,8 +606,8 @@ available. Hall
 upgrades require a free replacement footprint and assign the new descriptor's
 full HP on completion. Original HP transitions, active-building suspension and
 exact start/completion ticks remain open. Queues now progress independently per
-town. V10 replaces the eight-entry policy with capacity 50 per town; side-wide
-pause and full cancellation refund remain placeholders. Map construction
+town. Task 36 supersedes the earlier side-wide pause, upfront payment and full
+refund policies, and clarifies capacity as 50 waiting items plus active work. Map construction
 continues to use the build-tree construction flag; flag-0 commands ignore map
 coordinates. These engine command conventions do not establish packet parity.
 Town levels are now hashed, so older saves with stored hashes are incompatible.
@@ -875,9 +875,9 @@ indices. Completing an item does not advance that town's next item on the same
 tick. Missing/incomplete halls suspend queued timers; they never spawn units at
 an unrelated side start. UI production menus and queue cancellation follow the
 selected object's town, and placement remembers the producing town. Cancellation
-feedback shows the actual payment. V10 replaces the earlier eight-entry policy with the inspected 50-entry
-capacity per town; the panel still displays only the first eight entries. Production
-pause remains side-wide, and full refunds remain P pending measurements.
+feedback now shows the refundable unbuilt payment. Task 36 supersedes the earlier
+side-wide pause and full refund policies. The panel scrolls through all waiting
+orders, with 50 waiting slots per town in addition to active work.
 
 Repair service consumes each town's harvested credits after orders/mark maintenance
 and discards its unused budget every tick. Modes 0/1 repair; mode 2 destroys.
@@ -1121,7 +1121,8 @@ invented eight-entry town production cutoff is replaced by the inspected queue
 capacity 50. Synthetic checks cover admission through 50, refusal of entry 51
 without payment, and production with over 110 existing units for both human and
 computer sides. These limits apply to production queues, never total population.
-The panel currently exposes only its first eight queue entries. No universal
+Task 36 adds scrolling beyond the first eight displayed entries and distinguishes
+50 waiting slots from the active item. No universal
 population cap or global difficulty bonus is inferred. Existing parsed Difficulty
 0/100 hash-equivalence checks still apply only to the engine and the inspected
 map-loader/price-time exclusions; other difficulty effects remain O.
@@ -1280,3 +1281,71 @@ formats, engine integration and campaign script inventory; original-save import
 skipped because original saves are intentionally excluded. Pre-commit and
 `git diff --check` pass. Neither the synthetic checks nor bounded probes prove
 full campaign completion, reference parity or native Windows behavior.
+
+
+## Task 36: mixed construction and unit queues (2026-10-29)
+
+**Reproduction:** `test_mixed_production_queue` in `engine_unit` failed before the
+fix: construction appeared while earlier unit orders were pending, queued orders
+consumed cash, and pausing town 0 also stopped town 1. It uses invented terrain
+and ordinary public rules tables; it requires no original assets.
+
+**V, inspected reference behavior:** a town owns one active production item and a
+FIFO queue of up to 50 waiting objects. Selecting a different building in the same
+town does not create another production lane. Separate towns progress
+independently. Build admission reserves an item without paying; production tests
+prerequisites and available cash, then charges once at start using that town's
+current speed. An unaffordable head waits. Cancelling a waiting reservation does
+not credit cash. Active pause/resume and active cancellation address a town's
+current item. Active cancellation credits the unbuilt fraction of the recorded
+payment, using completion in 256 parts and integer truncation. Evidence anchors:
+town production `0x459bb0`, admission `0x45cec0`, waiting cancellation `0x45cfd0`,
+active cancellation `0x45a880`, timer accessors `0x40a480..0x40a4db`, and packet
+0x21/0x22 dispatch in `0x4577b0`. These are behavioral facts from private inspection;
+no executable-derived implementation or data has been added to the repository.
+
+**Independent implementation:** map construction, automatic structures, hall
+upgrades and units use one town-owned queue. Waiting map placements reserve their
+footprints, but create a live incomplete building only when payment succeeds.
+The active item keeps its original paid price and duration across later speed
+changes. Pausing it holds subsequent items in that town. Cancellation releases
+its type/placement reservation, removes live incomplete construction and its
+navigation blocker, and returns only its unbuilt payment. Destroyed construction
+is discarded without a cancellation refund. Menus permit unpaid orders; the
+scheduler rechecks affordability/prerequisites before starting. The panel admits
+50 waiting items, scrolls over all entries, pauses the selected town, and shows
+waiting/paused state and the refundable amount. Command fields are engine
+conventions documented in `commands.hpp`, not reference packet compatibility.
+New item state participates in the deterministic hash. Save replay version is 3;
+older engine saves are rejected rather than silently replaying different rules.
+
+**Synthetic checks:** mixed building/unit ordering through different members of
+one town, independent towns, FIFO cash stalls, unpaid cancellation, partial active
+refunds without double credit, construction pause/cancel and released footprint,
+speed selection at start, active/waiting capacity, UI admission and cancellation
+beyond slot eight, new-state hash sensitivity and command-log replay. Existing
+upgrade save/replay and AI checks cover the new payment timing.
+
+**Limits:** the engine still uses countdown completion; the reference increments
+structure HP or mobile training work. Exact start/completion ticks, damage during
+construction, hall-upgrade HP transitions, automatic placement and spawn locations
+remain unresolved. Refund quantization follows the inspected rule using the
+engine's countdown progress; this is not live timing/HP parity. A completed item
+leaves its successor to the next engine tick. Shared-cash town arbitration retains
+stable storage order pending measurements. No normalized reference observer or
+successful record/replay control is available in this checkout.
+
+The isolated reference attempt used the supplied read-only runtime, a private game
+copy, dummy SDL drivers and `unshare -rn` through `tools/zstat_run.sh`. It failed
+before launch at loopback setup with `Cannot open netlink socket: Operation not
+permitted`; inputs and failure output are under ignored `work/queue-reference/`.
+It establishes no live queue parity and was not rerun outside isolation.
+
+**Validation:** Release configure/build, all 26 runnable CTests and all pre-commit
+hooks passed. Four private-data entries and the restricted UDP process test skipped
+in the default 31-entry suite. Separate `test_formats` and `test_engine` runs
+passed against the private installation copy under dummy SDL and `unshare -rn`.
+A bounded engine mission 1 smoke run exited successfully with no script execution
+errors, ending in defeat at tick 1196 of a 1200-tick limit; it is neither a winning
+route nor a reference comparison. These results do not close the live timing/HP
+and reference observer dependencies above.
