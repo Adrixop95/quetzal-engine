@@ -1116,3 +1116,75 @@ save fixture was absent. These installed-data checks do not establish live
 reference gameplay. A read-only recount of the 15 `mission_N.mp` files found
 49 Difficulty keys: 46 zero, two 75 and one 100, consistent with retaining the
 key as metadata rather than deriving a bonus table. Changes remain uncommitted.
+## V19 campaign coverage update (2026-10-28, partial)
+
+**Engine construction / synthetic evidence:** `tools/playthrough.py` now emits
+an explicit matrix for missions 1 through 15, including missing/unselected data,
+private scenario routes and expected victory/defeat outcomes. Every scenario runs
+twice and retains status, unsupported action sites/executions, static unreachable
+findings, unmet objectives, stalled orders, stderr and crash/wall/tick timeouts.
+Per-tick transcripts include tick zero and report the first differing tick;
+missing, gapped or truncated evidence cannot pass. A third fresh process loads
+the ordinary AZS3 mid-mission save and compares its complete continuation suffix,
+including the saved boundary and terminal outcome, to the uninterrupted run.
+Inherited sight configuration is pinned to each private installation copy.
+
+The renderer-free mode adds tick transcript, save-at-tick and resume options;
+it uses existing content/script/hash verification and command replay. It resumes
+scheduled orders and the automatic exercising policy at absolute mission ticks.
+No simulation rules, player command semantics or outcome conditions were changed.
+Synthetic tests cover all 15 fixtures through victory and saved continuations,
+expected defeat and a separate fresh winning attempt, commands before/after the
+save boundary, mismatched scripts, first differing ticks, malformed/incomplete
+transcripts, missing mission coverage, scenario validation, crashes and timeouts.
+These establish engine consistency, not original-game parity or real Retry UI.
+
+**Private bounded observations:** the 24-tick isolated sweep reached every
+mission with both dummy SDL drivers under `unshare -rn`, private ordinary Maps/
+Saves directories, resource/map symlinks and copied configurations/profiles.
+Paired hashes matched for all 15 missions. Fourteen continued identically from
+tick-12 saves through tick 24; mission 11 ended in defeat at tick 1 before saving.
+No mission won. These are two-second simulation probes, not campaign acceptance;
+source data, transcripts, saves and complete matrices remain under ignored
+`work/v19-private-sweep/`.
+
+A second isolated sweep used a 1,200-tick budget (100 simulated seconds), saves at
+tick 600, and a 15-second wall limit per process. Missions 1, 4, 10 and 11 ended
+in defeat; 2, 3, 5, 6, 7 and 9 reached the tick limit; 8, 12, 13, 14 and 15 exceeded
+the wall limit in both runs. No crashes or victories were reported. All ten
+completed pairs matched every tick. Seven missions (2, 3, 5, 6, 7, 9 and 10) also
+matched fresh-process save continuations; 1, 4 and 11 ended before the save tick.
+The five wall-limited pairs have unverified hash/save evidence; expensive work
+within this host's budget is not proof of a hang. The runner correctly exited
+one. Executable/rules snapshots, paired transcripts, saves and the full matrix
+are retained privately under `work/v19-campaign-sweep/`. These observations use
+the exercising policy, not validated player routes. Immediate mission-11 defeat,
+other lost objectives and expensive missions remain investigation leads, not
+newly diagnosed engine rule defects.
+
+**Reference boundary:** a bounded mission-1 record attempt with the supplied
+read-only reference runtime used a separate private installation with copied map
+files and read-only resource symlinks. Namespace loopback setup failed before
+launch with `Cannot open netlink socket: Operation not permitted`. No command
+recording was produced, so replay and normalized comparison remain unverified.
+Failure logs and navigation input remain under `work/v19-reference/`; required
+isolation was retained. Engine self-comparison cannot replace that missing oracle.
+
+**Remaining dependencies:** V03-V16 are not fully accepted in this checkout.
+The independent harness and inventory above do not require those remaining
+adapters. Successful routes still depend on movement/transport, combat/economy,
+AI, script objective semantics, controls and campaign save/progression behavior.
+The existing audit lists 19 unsupported transport action sites in missions 2,
+7, 9 and 15, plus two missing-trigger warnings in mission 6. General objective
+reachability, player-controllable winning routes, same-input defeat/retry,
+front-end progression/final ending and Linux/Windows interactive acceptance remain
+unverified. Every generated matrix keeps interactive, retry and progression
+acceptance pending. V19 remains open; see [method and full planning matrix](playthrough.md).
+
+**Validation:** Release build and full CTest pass (26 passed, five skipped).
+The skipped entries are four default private-data checks and restricted UDP
+processes. A separate dummy-SDL `unshare -rn` run against a private copy passed
+formats, engine integration and campaign script inventory; original-save import
+skipped because original saves are intentionally excluded. Pre-commit and
+`git diff --check` pass. Neither the synthetic checks nor bounded probes prove
+full campaign completion, reference parity or native Windows behavior.

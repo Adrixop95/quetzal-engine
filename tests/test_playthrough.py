@@ -75,6 +75,7 @@ class PlaythroughTests(unittest.TestCase):
         self.script.write_text('trigger(0) conditions always actions boat(0).activate end\n')
         report = self.run_engine()
         self.assertTrue(report['script_errors'])
+        self.assertEqual(len(report['unsupported_actions']), 1)
         self.assertEqual(report['unsupported_executions'], 20)
         self.script.unlink()
         self.assertTrue('missing mission script' in self.run_engine()['script_errors'])
@@ -108,6 +109,19 @@ class PlaythroughTests(unittest.TestCase):
         self.assertEqual((self.game / 'profile.plr').read_bytes(), b'private profile')
         self.assertTrue((target / 'Maps' / 'Mission_1.mp').is_symlink())
 
+    def test_failed_launch_is_unverified_in_matrix(self):
+        (ROOT / 'work').mkdir(exist_ok=True)
+        temp = tempfile.TemporaryDirectory(dir=ROOT / 'work')
+        self.addCleanup(temp.cleanup)
+        output = Path(temp.name) / 'failed'
+        with patch.object(harness.subprocess, 'Popen', side_effect=OSError('unavailable')), contextlib.redirect_stdout(io.StringIO()):
+            code = harness.main(['--game', str(self.game), '--engine', str(ENGINE),
+                                 '--out', str(output), '--missions', '1', '--max-ticks', '20'])
+        self.assertEqual(code, 1)
+        row = json.loads((output / 'summary.json').read_text())['missions'][0]
+        self.assertIsNone(row['deterministic'])
+        self.assertFalse(row['passed'])
+
     def test_comparison_requires_two_successful_matching_runs(self):
         report = self.run_engine()
         run = {'returncode': 0, 'engine': report}
@@ -139,18 +153,116 @@ class PlaythroughTests(unittest.TestCase):
             # Synthetic data needs no namespace privileges in CI.
             return real_popen(command[2:], **kwargs)
 
+        self.script.write_text('trigger(0) conditions localTime == 15 actions side(local).victory end\n')
         for expected in (0, 1):
             output = Path(temp.name) / str(expected)
             if expected:
                 self.script.write_text('trigger(0) conditions always actions side(local).defeat end\n')
             with patch.object(harness.subprocess, 'Popen', side_effect=synthetic_launch), contextlib.redirect_stdout(io.StringIO()):
                 code = harness.main(['--game', str(self.game), '--engine', str(ENGINE),
-                                     '--out', str(output), '--max-ticks', '20'])
+                                     '--out', str(output), '--missions', '1', '--max-ticks', '20'])
             self.assertEqual(code, expected)
             summary = json.loads((output / 'summary.json').read_text())
             self.assertEqual(len(summary['missions']), 1)
             self.assertTrue(summary['missions'][0]['deterministic'])
             self.assertTrue((output / 'aztec_engine').is_file())
+            self.assertEqual(len(summary['matrix']), 15)
+            if not expected:
+                self.assertTrue(summary['missions'][0]['save_continuation']['equal'])
+                self.assertEqual(summary['missions'][0]['paired_ticks']['first_tick'], 0)
+            self.assertTrue((output / 'matrix.md').is_file())
+
+    def test_fresh_process_save_and_exact_continuation(self):
+        save = Path(self.temp.name) / 'mid.azs'
+        first = Path(self.temp.name) / 'first.txt'
+        second = Path(self.temp.name) / 'second.txt'
+        orders = Path(self.temp.name) / 'continuation.orders'
+        orders.write_text('1 move 0 2 2\n7 move 0 3 3\n')
+        route = ('--no-auto-orders', '--orders', str(orders))
+        baseline = self.run_engine(*route, '--tick-hashes', str(first), '--save-at', '5', '--save', str(save))
+        resumed = self.run_engine(*route, '--tick-hashes', str(second), '--resume', str(save))
+        self.assertEqual(resumed['commands'], 2)
+        pair = [dict(returncode=0, engine=r, tick_hashes=str(p))
+                for r, p in ((baseline, first), (resumed, second))]
+        self.assertTrue(harness.paired_hashes(*pair, start=5)['equal'])
+        self.assertEqual(harness.read_hashes(second)[0][0], 5)
+        text = second.read_text().splitlines()
+        text[1] = '6 0'
+        second.write_text('\n'.join(text) + '\n')
+        self.assertEqual(harness.paired_hashes(*pair, start=5)['first_mismatch_tick'], 6)
+        second.write_text('\n'.join(text[:-1]) + '\n')
+        self.assertIsNone(harness.paired_hashes(*pair, start=5)['equal'])
+        second.write_text('5 0\n7 0\n')
+        self.assertIsNone(harness.paired_hashes(*pair, start=5)['equal'])
+        # A changed script must refuse the save before continuing.
+        self.script.write_text('trigger(0) conditions always actions side(local).defeat end\n')
+        self.assertEqual(self.run_engine('--resume', str(save), code=1)['status'], 'error')
+
+    def test_full_fifteen_mission_matrix(self):
+        for mission in range(2, 16):
+            for ext, source in (('mp', self.maps / 'Mission_1.mp'), ('map', self.maps / 'mission_1.map')):
+                (self.maps / f'mission_{mission}.{ext}').write_bytes(source.read_bytes())
+        for mission in range(1, 16):
+            (self.maps / f'mission_{mission}.scn').write_text(
+                'trigger(0) conditions localTime == 15 actions side(local).victory end\n')
+        temp = tempfile.TemporaryDirectory(dir=ROOT / 'work')
+        self.addCleanup(temp.cleanup)
+        output = Path(temp.name) / 'all'
+        real_popen = subprocess.Popen
+        with patch.object(harness.subprocess, 'Popen',
+                          side_effect=lambda cmd, **kw: real_popen(cmd[2:], **kw)), contextlib.redirect_stdout(io.StringIO()):
+            code = harness.main(['--game', str(self.game), '--engine', str(ENGINE),
+                                 '--out', str(output), '--max-ticks', '20'])
+        self.assertEqual(code, 0)
+        summary = json.loads((output / 'summary.json').read_text())
+        self.assertEqual([m['mission'] for m in summary['matrix']], list(range(1, 16)))
+        self.assertTrue(all(r['passed'] for r in summary['missions']))
+        self.assertTrue(all(m['progression'] == 'pending' for m in summary['matrix']))
+
+    def test_expected_defeat_scenario_and_fresh_retry(self):
+        temp = tempfile.TemporaryDirectory(dir=ROOT / 'work')
+        self.addCleanup(temp.cleanup)
+        plan = Path(temp.name) / 'plan.json'
+        self.script.write_text('trigger(0) conditions localTime == 15 actions side(local).defeat end\n'
+                               'trigger(1) conditions localTime == 100 actions side(local).victory end\n')
+        real_popen = subprocess.Popen
+        for attempt, expected in enumerate(('defeat', 'victory')):
+            if attempt:
+                self.script.write_text('trigger(0) conditions localTime == 15 actions side(local).victory end\n')
+            plan.write_text(json.dumps([dict(id=expected, mission=1, route='Wait for the synthetic outcome',
+                                            expected_outcome=expected, save_tick=5)]))
+            output = Path(temp.name) / f'attempt-{attempt}'
+            with patch.object(harness.subprocess, 'Popen',
+                              side_effect=lambda cmd, **kw: real_popen(cmd[2:], **kw)), contextlib.redirect_stdout(io.StringIO()):
+                code = harness.main(['--game', str(self.game), '--engine', str(ENGINE), '--missions', '1',
+                                     '--scenarios', str(plan), '--out', str(output), '--max-ticks', '20'])
+            self.assertEqual(code, 0)
+            row = json.loads((output / 'summary.json').read_text())['missions'][0]
+            self.assertTrue(row['passed'])
+            self.assertEqual(row['runs'][0]['status'], expected)
+
+    def test_scenarios_and_missing_missions_remain_failures(self):
+        plan = Path(self.temp.name) / 'scenarios.json'
+        plan.write_text(json.dumps([dict(id='defeat', mission=1, route='Wait for scripted defeat',
+                                        expected_outcome='defeat', save_tick=5)]))
+        self.assertEqual(harness.scenarios(plan, [1], 20)[0]['expected_outcome'], 'defeat')
+        plan.write_text(json.dumps([dict(id='../bad', mission=1, route='Wait',
+                                        expected_outcome='victory', save_tick=5)]))
+        with self.assertRaises(ValueError):
+            harness.scenarios(plan, [1], 20)
+        matrix = harness.mission_matrix({1: self.script}, [1, 2], [])
+        self.assertEqual(matrix[1]['availability'], 'missing')
+        self.assertEqual(len(matrix), 15)
+        temp = tempfile.TemporaryDirectory(dir=ROOT / 'work')
+        self.addCleanup(temp.cleanup)
+        output = Path(temp.name) / 'missing'
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = harness.main(['--game', str(self.game), '--engine', str(ENGINE),
+                                 '--missions', '2', '--out', str(output), '--max-ticks', '20'])
+        self.assertEqual(code, 1)
+        summary = json.loads((output / 'summary.json').read_text())
+        self.assertEqual(summary['missions'][0]['error'], 'missing mission data')
+        self.assertEqual(summary['matrix'][1]['availability'], 'missing')
 
     @unittest.skipUnless(sys.platform.startswith("linux"), "the runner needs unshare and POSIX signals")
     def test_runner_crash_and_wall_timeout(self):

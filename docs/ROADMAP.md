@@ -305,6 +305,42 @@ and [event mapping](audio.md).
   inspection was denied; this refresh ran Release checks only.
 - [ ] Complete campaign/soak fixes, required private-data/socket checks and the
   platform/mission/save-load release checklist. Skips never satisfy release gates.
+| V17 | Make native Linux and Windows builds/tests required CI gates. Resolve GCC/POSIX assumptions, SDL discovery, paths/case handling and serialization portability; isolate optional POSIX networking or supply a Windows adapter so default builds succeed. | L | Task [09](../tasks/queue/09-portability.md); current build CI is Linux-only, Windows release job is experimental and `aztec_net` uses POSIX UDP. Can proceed alongside simulation work. |
+| V18 | Produce self-contained engine packages with external-data setup instructions, rules metadata, dependencies and licenses; smoke-test on clean Linux/Windows machines without the oracle/generated source. Check missing or malformed data produces useful errors. | M | Packaging, external-data/license instructions and separate clean-runner smoke jobs implemented; local synthetic staging verified. Native CI/package evidence remains pending, so this row is not complete. V17; see [package evidence](#v18-package-evidence). |
+| V19 | Add the full campaign harness and mission coverage matrix: completion route, expected outcome, unsupported actions, unreachable objectives, timeout/crash reports, paired tick hashes and mid-mission saves. Cover all 15 missions, defeat/retry and final progression with automated scenarios plus interactive acceptance. | XL | Task [19](../tasks/queue/19-campaign-playthrough.md); the [harness and 15-mission matrix](playthrough.md) now retain route/expected-outcome plans, diagnostics, paired per-tick transcripts and fresh-process mid-mission saves. Synthetic coverage is implemented; successful campaign routes, defeat/retry UI, final progression and interactive acceptance remain open. V03-V16 remain incomplete dependencies. |
+| V20 | Fix campaign/soak failures, run malformed-input and sanitizer checks, and complete required tests on hosts that permit sockets and private game-data runs. Publish an English release checklist with platform, mission and save/load results and outstanding limitations. | L | Malformed-input/local ASan/UBSan subset completed below; hosted sanitizer CI pending. [ROBUSTNESS.md](../tests/ROBUSTNESS.md) records coverage and limits. V17-V19 remain dependencies for campaign/release work; no skipped or denied test may stand in for required release evidence. |
+
+V19 partial evidence (2026-10-28; the full row remains open):
+
+- [x] Implement a complete 15-row inventory and private scenario plans with routes,
+  expected outcomes, unsupported-action and objective diagnostics, crash/timeout
+  reports, exact paired tick comparisons and fresh-process save continuations.
+- [x] Verify all 15 synthetic missions, expected-defeat scenarios, fresh winning
+  attempts, scripted continuation orders and refusal of incomplete hash evidence.
+- [ ] Establish successful player-controllable winning routes and mid-mission
+  save-to-completion evidence for all 15 original missions. Short isolated engine
+  sweeps are diagnostics only; they have produced no winning completion routes.
+- [ ] Exercise ordinary defeat/retry, interactive controls, Linux/Windows campaign
+  acceptance, mission unlock/profile progression and the final ending. V03-V16
+  simulation/control/save dependencies remain incomplete; no skipped or bounded
+  probe closes those requirements. See [status](engine_rules_status.md#v19-campaign-coverage-update-2026-10-28-partial).
+
+V20 partial evidence (2026-10-28; the full row remains open):
+
+- [x] Extend synthetic malformed-input checks across every core loader and
+  selected engine adapters; fix the descriptor overflow and validation gaps
+  covered by the regressions. GCC Release and Clang ASan/UBSan checks passed.
+- [x] Add a fail-fast ASan/UBSan build option and dedicated Linux synthetic CI job.
+- [ ] Obtain hosted sanitizer CI results, including leak detection. Local leak
+  inspection is denied by the sandbox; only ASan/UBSan ran successfully here.
+- [ ] Complete V17-V19 dependencies, campaign/soak fixes, required private-data
+  and socket checks, and the platform/mission/save-load release checklist.
+
+Start V01-V03, V17 and the V19 mission inventory early. Use V02 to prioritize
+first behavioral divergences rather than assigning causality from engine hashes.
+Economy, scripts, AI and their UI depend on one another; split the XL rows into
+reviewable scenarios and update status after each merged change. Close the
+campaign matrix and fresh-process save continuations before declaring v1.
 
 ### V18 package evidence
 
