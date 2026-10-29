@@ -57,8 +57,8 @@ and `engine` checks pass with the complete private map copy under dummy SDL in
 | Air orders and ground collisions | engine / P reference integration | Aircraft use straight fixed-point movement without terrain/contact blocking, including engine attack-move orders. Ground agents retain continuous disc avoidance/pushing and flow fields. Reference tile reservations, vehicle turning, formation/path decisions and exact arrival timing remain unimplemented or unmeasured; see [V05 progress](rules_movement.md#8-v05-partial-integration-2026-10-28) |
 | Price and build time | V formula / synthetic checks | `types.csv` with outpost/developed hall, runtime speed, hostile-to-everyone and computer branches. Float32 factors evaluated before truncation after +0.5; developed fast computer 100 -> 160 gold / 53 time units. No lifted 161 rounding |
 | Production countdown | engine / O parity | Computed time units drive tick countdowns; one payment at acceptance, none at spawn. Exact original start/completion tick ordering is unverified |
-| Build tree (who can build what, prerequisites) | V | `buildtree.csv`; ordinary prerequisites require completed objects in the producing town, A entries use side-wide counts. Completed/in-progress/queued structures prevent duplicates in that town; DisabledID and adjusted affordability are checked |
-| Town upgrades and non-map structure production | engine / V tables, P placement | Flag-0 structures use adjusted costs/timers and the production queue. Hall completion preserves identity and installs its race/level tree; farms/mines/defences are automatically placed on free tiles and activate descriptor effects. Exact reference placement, HP transition and completion ticks remain unverified; see validation below |
+| Build tree (who can build what, prerequisites) | V | `buildtree.csv`; ordinary prerequisites require completed objects in the producing town, A entries use side-wide counts. Only map-construction entries reject completed/in-progress/queued copies in that town; flag-0 resource structures and defences are repeatable. Hall upgrades retain their separate reservation guard; DisabledID and adjusted affordability are checked |
+| Town upgrades and non-map structure production | engine / V tables, P placement | Flag-0 structures use adjusted costs/timers and the production queue. Hall completion preserves identity and installs its race/level tree; farms/mines/defences can be queued repeatedly, are automatically placed on free tiles and activate descriptor effects. Exact reference placement, HP transition and completion ticks remain unverified; see validation below |
 | Side `DisabledID` blocks menu entries | V | `docs/formats.md` |
 | Weapon damage | V documented arithmetic / engine synthetic checks | Marine d7 and Defence d59 select weapon IDs. Classes 1/2/13 apply each matching 8.8 multiplier in sequence, then armor term; arrow zero-air suppresses armor. Classes 4/5/6/10 constants implemented; 8 delegates and 12 sums known child damage. Historical duel entries are diagnostics only. Other descriptor weapon mappings/armor retain placeholders |
 | Weapon reload getters and cooldown | V Marine reload+1 / P other scheduling | Classes 1/2/13/4/5/6/10 use documented reload/range. Simulation schedules reload+1; this is verified only for Marine cooldown, not universal hit intervals. Composite scheduling remains unresolved |
@@ -582,7 +582,8 @@ required for any claim that its outcomes match the original game.
 **Independent implementation / existing V tables:** the menu retains flag-0
 structure entries from `buildtree.csv`. The existing price/time formula applies
 at acceptance, with one payment and a frozen countdown. Queue reservations block
-duplicate structures and competing hall upgrades in the same town. DisabledID,
+competing hall upgrades in the same town. Only map-construction entries reject
+duplicate structures; queued farms, mines and defences allow multiple copies. DisabledID,
 affordability and local/side-wide prerequisites still apply. Completion replaces
 the owned live hall in place, preserving its ID, town and selection references,
 updates its descriptor HP and navigation footprint, resets its harvest clocks,
@@ -611,10 +612,33 @@ Town levels are now hashed, so older saves with stored hashes are incompatible.
 **Synthetic validation:** all supported race/level upgrades, sparse town section
 numbers, preserved hall identity and footprint blocking, build-tree unlocks,
 competing/repeated requests, paused timers, flag-0 farms/mines/defences, adjusted
-costs, completed/queued duplicates, resource accumulation after completion,
+costs, repeated queued/completed farms/mines/defences across all three races,
+distinct placement sites, queue capacity/payment/cancellation, map-construction
+duplicate rejection, resource accumulation after completion,
 DisabledID, insufficient money, invalid town members, dead halls, cancellation,
 serialized command replay and upgrade save/replay are covered in `engine_unit`.
 These checks validate engine construction, not measured original behavior.
+
+**Repeatable structure correction (2026-10-29):** a synthetic regression first
+failed on the previous blanket structure duplicate check: the second purchase
+was rejected and completed mines remained disabled. The check now follows the
+build-tree map-construction flag. Private reference rule inspection at `0x411ac0`
+shows that only flag-B entries test their own completed/in-progress counts;
+ordinary prerequisites use town counts and A prerequisites use side counts.
+Those counts are prerequisites, not a one-mine-per-side limit. No build-tree
+CSV, placement algorithm or runtime code changed. The regression completes three
+copies per tested farm/mine/defence type, verifies payment and serial countdowns,
+and reproduces the final state through serialized command replay.
+The sustained-opposition synthetic fixture now uses richer farm terrain (resource
+byte 130 rather than 65) to support its combat-per-interval assertions while the
+planner can purchase additional farms. Planner policy is unchanged; this fixture
+does not measure campaign balance.
+
+The new isolated reference attempt used a private installation copy, dummy SDL
+and `unshare -rn`; it failed at loopback setup with
+`Cannot open netlink socket: Operation not permitted` before game launch.
+Thus no new live original-game placement/timing or full parity claim is made.
+Private experiment output remains in `work/repeatable-reference/`.
 
 **Dependency and observation boundary:** the economy/prerequisite implementation
 is present. Task 01's audited packet replay, object identity mapping and aligned
@@ -1125,3 +1149,75 @@ save fixture was absent. These installed-data checks do not establish live
 reference gameplay. A read-only recount of the 15 `mission_N.mp` files found
 49 Difficulty keys: 46 zero, two 75 and one 100, consistent with retaining the
 key as metadata rather than deriving a bonus table. Changes remain uncommitted.
+## V19 campaign coverage update (2026-10-28, partial)
+
+**Engine construction / synthetic evidence:** `tools/playthrough.py` now emits
+an explicit matrix for missions 1 through 15, including missing/unselected data,
+private scenario routes and expected victory/defeat outcomes. Every scenario runs
+twice and retains status, unsupported action sites/executions, static unreachable
+findings, unmet objectives, stalled orders, stderr and crash/wall/tick timeouts.
+Per-tick transcripts include tick zero and report the first differing tick;
+missing, gapped or truncated evidence cannot pass. A third fresh process loads
+the ordinary AZS3 mid-mission save and compares its complete continuation suffix,
+including the saved boundary and terminal outcome, to the uninterrupted run.
+Inherited sight configuration is pinned to each private installation copy.
+
+The renderer-free mode adds tick transcript, save-at-tick and resume options;
+it uses existing content/script/hash verification and command replay. It resumes
+scheduled orders and the automatic exercising policy at absolute mission ticks.
+No simulation rules, player command semantics or outcome conditions were changed.
+Synthetic tests cover all 15 fixtures through victory and saved continuations,
+expected defeat and a separate fresh winning attempt, commands before/after the
+save boundary, mismatched scripts, first differing ticks, malformed/incomplete
+transcripts, missing mission coverage, scenario validation, crashes and timeouts.
+These establish engine consistency, not original-game parity or real Retry UI.
+
+**Private bounded observations:** the 24-tick isolated sweep reached every
+mission with both dummy SDL drivers under `unshare -rn`, private ordinary Maps/
+Saves directories, resource/map symlinks and copied configurations/profiles.
+Paired hashes matched for all 15 missions. Fourteen continued identically from
+tick-12 saves through tick 24; mission 11 ended in defeat at tick 1 before saving.
+No mission won. These are two-second simulation probes, not campaign acceptance;
+source data, transcripts, saves and complete matrices remain under ignored
+`work/v19-private-sweep/`.
+
+A second isolated sweep used a 1,200-tick budget (100 simulated seconds), saves at
+tick 600, and a 15-second wall limit per process. Missions 1, 4, 10 and 11 ended
+in defeat; 2, 3, 5, 6, 7 and 9 reached the tick limit; 8, 12, 13, 14 and 15 exceeded
+the wall limit in both runs. No crashes or victories were reported. All ten
+completed pairs matched every tick. Seven missions (2, 3, 5, 6, 7, 9 and 10) also
+matched fresh-process save continuations; 1, 4 and 11 ended before the save tick.
+The five wall-limited pairs have unverified hash/save evidence; expensive work
+within this host's budget is not proof of a hang. The runner correctly exited
+one. Executable/rules snapshots, paired transcripts, saves and the full matrix
+are retained privately under `work/v19-campaign-sweep/`. These observations use
+the exercising policy, not validated player routes. Immediate mission-11 defeat,
+other lost objectives and expensive missions remain investigation leads, not
+newly diagnosed engine rule defects.
+
+**Reference boundary:** a bounded mission-1 record attempt with the supplied
+read-only reference runtime used a separate private installation with copied map
+files and read-only resource symlinks. Namespace loopback setup failed before
+launch with `Cannot open netlink socket: Operation not permitted`. No command
+recording was produced, so replay and normalized comparison remain unverified.
+Failure logs and navigation input remain under `work/v19-reference/`; required
+isolation was retained. Engine self-comparison cannot replace that missing oracle.
+
+**Remaining dependencies:** V03-V16 are not fully accepted in this checkout.
+The independent harness and inventory above do not require those remaining
+adapters. Successful routes still depend on movement/transport, combat/economy,
+AI, script objective semantics, controls and campaign save/progression behavior.
+The existing audit lists 19 unsupported transport action sites in missions 2,
+7, 9 and 15, plus two missing-trigger warnings in mission 6. General objective
+reachability, player-controllable winning routes, same-input defeat/retry,
+front-end progression/final ending and Linux/Windows interactive acceptance remain
+unverified. Every generated matrix keeps interactive, retry and progression
+acceptance pending. V19 remains open; see [method and full planning matrix](playthrough.md).
+
+**Validation:** Release build and full CTest pass (26 passed, five skipped).
+The skipped entries are four default private-data checks and restricted UDP
+processes. A separate dummy-SDL `unshare -rn` run against a private copy passed
+formats, engine integration and campaign script inventory; original-save import
+skipped because original saves are intentionally excluded. Pre-commit and
+`git diff --check` pass. Neither the synthetic checks nor bounded probes prove
+full campaign completion, reference parity or native Windows behavior.
