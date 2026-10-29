@@ -281,9 +281,19 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME parity_scenarios COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_run.py $<TARGET_FILE:aztec_engine>)
   set_tests_properties(parity_scenarios PROPERTIES LABELS "unit" TIMEOUT 30)
+  add_test(NAME parity_visual_ui COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_visual.py $<TARGET_FILE:aztec_engine>)
+  set_tests_properties(parity_visual_ui PROPERTIES LABELS "unit" TIMEOUT 40)
 endif()
 
 # Synthetic UI captures stay in the build tree; no original screenshots are fixtures.
+add_executable(test_mouse_grab tests/test_mouse_grab.cpp)
+target_link_libraries(test_mouse_grab PRIVATE aztec_engine_lib)
+aztec_warnings(test_mouse_grab)
+add_test(NAME mouse_grab COMMAND test_mouse_grab)
+set_tests_properties(mouse_grab PROPERTIES LABELS "unit" TIMEOUT 10
+  ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+
 add_executable(test_ui_screenshots tests/test_ui_screenshots.cpp)
 target_link_libraries(test_ui_screenshots PRIVATE aztec_engine_lib)
 target_compile_definitions(test_ui_screenshots PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data")
@@ -291,3 +301,18 @@ aztec_warnings(test_ui_screenshots)
 add_test(NAME ui_screenshots COMMAND test_ui_screenshots ${CMAKE_CURRENT_BINARY_DIR}/ui-screenshots)
 set_tests_properties(ui_screenshots PROPERTIES LABELS "unit" TIMEOUT 30
   ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+
+# L1 specifications and measurement bookkeeping use synthetic inputs in CI.
+if(Python3_Interpreter_FOUND)
+  add_test(NAME parity_rules COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_rules.py)
+  set_tests_properties(parity_rules PROPERTIES LABELS "unit;parity" TIMEOUT 20)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_test(NAME parity_rules_private COMMAND ${Python3_EXECUTABLE} -I
+      ${CMAKE_CURRENT_SOURCE_DIR}/tools/parity_rules.py probe
+      --game ${CMAKE_CURRENT_SOURCE_DIR}/game --runtime ${CMAKE_CURRENT_BINARY_DIR}/aztec_recomp
+      --id l1_speed_cannon --output ${CMAKE_CURRENT_SOURCE_DIR}/work/parity/ctest-l1)
+    set_tests_properties(parity_rules_private PROPERTIES LABELS "game-data;parity"
+      SKIP_RETURN_CODE 77 TIMEOUT 60)
+  endif()
+endif()

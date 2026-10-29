@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "id": "visual-ui-synthetic",
+  "layer": [
+    "L4",
+    "L5"
+  ],
+  "evidence": "P",
+  "alignment": {
+    "map": "synthetic-grid",
+    "setup": "invented-ui-v1",
+    "phase": "after_input_before_present",
+    "camera": [
+      0,
+      0,
+      1
+    ],
+    "selection": [
+      "unit:a"
+    ],
+    "money": 0,
+    "side": 0,
+    "ui_scale": 1,
+    "resolution": [
+      12,
+      8
+    ],
+    "light": "flat",
+    "animation_ms": 0,
+    "bindings": "synthetic-v1",
+    "tooltip_ms": 0,
+    "messages": []
+  },
+  "regions": {
+    "map": {
+      "channel": 3,
+      "max_bad_fraction": 0.1,
+      "max_mae": 2
+    },
+    "units": {
+      "channel": 3,
+      "max_bad_fraction": 0.1,
+      "max_mae": 2
+    },
+    "hud": {
+      "channel": 3,
+      "max_bad_fraction": 0.1,
+      "max_mae": 2
+    },
+    "minimap": {
+      "channel": 3,
+      "max_bad_fraction": 0.1,
+      "max_mae": 2
+    },
+    "command_card": {
+      "channel": 3,
+      "max_bad_fraction": 0.1,
+      "max_mae": 2
+    },
+    "overlays": {
+      "channel": 3,
+      "max_bad_fraction": 0.1,
+      "max_mae": 2
+    }
+  },
+  "input": [
+    {
+      "step": "hover",
+      "tick": 0,
+      "event": "move"
+    },
+    {
+      "step": "press",
+      "tick": 1,
+      "event": "down"
+    },
+    {
+      "step": "release",
+      "tick": 2,
+      "event": "up"
+    },
+    {
+      "step": "hotkey",
+      "tick": 3,
+      "event": "key"
+    },
+    {
+      "step": "cursor",
+      "tick": 4,
+      "event": "move"
+    }
+  ],
+  "observe": [
+    {
+      "step": "hover",
+      "tick": 0
+    },
+    {
+      "step": "press",
+      "tick": 1
+    },
+    {
+      "step": "release",
+      "tick": 2
+    },
+    {
+      "step": "hotkey",
+      "tick": 3
+    },
+    {
+      "step": "cursor",
+      "tick": 4
+    }
+  ]
+}

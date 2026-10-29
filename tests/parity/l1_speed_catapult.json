@@ -1,0 +1,51 @@
+{
+  "id": "l1_speed_catapult",
+  "layer": "L1",
+  "map": {
+    "template": "mission_1",
+    "generator": "make_zstat",
+    "passability": "clear_interior",
+    "resources": "empty_control"
+  },
+  "setup": {
+    "sides": [
+      0,
+      1
+    ],
+    "money": 10000,
+    "preplaced_objects": [
+      {
+        "id": "source",
+        "type": 83,
+        "x": 16,
+        "y": 16,
+        "side": 0
+      }
+    ],
+    "tech": "record_and_hold_constant",
+    "controls": [
+      "One source on clear ground; exclude acceleration and arrival from steady speed.",
+      "Hold facing, game speed and simulation tick origin constant."
+    ]
+  },
+  "input": [
+    {
+      "tick": 12,
+      "command": "move",
+      "object": "source",
+      "x": 40,
+      "y": 16
+    }
+  ],
+  "observe": {
+    "first_tick": 1,
+    "last_tick": 720,
+    "fields": [
+      "x",
+      "y"
+    ]
+  },
+  "tolerance": 0,
+  "evidence": "P",
+  "mechanic": "speed"
+}

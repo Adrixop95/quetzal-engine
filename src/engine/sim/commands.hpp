@@ -37,7 +37,9 @@ enum class Pct : uint8_t {
 //   Flag-0 entries ignore b,c: queue a unit, automatically placed structure, or in-place hall upgrade.
 //   Build/BuildMode: optional ids[0] selects an owned town member; absent = first owned town (engine convention).
 //   BuildMode: a = runtime speed 0 slow / 1 normal / 2 fast.
-//   QueueKill: a = queue index to cancel (refund).  PauseBuild: a = 1 pause / 0 resume.  Pause*: global.
+//   QueueKill: a = side storage index to cancel; waiting orders are unpaid, active orders refund unbuilt work.
+//   PauseBuild: ids[0] selects a town member (absent = first town); a = 1 pause / 0 resume / 2 cancel active.
+//   PauseBuild affects only the current item. PauseOn/PauseOff pause the whole simulation.
 struct Command {
   Pct type = Pct::Nothing;
   uint8_t side = 0;

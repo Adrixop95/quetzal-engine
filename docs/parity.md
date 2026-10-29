@@ -301,3 +301,200 @@ pool cause or lifted price-rounding diagnosis was measured. The earlier
 `v02-baseline` attempt rejected its too-short explicit horizon before launch and
 is not reference-run evidence. V02 remains open, including original-instruction
 versus lifted-arithmetic validation and audited ownership/max-HP observers.
+
+## L4/L5 visual and interaction controls (2026-10-29, partial task 44)
+
+`tools/parity_visual.py` implements the independent part of L4/L5 while task 42's
+shared scenario runner is absent from this checkout. It compares explicitly
+normalized capture bundles and provides an isolated private capture **probe**.
+The probe does not produce an aligned bundle. Matching reference ticks/camera,
+reference UI state instrumentation, structural-mask extraction and audited
+command/object normalization remain prerequisites. A wall-clock `RT_SCRIPT wait`
+or `shot` must never be assigned a guessed simulation tick.
+
+Run the asset-independent controls with:
+
+```sh
+ctest --test-dir build -R parity_visual_ui --output-on-failure
+```
+
+All rasters, temporary synthetic installations, traces and diagnostic bundles
+created by these controls stay under ignored `work/parity/`. The ten Python test
+methods cover exact equality, tolerant RGB differences, local pixel/MAE failure,
+shifted structural masks, UI/command sequence differences, incomplete horizons,
+alignment/contract rejection, invalid rasters/thresholds, absent private inputs,
+isolation failure propagation and actual engine UI inputs. The last test runs
+the same invented installation twice and checks identical traces. This verifies
+tooling and independent engine behavior only.
+
+### Private comparison contract
+
+The public `tests/parity/visual-ui-synthetic.json` is an invented schema example
+with five observation points. Its input labels describe comparator controls;
+`tests/parity/ui-input.txt` is the separate executable engine playtest control.
+Private scenarios and manifests containing original state belong in
+`work/parity/`, including numeric alignment values. Compare them with:
+
+```sh
+python3 tools/parity_visual.py compare work/parity/CASE/scenario.json \
+  work/parity/CASE/reference.json work/parity/CASE/clone.json \
+  --output work/parity/CASE/diff.json
+```
+
+Use a fresh output file. Exit 0 means the declared samples agree within their
+thresholds, 1 means a difference, and 2 means invalid/incomplete observations.
+The output path is restricted to this worktree's `work/parity/`.
+
+A scenario declares `schema: 1`, `id`, `evidence` (P/M/V), `alignment`, `regions`
+and an ordered `observe` array of `{step, tick}`. The evidence label is supplied
+by the investigator, never promoted by the comparator. Alignment must include
+all these fields: `map`, `setup`, `phase`, `camera`, `selection`, `money`, `side`,
+`ui_scale`, `resolution`, `light`, `animation_ms`, `bindings`, `tooltip_ms`, and
+`messages`. Camera is the top-left world pixel position and zoom; resolution is
+`[width, height]`. Setup identifies the same starting simulation state. Static
+alignment describes the common viewing conditions for the whole scenario;
+use separate scenarios when camera/selection/light conditions change. Observation
+ticks must increase strictly; repeated UI observations in a paused tick need
+separate scenarios with distinct step labels. The contract must define tick
+origin, interpolation and input/render phase, not merely matching tick numbers.
+
+Each bundle declares `schema: 1`, `scenario`, a nonempty normalization `contract`,
+identical `alignment`, and `samples` in the exact scenario order. Each sample
+contains `step`, `tick`, `image`, `masks`, `state` and `commands`. Image/mask paths
+are relative to the bundle directory and cannot escape it, including by symlink.
+Both complete bundles are validated before any first-divergence verdict. Missing
+samples/fields, wrong ticks/resolution, incompatible contracts and truncated
+rasters fail. Header equality checks the supplied alignment assertions; it does
+not independently establish their truth.
+
+Images support the reference's binary P6 PPM and the clone's opaque RGB/RGBA8,
+non-interlaced PNG. Structural masks are full-resolution binary P5 PGM files
+(maximum 255, pixels 0 or 255), independently obtained for each capture. All six
+named regions are required: `map`, `units`, `hud`, `minimap`, `command_card`,
+`overlays`. A mask must contain at least one included pixel; choose a scene with
+coverage in every region. Region overlap is allowed. Mask provenance and the
+meaning of included structures belong to the normalization contract: annotate
+layout/occupancy independently on each side, rather than copying one mask to
+both captures. Do not automatically erase differences, fit/shift images, or infer
+alignment from pixels. No game-derived masks are public fixtures.
+
+Each region specifies `channel` (integer RGB channel tolerance),
+`max_bad_fraction` and `max_mae`. A pixel is bad when its largest absolute RGB
+channel difference exceeds `channel`. MAE is the sum of absolute RGB differences
+divided by three times the included pixel count, on a 0..255 scale. Pixels are
+measured over the union of the two masks. Structural mask differences always
+fail, including when RGB values agree. Reports retain mask difference counts,
+exact mismatch fraction, tolerant bad-pixel fraction and MAE separately.
+Thresholds in the synthetic example are invented controls, not measured game
+acceptance limits. No resampling, alpha blending or perceptual color transform
+is applied.
+
+Normalized UI `state` has exactly `buttons`, `cursor`, `tooltip`, `menu` and
+`target_mode`. Buttons map canonical control names to `{frame, highlight,
+enabled}`; frame is a nonnegative integer and the other fields are booleans.
+Cursor/menu/target mode are nonempty canonical strings; tooltip is a string.
+`commands` is an ordered list of `{name, arguments}`, with semantic command names
+and an arguments object. The normalization contract must specify every argument,
+canonical object identity and coordinate units, reject unsupported commands and
+include commands emitted since the previous observation. Observe every input
+transition so intermediate states/commands cannot disappear between samples.
+The comparator checks the entire state and ordered command list exactly; it
+reports changed fields for every sample. First divergence is ordered by scenario
+tick, then the six region names in the order above, then UI field name (commands
+last). This diagnostic order is not a causal attribution.
+
+### Engine trace and capture probe
+
+`aztec_engine --script INPUT --ui-trace work/parity/CASE/ui.jsonl` writes a raw
+`engine-ui-raw-v1` row per rendered frame, after UI input and before presentation.
+Rows include frame/tick, actual camera/zoom, interpolation alpha, selection,
+mouse/held left button, targeting/placement, panel/menu state, tooltip text,
+cursor shape/visibility/animation time, six command button states and commands
+newly submitted by `CommandsUi::update`. Raw command payloads and object indices
+use engine conventions; they are not oracle packets or canonical cross-engine
+identities. The engine currently draws command button sprite frame zero even
+while pressed; the trace records that behavior. Production/queue controls are
+outside this raw button-state coverage. Commands from setup, scripts or other
+sources are outside the UI submission window. A normalized adapter must refuse
+comparisons needing those uncovered observations.
+
+Scripted cursor animation uses virtual frame time at 12 Hz. Trace rows include
+the requested scripted screenshot path; scripts should write those screenshots
+under the same private case directory. Rendering errors and missing captures must
+be treated as failed experiments. The trace is a diagnostic source, not directly
+a normalized comparison bundle. Its presence does not supply the missing
+reference observer or shared task 42 runner.
+
+To reproduce the private availability/capture probe:
+
+```sh
+python3 tools/parity_visual.py probe \
+  --game /home/adrox/aztec-re/game \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --clone build/aztec_engine --output work/parity/l4-l5-probe-next --timeout 30
+```
+
+The output directory must be new. Missing private installation/runtime or engine
+returns 77 with a skip report. Both runners use private game copies, dummy SDL,
+`unshare -rn` and a hard timeout. Reference loopback setup fails closed. Engine
+capture needs no namespace interface setup. Even successful probes return 1 with
+`blocked_alignment_contract`: their frames are unpaired and cannot pass parity.
+
+The final local attempt in `work/parity/l4-l5-final-probe/` produced a clone PNG and four raw
+UI rows. Reference setup failed with a denied netlink socket before launching
+the game. No reference frame, UI observation or emitted command was measured.
+No visual/UI rule is promoted to M/V. The aggregate evidence table is
+[parity_visual_ui_results.md](parity_visual_ui_results.md).
+## L1 rule micro-experiments (2026-10-29, partial task 43)
+
+Task 42's scenario harness is absent (`tools/parity_run.py` is not present).
+The 19 P specifications in `tests/parity/l1_*.json` use the top-level schema in
+[PARITY_TEST_PLAN.md](PARITY_TEST_PLAN.md), with provisional nested keys described
+in [the scenario guide](../tests/parity/README.md). Referenced task prompts
+36/37/40 are absent too. Independent work supplies candidate maps, isolation
+probes and private numeric expectation export; command/observer adapters and
+validated isolated setup remain dependencies. No clone simulation rule changed.
+
+The selection prioritizes Cannon, Catapult and Hopcannon movement, six damage
+category controls, siege reload/range/flight, mine construction/price/income,
+sight/regeneration and serial versus two-town production. Each specification
+lists required controls and repeats. Armor classes must be observed, not inferred
+from target names. Boundary sweeps, nonzero resource patches, production speed
+branches, projectile obstacles and faction variants remain unexecuted protocols.
+
+The explicit external installation/runtime were used read-only:
+
+```sh
+python3 -I tools/parity_rules.py probe \
+  --game /home/adrox/aztec-re/game \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --output work/parity/l1-isolated-20261029 --timeout 45
+```
+
+All 19 candidates generated in separate private game copies. Each bounded
+launch used both dummy SDL drivers and `unshare -rn`; every attempt failed at
+loopback setup with `Cannot open netlink socket: Operation not permitted`.
+The runtime never launched. Private scenario copies, maps, invocation records,
+logs and aggregate report remain in the ignored output directory. No numeric
+expectations were measured or exported, and no semantic first divergence exists.
+The report uses `experiment_failed` with null tick/object/field, not a fabricated
+rule mismatch. Generated maps remain candidates: commands, AI, damaged HP, tech,
+money, fog and town membership have not been controlled or validated.
+
+| L1 result in this attempt | Count |
+| --- | --- |
+| P base specifications / generated candidate maps | 19 |
+| Isolated launch failures before simulation | 19 |
+| Measured rules / clone parity passes | 0 |
+| First semantic divergences | unavailable |
+
+`tools/parity_rules.py compare` consumes complete normalized streams from two
+reference repeats and the clone through the existing strict comparator. It
+checks the scenario contract, horizon, fields and initial identities before
+exporting integer-only expectations privately. Reference repeat disagreement
+creates no expectations; malformed or truncated observations fail. The comparator
+retains the first tick/object/field difference when one is actually observed.
+Its synthetic controls establish tooling behavior only. Matching streams and
+exporting numbers do not audit commands, setup, units or identity mapping and
+never automatically promote a P scenario to M. See the scenario guide for the
+private format, exit codes and remaining integration contract.

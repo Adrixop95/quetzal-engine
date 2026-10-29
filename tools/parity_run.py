@@ -27,6 +27,15 @@ def integer(value, minimum=0):
     return type(value) is int and value >= minimum
 
 
+def harness_scenario(path):
+    """Other layers keep their own scenario specifications in the same directory (L1 rules, L4 visual); this harness runs schema 1 only."""
+    try:
+        s = json.loads(path.read_text())
+    except ValueError:
+        return True   # let load_scenario report the malformed file
+    return isinstance(s, dict) and {"schema", "map", "setup", "tolerance"} <= set(s)
+
+
 def load_scenario(path):
     """Version 1 is deliberately narrow; reject unsupported semantics explicitly."""
     s = report.json_object(path.read_text())
@@ -196,7 +205,7 @@ def main(argv=None):
         for key in ("game", "runtime", "engine", "reference_adapter", "script", "commands"):
             if getattr(args, key) is not None:
                 setattr(args, key, getattr(args, key).resolve())
-        scenarios = [load_scenario(p) for p in sorted(args.scenarios_dir.glob("*.json"))]
+        scenarios = [load_scenario(p) for p in sorted(args.scenarios_dir.glob("*.json")) if harness_scenario(p)]
         ids = [s["id"] for s in scenarios]
         require(len(set(ids)) == len(ids), "duplicate scenario IDs")
         require(not set(args.ids) - set(ids), "unknown scenario ID")

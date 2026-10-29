@@ -5,6 +5,7 @@
 #include <charconv>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -15,6 +16,7 @@
 
 #include "core/script.hpp"
 #include "engine/sim/game_sim.hpp"
+#include "engine/sim/savegame.hpp"
 
 namespace aztec::engine {
 namespace {
@@ -116,7 +118,7 @@ struct Report {
   std::string mission, status = "error", error;
   uint64_t ticks = 0, hash = 0, trace = 1469598103934665603ull;
   size_t unsupported_executions = 0, commands = 0;
-  std::vector<std::string> script_errors, unreachable, unmet;
+  std::vector<std::string> script_errors, unsupported_actions, unreachable, unmet;
   std::vector<uint32_t> stalled;
   void write(std::ostream& out) const {
     out << "{\"schema\":1,\"mission\":" << quoted(mission) << ",\"status\":" << quoted(status)
@@ -130,6 +132,7 @@ struct Report {
       out << ']';
     };
     strings("script_errors", script_errors);
+    strings("unsupported_actions", unsupported_actions);
     strings("unreachable_objectives", unreachable);
     strings("unmet_objectives", unmet);
     out << ",\"stalled_order_ids\":[";
@@ -144,7 +147,12 @@ void audit(const Script& script, const World& w, Report& report) {
     bool objective = false;
     for (const auto& a : t.actions) {
       if (a.kind == ActKind::SideVictory && (a.side == kLocal || a.side == w.script_side)) objective = victory = true;
-      if (!ScriptRunner::supports(a.kind)) report.script_errors.push_back("unsupported action at line " + std::to_string(a.line));
+      if (!ScriptRunner::supports(a.kind)) {
+        auto diagnostic = std::string("unsupported action ") + action_name(a.kind) +
+                          " in trigger " + std::to_string(t.id) + " at line " + std::to_string(a.line);
+        report.unsupported_actions.push_back(diagnostic);
+        report.script_errors.push_back(diagnostic);
+      }
       if ((a.kind == ActKind::TriggerEnable || a.kind == ActKind::TriggerDisable) && !script.find(a.id))
         report.script_errors.push_back("missing trigger " + std::to_string(a.id) + " at line " + std::to_string(a.line));
     }
@@ -166,9 +174,9 @@ void audit(const Script& script, const World& w, Report& report) {
 
 int run_headless(int argc, char** argv) {
   Report report;
-  std::string game = "game", rules_dir = default_rules_dir(), orders_path, output, observations_path;
+  std::string game = "game", rules_dir = default_rules_dir(), orders_path, output, observations_path, hashes_path, save_path, resume_path;
   if (const char* value = std::getenv("AZTEC_GAME")) game = value;
-  int max_ticks = 43200, interval = 120;
+  int max_ticks = 43200, interval = 120, save_tick = 0;
   bool auto_orders = true;
   try {
     bool mission_given = false;
@@ -185,9 +193,13 @@ int run_headless(int argc, char** argv) {
       else if (a == "--orders") orders_path = value();
       else if (a == "--report") output = value();
       else if (a == "--observations") observations_path = value();
+      else if (a == "--tick-hashes") hashes_path = value();
+      else if (a == "--save-at") save_tick = number(value(), 1);
+      else if (a == "--save") save_path = value();
+      else if (a == "--resume") resume_path = value();
       else if (a == "--no-auto-orders") auto_orders = false;
       else if (a == "--help") {
-        std::puts("usage: aztec_engine --headless --game DIR --rules-dir DIR [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations JSONL] MISSION");
+        std::puts("usage: aztec_engine --headless --game DIR --rules-dir DIR [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE] [--tick-hashes FILE] [--save-at N --save FILE] [--resume FILE] MISSION");
         return 0;
       } else if (a.empty() || a[0] == '-' || mission_given) throw std::runtime_error("unexpected argument: " + a);
       else { report.mission = a; mission_given = true; }
@@ -200,7 +212,7 @@ int run_headless(int argc, char** argv) {
     if (!load_world(data, report.mission, world, error)) throw std::runtime_error(error);
     auto rules = std::make_shared<RulesData>();
     if (!rules->load_dir(rules_dir)) throw std::runtime_error("cannot load rules from " + rules_dir);
-    GameSim sim(rules);
+    auto session = std::make_unique<GameSim>(rules);
     Script script;
     const std::string scn = data.map_file(world.mission.file_name, "scn");
     if (scn.empty()) report.script_errors.push_back("missing mission script");
@@ -208,9 +220,52 @@ int run_headless(int argc, char** argv) {
       report.script_errors.push_back("script parse error: " + script.error);
       throw std::runtime_error(report.script_errors.back());
     }
-    else if (!sim.attach_script(scn)) throw std::runtime_error("cannot attach mission script");
+    else if (!session->attach_script(scn)) throw std::runtime_error("cannot attach mission script");
     audit(script, world, report);
-    sim.init(world);
+    if ((save_tick != 0) != !save_path.empty() || save_tick >= max_ticks)
+      throw std::runtime_error("save requires a path and a tick before the run limit");
+    // A headless save fingerprints every simulation input, including optional sight data.
+    std::vector<std::pair<std::string, std::string>> inputs;
+    inputs.emplace_back("mission", resolve_mission(data.maps_dir(), report.mission));
+    for (const char* ext : {"map", "dat", "rm", "vis", "scn"}) {
+      auto path = data.map_file(world.mission.file_name, ext);
+      if (path.empty() && std::string(ext) == "map") path = data.map_file(world.mission.map_name, ext);
+      inputs.emplace_back(ext, path);
+    }
+    std::vector<std::pair<std::string, std::string>> tables;
+    for (const auto& entry : std::filesystem::directory_iterator(rules_dir))
+      if (entry.path().extension() == ".csv")
+        tables.emplace_back(entry.path().filename().string(), entry.path().string());
+    std::sort(tables.begin(), tables.end());
+    inputs.insert(inputs.end(), tables.begin(), tables.end());
+    const char* sight = std::getenv("AZTEC_GAME");
+    for (const char* name : {"Res/Light.xbe", "Res/Units.xbe", "Aztec.exe"})
+      inputs.emplace_back(name, sight ? find_file_ci(sight, name) : "");
+    uint64_t content = 0;
+    if (!save_content_hash(inputs, content)) throw std::runtime_error("cannot fingerprint simulation inputs");
+    if (resume_path.empty()) session->init(world);
+    else {
+      SaveData saved;
+      if (!read_save(resume_path, saved)) throw std::runtime_error("cannot read resume save");
+      if (save_tick && uint64_t(save_tick) <= saved.tick) throw std::runtime_error("new save tick must follow resume tick");
+      if (saved.tick >= uint64_t(max_ticks)) throw std::runtime_error("resume tick must precede run limit");
+      session = replay_save(saved, world, rules, content, scn, error);
+      if (!session) throw std::runtime_error(error);
+    }
+    GameSim& sim = *session;
+    std::ofstream hashes;
+    if (!hashes_path.empty()) {
+      hashes.open(hashes_path);
+      if (!hashes) throw std::runtime_error("cannot open tick hashes");
+    }
+    auto hash_row = [&]() {
+      if (hashes.is_open()) {
+        hashes << sim.tick_count() << ' ' << std::hex << report.hash << std::dec << '\n';
+        if (!hashes) throw std::runtime_error("cannot write tick hashes");
+      }
+    };
+    report.hash = sim.state_hash(world);
+    hash_row();
     auto orders = read_orders(orders_path, world);
     if (!orders.empty() && orders.back().tick > max_ticks) throw std::runtime_error("order tick exceeds run limit");
     std::ofstream observations;
@@ -227,9 +282,10 @@ int run_headless(int argc, char** argv) {
                       "\"first_tick\":1,\"last_tick\":" << max_ticks << "}\n";
     }
     size_t next = 0;
+    while (next < orders.size() && uint64_t(orders[next].tick) <= sim.tick_count()) ++next;
     struct Position { Fixed x = 0, y = 0; uint64_t since = 0; };
     std::map<uint32_t, Position> positions;
-    for (int64_t tick = 1; tick <= max_ticks; ++tick) {
+    for (int64_t tick = int64_t(sim.tick_count()) + 1; tick <= max_ticks && world.outcome == kRunning; ++tick) {
       if (observations.is_open()) {
         observations << "{\"tick\":" << tick << ",\"objects\":{";
         bool first = true;
@@ -261,6 +317,14 @@ int run_headless(int argc, char** argv) {
       world.begin_tick();
       sim.tick(world);
       report.hash = sim.state_hash(world);
+      hash_row();
+      if (tick == save_tick) {
+        SaveData saved;
+        saved.mission = world.mission.file_name;
+        saved.tick = sim.tick_count(); saved.hash = report.hash;
+        saved.script_hash = file_hash(scn); saved.content_hash = content; saved.log = sim.log();
+        if (!write_save(save_path, saved)) throw std::runtime_error("cannot write mid-mission save");
+      }
       report.trace = (report.trace ^ report.hash) * 1099511628211ull;
       for (const auto& o : world.objects) {
         auto& p = positions[o.id];
@@ -272,6 +336,10 @@ int run_headless(int argc, char** argv) {
     if (observations.is_open()) {
       observations.close();
       if (!observations) throw std::runtime_error("cannot finish observations: " + observations_path);
+    }
+    if (hashes.is_open()) {
+      hashes.flush();
+      if (!hashes) throw std::runtime_error("cannot flush tick hashes");
     }
     report.ticks = sim.tick_count();
     report.commands = sim.log().size();

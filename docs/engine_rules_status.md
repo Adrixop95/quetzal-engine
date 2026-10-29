@@ -4,6 +4,39 @@ Simulation: `src/engine/sim/game_sim.*` (12 Hz, fixed-point harvests and origina
 Movement and pathfinding: `src/engine/sim/path/` (movement agents; the interface is swappable: `GameSim` only uses `MoveSystem`).
 Legend: **V** = verified against the original (code or screenshot), **M** = measured on the recompiled original, **P** = placeholder (invented, to be replaced).
 
+## Cursor confinement (task 39, 2026-10-29)
+
+**Engine presentation policy; reference parity unverified.** Interactive focused
+gameplay requests SDL mouse grab by default, with absolute coordinates and no
+keyboard grab. Focus loss, minimization, holding either Alt key (including
+Alt-Tab), pause menus, view/simulation pause, mission exit and the front-end
+release it. Resuming focused gameplay reapplies the session preference. F9
+toggles that preference without key-repeat; `--no-mouse-grab` starts disabled.
+Scripted playtests and screenshots never request confinement. This state does
+not enter simulation commands, saves or hashes.
+
+Before the fix, an isolated dummy-SDL reproduction using the existing Window
+reported no mouse grab request (exit 1). The new synthetic `mouse_grab` CTest
+checks SDL request flags in windowed, borderless and exclusive fullscreen modes,
+focus/pause/Alt transitions and toggling. It checks continuous camera movement
+from a stationary cursor at each edge and two corners, including a 2x HiDPI
+coordinate transform and the outer right edge beyond the panel. Unfocused,
+outside-window and Alt-held inputs produce no edge scroll; focus loss also
+clears pending click/key edges and motion to avoid stale input on resume.
+
+The dummy backend verifies requested SDL state and camera behavior, not physical
+desktop confinement or window-manager Alt-Tab handling. Those still need a live
+windowed/fullscreen check. A reference probe with a private game copy and dummy
+SDL inside `unshare -rn` failed at `ip link set lo up` with `Cannot open netlink
+socket: Operation not permitted`, before the game launched. No original-game
+cursor behavior or reference record/replay result was obtained. Private probe
+inputs and output remain under ignored `work/cursor-grab/`.
+
+Validation: Release build and pre-commit gates pass. The full 32-entry CTest run
+has 27 passes and five expected private-data/network skips. Separate `formats`
+and `engine` checks pass with the complete private map copy under dummy SDL in
+`unshare -rn`; a bounded mission 1 engine screenshot smoke also passes there.
+
 ## Core simulation
 | Rule | Status | Source / notes |
 |---|---|---|
@@ -24,8 +57,8 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Air orders and ground collisions | engine / P reference integration | Aircraft use straight fixed-point movement without terrain/contact blocking, including engine attack-move orders. Ground agents retain continuous disc avoidance/pushing and flow fields. Reference tile reservations, vehicle turning, formation/path decisions and exact arrival timing remain unimplemented or unmeasured; see [V05 progress](rules_movement.md#8-v05-partial-integration-2026-10-28) |
 | Price and build time | V formula / synthetic checks | `types.csv` with outpost/developed hall, runtime speed, hostile-to-everyone and computer branches. Float32 factors evaluated before truncation after +0.5; developed fast computer 100 -> 160 gold / 53 time units. No lifted 161 rounding |
 | Production countdown | engine / O parity | Computed time units drive tick countdowns; one payment at acceptance, none at spawn. Exact original start/completion tick ordering is unverified |
-| Build tree (who can build what, prerequisites) | V | `buildtree.csv`; ordinary prerequisites require completed objects in the producing town, A entries use side-wide counts. Completed/in-progress/queued structures prevent duplicates in that town; DisabledID and adjusted affordability are checked |
-| Town upgrades and non-map structure production | engine / V tables, P placement | Flag-0 structures use adjusted costs/timers and the production queue. Hall completion preserves identity and installs its race/level tree; farms/mines/defences are automatically placed on free tiles and activate descriptor effects. Exact reference placement, HP transition and completion ticks remain unverified; see validation below |
+| Build tree (who can build what, prerequisites) | V | `buildtree.csv`; ordinary prerequisites require completed objects in the producing town, A entries use side-wide counts. Only map-construction entries reject completed/in-progress/queued copies in that town; flag-0 resource structures and defences are repeatable. Hall upgrades retain their separate reservation guard; DisabledID and adjusted affordability are checked |
+| Town upgrades and non-map structure production | engine / V tables, P placement | Flag-0 structures use adjusted costs/timers and the production queue. Hall completion preserves identity and installs its race/level tree; farms/mines/defences can be queued repeatedly, are automatically placed on free tiles and activate descriptor effects. Exact reference placement, HP transition and completion ticks remain unverified; see validation below |
 | Side `DisabledID` blocks menu entries | V | `docs/formats.md` |
 | Weapon damage | V documented arithmetic / engine synthetic checks | Marine d7 and Defence d59 select weapon IDs. Classes 1/2/13 apply each matching 8.8 multiplier in sequence, then armor term; arrow zero-air suppresses armor. Classes 4/5/6/10 constants implemented; 8 delegates and 12 sums known child damage. Historical duel entries are diagnostics only. Other descriptor weapon mappings/armor retain placeholders |
 | Weapon reload getters and cooldown | V Marine reload+1 / P other scheduling | Classes 1/2/13/4/5/6/10 use documented reload/range. Simulation schedules reload+1; this is verified only for Marine cooldown, not universal hit intervals. Composite scheduling remains unresolved |
@@ -40,7 +73,7 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Simulation fog brightness and exploration | V formulas / synthetic checks | Every active tick: global daylight plus saturated glow (maximum 152), minimum side vision darkness, nonnegative difference; previous exploration capped at 32. Raw brightness replaces invented 0/96/152 states. Renderer integration remains separate |
 | Building construction: placement on free tiles, progress = adjusted build time, stages = animation slot 0 | V formula/stages, engine placement | Hall/speed/computer time applies to placed construction. Original placement/worker and exact completion semantics remain open |
 | Building footprint in tiles | P | desc d4/d5 (px) rounded up, centred on the clicked tile |
-| Town production: first item per town progresses independently, one completion per town per tick | engine / V capacity, P pause, refund and spawn policies | Shared insertion-ordered storage retains town ownership and actual payment. Capacity 50 per town; side-wide pause and full paid-cost cancellation remain provisional. Missing/incomplete halls suspend timers. See V08/V09 validation below |
+| Town production: construction and units share one active item per town | V inspected control flow / engine regression, P exact timing and spawn | FIFO waiting orders are unpaid; payment and speed/time selection happen at start. Capacity is 50 waiting items plus active work. Active pause is town-local; cancellation refunds unbuilt paid work. Missing/incomplete halls suspend timers. See task 36 below for evidence and limits |
 | Building income and repair supply | V formulas / synthetic checks | Descriptor occupancy cells equal to 2 weight resource channels A/B with d60/d61; periodic/scheduled 7200-tick clock from StartTime. Gold and d62/d320 repair supplies have separate accumulators. Completed same-town warehouse applies once to farms only. Missing resource map contributes zero terrain bytes |
 | Starting money = side `StartMoney` | V | `.mp` |
 | Garrison | engine / V semantic fact | Extracts live mobile town members into a fresh tactic and selects it. Explicit mission town membership and hall identity, invalid-owner checks, empty/repeated extraction, hash and save/replay checks. Reference packet field layout and live comparison remain unverified |
@@ -549,7 +582,8 @@ required for any claim that its outcomes match the original game.
 **Independent implementation / existing V tables:** the menu retains flag-0
 structure entries from `buildtree.csv`. The existing price/time formula applies
 at acceptance, with one payment and a frozen countdown. Queue reservations block
-duplicate structures and competing hall upgrades in the same town. DisabledID,
+competing hall upgrades in the same town. Only map-construction entries reject
+duplicate structures; queued farms, mines and defences allow multiple copies. DisabledID,
 affordability and local/side-wide prerequisites still apply. Completion replaces
 the owned live hall in place, preserving its ID, town and selection references,
 updates its descriptor HP and navigation footprint, resets its harvest clocks,
@@ -569,8 +603,8 @@ available. Hall
 upgrades require a free replacement footprint and assign the new descriptor's
 full HP on completion. Original HP transitions, active-building suspension and
 exact start/completion ticks remain open. Queues now progress independently per
-town. V10 replaces the eight-entry policy with capacity 50 per town; side-wide
-pause and full cancellation refund remain placeholders. Map construction
+town. Task 36 supersedes the earlier side-wide pause, upfront payment and full
+refund policies, and clarifies capacity as 50 waiting items plus active work. Map construction
 continues to use the build-tree construction flag; flag-0 commands ignore map
 coordinates. These engine command conventions do not establish packet parity.
 Town levels are now hashed, so older saves with stored hashes are incompatible.
@@ -578,10 +612,33 @@ Town levels are now hashed, so older saves with stored hashes are incompatible.
 **Synthetic validation:** all supported race/level upgrades, sparse town section
 numbers, preserved hall identity and footprint blocking, build-tree unlocks,
 competing/repeated requests, paused timers, flag-0 farms/mines/defences, adjusted
-costs, completed/queued duplicates, resource accumulation after completion,
+costs, repeated queued/completed farms/mines/defences across all three races,
+distinct placement sites, queue capacity/payment/cancellation, map-construction
+duplicate rejection, resource accumulation after completion,
 DisabledID, insufficient money, invalid town members, dead halls, cancellation,
 serialized command replay and upgrade save/replay are covered in `engine_unit`.
 These checks validate engine construction, not measured original behavior.
+
+**Repeatable structure correction (2026-10-29):** a synthetic regression first
+failed on the previous blanket structure duplicate check: the second purchase
+was rejected and completed mines remained disabled. The check now follows the
+build-tree map-construction flag. Private reference rule inspection at `0x411ac0`
+shows that only flag-B entries test their own completed/in-progress counts;
+ordinary prerequisites use town counts and A prerequisites use side counts.
+Those counts are prerequisites, not a one-mine-per-side limit. No build-tree
+CSV, placement algorithm or runtime code changed. The regression completes three
+copies per tested farm/mine/defence type, verifies payment and serial countdowns,
+and reproduces the final state through serialized command replay.
+The sustained-opposition synthetic fixture now uses richer farm terrain (resource
+byte 130 rather than 65) to support its combat-per-interval assertions while the
+planner can purchase additional farms. Planner policy is unchanged; this fixture
+does not measure campaign balance.
+
+The new isolated reference attempt used a private installation copy, dummy SDL
+and `unshare -rn`; it failed at loopback setup with
+`Cannot open netlink socket: Operation not permitted` before game launch.
+Thus no new live original-game placement/timing or full parity claim is made.
+Private experiment output remains in `work/repeatable-reference/`.
 
 **Dependency and observation boundary:** the economy/prerequisite implementation
 is present. Task 01's audited packet replay, object identity mapping and aligned
@@ -815,9 +872,9 @@ indices. Completing an item does not advance that town's next item on the same
 tick. Missing/incomplete halls suspend queued timers; they never spawn units at
 an unrelated side start. UI production menus and queue cancellation follow the
 selected object's town, and placement remembers the producing town. Cancellation
-feedback shows the actual payment. V10 replaces the earlier eight-entry policy with the inspected 50-entry
-capacity per town; the panel still displays only the first eight entries. Production
-pause remains side-wide, and full refunds remain P pending measurements.
+feedback now shows the refundable unbuilt payment. Task 36 supersedes the earlier
+side-wide pause and full refund policies. The panel scrolls through all waiting
+orders, with 50 waiting slots per town in addition to active work.
 
 Repair service consumes each town's harvested credits after orders/mark maintenance
 and discards its unused budget every tick. Modes 0/1 repair; mode 2 destroys.
@@ -1061,7 +1118,8 @@ invented eight-entry town production cutoff is replaced by the inspected queue
 capacity 50. Synthetic checks cover admission through 50, refusal of entry 51
 without payment, and production with over 110 existing units for both human and
 computer sides. These limits apply to production queues, never total population.
-The panel currently exposes only its first eight queue entries. No universal
+Task 36 adds scrolling beyond the first eight displayed entries and distinguishes
+50 waiting slots from the active item. No universal
 population cap or global difficulty bonus is inferred. Existing parsed Difficulty
 0/100 hash-equivalence checks still apply only to the engine and the inspected
 map-loader/price-time exclusions; other difficulty effects remain O.
@@ -1128,3 +1186,199 @@ worktree-local ccache. Full CTest passes 27 entries; four absent game-data check
 and the restricted UDP process check skip. All pre-commit gates pass, including
 explicit checks of new files. Private reference parity is not established by
 these synthetic checks or by the independent clone smoke run.
+## L4/L5 comparison instrumentation (2026-10-29, partial task 44)
+
+`--ui-trace` records independent engine render/input observations and commands
+submitted during the UI update. Scripted cursor animation now uses virtual
+frame time. Synthetic controls exercise hover, held press, release, Move target
+submission, Attack hotkey/cursor, attack-move and cancellation, with matching
+traces across repeated runs. The six command buttons currently retain sprite
+frame zero on press; the trace reports their actual hover/highlight/enabled state.
+Production/queue state normalization and reference input semantics remain open.
+
+The private-output-only comparator checks six independently supplied structural
+masks, tolerant RGB metrics, normalized UI states and semantic command order.
+Its synthetic failure controls verify diagnostic behavior, not game parity.
+See [parity.md](parity.md#l4l5-visual-and-interaction-controls-2026-10-29-partial-task-44)
+for schema, coverage, tolerances and limits.
+
+A private clone capture succeeded under dummy SDL in `unshare -rn`. The reference
+probe failed at loopback configuration before launch. Fixed-tick reference
+camera/UI capture, audited identity/command normalization and task 42's common
+runner are absent in this checkout. Matching scene comparison remains blocked;
+UI fidelity remains **P**, with no new M/V reference evidence. Only code,
+invented specifications and the aggregate
+[results table](parity_visual_ui_results.md) belong in the public repository.
+## L1 rule experiment preparation (2026-10-29, partial task 43)
+
+**Construction / synthetic evidence:** 19 P scenario specifications cover siege
+speed, damage/category controls, reload, range and projectile flight, mine build
+time/price/income, sight, regeneration and serial/two-town production. They use
+`docs/PARITY_TEST_PLAN.md` because task 42's harness is absent. Tasks 36/37/40
+are not present in this checkout either. `tools/parity_rules.py` generates
+private placement candidates and attempts isolated launch controls. Its separate
+comparison command reuses the strict normalized comparator, requires two equal
+reference repeats and complete scenario coverage, and stores integer-only
+expectations plus the first clone divergence under ignored `work/parity/`.
+Synthetic CTest controls cover export, differing fields, unstable repeats,
+truncation, private settings/maps, missing-input skip and denied isolation.
+These verify tooling, with no change to simulation rules or V/M/P labels.
+
+**Reference evidence unavailable:** all 19 candidate launch attempts used private
+game copies, immutable resource symlinks, dummy SDL drivers, hard timeouts and
+`unshare -rn`. All failed at loopback setup with a denied netlink socket before
+the runtime launched. Private outputs are in
+`work/parity/l1-isolated-20261029/`. No measured rule, expectation, clone parity
+pass or first semantic difference was obtained. Tick/object/field remain null.
+Generated candidates still require audited commands, AI/tech/money/fog/HP
+controls, town membership and normalized observers. Nonzero mine yields,
+production branches, boundary/faction repeats and flight controls remain open;
+see [the L1 parity record](parity.md#l1-rule-micro-experiments-2026-10-29-partial-task-43)
+and [scenario instructions](../tests/parity/README.md). Task 43 remains partial.
+
+**Local verification:** baseline and final Release configure/build passed with
+`AZTEC_GEN_DIR=` and a worktree-local compiler cache. Final CTest passed 27
+entries; five private-data entries and the restricted UDP process check skipped.
+Pre-commit passed for all tracked files and explicitly for the new scenario,
+tooling and test files using the copied local hook cache. No skipped check is
+counted as a live original-game measurement.
+## V19 campaign coverage update (2026-10-28, partial)
+
+**Engine construction / synthetic evidence:** `tools/playthrough.py` now emits
+an explicit matrix for missions 1 through 15, including missing/unselected data,
+private scenario routes and expected victory/defeat outcomes. Every scenario runs
+twice and retains status, unsupported action sites/executions, static unreachable
+findings, unmet objectives, stalled orders, stderr and crash/wall/tick timeouts.
+Per-tick transcripts include tick zero and report the first differing tick;
+missing, gapped or truncated evidence cannot pass. A third fresh process loads
+the ordinary AZS3 mid-mission save and compares its complete continuation suffix,
+including the saved boundary and terminal outcome, to the uninterrupted run.
+Inherited sight configuration is pinned to each private installation copy.
+
+The renderer-free mode adds tick transcript, save-at-tick and resume options;
+it uses existing content/script/hash verification and command replay. It resumes
+scheduled orders and the automatic exercising policy at absolute mission ticks.
+No simulation rules, player command semantics or outcome conditions were changed.
+Synthetic tests cover all 15 fixtures through victory and saved continuations,
+expected defeat and a separate fresh winning attempt, commands before/after the
+save boundary, mismatched scripts, first differing ticks, malformed/incomplete
+transcripts, missing mission coverage, scenario validation, crashes and timeouts.
+These establish engine consistency, not original-game parity or real Retry UI.
+
+**Private bounded observations:** the 24-tick isolated sweep reached every
+mission with both dummy SDL drivers under `unshare -rn`, private ordinary Maps/
+Saves directories, resource/map symlinks and copied configurations/profiles.
+Paired hashes matched for all 15 missions. Fourteen continued identically from
+tick-12 saves through tick 24; mission 11 ended in defeat at tick 1 before saving.
+No mission won. These are two-second simulation probes, not campaign acceptance;
+source data, transcripts, saves and complete matrices remain under ignored
+`work/v19-private-sweep/`.
+
+A second isolated sweep used a 1,200-tick budget (100 simulated seconds), saves at
+tick 600, and a 15-second wall limit per process. Missions 1, 4, 10 and 11 ended
+in defeat; 2, 3, 5, 6, 7 and 9 reached the tick limit; 8, 12, 13, 14 and 15 exceeded
+the wall limit in both runs. No crashes or victories were reported. All ten
+completed pairs matched every tick. Seven missions (2, 3, 5, 6, 7, 9 and 10) also
+matched fresh-process save continuations; 1, 4 and 11 ended before the save tick.
+The five wall-limited pairs have unverified hash/save evidence; expensive work
+within this host's budget is not proof of a hang. The runner correctly exited
+one. Executable/rules snapshots, paired transcripts, saves and the full matrix
+are retained privately under `work/v19-campaign-sweep/`. These observations use
+the exercising policy, not validated player routes. Immediate mission-11 defeat,
+other lost objectives and expensive missions remain investigation leads, not
+newly diagnosed engine rule defects.
+
+**Reference boundary:** a bounded mission-1 record attempt with the supplied
+read-only reference runtime used a separate private installation with copied map
+files and read-only resource symlinks. Namespace loopback setup failed before
+launch with `Cannot open netlink socket: Operation not permitted`. No command
+recording was produced, so replay and normalized comparison remain unverified.
+Failure logs and navigation input remain under `work/v19-reference/`; required
+isolation was retained. Engine self-comparison cannot replace that missing oracle.
+
+**Remaining dependencies:** V03-V16 are not fully accepted in this checkout.
+The independent harness and inventory above do not require those remaining
+adapters. Successful routes still depend on movement/transport, combat/economy,
+AI, script objective semantics, controls and campaign save/progression behavior.
+The existing audit lists 19 unsupported transport action sites in missions 2,
+7, 9 and 15, plus two missing-trigger warnings in mission 6. General objective
+reachability, player-controllable winning routes, same-input defeat/retry,
+front-end progression/final ending and Linux/Windows interactive acceptance remain
+unverified. Every generated matrix keeps interactive, retry and progression
+acceptance pending. V19 remains open; see [method and full planning matrix](playthrough.md).
+
+**Validation:** Release build and full CTest pass (26 passed, five skipped).
+The skipped entries are four default private-data checks and restricted UDP
+processes. A separate dummy-SDL `unshare -rn` run against a private copy passed
+formats, engine integration and campaign script inventory; original-save import
+skipped because original saves are intentionally excluded. Pre-commit and
+`git diff --check` pass. Neither the synthetic checks nor bounded probes prove
+full campaign completion, reference parity or native Windows behavior.
+
+
+## Task 36: mixed construction and unit queues (2026-10-29)
+
+**Reproduction:** `test_mixed_production_queue` in `engine_unit` failed before the
+fix: construction appeared while earlier unit orders were pending, queued orders
+consumed cash, and pausing town 0 also stopped town 1. It uses invented terrain
+and ordinary public rules tables; it requires no original assets.
+
+**V, inspected reference behavior:** a town owns one active production item and a
+FIFO queue of up to 50 waiting objects. Selecting a different building in the same
+town does not create another production lane. Separate towns progress
+independently. Build admission reserves an item without paying; production tests
+prerequisites and available cash, then charges once at start using that town's
+current speed. An unaffordable head waits. Cancelling a waiting reservation does
+not credit cash. Active pause/resume and active cancellation address a town's
+current item. Active cancellation credits the unbuilt fraction of the recorded
+payment, using completion in 256 parts and integer truncation. Evidence anchors:
+town production `0x459bb0`, admission `0x45cec0`, waiting cancellation `0x45cfd0`,
+active cancellation `0x45a880`, timer accessors `0x40a480..0x40a4db`, and packet
+0x21/0x22 dispatch in `0x4577b0`. These are behavioral facts from private inspection;
+no executable-derived implementation or data has been added to the repository.
+
+**Independent implementation:** map construction, automatic structures, hall
+upgrades and units use one town-owned queue. Waiting map placements reserve their
+footprints, but create a live incomplete building only when payment succeeds.
+The active item keeps its original paid price and duration across later speed
+changes. Pausing it holds subsequent items in that town. Cancellation releases
+its type/placement reservation, removes live incomplete construction and its
+navigation blocker, and returns only its unbuilt payment. Destroyed construction
+is discarded without a cancellation refund. Menus permit unpaid orders; the
+scheduler rechecks affordability/prerequisites before starting. The panel admits
+50 waiting items, scrolls over all entries, pauses the selected town, and shows
+waiting/paused state and the refundable amount. Command fields are engine
+conventions documented in `commands.hpp`, not reference packet compatibility.
+New item state participates in the deterministic hash. Save replay version is 3;
+older engine saves are rejected rather than silently replaying different rules.
+
+**Synthetic checks:** mixed building/unit ordering through different members of
+one town, independent towns, FIFO cash stalls, unpaid cancellation, partial active
+refunds without double credit, construction pause/cancel and released footprint,
+speed selection at start, active/waiting capacity, UI admission and cancellation
+beyond slot eight, new-state hash sensitivity and command-log replay. Existing
+upgrade save/replay and AI checks cover the new payment timing.
+
+**Limits:** the engine still uses countdown completion; the reference increments
+structure HP or mobile training work. Exact start/completion ticks, damage during
+construction, hall-upgrade HP transitions, automatic placement and spawn locations
+remain unresolved. Refund quantization follows the inspected rule using the
+engine's countdown progress; this is not live timing/HP parity. A completed item
+leaves its successor to the next engine tick. Shared-cash town arbitration retains
+stable storage order pending measurements. No normalized reference observer or
+successful record/replay control is available in this checkout.
+
+The isolated reference attempt used the supplied read-only runtime, a private game
+copy, dummy SDL drivers and `unshare -rn` through `tools/zstat_run.sh`. It failed
+before launch at loopback setup with `Cannot open netlink socket: Operation not
+permitted`; inputs and failure output are under ignored `work/queue-reference/`.
+It establishes no live queue parity and was not rerun outside isolation.
+
+**Validation:** Release configure/build, all 26 runnable CTests and all pre-commit
+hooks passed. Four private-data entries and the restricted UDP process test skipped
+in the default 31-entry suite. Separate `test_formats` and `test_engine` runs
+passed against the private installation copy under dummy SDL and `unshare -rn`.
+A bounded engine mission 1 smoke run exited successfully with no script execution
+errors, ending in defeat at tick 1196 of a 1200-tick limit; it is neither a winning
+route nor a reference comparison. These results do not close the live timing/HP
+and reference observer dependencies above.
