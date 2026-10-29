@@ -281,6 +281,13 @@ if(Python3_Interpreter_FOUND)
 endif()
 
 # Synthetic UI captures stay in the build tree; no original screenshots are fixtures.
+add_executable(test_mouse_grab tests/test_mouse_grab.cpp)
+target_link_libraries(test_mouse_grab PRIVATE aztec_engine_lib)
+aztec_warnings(test_mouse_grab)
+add_test(NAME mouse_grab COMMAND test_mouse_grab)
+set_tests_properties(mouse_grab PROPERTIES LABELS "unit" TIMEOUT 10
+  ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+
 add_executable(test_ui_screenshots tests/test_ui_screenshots.cpp)
 target_link_libraries(test_ui_screenshots PRIVATE aztec_engine_lib)
 target_compile_definitions(test_ui_screenshots PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data")

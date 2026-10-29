@@ -177,6 +177,8 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
     }
 
     Input in;
+    in.focused = (SDL_GetWindowFlags(win.sdl()) & SDL_WINDOW_INPUT_FOCUS) != 0;
+    in.mouse_inside = (SDL_GetWindowFlags(win.sdl()) & SDL_WINDOW_MOUSE_FOCUS) != 0;
     PlaytestScript playtest;
     bool pt = false;
     if (!o.script.empty()) {
@@ -260,7 +262,10 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         if (!req.shot.empty()) pending_shot = req.shot;
         if (!more || req.quit) in.quit = true;
       } else {
-        while (SDL_PollEvent(&e)) in.handle(e, sx, sy);
+        while (SDL_PollEvent(&e)) {
+          win.handle_event(e);
+          in.handle(e, sx, sy);
+        }
       }
       win.output_size(ow, oh);
       int ui = std::max(2, int(std::lround(oh / 360.0)));
@@ -424,6 +429,9 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
           if (!readable || ec || !progress.save(path)) notify("Campaign progress could not be saved");
         }
       }
+      win.set_gameplay_active(!pt && o.screenshot.empty() && !in.quit && !leave &&
+          !pause.open && !submodal && !briefing.open && !audio_options.open &&
+          world.outcome == kRunning && !paused && !(game && game->paused()));
       // Camera input.
       CameraInput ci;
       bool nokeys = in.ctrl;
@@ -441,11 +449,9 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       ci.zoom_pivot_y = on_mm || ci.zoom_steps == 0 || in.wheel == 0 ? oh / 2.f : float(in.my);
       int edge_dx = 0, edge_dy = 0;
       if (!pause.open && !submodal && world.outcome == kRunning && edge && o.screenshot.empty() && in.focused && in.mouse_inside && !drag_minimap) {
-        int z = std::max(2, ui);
-        if (in.mx < z) edge_dx = -1;
-        if (in.mx >= ow - z) edge_dx = 1;
-        if (in.my < z) edge_dy = -1;
-        if (in.my >= oh - z) edge_dy = 1;
+        const SDL_Point direction = in.edge_scroll(ow, oh, std::max(2, ui));
+        edge_dx = direction.x;
+        edge_dy = direction.y;
         ci.move_x += edge_dx;
         ci.move_y += edge_dy;
       }
@@ -466,7 +472,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         selection_input.shift = cmdui.action_down(in, "Add");
         selui.update(selection_input, world, cam, alpha, in_world && !consumed && !cmdui.wants_left_click());
       }
-      cam.update(ci, float(std::min(dt, 0.1)));
+      if (in.focused && !in.alt && !pause.open) cam.update(ci, float(std::min(dt, 0.1)));
       if (drag_minimap) {
         int mx = std::clamp(in.mx, minimap.rect().x, minimap.rect().x + minimap.rect().w - 1);
         int my = std::clamp(in.my, minimap.rect().y, minimap.rect().y + minimap.rect().h - 1);
@@ -575,6 +581,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       }
     }
     if (pt && playtest.failures() > 0) playtest_failed = true;
+    win.set_gameplay_active(false);
   }
   if (audio) { audio->stop_music(); audio->stop_effects(); }
   return exit_reason;
@@ -599,6 +606,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
     WindowOptions wo = o.window;
     wo.title = "Aztec Empire";
     if (!win.create(wo)) { SDL_Quit(); return 1; }
+    win.set_mouse_grab_enabled(o.mouse_grab);
     Options opts = o;
     opts.menu_session = o.menu || o.menu_session;
     std::string spec = o.mission;

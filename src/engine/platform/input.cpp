@@ -44,9 +44,15 @@ void Input::handle(const SDL_Event& e, float sx, float sy) {
       switch (e.window.event) {
         case SDL_WINDOWEVENT_FOCUS_GAINED: focused = true; break;
         case SDL_WINDOWEVENT_FOCUS_LOST:
+        case SDL_WINDOWEVENT_MINIMIZED:
           focused = false;
           std::memset(key_down, 0, sizeof key_down);
+          std::memset(key_hit, 0, sizeof key_hit);
           std::memset(buttons, 0, sizeof buttons);
+          std::memset(pressed, 0, sizeof pressed);
+          std::memset(released, 0, sizeof released);
+          dx = dy = 0;
+          wheel = 0;
           break;
         case SDL_WINDOWEVENT_ENTER: mouse_inside = true; break;
         case SDL_WINDOWEVENT_LEAVE: mouse_inside = false; break;
@@ -59,6 +65,12 @@ void Input::handle(const SDL_Event& e, float sx, float sy) {
   alt = ks[SDL_SCANCODE_LALT] || ks[SDL_SCANCODE_RALT];
   shift = ks[SDL_SCANCODE_LSHIFT] || ks[SDL_SCANCODE_RSHIFT];
   ctrl = ks[SDL_SCANCODE_LCTRL] || ks[SDL_SCANCODE_RCTRL];
+}
+
+SDL_Point Input::edge_scroll(int width, int height, int margin) const {
+  if (!focused || !mouse_inside || alt || mx < 0 || my < 0 || mx >= width || my >= height) return {0, 0};
+  return {mx < margin ? -1 : mx >= width - margin ? 1 : 0,
+          my < margin ? -1 : my >= height - margin ? 1 : 0};
 }
 
 }  // namespace aztec::engine

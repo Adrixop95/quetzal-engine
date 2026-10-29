@@ -23,6 +23,10 @@ class Window {
   DisplayMode mode() const { return mode_; }
   void cycle_borderless();    // F11
   void toggle_fullscreen();   // Alt+Enter
+  void handle_event(const SDL_Event& event);
+  void set_gameplay_active(bool active);
+  void set_mouse_grab_enabled(bool enabled);
+  bool mouse_grab_enabled() const { return mouse_grab_enabled_; }
   void set_title(const std::string& t) { SDL_SetWindowTitle(win_, t.c_str()); }
 
   SDL_Window* sdl() const { return win_; }
@@ -38,6 +42,11 @@ class Window {
   SDL_Renderer* ren_ = nullptr;
   DisplayMode mode_ = DisplayMode::Windowed;
   bool vsync_ = false;
+  bool mouse_grab_enabled_ = true;
+  bool gameplay_active_ = false;
+  bool focused_ = false;
+  bool left_alt_ = false, right_alt_ = false;
+  void apply_mouse_grab();
 };
 
 }  // namespace aztec::engine

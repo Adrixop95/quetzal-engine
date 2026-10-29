@@ -598,7 +598,9 @@ bool GameSim::menu_ok(const World& w, int side, const BuildItem& it, int town, c
         if (q.town == town && upgrade_level(td.race, q.type) >= 0) { *why = "upgrade queued"; return false; }
     }
   }
-  if (rules_->type(it.type).structure) {
+  // Only map-construction entries reserve a single structure of their type.
+  // Queued farms, mines and defences remain repeatable; upgrades have their own guard above.
+  if (it.construct) {
     for (const Object& o : w.objects)
       if (!o.removed && o.alive && o.side == side && o.town == td.index && o.type == it.type) {
         *why = "already built"; return false;
