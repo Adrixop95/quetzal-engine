@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Quetzal L0 parity scenario version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "layer",
+    "map",
+    "setup",
+    "input",
+    "observe",
+    "tolerance",
+    "evidence"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1,
+      "type": "integer"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "layer": {
+      "enum": [
+        "L0",
+        "L1",
+        "L2",
+        "L3",
+        "L4",
+        "L5",
+        "L6",
+        "L7",
+        "L8"
+      ]
+    },
+    "map": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "mission"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "synthetic",
+            "campaign"
+          ]
+        },
+        "mission": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 15
+        }
+      }
+    },
+    "setup": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sides": {},
+        "money": {},
+        "objects": {},
+        "tech": {}
+      }
+    },
+    "input": {
+      "type": "array"
+    },
+    "observe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "first_tick",
+        "last_tick",
+        "fields",
+        "contract"
+      ],
+      "properties": {
+        "first_tick": {
+          "const": 1,
+          "type": "integer"
+        },
+        "last_tick": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "contract": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "tolerance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exact"
+      ],
+      "properties": {
+        "exact": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "evidence": {
+      "enum": [
+        "V",
+        "M",
+        "P"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "map": {
+            "properties": {
+              "kind": {
+                "const": "synthetic"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "layer": {
+            "const": "L0"
+          },
+          "evidence": {
+            "const": "P"
+          },
+          "observe": {
+            "properties": {
+              "contract": {
+                "const": "synthetic-l0-v1"
+              }
+            }
+          },
+          "setup": {
+            "type": "object",
+            "required": [
+              "objects"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "objects": {
+                "type": "object",
+                "propertyNames": {
+                  "minLength": 1
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          },
+          "input": {
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "tick",
+                "object",
+                "set"
+              ],
+              "properties": {
+                "tick": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "object": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "set": {
+                  "type": "object",
+                  "minProperties": 1,
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$comment": "The dependency-free loader additionally checks exact object field coverage, object references, ordered input ticks and the scenario horizon. Campaign setup and input are reserved specifications and block execution when nonempty."
+}

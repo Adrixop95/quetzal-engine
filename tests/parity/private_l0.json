@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "id": "private_l0",
+  "layer": "L0",
+  "map": {"kind": "campaign", "mission": 1},
+  "setup": {},
+  "input": [],
+  "observe": {"first_tick": 1, "last_tick": 12, "fields": ["hp", "side", "type", "x", "y"], "contract": "engine-index-v1"},
+  "tolerance": {"exact": true},
+  "evidence": "P"
+}

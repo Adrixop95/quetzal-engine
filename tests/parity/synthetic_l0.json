@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "id": "synthetic_l0",
+  "layer": "L0",
+  "map": {"kind": "synthetic", "mission": 1},
+  "setup": {"objects": {"fixture:0": {"hp": 100, "x": 0, "y": 0}}},
+  "input": [
+    {"tick": 2, "object": "fixture:0", "set": {"x": 10}},
+    {"tick": 3, "object": "fixture:0", "set": {"hp": 90}}
+  ],
+  "observe": {"first_tick": 1, "last_tick": 4, "fields": ["hp", "x", "y"], "contract": "synthetic-l0-v1"},
+  "tolerance": {"exact": true},
+  "evidence": "P"
+}

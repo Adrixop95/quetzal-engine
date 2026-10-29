@@ -1092,3 +1092,39 @@ save fixture was absent. These installed-data checks do not establish live
 reference gameplay. A read-only recount of the 15 `mission_N.mp` files found
 49 Difficulty keys: 46 zero, two 75 and one 100, consistent with retaining the
 key as metadata rather than deriving a bonus table. Changes remain uncommitted.
+## L0 parity harness (2026-10-29)
+
+**Construction / synthetic evidence:** `tools/parity_run.py` validates versioned
+JSON specifications in `tests/parity/`, selects IDs/`--all`/`--layer`, lists
+without launching, skips absent private inputs and retains private observations
+and first-divergence reports under ignored `work/parity/`. The common integer
+JSONL comparator validates complete coverage and reports tick, object and field
+with explicit lifecycle/field/error categories. See [parity.md](parity.md) and
+[the scenario schema](parity_scenario.schema.json) for supported semantics.
+
+The headless engine can emit live-object HP, side, UGI type and fixed-point
+positions before each tick's commands/update. Its IDs are engine-local;
+`engine-index-v1` documents their units, lifecycle and tick origin without
+claiming an original identity mapping. CTest `parity_scenarios` checks two mocked
+runners, schema and selection failures, private skip behavior, first-difference
+ordering, lifecycle, malformed coverage/contracts, namespace/error propagation
+and actual engine observations from an invented installation. These are tooling
+checks; no simulation P/M/V label changes.
+
+**Private evidence and dependencies:** a bounded run with the supplied read-only
+installation/runtime, separate private game copies, dummy SDL and `unshare -rn`
+completed the clone's 12-tick horizon. Reference loopback setup failed with
+`Cannot open netlink socket: Operation not permitted` before runtime launch;
+the combined scenario reports `experiment_failed`. Details stay in
+`work/parity/l0-private-20261029/`. There is no measured original observation or
+semantic divergence. The audited reference normalization/identity observer and
+packet translator from task 01 are absent. Nonempty private setup/input/replay,
+unsupported layers and incompatible normalization remain explicitly blocked.
+L0 runner/schema/comparator work and synthetic checks are implemented independently
+of those missing prerequisites; whole-game/reference parity remains open.
+
+Validation: baseline and final Release builds pass with `AZTEC_GEN_DIR=` and a
+worktree-local ccache. Full CTest passes 27 entries; four absent game-data checks
+and the restricted UDP process check skip. All pre-commit gates pass, including
+explicit checks of new files. Private reference parity is not established by
+these synthetic checks or by the independent clone smoke run.
