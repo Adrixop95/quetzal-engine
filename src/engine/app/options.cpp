@@ -45,6 +45,7 @@ const char* usage_text() {
          "  --sfx-volume V --music-volume V --speech-volume V   independent volumes 0..1\n"
          "  --no-acknowledgement --no-subtitles   suppress confirmations or captions\n"
          "  --no-edge-scroll   disable edge scrolling;  --no-hud  hide the info overlay;  --help-overlay  show key help\n"
+         "  --no-mouse-grab    start with cursor confinement disabled (F9 toggles it)\n"
          "  --palette N --shade N   terrain palette/shade override\n"
          "  --screenshot FILE.png  render --frames N frames (default 5), save PNG and exit\n"
          "  --ticks N          run N simulation ticks before the first frame\n"
@@ -84,6 +85,7 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     }
     else if (a == "--wander") o.wander = true;
     else if (a == "--no-edge-scroll") o.edge_scroll = false;
+    else if (a == "--no-mouse-grab") o.mouse_grab = false;
     else if (a == "--no-hud") o.hud = false;
     else if (a == "--no-fog") o.fog = false;
     else if (a == "--rules-dir") { if (!next(v)) return false; o.rules_dir = v; }

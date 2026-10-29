@@ -1,0 +1,79 @@
+{
+  "id": "l1_queue_two_towns",
+  "layer": "L1",
+  "map": {
+    "template": "mission_1",
+    "generator": "make_zstat",
+    "passability": "clear_interior",
+    "resources": "empty_control"
+  },
+  "setup": {
+    "sides": [
+      0,
+      1
+    ],
+    "money": 10000,
+    "preplaced_objects": [
+      {
+        "id": "hall_a",
+        "type": 10,
+        "x": 16,
+        "y": 16,
+        "side": 0
+      },
+      {
+        "id": "workshop_a",
+        "type": 20,
+        "x": 22,
+        "y": 16,
+        "side": 0
+      },
+      {
+        "id": "hall_b",
+        "type": 10,
+        "x": 50,
+        "y": 40,
+        "side": 0
+      },
+      {
+        "id": "workshop_b",
+        "type": 20,
+        "x": 56,
+        "y": 40,
+        "side": 0
+      }
+    ],
+    "tech": "record_and_hold_constant",
+    "controls": [
+      "Requires audited town membership; generated Town sections are only placement candidates.",
+      "Measure each town independently with matching level, money and speed; retain the single-town control."
+    ]
+  },
+  "input": [
+    {
+      "tick": 12,
+      "command": "queue",
+      "town": "hall_a",
+      "type": 4
+    },
+    {
+      "tick": 12,
+      "command": "queue",
+      "town": "hall_b",
+      "type": 4
+    }
+  ],
+  "observe": {
+    "first_tick": 1,
+    "last_tick": 720,
+    "fields": [
+      "queue_length",
+      "remaining",
+      "spawn_count",
+      "money"
+    ]
+  },
+  "tolerance": 0,
+  "evidence": "P",
+  "mechanic": "build_time"
+}

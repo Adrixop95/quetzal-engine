@@ -1,0 +1,59 @@
+{
+  "id": "l1_range_hopcannon",
+  "layer": "L1",
+  "map": {
+    "template": "mission_1",
+    "generator": "make_zstat",
+    "passability": "clear_interior",
+    "resources": "empty_control"
+  },
+  "setup": {
+    "sides": [
+      0,
+      1
+    ],
+    "money": 10000,
+    "preplaced_objects": [
+      {
+        "id": "source",
+        "type": 87,
+        "x": 16,
+        "y": 16,
+        "side": 0
+      },
+      {
+        "id": "target",
+        "type": 14,
+        "x": 24,
+        "y": 16,
+        "side": 1
+      }
+    ],
+    "tech": "record_and_hold_constant",
+    "controls": [
+      "Repeat in separate maps at successively smaller and larger separations.",
+      "Measure final source position and footprint distance; acquisition is separate from weapon range."
+    ]
+  },
+  "input": [
+    {
+      "tick": 12,
+      "command": "attack",
+      "object": "source",
+      "target": "target"
+    }
+  ],
+  "observe": {
+    "first_tick": 1,
+    "last_tick": 720,
+    "fields": [
+      "x",
+      "y",
+      "shot_count",
+      "hp"
+    ]
+  },
+  "tolerance": 0,
+  "evidence": "P",
+  "mechanic": "range"
+}
