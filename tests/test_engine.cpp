@@ -1535,7 +1535,7 @@ static void test_town_production() {
     Command buy; buy.type = Pct::Build; buy.a = type; buy.ids = {1}; buy.b = -999; buy.c = -999;
     sim.submit(buy); sim.submit(buy); production_steps(sim, w, 1);
     CHECK(w.side_state[0].queue.size() == 2 && w.side_state[0].queue[0].paid == m.price);
-    CHECK(w.side_state[0].money == 10000 - 2 * m.price);
+    CHECK(w.side_state[0].money == 10000 - m.price);
     CHECK(w.objects.size() == fresh.objects.size() && item(sim, w, 0, type).enabled);
     production_steps(sim, w, m.time - 2);
     CHECK(w.objects.size() == fresh.objects.size());
@@ -1567,7 +1567,7 @@ static void test_town_production() {
     CHECK(replay->state_hash(fresh) == sim.state_hash(w));
   }
 
-  // Repeatable structures still obey the per-town queue capacity and charge only accepted requests.
+  // Repeatable structures obey the per-town queue capacity; only the started (first) item is charged, waiting orders are unpaid.
   World capacity = production_world();
   capacity.side_state.resize(8); capacity.side_state[0].money = 100000;
   production_object(capacity, 11, 0, 10, 10); capacity.objects[0].town_hall = true;
@@ -1579,12 +1579,12 @@ static void test_town_production() {
   for (int i = 0; i < 51; ++i) capacity_sim.submit(mine);
   production_steps(capacity_sim, capacity, 1);
   CHECK(capacity.side_state[0].queue.size() == 50);
-  CHECK(capacity.side_state[0].money == 100000 - 50 * mine_price);
+  CHECK(capacity.side_state[0].money == 100000 - mine_price);
   Command cancel_mine; cancel_mine.type = Pct::QueueKill;
   capacity_sim.submit(cancel_mine); capacity_sim.submit(mine);
   production_steps(capacity_sim, capacity, 1);
   CHECK(capacity.side_state[0].queue.size() == 50);
-  CHECK(capacity.side_state[0].money == 100000 - 50 * mine_price);
+  CHECK(capacity.side_state[0].money == 100000 - mine_price);
 
   // A blocked map retains the completed queue item; cancellation releases it.
   World blocked = production_world();
