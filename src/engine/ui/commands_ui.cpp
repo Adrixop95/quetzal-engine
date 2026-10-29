@@ -284,6 +284,20 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
     }
     right_moved_ = false;
   }
+  const int selected_town = production_town(w);
+  if (queue_town_ != selected_town) { queue_town_ = selected_town; queue_offset_ = 0; }
+  auto visible_queue = production_queue(w, selected_town);
+  queue_offset_ = std::clamp(queue_offset_, 0, std::max(0, int(visible_queue.size()) - 8));
+  if (in.wheel != 0 && panel.w > 0) {
+    auto boxes = layout(panel, std::max(1, panel.w / 204));
+    bool over_queue = contains(boxes.pause, in.mx, in.my);
+    for (const auto& box : boxes.queue) over_queue |= contains(box, in.mx, in.my);
+    if (over_queue) {
+      queue_offset_ = std::clamp(queue_offset_ + (in.wheel < 0 ? 8 : -8), 0,
+                               std::max(0, int(visible_queue.size()) - 8));
+      return true;
+    }
+  }
   if (!in.pressed[SDL_BUTTON_LEFT]) return false;
   if ((in_world || mm.contains(in.mx, in.my)) && mode_ != TargetMode::None) {
     float wx, wy;
@@ -314,6 +328,9 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
   for (size_t i = 0; i < l.commands.size(); i++) if (contains(l.commands[i], in.mx, in.my)) activate(PanelAction(i), w);
   int town = production_town(w);
   auto queue = production_queue(w, town);
+  const int waiting = int(std::count_if(queue.begin(), queue.end(), [&](size_t i) {
+    return !w.side_state[w.local_side].queue[i].started;
+  }));
   auto items = sim_->menu(w, w.local_side, town);
   int count = int(l.production.size()), pages = std::max(1, (int(items.size()) + count - 1) / count);
   page_ = std::clamp(page_, 0, pages - 1);
@@ -322,7 +339,7 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
   for (int i = 0; i < count && page_ * count + i < int(items.size()); i++) {
     const auto& m = items[size_t(page_ * count + i)];
     if (contains(l.production[size_t(i)], in.mx, in.my) && m.enabled &&
-        (m.construct || queue.size() < 8)) {
+        waiting < kProductionQueueCapacity) {
       cancel_mode();
       if (m.construct) { placing_ = m.type; placing_member_ = production_member(w, town); }
       else {
@@ -334,11 +351,15 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
   }
   if (w.local_side >= 0 && w.local_side < int(w.side_state.size())) {
     const SideState& ss = w.side_state[w.local_side];
-    if (!ss.queue.empty() && contains(l.pause, in.mx, in.my)) {
-      Command c; c.type = Pct::PauseBuild; c.side = uint8_t(w.local_side); c.a = !ss.build_paused; sim_->submit(c);
+    if (!queue.empty() && ss.queue[queue.front()].started && contains(l.pause, in.mx, in.my)) {
+      Command c; c.type = Pct::PauseBuild; c.side = uint8_t(w.local_side);
+      c.a = !ss.queue[queue.front()].paused;
+      if (auto id = production_member(w, town)) c.ids = {id};
+      sim_->submit(c);
     }
-    for (size_t i = 0; i < queue.size() && i < l.queue.size(); i++) if (contains(l.queue[i], in.mx, in.my)) {
-      Command c; c.type = Pct::QueueKill; c.side = uint8_t(w.local_side); c.a = int(queue[i]); sim_->submit(c);
+    for (size_t i = 0; i + queue_offset_ < queue.size() && i < l.queue.size(); i++) if (contains(l.queue[i], in.mx, in.my)) {
+      Command c; c.type = Pct::QueueKill; c.side = uint8_t(w.local_side);
+      c.a = int(queue[i + queue_offset_]); sim_->submit(c);
     }
   }
   return true;
@@ -403,6 +424,9 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
   }
   int town = production_town(w);
   auto queue = production_queue(w, town);
+  const int waiting = int(std::count_if(queue.begin(), queue.end(), [&](size_t i) {
+    return !w.side_state[w.local_side].queue[i].started;
+  }));
   auto items = sim_->menu(w, w.local_side, town);
   int count = int(l.production.size()), pages = std::max(1, (int(items.size()) + count - 1) / count);
   int page = std::clamp(page_, 0, pages - 1);
@@ -416,7 +440,7 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
   for (int i = 0; i < count && page * count + i < int(items.size()); i++) {
     const MenuItem& m = items[size_t(page * count + i)];
     const SDL_Rect& rect = l.production[size_t(i)];
-    bool full = !m.construct && queue.size() >= 8;
+    bool full = waiting >= kProductionQueueCapacity;
     bool enabled = m.enabled && !full;
     draw_icon(m.type, false, rect, enabled);
     border(r, rect, (enabled && contains(rect, mx, my)) || placing_ == m.type);
@@ -429,17 +453,21 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
     }
   }
   if (ss) {
-    font.draw(r, l.pause.x, l.pause.y, ss->queue.empty() ? "Queue empty" : ss->build_paused ? "Resume all towns" : "Pause all towns", ts, {220, 225, 185, 255});
-    if (!ss->queue.empty() && contains(l.pause, mx, my)) tip = ss->build_paused ? "Resume all towns" : "Pause all towns";
-    for (size_t i = 0; i < queue.size() && i < l.queue.size(); i++) {
-      const QueueItem& q = ss->queue[queue[i]];
+    const QueueItem* active = !queue.empty() && ss->queue[queue.front()].started ? &ss->queue[queue.front()] : nullptr;
+    const char* label = queue.empty() ? "Queue empty" : !active ? "Waiting for production" :
+                        active->paused ? "Resume town" : "Pause town";
+    font.draw(r, l.pause.x, l.pause.y, label, ts, {220, 225, 185, 255});
+    if (!queue.empty() && contains(l.pause, mx, my)) tip = std::string(label) + "\nScroll to view waiting orders";
+    const size_t offset = queue_town_ == town ? size_t(std::clamp(queue_offset_, 0, std::max(0, int(queue.size()) - 8))) : 0;
+    for (size_t i = 0; i + offset < queue.size() && i < l.queue.size(); i++) {
+      const QueueItem& q = ss->queue[queue[i + offset]];
       const SDL_Rect& rect = l.queue[i];
       draw_icon(q.type, false, rect);
       int pct = std::clamp(100 - q.remaining * 100 / std::max(1, q.total), 0, 100);
       SDL_Rect bar{rect.x, rect.y + rect.h - 3 * sc, rect.w * pct / 100, 3 * sc};
       SDL_SetRenderDrawColor(r, 90, 210, 90, 255); SDL_RenderFillRect(r, &bar);
       border(r, rect, contains(rect, mx, my));
-      if (contains(rect, mx, my)) tip = type_display_name(strings, q.type) + " " + std::to_string(pct) + "%\nTime remaining: " + std::to_string(q.remaining) + "\nClick to cancel; refund: " + std::to_string(q.paid);
+      if (contains(rect, mx, my)) tip = type_display_name(strings, q.type) + " " + std::to_string(pct) + "%\nTime remaining: " + std::to_string(q.remaining) + "\nClick to cancel; refund: " + std::to_string(q.refund()) + (q.paused ? "\nPaused" : !q.started ? "\nWaiting; unpaid" : "") + "\nScroll to view waiting orders";
     }
   }
   if (wants_left_click() && tip.empty()) tip = placing_ >= 0 ? "Place building: click terrain\nRight-click or Escape cancels" : mode_ == TargetMode::Move ? "Move: click a destination\nRight-click or Escape cancels" : "Attack: click enemy or terrain\nRight-click or Escape cancels";

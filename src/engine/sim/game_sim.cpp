@@ -466,7 +466,18 @@ void GameSim::apply(World& w, const Command& c) {
           if (std::find(g.begin(), g.end(), o->id) == g.end()) g.push_back(o->id);
       }
       break;
-    case Pct::PauseBuild: if (ss) ss->build_paused = c.a != 0; break;
+    case Pct::PauseBuild: {
+      if (!ss || c.a < 0 || c.a > 2) break;
+      int town = producing_town(w, c.side, c.ids);
+      for (size_t i = 0; i < ss->queue.size(); ++i) {
+        auto& q = ss->queue[i];
+        if (q.town != town || !q.started) continue;
+        if (c.a == 2) cancel_production(w, *ss, i);
+        else q.paused = c.a == 1;
+        break;
+      }
+      break;
+    }
     case Pct::BuildMode: {
       int ti = producing_town(w, c.side, c.ids);
       if (ti >= 0 && ti < int(w.town_speed.size()) && c.a >= 0 && c.a <= 2) w.town_speed[ti] = c.a;
@@ -474,8 +485,7 @@ void GameSim::apply(World& w, const Command& c) {
     }
     case Pct::QueueKill:
       if (ss && c.a >= 0 && c.a < int(ss->queue.size())) {
-        ss->money += ss->queue[size_t(c.a)].paid;  // refund (placeholder: full)
-        ss->queue.erase(ss->queue.begin() + c.a);
+        cancel_production(w, *ss, size_t(c.a));
       }
       break;
     case Pct::Build: {
@@ -487,20 +497,13 @@ void GameSim::apply(World& w, const Command& c) {
       const MenuItem* mi = nullptr;
       for (const MenuItem& m : items) if (m.type == c.a) mi = &m;
       if (!mi || !mi->enabled) break;
-      if (mi->construct) {
-        if (c.b < 0 || c.c < 0 || c.b >= w.terrain.w || c.c >= w.terrain.h) break;
-        if (!can_place(w, c.side, c.a, c.b, c.c, &why)) break;
-        ss->money -= mi->price;
-        if (ti >= 0 && ti < int(w.ai_towns.size())) w.ai_towns[ti].spent += mi->price;
-        uint32_t id = spawn(w, c.a, c.side, c.b * kTilePx + kTilePx / 2, c.c * kTilePx + kTilePx / 2, 0, true);
-        w.find_mut(id)->town = w.mission.towns[size_t(ti)].index;
-        w.find_mut(id)->build_total = std::max(1, mi->time);
-      } else if (std::count_if(ss->queue.begin(), ss->queue.end(),
-                               [ti](const QueueItem& q) { return q.town == ti; }) < 50) {
-        ss->money -= mi->price;
-        if (ti >= 0 && ti < int(w.ai_towns.size())) w.ai_towns[ti].spent += mi->price;
-        ss->queue.push_back({c.a, std::max(1, mi->time), std::max(1, mi->time), ti, mi->price});
-      }
+      if (std::count_if(ss->queue.begin(), ss->queue.end(),
+                        [ti](const QueueItem& q) { return q.town == ti && !q.started; }) >= kProductionQueueCapacity) break;
+      if (mi->construct && (c.b < 0 || c.c < 0 || c.b >= w.terrain.w || c.c >= w.terrain.h ||
+                            !can_place(w, c.side, c.a, c.b, c.c, &why))) break;
+      QueueItem q{c.a, std::max(1, mi->time), std::max(1, mi->time), ti, 0};
+      if (mi->construct) { q.tile_x = c.b; q.tile_y = c.c; }
+      ss->queue.push_back(q);
       break;
     }
     default: break;
@@ -577,7 +580,7 @@ void GameSim::service_towns(World& w) {
 
 // ---- economy -----------------------------------------------------------------------------------------------------
 
-bool GameSim::menu_ok(const World& w, int side, const BuildItem& it, int town, const char** why) const {
+bool GameSim::menu_ok(const World& w, int side, const BuildItem& it, int town, const char** why, const QueueItem* reservation) const {
   const SideDef* sd = nullptr;
   for (const SideDef& s : w.mission.sides) if (s.index == side) sd = &s;
   if (sd && std::find(sd->disabled.begin(), sd->disabled.end(), it.type) != sd->disabled.end()) { *why = "disabled"; return false; }
@@ -595,7 +598,7 @@ bool GameSim::menu_ok(const World& w, int side, const BuildItem& it, int town, c
     if (level >= 0) {
       if (level <= td.type) { *why = "already developed"; return false; }
       for (const auto& q : w.side_state[side].queue)
-        if (q.town == town && upgrade_level(td.race, q.type) >= 0) { *why = "upgrade queued"; return false; }
+        if (&q != reservation && q.town == town && upgrade_level(td.race, q.type) >= 0) { *why = "upgrade queued"; return false; }
     }
   }
   if (rules_->type(it.type).structure) {
@@ -604,7 +607,7 @@ bool GameSim::menu_ok(const World& w, int side, const BuildItem& it, int town, c
         *why = "already built"; return false;
       }
     for (const auto& q : w.side_state[side].queue)
-      if (q.town == town && q.type == it.type) { *why = "already queued"; return false; }
+      if (&q != reservation && q.town == town && q.type == it.type) { *why = "already queued"; return false; }
   }
   return true;
 }
@@ -629,16 +632,13 @@ std::vector<MenuItem> GameSim::menu(const World& w, int side, int town) const {
     m.time = production_value(r.time, t.type, speed, computer, hostile_all, true);
     const char* why = "";
     m.enabled = menu_ok(w, side, it, ti, &why);
-    if (m.enabled && (side < 0 || side >= int(w.side_state.size()) || w.side_state[side].money < m.price)) {
-      m.enabled = false; why = "no gold";
-    }
     m.why_not = why;
     out.push_back(m);
   }
   return out;
 }
 
-bool GameSim::can_place(const World& w, int side, int type, int tx, int ty, const char** why) const {
+bool GameSim::can_place(const World& w, int side, int type, int tx, int ty, const char** why, const QueueItem* reservation) const {
   (void)side;
   const TypeRules& r = rules_->type(type);
   int x0, y0, x1, y1;
@@ -649,14 +649,36 @@ bool GameSim::can_place(const World& w, int side, int type, int tx, int ty, cons
         if (why) *why = "blocked";
         return false;
       }
-  (void)w;
+  // Waiting placement orders reserve their footprints without creating live buildings.
+  for (const auto& state : w.side_state) for (const auto& q : state.queue) {
+    if (&q == reservation || q.tile_x < 0 || q.started) continue;
+    int qx0, qy0, qx1, qy1;
+    footprint(rules_->type(q.type), q.tile_x, q.tile_y, qx0, qy0, qx1, qy1);
+    if (x0 <= qx1 && qx0 <= x1 && y0 <= qy1 && qy0 <= y1) {
+      if (why) *why = "reserved";
+      return false;
+    }
+  }
   return true;
 }
 
+void GameSim::cancel_production(World& w, SideState& side, size_t index) {
+  const auto q = side.queue[index];
+  const Object* construction = w.find(q.object);
+  if (!q.object || (construction && construction->alive && !construction->removed)) side.money += q.refund();
+  if (Object* o = w.find_mut(q.object); o && o->alive && !o->removed) {
+    int x0, y0, x1, y1;
+    footprint(rules_->type(o->type), px(o->cur_x) / kTilePx, px(o->cur_y) / kTilePx, x0, y0, x1, y1);
+    nav_.add_block(x0, y0, x1 - x0 + 1, y1 - y0 + 1, -1);
+    o->alive = false; o->removed = true; o->hp = 0;
+  }
+  side.queue.erase(side.queue.begin() + index);
+}
+
 void GameSim::economy(World& w) {
+  std::vector<uint32_t> completed;
   for (size_t s = 0; s < w.side_state.size(); s++) {
     SideState& ss = w.side_state[s];
-    if (ss.build_paused) continue;
     // Storage remains in command insertion order; each town advances only its first item.
     std::vector<int> advanced;
     for (size_t i = 0; i < ss.queue.size();) {
@@ -665,11 +687,51 @@ void GameSim::economy(World& w) {
       advanced.push_back(q.town);
       const Object* hall = town_hall(w, q.town);
       // A missing producer suspends production rather than spawning at the side start.
-      if (!hall || hall->progress < 1000) { ++i; continue; }
+      if (!hall || hall->side != int(s) || hall->progress < 1000) { ++i; continue; }
+      if (!q.started) {
+        const auto& town = w.mission.towns[size_t(q.town)];
+        const char* why = "";
+        bool available = false;
+        for (const auto& recipe : rules_->build_list(town.race, town.type))
+          if (recipe.type == q.type) available = menu_ok(w, int(s), recipe, q.town, &why, &q);
+        if (!available) { ++i; continue; }
+        MenuItem offer;
+        for (const auto& m : menu(w, int(s), q.town)) if (m.type == q.type) offer = m;
+        if (ss.money < offer.price) { ++i; continue; }
+        if (q.tile_x >= 0 && !can_place(w, int(s), q.type, q.tile_x, q.tile_y, nullptr, &q)) {
+          ++i; continue;
+        }
+        q.started = true;
+        q.paid = offer.price;
+        q.total = q.remaining = std::max(1, offer.time);
+        ss.money -= q.paid;
+        if (q.town < int(w.ai_towns.size())) w.ai_towns[q.town].spent += q.paid;
+        if (q.tile_x >= 0) {
+          q.object = spawn(w, q.type, int(s), q.tile_x * kTilePx + kTilePx / 2,
+                           q.tile_y * kTilePx + kTilePx / 2, 0, true);
+          auto* o = w.find_mut(q.object);
+          o->town = town.index; o->build_total = q.total;
+        }
+      }
+      if (q.object) {
+        const auto* o = w.find(q.object);
+        if (!o || !o->alive || o->removed) {
+          ss.queue.erase(ss.queue.begin() + i); // destroyed construction has no cancellation refund
+          continue;
+        }
+      }
+      if (q.paused) { ++i; continue; }
       if (q.remaining > 0) --q.remaining;
+      if (auto* o = w.find_mut(q.object)) {
+        o->build_elapsed = q.total - q.remaining;
+        o->progress = std::min(1000, int(int64_t(o->build_elapsed) * 1000 / q.total));
+        o->hp = std::max(1, int(int64_t(o->hp_max) * o->progress / 1000));
+        if (q.remaining == 0) { o->set_anim(kAnimIdle); o->body_tick = -1; }
+      }
       bool finished = false;
       if (q.remaining <= 0) {
-        if (rules_->type(q.type).structure) finished = finish_structure(w, int(s), q);
+        if (q.object) { finished = true; completed.push_back(q.object); }
+        else if (rules_->type(q.type).structure) finished = finish_structure(w, int(s), q);
         else {
           int bx = px(hall->cur_x), by = px(hall->cur_y);
           int fh = rules_->type(hall->type).foot_h;
@@ -688,8 +750,11 @@ void GameSim::economy(World& w) {
   for (Object& o : w.objects) {
     if (o.removed || !o.alive || o.type < 0) continue;
     const TypeRules& r = rules_->type(o.type);
-    if (!r.structure) continue;
+    if (!r.structure || std::find(completed.begin(), completed.end(), o.id) != completed.end()) continue;
     if (o.progress < 1000) {
+      bool queued = false;
+      for (const auto& state : w.side_state) for (const auto& q : state.queue) queued |= q.object == o.id;
+      if (queued) continue;
       o.build_elapsed++;
       o.progress = std::min(1000, o.build_elapsed * 1000 / std::max(1, o.build_total));
       o.hp = std::max(1, int(int64_t(o.hp_max) * o.progress / 1000));
@@ -1229,8 +1294,9 @@ uint64_t GameSim::state_hash(const World& w) const {
   for (const SideState& s : w.side_state) {
     mix(uint32_t(s.selected_tactic));
     mix(s.selected_ids.size()); for (uint32_t id : s.selected_ids) mix(id);
-    mix(uint32_t(s.money)); mix(s.build_paused); mix(s.queue.size());
-    for (const QueueItem& q : s.queue) { mix(uint32_t(q.type)); mix(uint32_t(q.remaining)); mix(uint32_t(q.total)); mix(uint32_t(q.town)); mix(uint32_t(q.paid)); }
+    mix(uint32_t(s.money)); mix(s.queue.size());
+    for (const QueueItem& q : s.queue) { mix(uint32_t(q.type)); mix(uint32_t(q.remaining)); mix(uint32_t(q.total)); mix(uint32_t(q.town)); mix(uint32_t(q.paid));
+      mix(q.started); mix(q.paused); mix(uint32_t(q.tile_x)); mix(uint32_t(q.tile_y)); mix(q.object); }
     for (const auto& g : s.groups) { mix(g.size()); for (uint32_t id : g) mix(id); }
   }
   mix(w.visibility.sides.size());

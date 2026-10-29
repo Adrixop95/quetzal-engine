@@ -165,15 +165,17 @@ static void sparse_towns(std::shared_ptr<const RulesData> rules) {
   if (w.side_state[0].queue.empty()) return;
   auto& q = w.side_state[0].queue.front();
   CHECK(q.type == 12 && q.town == 0);
-  CHECK(w.ai_towns[0].spent > 20000 && w.ai_towns[1].spent == 0);
+  CHECK(w.ai_towns[0].spent == 20000 && q.paid == 0);
   auto phase = w.ai_towns[0].phase;
   w.begin_tick(); sim.tick(w);
   CHECK(w.ai_towns[0].phase == phase); // queued construction suspends the planner
+  CHECK(w.ai_towns[0].spent > 20000 && w.ai_towns[1].spent == 0);
   q.remaining = 1;
   w.begin_tick(); sim.tick(w);
   CHECK(w.side_state[0].queue.empty());
   CHECK(w.objects.back().type == 12 && w.objects.back().town == 4);
-  w.side_state[0].build_paused = true;
+  // Disable new planning while measuring harvest in isolation.
+  w.mission.sides[0].only_comp = false;
   const auto before = w.ai_towns;
   const auto money = w.side_state;
   for (int i = 0; i < kDayTicks; ++i) { w.begin_tick(); sim.tick(w); }
@@ -199,6 +201,8 @@ static void town_orders(std::shared_ptr<const RulesData> rules) {
   CHECK(w.town_speed[0] == 1 && w.town_speed[1] == 2);
   CHECK(w.side_state[0].queue.size() == 2);
   if (w.side_state[0].queue.size() != 2) return;
+  CHECK(w.side_state[0].queue[0].paid == 0 && w.side_state[0].queue[1].paid == 0);
+  w.begin_tick(); sim.tick(w); // charge when production starts, using each town's selected speed
   for (int ti = 0; ti < 2; ++ti) {
     const auto& q = w.side_state[0].queue[size_t(ti)];
     CHECK(q.town == ti && q.type == 12);
