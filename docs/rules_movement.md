@@ -212,7 +212,7 @@ local planning and occupancy constraints described above. Everything in integers
 ### 7.1 Move order (`order_move`)
 1. One flow field from the goal tile (goal blocked -> nearest free; goal unreachable for the first agent -> flood field from the agent and selection of the reachable tile nearest to the goal,
    i.e. what the original did only after the failed wave `FUN_0046ce80`).
-2. **Target slots**: hexagonal grid of points around the goal (spacing `2r + 4 px`), only reachable and without collision with a wall, sorted from the goal; agents and slots are sorted along the direction
+2. **Target slots**: hexagonal grid of points around the goal (spacing `2r + 4 px`), only reachable, without collision with a wall, and connected to the anchor tile centre by a clear disc segment, sorted from the goal; agents and slots are sorted along the direction
    of approach and paired (the front of the group takes the front slots), so nobody waits on an occupied goal point and paths do not cross.
 3. No original-style requester quota: a field is shared per order/class and rebuilt when the grid version changes. Benchmark timings include steering and collision handling, not just field construction.
 
@@ -298,3 +298,59 @@ private-data checks and the socket-restricted process check skipped. The final
 additional class-to-navigation fixture passed in a separate `engine_unit` run.
 All pre-commit hooks passed. These outcomes do not close the reference-dependent
 parts of V05.
+
+## 9. Wall-side destination regression (2026-10-29)
+
+A synthetic 32x30 map reproduces an obstacle/group stall without game data:
+block column 16 through row 25, place 30 radius-18, speed-9 Small agents in
+columns 6..11 and rows 8..12, then command tile (15,10). All positions start at
+tile centres. The destination lattice previously selected five slots across
+the wall. Those tiles are globally reachable around its distant end, but the
+shared flow field terminates at the clicked side. Members following that field
+cannot follow the required detour to their slots and rely on jam recovery and
+arrival beside settled neighbours. At tick 150 only 29/30 had settled.
+
+Slot selection now requires a clear segment for the group's maximum disc radius
+from the final anchor tile centre to each candidate. This keeps the destination
+cluster in the anchor's arrival area and rejects slots across intervening walls.
+The existing nearest-reachable fallback supplies the anchor for unreachable
+orders. Speed, terrain classes, field costs and contact handling are unchanged.
+This is a correction to the engine's slot policy, not a recovered reference
+formation algorithm. The reference's three-tile arrival tolerance and tile
+reservations in sections 2 and 3 remain distinct from this engine policy.
+
+`test_path` checks all 30 destinations stay on the clicked side, wall clearance,
+settlement within 150 ticks, and repeated state hashes. Linking that regression
+against the unchanged mover reproduces the destination and settlement failures.
+A separate 500-tick diagnostic gives final settlement at tick 168 before and
+145 after, total group travel 15,276 versus 12,719 pixels, and 49 versus 20 jam
+window detections. These are engine measurements, not reference observations.
+The 48 existing course/count configurations retain identical hashes and movement
+metrics (656/656 broad-radius arrivals, zero lost); the existing gap1 golden
+hash is unchanged. The wall regression covers a case absent from that matrix.
+
+The fresh reference command was:
+
+```sh
+ZPATH_GAME_DIR=/home/adrox/aztec-re/game \
+ZPATH_RUNTIME=/home/adrox/aztec-re/build/aztec_recomp \
+  sh tools/zpath_run.sh gap1 30 explored work/path-quality/reference-gap1 5
+```
+
+It created a private game copy and selected dummy SDL drivers inside
+`unshare -rn`, then failed with `Cannot open netlink socket: Operation not
+permitted` at loopback setup (exit 1). No reference simulation ran. Historical
+accepted open/gap1 observations in section 5 remain the comparison evidence;
+the unchanged course results preserve that comparison but do not establish
+wall-side formation parity. Successful normalized reference record/replay from
+V02 and the remaining V05 collision/formation measurements are still pending.
+Private diagnostics and the failed probe are under ignored `work/path-quality/`.
+
+Validation: Release build and all 26 runnable CTest entries passed; four
+private-data entries and the restricted UDP process check skipped. All
+pre-commit hooks passed using a copied local cache (remote DNS was unavailable).
+Two independent headless mission-1 smoke runs with a private installation copy,
+dummy SDL and `unshare -rn` produced identical reports through 600 ticks and
+21 commands, with no reported stalled orders. Both stopped at the requested
+horizon with unmet victory conditions; this is neither mission completion nor
+reference movement parity.

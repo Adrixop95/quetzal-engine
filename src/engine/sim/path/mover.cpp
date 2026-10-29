@@ -83,6 +83,10 @@ void MoveSystem::order_move(const u32* ids, int n, Vec2 goal) {
         int tx = floor_div(p.x, kTileFix), ty = floor_div(p.y, kTileFix);
         if (!grid_.in_bounds(tx, ty) || grid_.blocked(tx, ty, strict) || sf.cost(tx, ty) == FlowField::kInf) continue;
         if (grid_.disc_hits(p, maxr, strict)) continue;
+        // A nearby tile across a wall can be globally reachable only by a
+        // long detour. The shared field ends at the anchor, so slots must
+        // belong to its visible arrival area rather than another room.
+        if (!grid_.segment_clear(tile_center(o.goal_cell.x, o.goal_cell.y), p, maxr, strict)) continue;
         slots.push_back(p);
       }
     if ((int)slots.size() >= n || R > 64) break;

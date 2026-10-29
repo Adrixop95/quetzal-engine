@@ -122,6 +122,33 @@ static void test_dynamic_block() {
   CHECK(ff3.cost(5, 10) == c0);
 }
 
+static u64 run_goal_beside_wall() {
+  // Nearby floor on the other side of this wall requires a long detour.
+  // A move to its left face must keep the destination cluster on that face.
+  NavGrid g(32, 30);
+  for (int y = 0; y < 26; ++y) g.set_terrain(16, y, 0);
+  MoveSystem ms(g);
+  std::vector<u32> ids;
+  for (int y = 0; y < 5; ++y) for (int x = 0; x < 6; ++x)
+    ids.push_back(ms.add_agent({(6 + x) * kTileFix + kTileFix / 2,
+                               (8 + y) * kTileFix + kTileFix / 2},
+                              18 * kFix, 9 * kFix, MoveClass::Small));
+  ms.order_move(ids.data(), int(ids.size()), {15 * kTileFix + kTileFix / 2, 10 * kTileFix + kTileFix / 2});
+  for (const Agent& a : ms.agents()) CHECK(a.slot.x < 16 * kTileFix);
+  // A 150-tick budget includes the approach and crowd settling. Previously
+  // slots across the wall delayed final settlement until tick 168.
+  for (int t = 0; t < 150; ++t) ms.tick();
+  int arrived = 0;
+  for (const Agent& a : ms.agents()) {
+    if (a.state == AgentState::Arrived) ++arrived;
+    CHECK(a.pos.x < 16 * kTileFix);
+    CHECK(!g.disc_hits(a.pos, a.radius / 2, a.cls));
+  }
+  if (arrived != int(ids.size())) printf("  wall-side cluster: %d/%zu arrived\n", arrived, ids.size());
+  CHECK(arrived == int(ids.size()));
+  return ms.state_hash();
+}
+
 static void test_random_stress() {
   int total = 0, settled = 0;
   for (int trial = 0; trial < 12; ++trial) {
@@ -150,7 +177,10 @@ static void test_random_stress() {
 }
 
 int main() {
-  test_math(); test_field_vs_astar(); test_no_corner_cut(); test_courses(); test_determinism(); test_unreachable_goal(); test_large_class(); test_dynamic_block(); test_random_stress();
+  test_math(); test_field_vs_astar(); test_no_corner_cut(); test_courses(); test_determinism(); test_unreachable_goal(); test_large_class(); test_dynamic_block();
+  const u64 wall_run = run_goal_beside_wall();
+  CHECK(wall_run == run_goal_beside_wall());
+  test_random_stress();
   printf("%d checks, %d failed\n", g_checks, g_fail);
   return g_fail ? 1 : 0;
 }
