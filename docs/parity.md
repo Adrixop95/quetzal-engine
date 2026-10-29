@@ -6,6 +6,114 @@ The audited packet translation/identity adapters from task `01-oracle-parity` ar
 The script does not translate reference pool hashes into engine hashes or infer
 object fields from a hash mismatch.
 
+## L0 scenario harness
+
+`tools/parity_run.py` selects JSON specifications from `tests/parity/`. The
+version 1 schema is [parity_scenario.schema.json](parity_scenario.schema.json);
+the dependency-free loader also checks field coverage, object references and
+input tick ordering. Duplicate keys, unknown keys, booleans used as integers,
+invalid horizons and unsupported tolerances are rejected.
+
+```sh
+python3 -I tools/parity_run.py --list
+python3 -I tools/parity_run.py synthetic_l0
+python3 -I tools/parity_run.py --all --layer L0
+ctest --test-dir build -R 'parity_(scenarios|controls)' --output-on-failure
+```
+
+IDs select individual scenarios; `--all` selects every specification and `--layer`
+filters L0 through L8. A layer can also select scenarios without `--all`. Listing
+validates specifications without creating output or launching a process. An
+unknown ID, empty selection or invalid specification is a usage failure.
+
+| Key | Version 1 contract |
+| --- | --- |
+| `schema`, `id`, `layer` | Version 1; unique lowercase letters/digits/underscore/hyphen ID; L0 through L8 |
+| `map` | `kind` is `synthetic` or `campaign`; `mission` is an integer from 1 through 15 |
+| `setup` | Synthetic: `objects`, keyed by invented IDs, each with exactly the declared integer fields. Campaign: empty for executable L0 smoke tests; `sides`, `money`, `objects`, `tech` reserve future setup specifications |
+| `input` | Synthetic: ordered `{tick, object, set}` updates; `set` contains declared integer fields. Campaign: empty until an audited input translator exists |
+| `observe` | `first_tick` is 1, `last_tick` is a positive signed 32-bit integer; `fields` is a nonempty unique string list; `contract` names the normalization specification |
+| `tolerance` | Exactly `{"exact":true}`; no tick offset or numeric epsilon |
+| `evidence` | V/M/P specification label; running a scenario never promotes it |
+
+`synthetic_l0` uses two mocked runners and the `synthetic-l0-v1` contract. Setup
+defines invented objects and arbitrary integer units; IDs never change, and an
+input at tick t applies after observing t, appearing in observation t+1. Repeated
+events at the same tick preserve specification order. This checks harness
+construction only; it models no original rule. Synthetic fixtures require L0
+and evidence P. Scenario files contain specifications only, with no captured
+state, assets, screenshots, audio or executable-derived expectations.
+
+Every invocation creates a fresh directory under ignored `work/parity/` (or an
+explicit `--output` there). Each scenario retains its specification, normalized
+`reference.jsonl` and `clone.jsonl` when available, runner diagnostics and
+`diff.json`. `report.json` collects scenario ID, layer and verdict. Existing run
+directories and input/output overlap are rejected. The comparator reuses the
+strict JSONL observation schema below: it checks the full horizon before
+accepting the first difference in tick/object/field order. Categories include
+`field_difference`, `object_lifecycle`, `equal_observed_fields`,
+`blocked_observation_contract`, `experiment_failed` and
+`skipped_missing_private_inputs`. No tick/object/field is invented for a run
+that failed before producing comparable observations. Exit codes are 0 for
+matching observed fields with optional skips, 77 when every scenario skipped,
+1 for a difference/blocker/failed experiment, and 2 for invalid top-level input.
+
+### Private L0 smoke test and missing prerequisites
+
+```sh
+python3 -I tools/parity_run.py private_l0 \
+  --game /absolute/private/game --runtime /absolute/private/build/aztec_recomp \
+  --engine "$PWD/build/aztec_engine" --output work/parity/l0-private-new \
+  --timeout 60
+```
+
+Absent installation/resources/maps, runtime or engine produce a skip. With
+inputs present, both runners receive separate private game copies, ordinary
+Maps/Saves directories, copied profiles/configuration and immutable resource
+symlinks. Both use dummy SDL drivers inside `unshare -rn` with
+`timeout -s KILL`. Reference loopback/address setup fails closed; the independent
+engine and normalization adapter need no interface configuration. Inherited
+`RT_*` variables are removed. The reference runner sets `RT_SCRIPT`,
+`RT_CMD_REPLAY`, `RT_CMD_LOG`, `RT_STATE_LOG`, `RT_UNIT_LOG` and a private dump
+directory. Default menu navigation covers missions 1 through 15; `--script`
+accepts private navigation text and `--commands` accepts a private oracle log.
+Menu waits are watchdogs, not observation synchronization. State coverage and
+packet readback are checked explicitly.
+
+The clone runs `aztec_engine --headless --no-auto-orders --observations JSONL`.
+`engine-index-v1` observes live, nonremoved objects before command submission
+and `begin_tick`: tick 1 is initialized state, t is after t-1 updates. IDs are
+`engine:<Object.id>` with append-only engine identity; missing IDs indicate
+death/removal and newly live objects appear at the next boundary. Integer `x`
+and `y` are engine world pixels times 256, `hp` is the current engine HP value,
+`side` is the engine side index and `type` is the engine UGI ID (including -1
+markers). Campaign CLI numbers 1..15 enter the header; custom map names use
+mission 0. The horizon remains the requested limit: an earlier terminal outcome
+leaves a truncated stream and cannot count as full coverage. Output failures,
+script errors, unsupported executions and incomplete horizons fail the runner.
+
+This engine-local contract does **not** establish original identity, units,
+ownership or tick equivalence. `--reference-adapter` uses the reference adapter
+interface below and must audit the mapping and produce the exact scenario
+header/coverage. No such adapter is supplied by this task. Without it, a
+successful raw reference run reports `blocked_observation_contract`; pool
+hashes are never relabeled as semantic fields. Nonempty campaign setup/input,
+nonempty replay packets, other layers and other private normalization contracts
+also block explicitly. Task 01's packet translator and audited observer remain
+dependencies; the completed L0 selection, runners, observer and synthetic
+comparison do not depend on their presence. For standalone comparison, use the
+existing `parity_report.py compare` command below.
+
+On 2026-10-29, the supplied read-only installation and runtime were used with
+private copies in `work/parity/l0-private-20261029/`. The clone completed 12 ticks
+with valid observations. The reference attempt failed at loopback setup with a
+denied netlink socket before runtime launch. The combined result is
+`experiment_failed`, with no semantic divergence or new gameplay M/V evidence.
+CTest's synthetic controls cover schema rejection, selection/skip behavior,
+mocked runners, exact first differences, lifecycle, truncation, contract
+mismatch, isolation failure propagation and real headless before-command
+observations using an invented installation.
+
 ## Run the corpus
 
 First build the independent engine and run the checks in [SETUP.md](SETUP.md).

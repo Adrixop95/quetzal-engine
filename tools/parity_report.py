@@ -167,17 +167,18 @@ def private_game(source, destination):
         else:
             (destination / name).mkdir()
     for item in source.iterdir():
-        if item.is_file() and item.suffix.lower() in (".ini", ".plr"):
+        if item.is_file() and item.suffix.lower() in (".ini", ".plr", ".cfg"):
             shutil.copy2(item, destination / item.name)
 
 
-def execute(argv, directory, timeout, extra=None):
+def execute(argv, directory, timeout, extra=None, *, setup_network=True):
     env = {k: v for k, v in os.environ.items() if not k.startswith("RT_")}
     env.update(SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
     env.update(extra or {})
     # Fail closed: shell -e stops before the runtime on either network setup error.
+    setup = 'ip link set lo up\nip addr add 192.168.1.125/24 dev lo\n' if setup_network else ''
     isolated = ["timeout", "-s", "KILL", str(timeout), "unshare", "-rn", "sh", "-ec",
-                'ip link set lo up\nip addr add 192.168.1.125/24 dev lo\nexec "$@"',
+                setup + 'exec "$@"',
                 "parity", *map(str, argv)]
     write_json(directory / "invocation.json", dict(argv=isolated, environment={
         k: v for k, v in env.items() if k.startswith(("RT_", "SDL_"))}))
