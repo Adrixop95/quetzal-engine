@@ -174,7 +174,7 @@ void audit(const Script& script, const World& w, Report& report) {
 
 int run_headless(int argc, char** argv) {
   Report report;
-  std::string game = "game", rules_dir = default_rules_dir(), orders_path, output, hashes_path, save_path, resume_path;
+  std::string game = "game", rules_dir = default_rules_dir(), orders_path, output, observations_path, hashes_path, save_path, resume_path;
   if (const char* value = std::getenv("AZTEC_GAME")) game = value;
   int max_ticks = 43200, interval = 120, save_tick = 0;
   bool auto_orders = true;
@@ -192,13 +192,14 @@ int run_headless(int argc, char** argv) {
       else if (a == "--order-interval") interval = number(value(), 1);
       else if (a == "--orders") orders_path = value();
       else if (a == "--report") output = value();
+      else if (a == "--observations") observations_path = value();
       else if (a == "--tick-hashes") hashes_path = value();
       else if (a == "--save-at") save_tick = number(value(), 1);
       else if (a == "--save") save_path = value();
       else if (a == "--resume") resume_path = value();
       else if (a == "--no-auto-orders") auto_orders = false;
       else if (a == "--help") {
-        std::puts("usage: aztec_engine --headless --game DIR --rules-dir DIR [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--tick-hashes FILE] [--save-at N --save FILE] [--resume FILE] MISSION");
+        std::puts("usage: aztec_engine --headless --game DIR --rules-dir DIR [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE] [--tick-hashes FILE] [--save-at N --save FILE] [--resume FILE] MISSION");
         return 0;
       } else if (a.empty() || a[0] == '-' || mission_given) throw std::runtime_error("unexpected argument: " + a);
       else { report.mission = a; mission_given = true; }
@@ -267,11 +268,38 @@ int run_headless(int argc, char** argv) {
     hash_row();
     auto orders = read_orders(orders_path, world);
     if (!orders.empty() && orders.back().tick > max_ticks) throw std::runtime_error("order tick exceeds run limit");
+    std::ofstream observations;
+    if (!observations_path.empty()) {
+      observations.open(observations_path);
+      if (!observations) throw std::runtime_error("cannot open observations: " + observations_path);
+      int mission_id = 0;
+      auto [end, ec] = std::from_chars(report.mission.data(), report.mission.data() + report.mission.size(), mission_id);
+      if (ec != std::errc{} || end != report.mission.data() + report.mission.size() || mission_id < 1 || mission_id > 15)
+        mission_id = 0;  // Custom map names have no campaign number.
+      // Engine-local identity contract; a reference adapter must audit its mapping separately.
+      observations << "{\"schema\":1,\"mission\":" << mission_id << ",\"phase\":\"before_commands\","
+                      "\"contract\":\"engine-index-v1\",\"fields\":[\"hp\",\"side\",\"type\",\"x\",\"y\"],"
+                      "\"first_tick\":1,\"last_tick\":" << max_ticks << "}\n";
+    }
     size_t next = 0;
     while (next < orders.size() && uint64_t(orders[next].tick) <= sim.tick_count()) ++next;
     struct Position { Fixed x = 0, y = 0; uint64_t since = 0; };
     std::map<uint32_t, Position> positions;
     for (int64_t tick = int64_t(sim.tick_count()) + 1; tick <= max_ticks && world.outcome == kRunning; ++tick) {
+      if (observations.is_open()) {
+        observations << "{\"tick\":" << tick << ",\"objects\":{";
+        bool first = true;
+        for (const auto& o : world.objects) {
+          if (!o.alive || o.removed) continue;
+          if (!first) observations << ',';
+          first = false;
+          observations << quoted("engine:" + std::to_string(o.id)) << ":{\"hp\":" << o.hp
+                       << ",\"side\":" << o.side << ",\"type\":" << o.type
+                       << ",\"x\":" << o.cur_x << ",\"y\":" << o.cur_y << '}';
+        }
+        observations << "}}\n";
+        if (!observations) throw std::runtime_error("cannot write observations: " + observations_path);
+      }
       if (auto_orders && (tick - 1) % interval == 0) drive(sim, world);
       while (next < orders.size() && orders[next].tick == tick) {
         Command command = orders[next].command;
@@ -304,6 +332,10 @@ int run_headless(int argc, char** argv) {
             o.cur_x != p.x || o.cur_y != p.y) p = {o.cur_x, o.cur_y, sim.tick_count()};
       }
       if (world.outcome != kRunning) break;
+    }
+    if (observations.is_open()) {
+      observations.close();
+      if (!observations) throw std::runtime_error("cannot finish observations: " + observations_path);
     }
     if (hashes.is_open()) {
       hashes.flush();
