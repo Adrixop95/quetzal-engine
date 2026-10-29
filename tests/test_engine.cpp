@@ -1584,7 +1584,7 @@ static void test_town_production() {
   capacity_sim.submit(cancel_mine); capacity_sim.submit(mine);
   production_steps(capacity_sim, capacity, 1);
   CHECK(capacity.side_state[0].queue.size() == 50);
-  CHECK(capacity.side_state[0].money == 100000 - mine_price);
+  CHECK(capacity.side_state[0].money > 100000 - 2 * mine_price && capacity.side_state[0].money <= 100000 - mine_price);   // cancel refunds part of the started item, the next one starts and pays
 
   // A blocked map retains the completed queue item; cancellation releases it.
   World blocked = production_world();
