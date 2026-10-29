@@ -7,6 +7,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include "engine/app/ui_trace.hpp"
 
 #include "engine/assets/anim_provider.hpp"
 #include "engine/assets/daylight.hpp"
@@ -176,6 +178,11 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       cam.center_on((s.start_x + 0.5f) * kTilePx, (s.start_y + 0.5f) * kTilePx);
     }
 
+    std::ofstream ui_trace;
+    if (!o.ui_trace.empty()) {
+      ui_trace.open(o.ui_trace);
+      if (!ui_trace) { std::fprintf(stderr, "cannot open UI trace\n"); rc = 1; return PlayExit::Quit; }
+    }
     Input in;
     PlaytestScript playtest;
     bool pt = false;
@@ -459,6 +466,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       if (in.pressed[SDL_BUTTON_LEFT] && on_mm && !cmdui.wants_left_click()) drag_minimap = true;
       if (!in.buttons[SDL_BUTTON_LEFT]) drag_minimap = false;
       // Selection (left button in the world view).
+      const size_t ui_command_start = game ? game->pending_commands().size() : 0;
       {
         bool in_world = world.outcome == kRunning && !pause.open && !submodal && !on_mm && !on_panel && !drag_minimap && !pan;
         bool consumed = cmdui.update(in, world, cam, alpha, minimap, in_world, show_panel ? panel.rect() : SDL_Rect{ow, 0, 0, oh});
@@ -502,6 +510,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         GetMouse(&gx, &gy);
         cmdui.draw_ghost(win.renderer(), world, cam, int(gx * sx), int(gy * sy));
       }
+      std::string rendered_tooltip;
       if (show_panel) {
         int gold = 0;
         for (const SideDef& sd : world.mission.sides) if (sd.index == world.local_side) gold = sd.money;
@@ -528,6 +537,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
           std::string mt = cmdui.draw_menu(win.renderer(), scene.store(), scene.font(), strings, world, panel.rect(), pscale, int(mx3 * sx), int(my3 * sy));
           if (!mt.empty()) tip = mt;
         }
+        rendered_tooltip = tip;
         if (!tip.empty()) panel.draw_tooltip(win.renderer(), scene.font(), tip);
         minimap.draw(win.renderer(), cam, alpha, &scene.fog());
       }
@@ -554,7 +564,16 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         const Object* h = pick_object(world, cam.to_world_x(float(cx)), cam.to_world_y(float(cy)), alpha, 24.f / cam.zoom + 8);
         if (h && h->side != world.local_side) ck = CursorKind::Attack;
       }
-      if (visible && (o.screenshot.empty() || forced)) cursor.draw(win.renderer(), scene.store(), cx, cy, ck, cur_scale, SDL_GetTicks());
+      const uint32_t cursor_ms = pt ? uint32_t(uint64_t(frame) * 1000 / 12) : SDL_GetTicks();
+      const bool cursor_drawn = visible && (o.screenshot.empty() || forced);
+      if (cursor_drawn) cursor.draw(win.renderer(), scene.store(), cx, cy, ck, cur_scale, cursor_ms);
+      if (ui_trace.is_open()) {
+        trace_ui(ui_trace, frame, world, cam, alpha, in, cmdui, game, ui_command_start,
+                 panel.rect(), pscale, show_panel, pause.open, ck, cursor_drawn, cursor_ms,
+                 rendered_tooltip, pending_shot);
+        ui_trace.flush();
+        if (!ui_trace) { std::fprintf(stderr, "UI trace write failed\n"); rc = 1; break; }
+      }
 
       if (!pending_shot.empty()) {
         std::printf(save_screenshot(win.renderer(), pending_shot) ? "saved %s\n" : "screenshot failed %s\n", pending_shot.c_str());

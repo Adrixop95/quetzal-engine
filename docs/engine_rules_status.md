@@ -1092,3 +1092,26 @@ save fixture was absent. These installed-data checks do not establish live
 reference gameplay. A read-only recount of the 15 `mission_N.mp` files found
 49 Difficulty keys: 46 zero, two 75 and one 100, consistent with retaining the
 key as metadata rather than deriving a bonus table. Changes remain uncommitted.
+## L4/L5 comparison instrumentation (2026-10-29, partial task 44)
+
+`--ui-trace` records independent engine render/input observations and commands
+submitted during the UI update. Scripted cursor animation now uses virtual
+frame time. Synthetic controls exercise hover, held press, release, Move target
+submission, Attack hotkey/cursor, attack-move and cancellation, with matching
+traces across repeated runs. The six command buttons currently retain sprite
+frame zero on press; the trace reports their actual hover/highlight/enabled state.
+Production/queue state normalization and reference input semantics remain open.
+
+The private-output-only comparator checks six independently supplied structural
+masks, tolerant RGB metrics, normalized UI states and semantic command order.
+Its synthetic failure controls verify diagnostic behavior, not game parity.
+See [parity.md](parity.md#l4l5-visual-and-interaction-controls-2026-10-29-partial-task-44)
+for schema, coverage, tolerances and limits.
+
+A private clone capture succeeded under dummy SDL in `unshare -rn`. The reference
+probe failed at loopback configuration before launch. Fixed-tick reference
+camera/UI capture, audited identity/command normalization and task 42's common
+runner are absent in this checkout. Matching scene comparison remains blocked;
+UI fidelity remains **P**, with no new M/V reference evidence. Only code,
+invented specifications and the aggregate
+[results table](parity_visual_ui_results.md) belong in the public repository.

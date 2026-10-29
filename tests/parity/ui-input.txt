@@ -1,0 +1,15 @@
+# Independent engine input control at 800x600; selected synthetic unit.
+# Observe distinct hover, held press, release, target, hotkey and cursor states.
+move 570 470
+down
+up
+move 100 100
+down
+up
+key X
+move 100 100
+down
+up
+key M
+key Escape
+quit
