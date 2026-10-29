@@ -26,6 +26,7 @@ bool Window::create(const WindowOptions& o) {
   vsync_ = (info.flags & SDL_RENDERER_PRESENTVSYNC) != 0;
   SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
   SDL_ShowCursor(SDL_DISABLE);  // the engine draws its own cursor every frame
+  focused_ = (SDL_GetWindowFlags(win_) & SDL_WINDOW_INPUT_FOCUS) != 0;
   set_mode(o.mode);
   return true;
 }
@@ -37,6 +38,49 @@ void Window::set_mode(DisplayMode m) {
     case DisplayMode::Borderless: SDL_SetWindowFullscreen(win_, SDL_WINDOW_FULLSCREEN_DESKTOP); break;
     case DisplayMode::Fullscreen: SDL_SetWindowFullscreen(win_, SDL_WINDOW_FULLSCREEN); break;
   }
+  apply_mouse_grab();
+}
+
+void Window::apply_mouse_grab() {
+  if (!win_) return;
+  // Keep absolute coordinates for edge scrolling and leave system shortcuts available.
+  SDL_SetWindowKeyboardGrab(win_, SDL_FALSE);
+  SDL_SetWindowMouseGrab(win_, mouse_grab_enabled_ && gameplay_active_ && focused_ &&
+      !left_alt_ && !right_alt_ ? SDL_TRUE : SDL_FALSE);
+}
+
+void Window::set_gameplay_active(bool active) {
+  gameplay_active_ = active;
+  apply_mouse_grab();
+}
+
+void Window::set_mouse_grab_enabled(bool enabled) {
+  mouse_grab_enabled_ = enabled;
+  apply_mouse_grab();
+}
+
+void Window::handle_event(const SDL_Event& e) {
+  if (e.type == SDL_WINDOWEVENT && e.window.windowID == SDL_GetWindowID(win_)) {
+    if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+      focused_ = true;
+      const SDL_Keymod mods = SDL_GetModState();
+      left_alt_ = (mods & KMOD_LALT) != 0;
+      right_alt_ = (mods & KMOD_RALT) != 0;
+    }
+    if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST || e.window.event == SDL_WINDOWEVENT_MINIMIZED) {
+      focused_ = false;
+      left_alt_ = right_alt_ = false;
+    }
+  }
+  if ((e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) && e.key.windowID == SDL_GetWindowID(win_)) {
+    const bool down = e.type == SDL_KEYDOWN;
+    if (e.key.keysym.scancode == SDL_SCANCODE_LALT) left_alt_ = down;
+    if (e.key.keysym.scancode == SDL_SCANCODE_RALT) right_alt_ = down;
+    if (down && !e.key.repeat && focused_ && e.key.keysym.scancode == SDL_SCANCODE_F9)
+      mouse_grab_enabled_ = !mouse_grab_enabled_;
+  }
+  if (e.type == SDL_QUIT) gameplay_active_ = false;
+  apply_mouse_grab();
 }
 
 void Window::cycle_borderless() {
