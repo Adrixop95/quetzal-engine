@@ -241,7 +241,8 @@ static void scripted(std::shared_ptr<const RulesData> rules) {
 static void smoke(std::shared_ptr<const RulesData> rules) {
   auto initial = world();
   for (auto& side : initial.side_state) side.money = 2000;
-  initial.resources.v.assign(1600, 65);
+  // Rich synthetic terrain supports sustained combat while repeated farms remain available.
+  initial.resources.v.assign(1600, 130);
   // Synthetic durable halls keep both producers alive through the full soak.
   // These HP values exercise sustained opposition, not campaign balance.
   for (auto& o : initial.objects) { o.hp = 1000000; o.town_hall = true; }

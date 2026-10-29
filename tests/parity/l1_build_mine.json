@@ -1,0 +1,62 @@
+{
+  "id": "l1_build_mine",
+  "layer": "L1",
+  "map": {
+    "template": "mission_1",
+    "generator": "make_zstat",
+    "passability": "clear_interior",
+    "resources": "empty_control"
+  },
+  "setup": {
+    "sides": [
+      0,
+      1
+    ],
+    "money": 10000,
+    "preplaced_objects": [
+      {
+        "id": "hall",
+        "type": 10,
+        "x": 16,
+        "y": 16,
+        "side": 0
+      },
+      {
+        "id": "warehouse",
+        "type": 18,
+        "x": 20,
+        "y": 20,
+        "side": 0
+      }
+    ],
+    "tech": "record_and_hold_constant",
+    "controls": [
+      "Record town level, prerequisites and build-speed branch.",
+      "Measure acceptance, debit, activation and first harvest separately; placement must be legal.",
+      "Repeat for mine types 48 and 66 with matching faction and prerequisites."
+    ]
+  },
+  "input": [
+    {
+      "tick": 12,
+      "command": "build",
+      "town": "hall",
+      "type": 13,
+      "x": 26,
+      "y": 16
+    }
+  ],
+  "observe": {
+    "first_tick": 1,
+    "last_tick": 720,
+    "fields": [
+      "money",
+      "construction_remaining",
+      "active",
+      "hp"
+    ]
+  },
+  "tolerance": 0,
+  "evidence": "P",
+  "mechanic": "build_time"
+}

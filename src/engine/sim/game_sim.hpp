@@ -35,6 +35,7 @@ class GameSim : public Simulation {
   // Queues a command for the next tick (all clients submit the same commands in the same order in lockstep play).
   void submit(Command c) { pending_.push_back(std::move(c)); }
   bool paused() const { return paused_; }
+  const std::vector<Command>& pending_commands() const { return pending_; }
   bool has_pending_commands() const { return !pending_.empty(); }
   uint64_t tick_count() const { return tick_; }
   const std::vector<LoggedCommand>& log() const { return log_; }

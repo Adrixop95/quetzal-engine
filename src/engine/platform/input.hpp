@@ -21,6 +21,7 @@ struct Input {
 
   void begin_frame();            // clears per-frame edges
   void handle(const SDL_Event& e, float scale_x, float scale_y);
+  SDL_Point edge_scroll(int width, int height, int margin) const;
   bool down(SDL_Scancode k) const { return key_down[k]; }
   bool hit(SDL_Scancode k) const { return key_hit[k]; }
 };

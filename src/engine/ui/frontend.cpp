@@ -180,7 +180,10 @@ void Screen::frame_begin() {
   SDL_Event e;
   float sx, sy;
   win_.mouse_scale(sx, sy);
-  while (SDL_PollEvent(&e)) in_.handle(e, sx, sy);
+  while (SDL_PollEvent(&e)) {
+    win_.handle_event(e);
+    in_.handle(e, sx, sy);
+  }
   win_.output_size(ow_, oh_);
   L_.fit(ow_, oh_);
   mx_ = int((in_.mx - L_.ox) / L_.s);
@@ -412,8 +415,10 @@ bool play_video(Window& win, const std::string& path) {
   while (!skip && std::fread(buf.data(), 1, buf.size(), p) == buf.size()) {
     any = true;
     SDL_Event e;
-    while (SDL_PollEvent(&e))
+    while (SDL_PollEvent(&e)) {
+      win.handle_event(e);
       if (e.type == SDL_QUIT || e.type == SDL_KEYDOWN || e.type == SDL_MOUSEBUTTONDOWN) skip = true;
+    }
     int ow, oh;
     win.output_size(ow, oh);
     SDL_UpdateTexture(tex, nullptr, buf.data(), 640 * 3);

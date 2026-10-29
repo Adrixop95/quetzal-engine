@@ -1,0 +1,61 @@
+{
+  "id": "l1_flight_catapult",
+  "layer": "L1",
+  "map": {
+    "template": "mission_1",
+    "generator": "make_zstat",
+    "passability": "clear_interior",
+    "resources": "empty_control"
+  },
+  "setup": {
+    "sides": [
+      0,
+      1
+    ],
+    "money": 10000,
+    "preplaced_objects": [
+      {
+        "id": "source",
+        "type": 83,
+        "x": 16,
+        "y": 16,
+        "side": 0
+      },
+      {
+        "id": "target",
+        "type": 14,
+        "x": 24,
+        "y": 16,
+        "side": 1
+      }
+    ],
+    "tech": "record_and_hold_constant",
+    "controls": [
+      "Single shot on clear ground; repeat with moving target, source death and an intervening obstacle.",
+      "Capture projectile identity and height independently; unit HP logs alone cannot establish trajectory."
+    ]
+  },
+  "input": [
+    {
+      "tick": 12,
+      "command": "attack",
+      "object": "source",
+      "target": "target"
+    }
+  ],
+  "observe": {
+    "first_tick": 1,
+    "last_tick": 720,
+    "fields": [
+      "projectile_x",
+      "projectile_y",
+      "projectile_height",
+      "launch_tick",
+      "impact_tick",
+      "hp"
+    ]
+  },
+  "tolerance": 0,
+  "evidence": "P",
+  "mechanic": "projectile_flight"
+}

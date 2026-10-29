@@ -1,0 +1,65 @@
+{
+  "id": "l1_queue_serial",
+  "layer": "L1",
+  "map": {
+    "template": "mission_1",
+    "generator": "make_zstat",
+    "passability": "clear_interior",
+    "resources": "empty_control"
+  },
+  "setup": {
+    "sides": [
+      0,
+      1
+    ],
+    "money": 10000,
+    "preplaced_objects": [
+      {
+        "id": "hall",
+        "type": 10,
+        "x": 16,
+        "y": 16,
+        "side": 0
+      },
+      {
+        "id": "workshop",
+        "type": 20,
+        "x": 22,
+        "y": 16,
+        "side": 0
+      }
+    ],
+    "tech": "record_and_hold_constant",
+    "controls": [
+      "Record accepted command order; observe every tick around both completions.",
+      "Pause and resume in a separate repeat; verify the next item does not receive an unobserved extra tick."
+    ]
+  },
+  "input": [
+    {
+      "tick": 12,
+      "command": "queue",
+      "town": "hall",
+      "type": 4
+    },
+    {
+      "tick": 12,
+      "command": "queue",
+      "town": "hall",
+      "type": 4
+    }
+  ],
+  "observe": {
+    "first_tick": 1,
+    "last_tick": 720,
+    "fields": [
+      "queue_length",
+      "remaining",
+      "spawn_count",
+      "money"
+    ]
+  },
+  "tolerance": 0,
+  "evidence": "P",
+  "mechanic": "build_time"
+}

@@ -37,6 +37,7 @@ const char* usage_text() {
          "  --no-panel         no original right-hand panel\n"
          "  --no-light         no time-of-day tint;  --time T  fixed day clock (0..7199)\n"
          "  --rules-dir DIR    override packaged rules (source builds use docs/data);  --no-sim  no game logic\n"
+         "  --ui-trace FILE    write raw UI state and submitted commands per rendered frame\n"
          "  --script FILE      playtest script: synthetic clicks/keys, screenshots, expectations (virtual time)\n"
          "  --no-menu          start the default mission directly instead of the front-end menu\n"
          "  --audio-log FILE  write playback events as text\n"
@@ -44,6 +45,7 @@ const char* usage_text() {
          "  --sfx-volume V --music-volume V --speech-volume V   independent volumes 0..1\n"
          "  --no-acknowledgement --no-subtitles   suppress confirmations or captions\n"
          "  --no-edge-scroll   disable edge scrolling;  --no-hud  hide the info overlay;  --help-overlay  show key help\n"
+         "  --no-mouse-grab    start with cursor confinement disabled (F9 toggles it)\n"
          "  --palette N --shade N   terrain palette/shade override\n"
          "  --screenshot FILE.png  render --frames N frames (default 5), save PNG and exit\n"
          "  --ticks N          run N simulation ticks before the first frame\n"
@@ -83,6 +85,7 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     }
     else if (a == "--wander") o.wander = true;
     else if (a == "--no-edge-scroll") o.edge_scroll = false;
+    else if (a == "--no-mouse-grab") o.mouse_grab = false;
     else if (a == "--no-hud") o.hud = false;
     else if (a == "--no-fog") o.fog = false;
     else if (a == "--rules-dir") { if (!next(v)) return false; o.rules_dir = v; }
@@ -101,6 +104,7 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     else if (a == "--no-acknowledgement") o.acknowledgement = false;
     else if (a == "--no-subtitles") o.subtitles = false;
     else if (a == "--no-menu") o.no_menu = true;
+    else if (a == "--ui-trace") { if (!next(v)) return false; o.ui_trace = v; }
     else if (a == "--script") { if (!next(v)) return false; o.script = v; }
     else if (a == "--cmd-move" || a == "--cmd-attack-move") { if (!next(v)) return false; if (std::sscanf(v, "%d,%d", &o.cmd_x, &o.cmd_y) != 2) { err = "bad " + a; return false; } o.cmd_attack_move = a != "--cmd-move"; }
     else if (a == "--select") { if (!next(v)) return false; if (std::sscanf(v, "%d,%d,%d,%d", &o.select_x0, &o.select_y0, &o.select_x1, &o.select_y1) != 4) { err = "bad --select"; return false; } }
