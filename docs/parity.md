@@ -193,3 +193,57 @@ pool cause or lifted price-rounding diagnosis was measured. The earlier
 `v02-baseline` attempt rejected its too-short explicit horizon before launch and
 is not reference-run evidence. V02 remains open, including original-instruction
 versus lifted-arithmetic validation and audited ownership/max-HP observers.
+
+## L1 rule micro-experiments (2026-10-29, partial task 43)
+
+Task 42's scenario harness is absent (`tools/parity_run.py` is not present).
+The 19 P specifications in `tests/parity/l1_*.json` use the top-level schema in
+[PARITY_TEST_PLAN.md](PARITY_TEST_PLAN.md), with provisional nested keys described
+in [the scenario guide](../tests/parity/README.md). Referenced task prompts
+36/37/40 are absent too. Independent work supplies candidate maps, isolation
+probes and private numeric expectation export; command/observer adapters and
+validated isolated setup remain dependencies. No clone simulation rule changed.
+
+The selection prioritizes Cannon, Catapult and Hopcannon movement, six damage
+category controls, siege reload/range/flight, mine construction/price/income,
+sight/regeneration and serial versus two-town production. Each specification
+lists required controls and repeats. Armor classes must be observed, not inferred
+from target names. Boundary sweeps, nonzero resource patches, production speed
+branches, projectile obstacles and faction variants remain unexecuted protocols.
+
+The explicit external installation/runtime were used read-only:
+
+```sh
+python3 -I tools/parity_rules.py probe \
+  --game /home/adrox/aztec-re/game \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --output work/parity/l1-isolated-20261029 --timeout 45
+```
+
+All 19 candidates generated in separate private game copies. Each bounded
+launch used both dummy SDL drivers and `unshare -rn`; every attempt failed at
+loopback setup with `Cannot open netlink socket: Operation not permitted`.
+The runtime never launched. Private scenario copies, maps, invocation records,
+logs and aggregate report remain in the ignored output directory. No numeric
+expectations were measured or exported, and no semantic first divergence exists.
+The report uses `experiment_failed` with null tick/object/field, not a fabricated
+rule mismatch. Generated maps remain candidates: commands, AI, damaged HP, tech,
+money, fog and town membership have not been controlled or validated.
+
+| L1 result in this attempt | Count |
+| --- | --- |
+| P base specifications / generated candidate maps | 19 |
+| Isolated launch failures before simulation | 19 |
+| Measured rules / clone parity passes | 0 |
+| First semantic divergences | unavailable |
+
+`tools/parity_rules.py compare` consumes complete normalized streams from two
+reference repeats and the clone through the existing strict comparator. It
+checks the scenario contract, horizon, fields and initial identities before
+exporting integer-only expectations privately. Reference repeat disagreement
+creates no expectations; malformed or truncated observations fail. The comparator
+retains the first tick/object/field difference when one is actually observed.
+Its synthetic controls establish tooling behavior only. Matching streams and
+exporting numbers do not audit commands, setup, units or identity mapping and
+never automatically promote a P scenario to M. See the scenario guide for the
+private format, exit codes and remaining integration contract.

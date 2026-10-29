@@ -1,0 +1,61 @@
+{
+  "id": "l1_sight_cannon",
+  "layer": "L1",
+  "map": {
+    "template": "mission_1",
+    "generator": "make_zstat",
+    "passability": "clear_interior",
+    "resources": "empty_control"
+  },
+  "setup": {
+    "sides": [
+      0,
+      1
+    ],
+    "money": 10000,
+    "preplaced_objects": [
+      {
+        "id": "source",
+        "type": 4,
+        "x": 16,
+        "y": 16,
+        "side": 0
+      },
+      {
+        "id": "target",
+        "type": 0,
+        "x": 24,
+        "y": 16,
+        "side": 1
+      }
+    ],
+    "tech": "record_and_hold_constant",
+    "controls": [
+      "Reset fog in each repeat; keep distant halls outside the measurement region.",
+      "Repeat day/night and both boundary directions; distinguish explored, visible and targetable."
+    ]
+  },
+  "input": [
+    {
+      "tick": 12,
+      "command": "move",
+      "object": "target",
+      "x": 17,
+      "y": 16
+    }
+  ],
+  "observe": {
+    "first_tick": 1,
+    "last_tick": 720,
+    "fields": [
+      "x",
+      "y",
+      "visible",
+      "explored",
+      "day_clock"
+    ]
+  },
+  "tolerance": 0,
+  "evidence": "P",
+  "mechanic": "sight"
+}

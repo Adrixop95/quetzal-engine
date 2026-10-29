@@ -1149,6 +1149,39 @@ save fixture was absent. These installed-data checks do not establish live
 reference gameplay. A read-only recount of the 15 `mission_N.mp` files found
 49 Difficulty keys: 46 zero, two 75 and one 100, consistent with retaining the
 key as metadata rather than deriving a bonus table. Changes remain uncommitted.
+## L1 rule experiment preparation (2026-10-29, partial task 43)
+
+**Construction / synthetic evidence:** 19 P scenario specifications cover siege
+speed, damage/category controls, reload, range and projectile flight, mine build
+time/price/income, sight, regeneration and serial/two-town production. They use
+`docs/PARITY_TEST_PLAN.md` because task 42's harness is absent. Tasks 36/37/40
+are not present in this checkout either. `tools/parity_rules.py` generates
+private placement candidates and attempts isolated launch controls. Its separate
+comparison command reuses the strict normalized comparator, requires two equal
+reference repeats and complete scenario coverage, and stores integer-only
+expectations plus the first clone divergence under ignored `work/parity/`.
+Synthetic CTest controls cover export, differing fields, unstable repeats,
+truncation, private settings/maps, missing-input skip and denied isolation.
+These verify tooling, with no change to simulation rules or V/M/P labels.
+
+**Reference evidence unavailable:** all 19 candidate launch attempts used private
+game copies, immutable resource symlinks, dummy SDL drivers, hard timeouts and
+`unshare -rn`. All failed at loopback setup with a denied netlink socket before
+the runtime launched. Private outputs are in
+`work/parity/l1-isolated-20261029/`. No measured rule, expectation, clone parity
+pass or first semantic difference was obtained. Tick/object/field remain null.
+Generated candidates still require audited commands, AI/tech/money/fog/HP
+controls, town membership and normalized observers. Nonzero mine yields,
+production branches, boundary/faction repeats and flight controls remain open;
+see [the L1 parity record](parity.md#l1-rule-micro-experiments-2026-10-29-partial-task-43)
+and [scenario instructions](../tests/parity/README.md). Task 43 remains partial.
+
+**Local verification:** baseline and final Release configure/build passed with
+`AZTEC_GEN_DIR=` and a worktree-local compiler cache. Final CTest passed 27
+entries; five private-data entries and the restricted UDP process check skipped.
+Pre-commit passed for all tracked files and explicitly for the new scenario,
+tooling and test files using the copied local hook cache. No skipped check is
+counted as a live original-game measurement.
 ## V19 campaign coverage update (2026-10-28, partial)
 
 **Engine construction / synthetic evidence:** `tools/playthrough.py` now emits
