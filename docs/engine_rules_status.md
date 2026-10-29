@@ -4,6 +4,39 @@ Simulation: `src/engine/sim/game_sim.*` (12 Hz, fixed-point harvests and origina
 Movement and pathfinding: `src/engine/sim/path/` (movement agents; the interface is swappable: `GameSim` only uses `MoveSystem`).
 Legend: **V** = verified against the original (code or screenshot), **M** = measured on the recompiled original, **P** = placeholder (invented, to be replaced).
 
+## Cursor confinement (task 39, 2026-10-29)
+
+**Engine presentation policy; reference parity unverified.** Interactive focused
+gameplay requests SDL mouse grab by default, with absolute coordinates and no
+keyboard grab. Focus loss, minimization, holding either Alt key (including
+Alt-Tab), pause menus, view/simulation pause, mission exit and the front-end
+release it. Resuming focused gameplay reapplies the session preference. F9
+toggles that preference without key-repeat; `--no-mouse-grab` starts disabled.
+Scripted playtests and screenshots never request confinement. This state does
+not enter simulation commands, saves or hashes.
+
+Before the fix, an isolated dummy-SDL reproduction using the existing Window
+reported no mouse grab request (exit 1). The new synthetic `mouse_grab` CTest
+checks SDL request flags in windowed, borderless and exclusive fullscreen modes,
+focus/pause/Alt transitions and toggling. It checks continuous camera movement
+from a stationary cursor at each edge and two corners, including a 2x HiDPI
+coordinate transform and the outer right edge beyond the panel. Unfocused,
+outside-window and Alt-held inputs produce no edge scroll; focus loss also
+clears pending click/key edges and motion to avoid stale input on resume.
+
+The dummy backend verifies requested SDL state and camera behavior, not physical
+desktop confinement or window-manager Alt-Tab handling. Those still need a live
+windowed/fullscreen check. A reference probe with a private game copy and dummy
+SDL inside `unshare -rn` failed at `ip link set lo up` with `Cannot open netlink
+socket: Operation not permitted`, before the game launched. No original-game
+cursor behavior or reference record/replay result was obtained. Private probe
+inputs and output remain under ignored `work/cursor-grab/`.
+
+Validation: Release build and pre-commit gates pass. The full 32-entry CTest run
+has 27 passes and five expected private-data/network skips. Separate `formats`
+and `engine` checks pass with the complete private map copy under dummy SDL in
+`unshare -rn`; a bounded mission 1 engine screenshot smoke also passes there.
+
 ## Core simulation
 | Rule | Status | Source / notes |
 |---|---|---|

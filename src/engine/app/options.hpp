@@ -21,6 +21,7 @@ struct Options {
   float cam_tx = 0, cam_ty = 0;    // initial camera centre in tiles
   bool wander = false;             // demo simulation: units random-walk (tests interpolation)
   bool edge_scroll = true;
+  bool mouse_grab = true;
   bool hud = true;
   bool fog = true;
   std::string audio_log;           // --audio-log FILE: successful playback events

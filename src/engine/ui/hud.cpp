@@ -65,7 +65,7 @@ void draw_hud(SDL_Renderer* r, const Font& font, const World& w, const Camera& c
   }
   if (in.show_help) {
     const char* help[] = {"KEYS.INI SCROLL   EDGE SCROLL   MIDDLE/RIGHT DRAG PAN   WHEEL +/- ZOOM",
-                          "LMB MINIMAP JUMP   F11 BORDERLESS   ALT+ENTER FULLSCREEN",
+                          "LMB MINIMAP JUMP   F9 MOUSE GRAB   F11 BORDERLESS   ALT+ENTER FULLSCREEN",
                           "M MOVE  X ATTACK  H STOP  P PAUSE   KEYS.INI: PANEL / SCREENSHOT / DESTROY"};
     for (const char* h : help) { font.draw(r, x, y, h, scale, dim); y += lh; }
   }
