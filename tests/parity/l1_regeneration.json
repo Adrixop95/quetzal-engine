@@ -1,0 +1,45 @@
+{
+  "id": "l1_regeneration",
+  "layer": "L1",
+  "map": {
+    "template": "mission_1",
+    "generator": "make_zstat",
+    "passability": "clear_interior",
+    "resources": "empty_control"
+  },
+  "setup": {
+    "sides": [
+      0,
+      1
+    ],
+    "money": 10000,
+    "preplaced_objects": [
+      {
+        "id": "source",
+        "type": 4,
+        "x": 16,
+        "y": 16,
+        "side": 0,
+        "initial_hp_percent": 50
+      }
+    ],
+    "tech": "record_and_hold_constant",
+    "controls": [
+      "Disable town repair, income, combat and scripts; verify initial HP in the first observation.",
+      "Repeat damaged organic unit and structure controls; no change in one horizon is not proof of no regeneration."
+    ]
+  },
+  "input": [],
+  "observe": {
+    "first_tick": 1,
+    "last_tick": 720,
+    "fields": [
+      "hp",
+      "active",
+      "day_clock"
+    ]
+  },
+  "tolerance": 0,
+  "evidence": "P",
+  "mechanic": "regeneration"
+}
