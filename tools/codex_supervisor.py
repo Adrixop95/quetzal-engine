@@ -52,6 +52,14 @@ def lrun(cmd):
     return run(cmd, cwd=LAND)
 
 
+def union_markdown(conflicted):
+    """Docs conflicts are additive: keep both sides without Codex."""
+    for f in [f for f in conflicted if f.endswith(".md")]:
+        if lrun(f"git show :1:{f} > /tmp/.u_base && git show :2:{f} > /tmp/.u_ours && git show :3:{f} > /tmp/.u_theirs "
+                f"&& git merge-file --union -p /tmp/.u_ours /tmp/.u_base /tmp/.u_theirs > {f}.u && mv {f}.u {f}").returncode == 0:
+            lrun(f"git add {f}")
+
+
 def land(name):
     """Land a finished task in the dedicated checkout LAND (the main checkout is never touched)."""
     ensure_land()
@@ -64,13 +72,16 @@ def land(name):
         if "did not apply" not in r.stdout or not conflicted:
             log("harvest produced nothing for", name, r.stdout[-200:], r.stderr[-200:])
             return
-        log("patch of", name, "conflicts with develop in", " ".join(conflicted), "- asking Codex to resolve")
-        codex_in_land("This worktree holds a task patch applied with git apply --3way onto the latest develop; it has conflict markers in: "
-                      + " ".join(conflicted) + ". Resolve every conflict preserving the intent of BOTH sides (the task adds a feature, develop gained "
-                      "other features in the same files). Remove all markers, make the project build and tests pass (cmake -S . -B build_sup "
-                      "-DAZTEC_GEN_DIR= && cmake --build build_sup && ctest --test-dir build_sup), keep everything English. Do NOT run git "
-                      "write commands; leave the resolved files in the working tree.")
-        bad = verify_land(conflicted)
+        union_markdown(conflicted)
+        conflicted = lrun("git diff --name-only --diff-filter=U").stdout.split()
+        log("patch of", name, "conflicts with develop in", " ".join(conflicted) or "Markdown only (merged by union)")
+        if conflicted:
+          codex_in_land("This worktree holds a task patch applied with git apply --3way onto the latest develop; it has conflict markers in: "
+                        + " ".join(conflicted) + ". Resolve every conflict preserving the intent of BOTH sides (the task adds a feature, develop gained "
+                        "other features in the same files). Remove all markers, make the project build and tests pass (cmake -S . -B build_sup "
+                        "-DAZTEC_GEN_DIR= && cmake --build build_sup && ctest --test-dir build_sup), keep everything English. Do NOT run git "
+                        "write commands; leave the resolved files in the working tree.")
+        bad = verify_land(conflicted) if conflicted else ""
         if bad:
             log("could not resolve patch conflicts for", name, bad)
             lrun("git reset -q --hard; git checkout -q --detach origin/develop")
@@ -184,10 +195,7 @@ def sync_with_develop(num, head, hint=""):
         lrun(f"git checkout -q -f --detach origin/{head}")
         lrun(" ".join(GIT) + " merge --no-commit --no-ff origin/develop")
         conflicted = lrun("git diff --name-only --diff-filter=U").stdout.split()
-        for f in [f for f in conflicted if f.endswith(".md")]:   # docs conflicts are additive: keep both sides without Codex
-            if lrun(f"git show :1:{f} > /tmp/.u_base && git show :2:{f} > /tmp/.u_ours && git show :3:{f} > /tmp/.u_theirs "
-                    f"&& git merge-file --union -p /tmp/.u_ours /tmp/.u_base /tmp/.u_theirs > {f}.u && mv {f}.u {f}").returncode == 0:
-                lrun(f"git add {f}")
+        union_markdown(conflicted)
         conflicted = lrun("git diff --name-only --diff-filter=U").stdout.split()
         try:
             if conflicted:
