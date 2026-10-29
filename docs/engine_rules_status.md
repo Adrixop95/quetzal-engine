@@ -24,8 +24,8 @@ Legend: **V** = verified against the original (code or screenshot), **M** = meas
 | Air orders and ground collisions | engine / P reference integration | Aircraft use straight fixed-point movement without terrain/contact blocking, including engine attack-move orders. Ground agents retain continuous disc avoidance/pushing and flow fields. Reference tile reservations, vehicle turning, formation/path decisions and exact arrival timing remain unimplemented or unmeasured; see [V05 progress](rules_movement.md#8-v05-partial-integration-2026-10-28) |
 | Price and build time | V formula / synthetic checks | `types.csv` with outpost/developed hall, runtime speed, hostile-to-everyone and computer branches. Float32 factors evaluated before truncation after +0.5; developed fast computer 100 -> 160 gold / 53 time units. No lifted 161 rounding |
 | Production countdown | engine / O parity | Computed time units drive tick countdowns; one payment at acceptance, none at spawn. Exact original start/completion tick ordering is unverified |
-| Build tree (who can build what, prerequisites) | V | `buildtree.csv`; ordinary prerequisites require completed objects in the producing town, A entries use side-wide counts. Completed/in-progress/queued structures prevent duplicates in that town; DisabledID and adjusted affordability are checked |
-| Town upgrades and non-map structure production | engine / V tables, P placement | Flag-0 structures use adjusted costs/timers and the production queue. Hall completion preserves identity and installs its race/level tree; farms/mines/defences are automatically placed on free tiles and activate descriptor effects. Exact reference placement, HP transition and completion ticks remain unverified; see validation below |
+| Build tree (who can build what, prerequisites) | V | `buildtree.csv`; ordinary prerequisites require completed objects in the producing town, A entries use side-wide counts. Only map-construction entries reject completed/in-progress/queued copies in that town; flag-0 resource structures and defences are repeatable. Hall upgrades retain their separate reservation guard; DisabledID and adjusted affordability are checked |
+| Town upgrades and non-map structure production | engine / V tables, P placement | Flag-0 structures use adjusted costs/timers and the production queue. Hall completion preserves identity and installs its race/level tree; farms/mines/defences can be queued repeatedly, are automatically placed on free tiles and activate descriptor effects. Exact reference placement, HP transition and completion ticks remain unverified; see validation below |
 | Side `DisabledID` blocks menu entries | V | `docs/formats.md` |
 | Weapon damage | V documented arithmetic / engine synthetic checks | Marine d7 and Defence d59 select weapon IDs. Classes 1/2/13 apply each matching 8.8 multiplier in sequence, then armor term; arrow zero-air suppresses armor. Classes 4/5/6/10 constants implemented; 8 delegates and 12 sums known child damage. Historical duel entries are diagnostics only. Other descriptor weapon mappings/armor retain placeholders |
 | Weapon reload getters and cooldown | V Marine reload+1 / P other scheduling | Classes 1/2/13/4/5/6/10 use documented reload/range. Simulation schedules reload+1; this is verified only for Marine cooldown, not universal hit intervals. Composite scheduling remains unresolved |
@@ -549,7 +549,8 @@ required for any claim that its outcomes match the original game.
 **Independent implementation / existing V tables:** the menu retains flag-0
 structure entries from `buildtree.csv`. The existing price/time formula applies
 at acceptance, with one payment and a frozen countdown. Queue reservations block
-duplicate structures and competing hall upgrades in the same town. DisabledID,
+competing hall upgrades in the same town. Only map-construction entries reject
+duplicate structures; queued farms, mines and defences allow multiple copies. DisabledID,
 affordability and local/side-wide prerequisites still apply. Completion replaces
 the owned live hall in place, preserving its ID, town and selection references,
 updates its descriptor HP and navigation footprint, resets its harvest clocks,
@@ -578,10 +579,33 @@ Town levels are now hashed, so older saves with stored hashes are incompatible.
 **Synthetic validation:** all supported race/level upgrades, sparse town section
 numbers, preserved hall identity and footprint blocking, build-tree unlocks,
 competing/repeated requests, paused timers, flag-0 farms/mines/defences, adjusted
-costs, completed/queued duplicates, resource accumulation after completion,
+costs, repeated queued/completed farms/mines/defences across all three races,
+distinct placement sites, queue capacity/payment/cancellation, map-construction
+duplicate rejection, resource accumulation after completion,
 DisabledID, insufficient money, invalid town members, dead halls, cancellation,
 serialized command replay and upgrade save/replay are covered in `engine_unit`.
 These checks validate engine construction, not measured original behavior.
+
+**Repeatable structure correction (2026-10-29):** a synthetic regression first
+failed on the previous blanket structure duplicate check: the second purchase
+was rejected and completed mines remained disabled. The check now follows the
+build-tree map-construction flag. Private reference rule inspection at `0x411ac0`
+shows that only flag-B entries test their own completed/in-progress counts;
+ordinary prerequisites use town counts and A prerequisites use side counts.
+Those counts are prerequisites, not a one-mine-per-side limit. No build-tree
+CSV, placement algorithm or runtime code changed. The regression completes three
+copies per tested farm/mine/defence type, verifies payment and serial countdowns,
+and reproduces the final state through serialized command replay.
+The sustained-opposition synthetic fixture now uses richer farm terrain (resource
+byte 130 rather than 65) to support its combat-per-interval assertions while the
+planner can purchase additional farms. Planner policy is unchanged; this fixture
+does not measure campaign balance.
+
+The new isolated reference attempt used a private installation copy, dummy SDL
+and `unshare -rn`; it failed at loopback setup with
+`Cannot open netlink socket: Operation not permitted` before game launch.
+Thus no new live original-game placement/timing or full parity claim is made.
+Private experiment output remains in `work/repeatable-reference/`.
 
 **Dependency and observation boundary:** the economy/prerequisite implementation
 is present. Task 01's audited packet replay, object identity mapping and aligned

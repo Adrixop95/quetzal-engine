@@ -1512,7 +1512,7 @@ static void test_town_production() {
   }
 
   // All races' flag-0 farms/mines/defences use queued production, with normal costs and timers.
-  for (auto choice : {std::pair{0, 12}, {0, 13}, {0, 17}, {1, 39}, {1, 48}, {2, 65}, {2, 66}}) {
+  for (auto choice : {std::pair{0, 12}, {0, 13}, {0, 17}, {1, 39}, {1, 48}, {1, 42}, {2, 65}, {2, 66}, {2, 80}}) {
     World fresh = production_world();
     int race = choice.first, type = choice.second;
     int level = type == 48 || type == 66 ? 2 : 1;
@@ -1521,23 +1521,33 @@ static void test_town_production() {
     fresh.side_state.resize(8); fresh.side_state[0].money = 10000;
     production_object(fresh, rules->town_building(level, race), 0, 10, 10);
     fresh.objects[0].town_hall = true;
-    if (type == 17) production_object(fresh, 14, 0, 20, 20);
+    if (type == 17 || type == 42) production_object(fresh, race == 0 ? 14 : 41, 0, 20, 20);
     World w = fresh; GameSim sim(rules); sim.init(w);
     MenuItem m = item(sim, w, 0, type);
     CHECK(m.enabled && !m.construct);
     CHECK(m.price == rules->type(type).price && m.time == rules->type(type).time);
     Command buy; buy.type = Pct::Build; buy.a = type; buy.ids = {1}; buy.b = -999; buy.c = -999;
     sim.submit(buy); sim.submit(buy); production_steps(sim, w, 1);
-    CHECK(w.side_state[0].queue.size() == 1 && w.side_state[0].queue[0].paid == m.price);
-    CHECK(w.side_state[0].money == 10000 - m.price);
-    CHECK(w.objects.size() == fresh.objects.size() && !item(sim, w, 0, type).enabled);
+    CHECK(w.side_state[0].queue.size() == 2 && w.side_state[0].queue[0].paid == m.price);
+    CHECK(w.side_state[0].money == 10000 - 2 * m.price);
+    CHECK(w.objects.size() == fresh.objects.size() && item(sim, w, 0, type).enabled);
     production_steps(sim, w, m.time - 2);
     CHECK(w.objects.size() == fresh.objects.size());
     production_steps(sim, w, 1);
-    CHECK(w.side_state[0].queue.empty() && w.objects.size() == fresh.objects.size() + 1);
+    CHECK(w.side_state[0].queue.size() == 1 && w.objects.size() == fresh.objects.size() + 1);
     CHECK(w.objects.back().type == type && w.objects.back().town == 0 && w.objects.back().progress == 1000);
     CHECK(!sim.can_place(w, 0, type, int(w.objects.back().cur_x >> 8) / kTilePx, int(w.objects.back().cur_y >> 8) / kTilePx));
-    CHECK(!item(sim, w, 0, type).enabled);
+    CHECK(item(sim, w, 0, type).enabled);
+    const Fixed first_x = w.objects.back().cur_x, first_y = w.objects.back().cur_y;
+    production_steps(sim, w, m.time);
+    CHECK(w.side_state[0].queue.empty() && w.objects.size() == fresh.objects.size() + 2);
+    CHECK(w.objects.back().type == type && w.objects.back().town == 0);
+    CHECK(w.objects.back().cur_x != first_x || w.objects.back().cur_y != first_y);
+    // Completed copies and the side's type counts must not disable another purchase.
+    CHECK(item(sim, w, 0, type).enabled);
+    sim.submit(buy); production_steps(sim, w, m.time);
+    CHECK(w.side_state[0].queue.empty() && w.objects.size() == fresh.objects.size() + 3);
+    CHECK(item(sim, w, 0, type).enabled);
     if (type == 12 || type == 39 || type == 65)
       CHECK(item(sim, w, 0, race == 0 ? 18 : race == 1 ? 40 : 70).enabled);
     // Income/repair accumulation begins at completion, using the resource map at the chosen site.
@@ -1551,7 +1561,26 @@ static void test_town_production() {
     CHECK(replay->state_hash(fresh) == sim.state_hash(w));
   }
 
-  // A blocked map retains the completed reservation; cancellation releases it.
+  // Repeatable structures still obey the per-town queue capacity and charge only accepted requests.
+  World capacity = production_world();
+  capacity.side_state.resize(8); capacity.side_state[0].money = 100000;
+  production_object(capacity, 11, 0, 10, 10); capacity.objects[0].town_hall = true;
+  GameSim capacity_sim(rules); capacity_sim.init(capacity);
+  Command pause_queue; pause_queue.type = Pct::PauseBuild; pause_queue.a = 1;
+  capacity_sim.submit(pause_queue);
+  Command mine; mine.type = Pct::Build; mine.a = 13; mine.ids = {1};
+  int mine_price = item(capacity_sim, capacity, 0, 13).price;
+  for (int i = 0; i < 51; ++i) capacity_sim.submit(mine);
+  production_steps(capacity_sim, capacity, 1);
+  CHECK(capacity.side_state[0].queue.size() == 50);
+  CHECK(capacity.side_state[0].money == 100000 - 50 * mine_price);
+  Command cancel_mine; cancel_mine.type = Pct::QueueKill;
+  capacity_sim.submit(cancel_mine); capacity_sim.submit(mine);
+  production_steps(capacity_sim, capacity, 1);
+  CHECK(capacity.side_state[0].queue.size() == 50);
+  CHECK(capacity.side_state[0].money == 100000 - 50 * mine_price);
+
+  // A blocked map retains the completed queue item; cancellation releases it.
   World blocked = production_world();
   blocked.passability = {40, 40, std::vector<uint8_t>(1600, 0)};
   blocked.side_state.resize(8); blocked.side_state[0].money = 10000;
@@ -1560,7 +1589,7 @@ static void test_town_production() {
   Command request; request.type = Pct::Build; request.a = 12;
   blocked_sim.submit(request); production_steps(blocked_sim, blocked, 200);
   CHECK(blocked.objects.size() == 1 && blocked.side_state[0].queue[0].remaining == 0);
-  CHECK(!item(blocked_sim, blocked, 0, 12).enabled);
+  CHECK(item(blocked_sim, blocked, 0, 12).enabled);
   Command remove; remove.type = Pct::QueueKill; blocked_sim.submit(remove);
   production_steps(blocked_sim, blocked, 1);
   CHECK(blocked.side_state[0].queue.empty() && item(blocked_sim, blocked, 0, 12).enabled);
