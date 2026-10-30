@@ -86,7 +86,8 @@ void MoveSystem::order_move(const u32* ids, int n, Vec2 goal) {
         // A nearby tile across a wall can be globally reachable only by a
         // long detour. The shared field ends at the anchor, so slots must
         // belong to its visible arrival area rather than another room.
-        if (!grid_.segment_clear(tile_center(o.goal_cell.x, o.goal_cell.y), p, maxr, strict)) continue;
+        // Single-agent pursuit keeps its nearest collision-free destination.
+        if (n > 1 && !grid_.segment_clear(tile_center(o.goal_cell.x, o.goal_cell.y), p, maxr, strict)) continue;
         slots.push_back(p);
       }
     if ((int)slots.size() >= n || R > 64) break;

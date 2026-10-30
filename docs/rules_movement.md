@@ -212,7 +212,7 @@ local planning and occupancy constraints described above. Everything in integers
 ### 7.1 Move order (`order_move`)
 1. One flow field from the goal tile (goal blocked -> nearest free; goal unreachable for the first agent -> flood field from the agent and selection of the reachable tile nearest to the goal,
    i.e. what the original did only after the failed wave `FUN_0046ce80`).
-2. **Target slots**: hexagonal grid of points around the goal (spacing `2r + 4 px`), only reachable, without collision with a wall, and connected to the anchor tile centre by a clear disc segment, sorted from the goal; agents and slots are sorted along the direction
+2. **Target slots**: hexagonal grid of points around the goal (spacing `2r + 4 px`), only reachable, without collision with a wall, and, for group orders, connected to the anchor tile centre by a clear disc segment, sorted from the goal; agents and slots are sorted along the direction
    of approach and paired (the front of the group takes the front slots), so nobody waits on an occupied goal point and paths do not cross.
 3. No original-style requester quota: a field is shared per order/class and rebuilt when the grid version changes. Benchmark timings include steering and collision handling, not just field construction.
 
@@ -310,7 +310,7 @@ shared flow field terminates at the clicked side. Members following that field
 cannot follow the required detour to their slots and rely on jam recovery and
 arrival beside settled neighbours. At tick 150 only 29/30 had settled.
 
-Slot selection now requires a clear segment for the group's maximum disc radius
+Group slot selection now requires a clear segment for the group's maximum disc radius
 from the final anchor tile centre to each candidate. This keeps the destination
 cluster in the anchor's arrival area and rejects slots across intervening walls.
 The existing nearest-reachable fallback supplies the anchor for unreachable
