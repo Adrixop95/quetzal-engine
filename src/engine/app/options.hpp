@@ -1,13 +1,20 @@
 #pragma once
 #include <string>
 #include "engine/platform/window.hpp"
+#include "engine/sim/modifications.hpp"
 
 namespace aztec::engine {
 
 // Installed packages keep rules beside the executable, independent of the working directory.
 std::string default_rules_dir();
 
+std::string default_modifications_file();
+bool load_modifications(const std::string& path, Modifications& out);
+bool save_modifications(const std::string& path, Modifications options);
+
 struct Options {
+  Modifications modifications;
+  std::string modifications_file;
   std::string game_dir = "game";
   std::string original_save;        // --load-original FILE
   std::string mission = "1";

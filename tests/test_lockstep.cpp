@@ -114,6 +114,18 @@ static void wire_values() {
   require(serialize_log(a.sim.log()) == serialize_log(b.sim.log()), "Preserve integer bit patterns and IDs");
 }
 
+static void modification_mismatch() {
+  auto a = world(), b = world();
+  GameSim serial(rules()), parallel(rules(), {true}); serial.init(a); parallel.init(b);
+  require(serial.state_hash(a) != parallel.state_hash(b), "Modifications affect initial hash");
+  Lockstep x({7, 0, 0, serial.state_hash(a)}), y({7, 1, 0, parallel.state_hash(b)});
+  require(x.submit({}) && y.submit({}), "Seal modification mismatch test");
+  for (const auto& packet : x.packets()) y.receive(packet);
+  for (const auto& packet : y.packets()) x.receive(packet);
+  require(x.desync() && y.desync(), "Reject mismatching modification sets at handshake");
+  require(!x.step(serial, a) && !y.step(parallel, b), "Reject before simulation advances");
+}
+
 static void desync() {
   Peer a(0), b(1);
   require(a.link.submit({}) && b.link.submit({}), "Seal desync test");
@@ -138,7 +150,7 @@ static void desync() {
 
 int main() {
   try {
-    validation(); wire_values(); desync();
+    validation(); wire_values(); desync(); modification_mismatch();
     for (uint8_t delay : {0, 2, 8}) loopback(delay);
     std::cout << "Lockstep loopback, validation and desync checks passed\n";
   } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

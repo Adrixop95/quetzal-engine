@@ -54,7 +54,7 @@ class Screen {
   bool run(FrontendResult& out, const std::string& open_briefing);
 
  private:
-  enum class Mode { Main, Campaign, Custom, Briefing, Options, Audio };
+  enum class Mode { Main, Campaign, Custom, Briefing, Options, Audio, Modifications };
 
   void background(uint32_t id) {
     const StoredSprite& s = store_.get(common_key(id));
@@ -116,6 +116,7 @@ class Screen {
   int custom_page_ = 0;
   CampaignProgress progress_;
   AudioOptions audio_options_;
+  ModificationOptions modification_options_;
   // briefing
   std::string brief_spec_, brief_text_, brief_avi_;
   bool brief_campaign_ = false;
@@ -313,6 +314,12 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
         if (!audio_options_.open) mode_ = Mode::Options;
         break;
       }
+      case Mode::Modifications: {
+        modification_options_.update(in_, opts_, ow_, oh_, std::max(1, int(L_.s)));
+        modification_options_.draw(win_.renderer(), font_, opts_, ow_, oh_, std::max(1, int(L_.s)));
+        if (!modification_options_.open) mode_ = Mode::Options;
+        break;
+      }
       case Mode::Options: {
         background(284);
         text(400, 60, "Options", 3, gold, true);
@@ -322,8 +329,10 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
         Button b3{250, 280, 300, 40, std::string("Fog of war: ") + (opts_.fog ? "on" : "off")};
         Button b4{250, 335, 300, 40, std::string("Day / night tint: ") + (opts_.light ? "on" : "off")};
         Button sound{250, 390, 300, 40, "Audio"};
-        Button back{250, 455, 300, 40, "Back"};
-        for (Button* b : {&b1, &b2, &b3, &b4, &sound, &back}) draw_button(*b);
+        Button mods{250, 440, 300, 40, "Game modifications"};
+        Button back{250, 495, 300, 40, "Back"};
+        for (Button* b : {&b1, &b2, &b3, &b4, &sound, &mods, &back}) draw_button(*b);
+        if (clicked(mods)) { mode_ = Mode::Modifications; modification_options_.open = true; }
         if (clicked(sound)) { mode_ = Mode::Audio; audio_options_.open = true; }
         if (clicked(b1)) win_.set_mode(win_.mode() == DisplayMode::Windowed ? DisplayMode::Borderless : win_.mode() == DisplayMode::Borderless ? DisplayMode::Fullscreen : DisplayMode::Windowed);
         if (clicked(b2)) opts_.edge_scroll = !opts_.edge_scroll;
@@ -384,6 +393,36 @@ void AudioOptions::draw(SDL_Renderer* r, const Font& font, const Options& o, int
     font.draw(r, rect.x + (rect.w - font.width(labels[i], ts)) / 2,
               rect.y + (rect.h - font.height(ts)) / 2, labels[i], ts, {245, 230, 200, 255});
   }
+}
+
+SDL_Rect ModificationOptions::row(int i, int w, int h, int sc) {
+  return {(w - std::min(w - 16, 600 * sc)) / 2, h / 2 + i * 50 * sc,
+          std::min(w - 16, 600 * sc), 36 * sc};
+}
+void ModificationOptions::update(const Input& in, Options& options, int w, int h, int sc) {
+  if (!open) return;
+  if (in.hit(SDL_SCANCODE_ESCAPE)) open = false;
+  if (!in.pressed[SDL_BUTTON_LEFT]) return;
+  SDL_Point point{in.mx, in.my};
+  auto toggle = row(0, w, h, sc), back = row(2, w, h, sc);
+  if (SDL_PointInRect(&point, &toggle)) {
+    options.modifications.parallel_construction = !options.modifications.parallel_construction;
+    if (!save_modifications(options.modifications_file, options.modifications))
+      std::fprintf(stderr, "Cannot persist game modifications\n");
+  }
+  if (SDL_PointInRect(&point, &back)) open = false;
+}
+void ModificationOptions::draw(SDL_Renderer* r, const Font& font, const Options& options, int w, int h, int sc) const {
+  if (!open) return;
+  SDL_SetRenderDrawColor(r, 20, 18, 14, 255); SDL_RenderClear(r);
+  auto rect = row(0, w, h, sc);
+  font.draw(r, rect.x, rect.y - 60 * sc, "Game modifications", 2 * sc, {245, 230, 200, 255});
+  SDL_SetRenderDrawColor(r, 55, 42, 25, 255); SDL_RenderFillRect(r, &rect);
+  font.draw(r, rect.x + 8 * sc, rect.y + 8 * sc,
+      std::string("Parallel construction: ") + (options.modifications.parallel_construction ? "on" : "off"), 2 * sc, {245, 230, 200, 255});
+  font.draw(r, rect.x, rect.y + 45 * sc, "Buildings progress together; units train one at a time.", sc, {245, 230, 200, 255});
+  auto back = row(2, w, h, sc);
+  font.draw(r, back.x, back.y, "Back", 2 * sc, {245, 230, 200, 255});
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -448,8 +487,8 @@ SDL_Rect PauseMenu::button(int i, int ow, int oh, int sc) const {
 
 PauseMenu::Action PauseMenu::update(const Input& in, int ow, int oh, int sc) {
   if (!open || !in.pressed[SDL_BUTTON_LEFT]) return Action::None;
-  static const Action acts[8] = {Action::Resume, Action::Briefing, Action::Audio, Action::Save, Action::Load, Action::Restart, Action::Menu, Action::Quit};
-  for (int i = 0; i < 8; i++) {
+  static const Action acts[9] = {Action::Resume, Action::Briefing, Action::Audio, Action::Save, Action::Load, Action::Restart, Action::Menu, Action::Quit, Action::Modifications};
+  for (int i = 0; i < 9; i++) {
     SDL_Rect b = button(i, ow, oh, sc);
     if (in.mx >= b.x && in.mx < b.x + b.w && in.my >= b.y && in.my < b.y + b.h) return acts[i];
   }
@@ -461,10 +500,10 @@ void PauseMenu::draw(SDL_Renderer* r, const Font& font, int ow, int oh, int sc) 
   SDL_Rect all{0, 0, ow, oh};
   SDL_SetRenderDrawColor(r, 0, 0, 0, 150);
   SDL_RenderFillRect(r, &all);
-  static const char* labels[8] = {"Resume", "Briefing / objectives", "Audio", "Save game", "Load game", "Restart mission", "Main menu", "Quit"};
+  static const char* labels[9] = {"Resume", "Briefing / objectives", "Audio", "Save game", "Load game", "Restart mission", "Main menu", "Quit", "Game modifications"};
   int mx, my;
   SDL_GetMouseState(&mx, &my);
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < 9; i++) {
     SDL_Rect b = button(i, ow, oh, sc);
     SDL_SetRenderDrawColor(r, 35, 26, 16, 235);
     SDL_RenderFillRect(r, &b);

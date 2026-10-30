@@ -72,6 +72,9 @@ static void malformed() {
   auto extra = bytes; extra.push_back(0); repair_checksum(extra);
   CHECK(!deserialize_save(extra, decoded));
   auto old = bytes; old[3] = '2'; repair_checksum(old); CHECK(!deserialize_save(old, decoded));
+  auto unknown_modification = bytes;
+  write_le(unknown_modification.data() + unknown_modification.size() - 12, uint32_t(2));
+  repair_checksum(unknown_modification); CHECK(!deserialize_save(unknown_modification, decoded));
   auto old_replay = bytes; write_le(old_replay.data() + 8, uint32_t(1)); repair_checksum(old_replay);
   CHECK(!deserialize_save(old_replay, decoded)); check_save(old_replay);
   for (auto name : {"", "../mission_1", "/mission_1", "mission.mp", "a b"}) {
@@ -101,7 +104,7 @@ static void malformed() {
   // Reject a bad second command without publishing the already parsed first one.
   auto partial = log;
   const size_t second = 8 + 28 + 4 * s.log.front().cmd.ids.size();
-  write_le(partial.data() + second + 8, uint32_t(0x53));
+  write_le(partial.data() + second + 8, uint32_t(0x54));
   check_log(partial);
   auto preserved = s.log;
   CHECK(!deserialize_log(partial, preserved));
@@ -178,21 +181,24 @@ static SaveData long_save(const std::shared_ptr<RulesData>& rules) {
   return s;
 }
 static void pending_save(const std::shared_ptr<RulesData>& rules) {
-  auto world = initial_world(); GameSim game(rules); game.init(world);
-  Command move; move.type = Pct::Move; move.ids = {1}; move.a = 300; move.b = 200;
-  game.submit(move);
-  CHECK(game.has_pending_commands());
-  advance(world, game, 1);
-  CHECK(!game.has_pending_commands());
-  auto save = fixture(); save.tick = game.tick_count(); save.hash = game.state_hash(world); save.log = game.log();
-  SaveData decoded;
-  CHECK(deserialize_save(serialize_save(save), decoded));
-  auto restored = initial_world(); std::string error;
-  auto replay = replay_save(decoded, restored, rules, save.content_hash, "", error);
-  CHECK(replay && error.empty());
-  CHECK(replay->state_hash(restored) == game.state_hash(world));
-  advance(world, game, 30); advance(restored, *replay, 30);
-  CHECK(replay->state_hash(restored) == game.state_hash(world));
+  for (bool enabled : {false, true}) {
+    auto world = initial_world(); GameSim game(rules, {enabled}); game.init(world);
+    Command move; move.type = Pct::Move; move.ids = {1}; move.a = 300; move.b = 200;
+    game.submit(move);
+    CHECK(game.has_pending_commands());
+    advance(world, game, 1);
+    CHECK(!game.has_pending_commands());
+    auto save = fixture(); save.tick = game.tick_count(); save.hash = game.state_hash(world); save.log = game.log(); save.modifications = game.initial_modifications();
+    SaveData decoded;
+    CHECK(deserialize_save(serialize_save(save), decoded));
+    auto restored = initial_world(); std::string error;
+    auto replay = replay_save(decoded, restored, rules, save.content_hash, "", error);
+    CHECK(replay && error.empty());
+    CHECK(replay->state_hash(restored) == game.state_hash(world));
+    advance(world, game, 30); advance(restored, *replay, 30);
+    CHECK(replay->state_hash(restored) == game.state_hash(world));
+    CHECK(replay->modifications().parallel_construction == enabled);
+  }
 }
 static void continuation(const SaveData& s, const std::shared_ptr<RulesData>& rules) {
   World uninterrupted = initial_world(); GameSim original(rules); original.init(uninterrupted);

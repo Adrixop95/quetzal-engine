@@ -24,6 +24,25 @@ int main(int argc, char** argv) {
   std::filesystem::create_directory(root / "Res");
   for (const char* name : {"Pal", "Units", "Tiles0", "Tiles1", "common", "fnts", "light"})
     write(root / "Res" / (std::string(name) + ".xbe"), std::string(4, '\0'));
+  Options mod_options; mod_options.modifications_file = (root / "modifications.ini").string();
+  CHECK(!mod_options.modifications.parallel_construction);
+  ModificationOptions mod_menu; mod_menu.open = true;
+  Input mod_click; auto mod_rect = ModificationOptions::row(0, 800, 600, 1);
+  mod_click.mx = mod_rect.x + 2; mod_click.my = mod_rect.y + 2; mod_click.pressed[SDL_BUTTON_LEFT] = true;
+  mod_menu.update(mod_click, mod_options, 800, 600, 1);
+  CHECK(mod_options.modifications.parallel_construction);
+  Modifications persisted; CHECK(load_modifications(mod_options.modifications_file, persisted));
+  CHECK(persisted.parallel_construction);
+  write(root / "invalid-modifications.ini", "unknown=on\n");
+  CHECK(!load_modifications((root / "invalid-modifications.ini").string(), persisted));
+  CHECK(persisted.parallel_construction); // invalid settings leave the caller unchanged
+  std::string mod_path = mod_options.modifications_file;
+  std::vector<std::string> args{"engine", "--mod", "parallel_construction=off", "--modifications-file", mod_path};
+  std::vector<char*> raw; for (auto& arg : args) raw.push_back(arg.data());
+  Options parsed_mods; std::string parse_error; bool usage = false;
+  CHECK(parse_options(int(raw.size()), raw.data(), parsed_mods, parse_error, usage));
+  CHECK(!parsed_mods.modifications.parallel_construction); // CLI overrides persisted on
+  CHECK(!persisted.set("unknown=on") && !persisted.set("parallel_construction=yes"));
   GameData data; std::string error; CHECK(data.open(root.string(), error));
   CHECK(campaign_number("MISSION_15.MP") == 15);
   CHECK(campaign_number("/private/Maps/mission_4.mp") == 4);
@@ -143,12 +162,12 @@ int main(int argc, char** argv) {
   write(root / "Maps/mission_1.map", map);
   write(root / "Maps/mission_1.scn", "trigger(0) conditions localTime == 6 actions side(local).victory end\n");
   write(root / "controls.txt",
-      "key Escape\nexpect tick == 0\nclick 400 200\nexpect tick == 0\n"
+      "key Escape\nexpect tick == 0\nclick 400 452\nclick 400 310\nexpect tick == 0\nkey Escape\nclick 400 200\nexpect tick == 0\n"
       "key M\nwait 2\nexpect tick == 0\nkey Escape\n"
       "click 400 238\nexpect tick == 0\nclick 590 270\nwait 2\nexpect tick == 0\n"
       "click 400 410\nclick 400 160\nexpect tick == 1\nwait 10\n"
       "expect outcome == 1\nexpect tick == 6\nkey M\nwait 2\nexpect tick == 6\nquit\n");
-  Options options; options.game_dir = root.string(); options.mission = "1";
+  Options options; options.modifications_file = (root / "mission-modifications.ini").string(); options.game_dir = root.string(); options.mission = "1";
   options.rules_dir = AZTEC_TEST_RULES_DIR; options.menu_session = true;
   options.script = (root / "controls.txt").string(); options.audio = false; options.light = false;
   options.window.width = 800; options.window.height = 600; options.window.software = true; options.window.vsync = false;

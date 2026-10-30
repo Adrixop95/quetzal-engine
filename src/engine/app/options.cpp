@@ -5,9 +5,39 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <SDL.h>
 
 namespace aztec::engine {
+
+std::string default_modifications_file() {
+  char* path = SDL_GetPrefPath("Quetzal", "Engine");
+  if (!path) return {};
+  std::string result = std::string(path) + "modifications.ini";
+  SDL_free(path);
+  return result;
+}
+bool load_modifications(const std::string& path, Modifications& out) {
+  std::ifstream in(path);
+  if (!in) return false;
+  Modifications parsed;
+  std::string line;
+  while (std::getline(in, line)) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    if (line.empty() || line.front() == '#') continue;
+    if (!parsed.set(line)) return false;
+  }
+  if (in.bad()) return false;
+  out = parsed;
+  return true;
+}
+bool save_modifications(const std::string& path, Modifications options) {
+  if (path.empty()) return false;
+  std::ofstream out(path, std::ios::trunc);
+  out << "parallel_construction=" << (options.parallel_construction ? "on" : "off") << "\n";
+  out.close();
+  return bool(out);
+}
 
 std::string default_rules_dir() {
   char* base = SDL_GetBasePath();
@@ -24,6 +54,8 @@ const char* usage_text() {
   return "usage: aztec_engine [options] [MISSION]\n"
          "  aztec_engine --headless --help   bounded simulation-only campaign mode\n"
          "  MISSION            number (campaign mission_N), map name from game/Maps, or path to .mp (default 1)\n"
+         "  --mod NAME=on|off  clone-only option (parallel_construction; default off)\n"
+         "  --modifications-file FILE  override persisted modification settings\n"
          "  --game DIR         game directory (default ./game, or $AZTEC_GAME)\n"
          "  --load-original FILE  import an original .sav (partial resume; see docs/savegame.md)\n"
          "  --size WxH         window size (default 1280x720)\n"
@@ -56,6 +88,12 @@ const char* usage_text() {
 bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& usage) {
   usage = false;
   o.rules_dir = default_rules_dir();
+  o.modifications_file = default_modifications_file();
+  // Select the file before applying command-line overrides, regardless of order.
+  for (int i = 1; i + 1 < argc; ++i)
+    if (std::string(argv[i]) == "--modifications-file") o.modifications_file = argv[++i];
+  o.modifications = {};
+  load_modifications(o.modifications_file, o.modifications);
   if (const char* g = std::getenv("AZTEC_GAME")) o.game_dir = g;
   for (int i = 1; i < argc; i++) {
     std::string a = argv[i];
@@ -66,6 +104,11 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     };
     const char* v = nullptr;
     if (a == "--help" || a == "-h") { usage = true; return true; }
+    else if (a == "--modifications-file") { if (!next(v)) return false; }
+    else if (a == "--mod") {
+      if (!next(v)) return false;
+      if (!o.modifications.set(v)) { err = "invalid modification: " + std::string(v); return false; }
+    }
     else if (a == "--game") { if (!next(v)) return false; o.game_dir = v; }
     else if (a == "--load-original") { if (!next(v)) return false; o.original_save = v; }
     else if (a == "--size") {
