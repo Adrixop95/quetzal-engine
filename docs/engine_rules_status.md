@@ -64,8 +64,8 @@ and `engine` checks pass with the complete private map copy under dummy SDL in
 | Town upgrades and non-map structure production | engine / V tables, P placement | Flag-0 structures use adjusted costs/timers and the production queue. Hall completion preserves identity and installs its race/level tree; farms/mines/defences can be queued repeatedly, are automatically placed on free tiles and activate descriptor effects. Exact reference placement, HP transition and completion ticks remain unverified; see validation below |
 | Side `DisabledID` blocks menu entries | V | `docs/formats.md` |
 | Weapon damage | V documented arithmetic / engine synthetic checks | Marine d7 and Defence d59 select weapon IDs. Classes 1/2/13 apply each matching 8.8 multiplier in sequence, then armor term; arrow zero-air suppresses armor. Classes 4/5/6/10 constants implemented; 8 delegates and 12 sums known child damage. Historical duel entries are diagnostics only. Other descriptor weapon mappings/armor retain placeholders |
-| Weapon reload getters and cooldown | V Marine reload+1 / P other scheduling | Classes 1/2/13/4/5/6/10 use documented reload/range. Simulation schedules reload+1; this is verified only for Marine cooldown, not universal hit intervals. Composite scheduling remains unresolved |
-| Projectile and unresolved weapon behavior | P / unresolved | Projectile speed is distinct metadata, not added to reload. Descriptor damage feeds provisional straight projectile flight and impact timing; direct weapons hit immediately. Reference flight/animation timing remains unverified. Classes 0/3/7/9/11, complete burn behavior and composite scheduling are unavailable calculations; known unresolved descriptor weapons do not silently fire generic damage |
+| Weapon reload getters and cooldown | V getters / partial scheduling | Ball/Axe use d2/d3 for reload/range; class 12 uses its first child. Siege launch cooldown uses reload, following Truck/Headtruck decrement-before-check; other weapons retain reload+1. Animation-marker launch delays and exact hit intervals remain unverified |
+| Projectile and unresolved weapon behavior | partial | Ball/Axe and paired siege launchers now fire descriptor payloads; class 9 supplies chained category damage. Ball impacts evaluate a spatial blast per victim. Standalone FireThrow and burn scheduling remain disabled. See the siege investigation below for evidence and remaining approximations |
 | Weapon range | V getters / P geometry and fallback | Established weapon getters replace generic ranges; Euclidean centre distance plus mobile source radius and placeholder target radius/footprint remains. Types without loaded weapon descriptors retain 56/288/336 px placeholders |
 | Sight range (target acquisition, fog) | P | Rewrite: 288 px (6 tiles), buildings 8 tiles. Reference: per-type interpolated light-mask IDs, daylight and brightness >32; separate tactic scan and weapon checks |
 | Auto-attack of enemies in sight (idle and attack-moving units) | P | nearest enemy, ties = lower id; hostility from the relation matrix |
@@ -86,22 +86,76 @@ and `engine` checks pass with the complete private map copy under dummy SDL in
 | Universal population cap | O reference / engine correction | Task 13 removes the unsupported AI-only cap 80 in develop. Synthetic human/AI production above 110 units passes. Queue 50 and assignment arrays 100 do not establish a side cap; no live population measurement succeeded |
 | Difficulty bonuses | V map-key exclusion / O other effects | Map Difficulty stays editor metadata; synthetic 0/100 inputs produce identical simulation hashes. No HP, damage, income or price bonus is invented. Global difficulty effects remain unverified |
 
+## Siege firing investigation (2026-10-29)
+
+The synthetic `test_siege_ranged` reproduced the reported failure before the
+fix: types 3 (axe siege), 4 (cannon) and 83 (catapult) could neither acquire nor
+fire at an unarmed enemy structure 180 pixels away. All nine acquisition,
+firing and damage/effect assertions failed. Truck kind 4 had no weapon mapping
+or armed flag; Ball/Axe damage and paired range/reload getters were unavailable,
+so combat eligibility rejected those descriptors. No melee damage was invented
+to make these tests pass.
+
+The engine now loads Truck d7 and enables known Ball/Axe/paired weapons. The
+same eligibility calculation drives autonomous acquisition and explicit orders.
+Out-of-range siege units choose a reachable, disc-clear firing tile within the
+weapon envelope, with stable row/column ties; direct mode never pursues. This
+selection is an engine pathfinding policy, not an original WaveSearch match.
+These classes inherit the maximum-only CanFire predicate: no positive minimum
+range or melee substitution is added. Target/source radii and structure geometry
+remain the existing approximations.
+
+Local reference inspection established Truck d7 (`0x4166a0`), Headtruck d9
+(`0x42c3c0`), Ball/Axe reload d2 and range d3 (`0x4039a0`, `0x4039b0`), paired
+first-child getters (`0x41e480`, `0x41e5f0`) and perpendicular d2 launch offsets
+(`0x41e4a0`). `0x4038a0` supplies their maximum-only CanFire predicate. Truck and
+Headtruck decrement a positive cooldown before testing it (`0x460a10`,
+`0x42c880`); the engine uses descriptor reload between siege launch events.
+Reference animation-marker firing and turret turn delays are still absent.
+
+Ball damage delegates to its child; Axe potential damage includes its direct
+component and chained weapon. Class 9 applies sequential category factors.
+The class-7 blast branch (`0x44c130`) checks the airborne category, returns full
+damage in the inner band, then applies distance falloff and outer-band structure
+and victim multipliers. Balls evaluate every living victim at the actual impact
+location, including allies, rather than guaranteeing a hit on their original
+moving target. New flight/payload fields participate in state hashes and replay.
+The engine's Euclidean norm, provisional victim radii, integer blast rounding,
+launch-time aim instead of reference prediction, and Arrow/Axe collision behavior
+still prevent a full projectile parity claim. Unmapped blast multipliers retain
+256; Marine, Truck and Headtruck use their inspected descriptor fields.
+
+Validation covers idle/explicit acquisition, descriptor ranges/reloads, three
+launches over two reload intervals, close targets, direct mode at long range,
+approach to a firing position across an impassable wall, paired projectiles,
+ball altitude and moving-target escape, blast boundaries/category/friendly fire,
+and per-tick replay equality. The private reference attempt used
+`work/siege-game/` and `tools/zstat_run.sh` inside `unshare -rn` with dummy SDL;
+`work/siege-probe/out.txt` records `Cannot open netlink socket: Operation not
+permitted`. It failed before game launch. No live reference timing or mission-1
+parity was established, and isolation was not bypassed.
+
+Final validation: Release build and all 26 runnable CTest entries passed; four
+game-data entries and the restricted UDP process check skipped. The separate
+game-data engine check passed with private mission 1/4 copies and resource
+symlinks under dummy SDL in `unshare -rn`. All pre-commit gates passed.
+
 ## Projectiles and effects
 
 | Rule | Status | Source / notes |
 |---|---|---|
 | Projectile objects at 12 Hz, integer fixed-point flight, previous/current render interpolation, hash/replay coverage | engine | Arrow, Axe, BallExpl and FireThrow objects carry source/target ids, snapshot endpoint, speed, payload and animation age. No renderer writes simulation state |
-| Type-to-weapon dispatch | V Marine/Defence / P Spider/Headtruck | Marine d7, Defence d59, Spider/Headtruck d9; CSV class/parameter lookup. Composite class 12 retains both visual components but cannot fire until scheduling and damage are known; class 8 delegates its visual to its child. Composite damage provisionally splits the existing total equally (integer remainder to the first child). Bird/Truck/Cannon/Zeppelin weapon fields are not guessed |
+| Type-to-weapon dispatch | V inspected fields / partial families | Marine/Truck d7, Defence d59, Spider/Headtruck d9. Truck is marked armed when its descriptor supplies a weapon. Class 12 retains both child IDs, damage and opposite perpendicular launch offsets from d2; class 8 delegates. Bird/Cannon/Zeppelin weapon fields remain unresolved |
 | Arrow speed/reload/range | V table / P firing schedule | Arrow d1/d2/d3; descriptor reload+1 schedules shots, without duel overrides. Shots start at the combat event, not the animation fire marker. Flight timing parity remains open |
-| Ball/Axe speed/reload/range | P | d1/d2/d3 interpreted as flight speed, reload and range; zero speed falls back to 1 px/tick. These getters/trajectory semantics need reference measurement |
-| Flame and splash behavior | P | class 7 uses anim 157, 24 px/tick, range 96, reload 12. Child class 7 d0 selects 150/151; d6 is provisionally a splash radius. Full burn sequencing, armor/category damage, friendly splash, falloff and secondary weapon damage are unresolved. Known descriptor damage is applied once at impact. Class 7 and other unresolved damage/scheduling remain disabled; visual defaults do not enable a shot |
-| Projectile trajectory and collision | P | straight flight toward the launch-time target position; no gravity, homing, terrain collision or interception. The original target receives the hit even after moving; splash additionally hits living hostile objects inside the radius. Source death does not cancel flight |
+| Ball/Axe speed/reload/range | V getters / P exact timing | d1/d2/d3 supply speed/reload/range. Paired launchers delegate range and reload to their first child. Base CanFire imposes a maximum range and no positive minimum. Zero-speed balls stay at their launch ground position and fall; zero-speed Axe metadata remains outside the exercised siege types |
+| Flame and splash behavior | V inspected blast branches / P geometry and arithmetic parity | Ball child class 7 uses d0 animation, d1/d2 inner/outer radius, d4 damage, d5 air category. Distance includes a provisional victim radius; the outer band falls off, applies the structure factor 204/256 and blast multiplier. Inner-band damage returns directly. Friendly and neutral victims are included. Standalone FireThrow and burn sequencing remain unresolved |
+| Projectile trajectory and collision | partial / P exact trajectory | Balls retain snapshot aim, planar velocity, altitude, vertical velocity and gravity; impact follows the fall at the actual ground location. Moving targets can escape; terrain does not intercept balls. Arrow/Axe retain provisional straight flight and guaranteed original-target damage; interception/swept Axe damage remain unresolved. Source death does not cancel flight |
 | Reference trajectory, interception, burn and splash measurements | blocked / no measurements | The 2026-10-28 isolated probe failed before game launch: namespace loopback setup returned `Cannot open netlink socket: Operation not permitted`. This is not a no-hit observation. Ballistic parameters, terrain/obstacle tests, burn cadence and per-category splash damage remain unresolved; see the [measurement protocol](EXPERIMENTS.md#projectile-measurement-protocol). No simulation rules were changed from this failed probe |
 | Effect animation ids, slots, durations and hotspots | V resource metadata | `effects.hpp`, `AnimSet`, `sprites_mapping.md`; effects read frame/light timelines from installed Units.xbe. 150/151/152 last 11 ticks in slot 0 and 10 in slots 1/2; debris/rubble 250; shockwave 105 lasts 30. Arrow/Axe/Ball use dir32 looping slots, flame uses a one-shot slot |
 | Damage fire | V selection / engine descriptor HP inputs | built structures at <=75/50/25% HP use 154/155/156 at ground position +(0,1), looping; repair/death removes the fire. Descriptor maxima are supplied by V04; synchronized reference rendering remains open |
 | Explosions, debris, muzzle and beam | V selection metadata / P spawn timing | vehicle death 152, ground debris 113; Arrow d13=105 creates shockwave; immediate descriptor d10/d11 enables muzzle 106 at +20 px, beam 107 at approximately 30-px steps, impact 110. No extra turret muzzle sprite is invented |
 | Smoke and unknown owners | open | smoke contained in known animation frames renders through the same effect path. Standalone anims 104/153 remain unassigned: their owners/spawn conditions are unverified, so no smoke spawning rule is invented |
-| Height and displacement | P flight altitude | Axe uses frame height, debris/rubble height -1; vehicle explosions retain explicit render height; other transient heights default to zero. Ball light reduction with altitude, altitude production and per-frame simulation displacement remain unresolved |
+| Height and displacement | partial | Balls launch at height 24, aim two pixels below the target ground point and fall with separate fixed-point vertical state. Integer Euclidean distance/normalization and launch tick ordering still require differential measurement. Axe uses frame height, debris/rubble height -1; vehicle explosions retain explicit render height. Altitude-dependent light remains unresolved |
 | Draw order | V contract / engine integration | effects share the unit/terrain overlay list: underlays first, ascending ground Y then descending X; each shadow precedes its body, then turret shadow/body. No separate air pass. Alpha uses the existing SDL approximation, not reference-exact background compositing |
 | Effect glow | V masks / P final shading | light.xbe 0x455 ids 1..16 are additive brightness, saturated at 152; translated bilinearly onto the (width+1)x(height+2) 48-pixel grid at ground position minus nine tiles. Body frames supply unit light; turret frame light is not separately queried. Palette shade uses (brightness+4)/8. Per-tile sampling, daylight tint and existing fog remain approximations; vision masks are not glow masks |
 
