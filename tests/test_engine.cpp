@@ -1202,6 +1202,244 @@ static void production_steps(GameSim& sim, World& w, int ticks) {
   for (int t = 0; t < ticks; ++t) { w.begin_tick(); sim.tick(w); }
 }
 
+// Task 47 reproductions: geometry, mines, mixed preview colours and damaged work.
+static void test_building_placement() {
+  auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  World base = production_world();
+  production_object(base, 11, 0, 5, 5); base.objects.back().town_hall = true;
+  base.side_state.resize(8); base.side_state[0].money = 10000;
+  base.passability = {40, 40, std::vector<uint8_t>(1600, 2)};
+  auto check_tile = [&](int x, int y, bool expected) {
+    World w = base; w.passability.v[y * 40 + x] = 0;
+    GameSim sim(rules); sim.init(w);
+    CHECK(sim.can_place(w, 0, 14, 12, 12) == expected);
+  };
+  check_tile(11, 12, false); // occupied western arm, outside the old sprite rectangle
+  check_tile(13, 13, true);  // empty corner of the actual occupancy mask
+  World occupied = base; production_object(occupied, 0, 0, 12, 12);
+  GameSim blocked(rules); blocked.init(occupied);
+  CHECK(!blocked.can_place(occupied, 0, 14, 12, 12));
+  GameSim sim(rules); World w = base; sim.init(w);
+  CHECK(!sim.can_place(w, 0, 14, 35, 35)); // owned town build radius
+  CHECK(!sim.can_place(w, 0, 13, 12, 12)); // empty high-byte mineral resource
+
+  CommandsUi ui(&sim); Camera cam; cam.set_world(1920, 1920); cam.set_view(796, 700);
+  Minimap mm; SDL_Rect panel{796, 0, 204, 493}; auto boxes = CommandsUi::layout(panel, 1);
+  w.selection.ids = {1};
+  auto click = [&](SDL_Rect box) {
+    Input in; in.mx = box.x + box.w / 2; in.my = box.y + box.h / 2;
+    in.pressed[SDL_BUTTON_LEFT] = true;
+    ui.update(in, w, cam, 1, mm, false, panel);
+    in.pressed[SDL_BUTTON_LEFT] = false; in.released[SDL_BUTTON_LEFT] = true;
+    ui.update(in, w, cam, 1, mm, false, panel);
+  };
+  auto menu = sim.menu(w, 0); int mine_index = -1, barracks_index = -1;
+  for (size_t i = 0; i < menu.size(); ++i) {
+    if (menu[i].type == 13) mine_index = int(i);
+    if (menu[i].type == 14) barracks_index = int(i);
+  }
+  CHECK(mine_index >= 0 && barracks_index >= 0);
+  if (mine_index >= 0) {
+    click(boxes.production[size_t(mine_index)]);
+    CHECK(ui.placing() == 13 && sim.pending_commands().empty());
+  }
+  ui.cancel_mode();
+  if (barracks_index >= 0) click(boxes.production[size_t(barracks_index)]);
+  // One blocked cell must leave the other occupied tiles green.
+  w.passability.v[12 * 40 + 12] = 0; sim.init(w);
+  SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, 796, 700, 32, SDL_PIXELFORMAT_ARGB8888);
+  CHECK(surface != nullptr);
+  SDL_Renderer* renderer = surface ? SDL_CreateSoftwareRenderer(surface) : nullptr;
+  CHECK(renderer != nullptr);
+  if (renderer) {
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); SDL_RenderClear(renderer);
+    ui.draw_ghost(renderer, w, cam, 12 * 48 + 24, 12 * 48 + 24);
+    std::vector<uint32_t> pixels(796 * 700);
+    CHECK(SDL_RenderReadPixels(renderer, nullptr, SDL_PIXELFORMAT_ARGB8888, pixels.data(), 796 * 4) == 0);
+    bool red = false, green = false;
+    for (auto pixel : pixels) {
+      int r = (pixel >> 16) & 255, g = (pixel >> 8) & 255;
+      red |= r > g + 20; green |= g > r + 20;
+    }
+    CHECK(red && green);
+    SDL_DestroyRenderer(renderer);
+  }
+  if (surface) SDL_FreeSurface(surface);
+
+  World work = base; GameSim build(rules); build.init(work);
+  Command buy; buy.type = Pct::Build; buy.a = 14; buy.b = 12; buy.c = 12; buy.ids = {1};
+  build.submit(buy); production_steps(build, work, 100);
+  CHECK(work.objects.size() == 2);
+  if (work.objects.size() == 2) {
+    auto& building = work.objects.back(); int before = building.hp;
+    building.hp -= 1000;
+    production_steps(build, work, 1);
+    CHECK(building.hp < before); // progress adds work HP without erasing damage
+  }
+}
+
+static void test_mine_construction_flow() {
+  auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  for (auto choice : {std::pair{0, 13}, {1, 48}, {2, 66}}) {
+    const auto [race, type] = choice;
+    World initial = production_world();
+    initial.mission.towns[0].index = 4; initial.mission.towns[0].race = race;
+    initial.mission.towns[0].type = race ? 2 : 1;
+    production_object(initial, rules->town_building(initial.mission.towns[0].type, race), 4, 5, 5);
+    initial.objects[0].town_hall = true;
+    initial.side_state.resize(8); initial.side_state[0].money = 10000;
+    initial.resources.v.assign(1600, 0);
+    initial.passability = {40, 40, std::vector<uint8_t>(1600, 2)};
+    const auto& r = rules->type(type);
+    CHECK(r.has_footprint_mask && r.foot_src == Src::Verified);
+    for (int y = 9; y <= 15; ++y) for (int x = 9; x <= 15; ++x)
+      if (GameSim::occupies(r, 12, 12, x, y)) {
+        initial.resources.v[y * 40 + x] = 65 << 8;
+        initial.passability.v[y * 40 + x] = 0; // mineral rock, not ordinary clear land
+      }
+    World w = initial; GameSim sim(rules); sim.init(w);
+    CHECK(sim.can_place(w, 0, type, 12, 12));
+    CHECK(!sim.can_place(w, 0, type, 20, 12)); // clear land without a deposit
+    CHECK(!sim.can_place(w, 0, type, 12, 12, nullptr, nullptr, 1)); // wrong producing town
+    CHECK(!sim.can_place(w, 0, type, -1, 12));
+    CHECK(!sim.can_place(w, 0, type, INT32_MAX, INT32_MIN));
+    CHECK(sim.can_place(w, 0, 14, 21, 5)); // P radius boundary (16 tiles)
+    CHECK(!sim.can_place(w, 0, 14, 22, 5));
+
+    w.selection.ids = {1}; CommandsUi ui(&sim);
+    Camera cam; cam.set_world(1920, 1920); cam.set_view(796, 700);
+    Minimap mm; SDL_Rect panel{796, 0, 204, 493}; auto boxes = CommandsUi::layout(panel, 1);
+    auto choose_mine = [&] {
+      auto items = sim.menu(w, 0); int index = -1;
+      for (size_t i = 0; i < items.size(); ++i) if (items[i].type == type) index = int(i);
+      CHECK(index >= 0 && index < int(boxes.production.size()));
+      if (index < 0 || index >= int(boxes.production.size())) return;
+      Input click; click.mx = boxes.production[index].x + 4; click.my = boxes.production[index].y + 4;
+      click.pressed[SDL_BUTTON_LEFT] = true;
+      CHECK(ui.update(click, w, cam, 1, mm, false, panel));
+      click.pressed[SDL_BUTTON_LEFT] = false; click.released[SDL_BUTTON_LEFT] = true;
+      ui.update(click, w, cam, 1, mm, false, panel);
+      CHECK(ui.placing() == type);
+    };
+    choose_mine();
+    Input target; target.mx = 20 * 48 + 24; target.my = 12 * 48 + 24; target.pressed[SDL_BUTTON_LEFT] = true;
+    CHECK(ui.update(target, w, cam, 1, mm, true, panel));
+    CHECK(ui.placing() == type && sim.pending_commands().empty()); // invalid click keeps mode
+    Input cancel; cancel.key_hit[SDL_SCANCODE_ESCAPE] = true;
+    ui.update(cancel, w, cam, 1, mm, true, panel);
+    CHECK(!ui.wants_left_click() && sim.pending_commands().empty());
+    choose_mine();
+    Input right; right.pressed[SDL_BUTTON_RIGHT] = true; right.buttons[SDL_BUTTON_RIGHT] = true;
+    ui.update(right, w, cam, 1, mm, true, panel);
+    right = {}; right.released[SDL_BUTTON_RIGHT] = true;
+    ui.update(right, w, cam, 1, mm, true, panel);
+    CHECK(!ui.wants_left_click() && sim.pending_commands().empty());
+    choose_mine();
+    cam.zoom = 0.5f;
+    target.mx = int(cam.to_screen_x(12 * 48 + 24)); target.my = int(cam.to_screen_y(12 * 48 + 24));
+    CHECK(ui.update(target, w, cam, 1, mm, true, panel));
+    CHECK(!ui.wants_left_click() && sim.pending_commands().size() == 1);
+    CHECK(sim.pending_commands()[0].type == Pct::PlaceBuilding);
+    CHECK(sim.pending_commands()[0].b == 12 && sim.pending_commands()[0].c == 12);
+    production_steps(sim, w, 1);
+    CHECK(w.side_state[0].queue.size() == 1 && w.objects.size() == 2);
+    if (w.side_state[0].queue.empty() || w.objects.size() != 2) continue;
+    const int paid = w.side_state[0].queue[0].paid, total = w.side_state[0].queue[0].total;
+    CHECK(w.objects.back().town == 4 && w.objects.back().anim_state == kAnimConstruct);
+    CHECK(w.objects.back().build_elapsed == 1 && w.objects.back().progress < 1000);
+    CHECK(w.side_state[0].money == 10000 - paid && !w.objects.back().harvest_ready);
+    production_steps(sim, w, total / 2);
+    auto& object = w.objects.back();
+    CHECK(data::construction_frame(5, object.hp, object.hp_max) >= 0);
+    CHECK(!sim.can_place(w, 0, type, 12, 12)); // deposits never override a building collision
+    Command pause; pause.type = Pct::PauseBuild; pause.a = 1; pause.ids = {1};
+    sim.submit(pause); int elapsed = object.build_elapsed; production_steps(sim, w, 5);
+    CHECK(object.build_elapsed == elapsed);
+    std::vector<LoggedCommand> decoded;
+    CHECK(deserialize_log(serialize_log(sim.log()), decoded));
+    World replay_world = initial; auto replay = GameSim::replay(replay_world, rules, decoded, sim.tick_count());
+    CHECK(replay->state_hash(replay_world) == sim.state_hash(w));
+    int cash = w.side_state[0].money, refund = w.side_state[0].queue[0].refund();
+    Command cancel_work; cancel_work.type = Pct::PauseBuild; cancel_work.a = 2; cancel_work.ids = {1};
+    sim.submit(cancel_work); production_steps(sim, w, 1);
+    CHECK(w.side_state[0].money == cash + refund && object.removed && w.side_state[0].queue.empty());
+    CHECK(sim.can_place(w, 0, type, 12, 12));
+    // Complete the same site on a second order; only the hall is needed to build it.
+    Command buy; buy.type = Pct::PlaceBuilding; buy.a = type; buy.b = buy.c = 12; buy.ids = {1};
+    sim.submit(buy); production_steps(sim, w, total - 1);
+    CHECK(w.objects.back().progress < 1000 && !w.objects.back().harvest_ready);
+    production_steps(sim, w, 1);
+    CHECK(w.objects.back().progress == 1000 && w.objects.back().hp == w.objects.back().hp_max);
+    CHECK(w.objects.back().anim_state != kAnimConstruct && !w.objects.back().harvest_ready);
+    CHECK(w.side_state[0].queue.empty());
+    production_steps(sim, w, 1); CHECK(w.objects.back().harvest_ready);
+    World final_replay = initial;
+    auto final_sim = GameSim::replay(final_replay, rules, sim.log(), sim.tick_count());
+    CHECK(final_sim->state_hash(final_replay) == sim.state_hash(w));
+  }
+}
+
+// Automatic construction must leave the producer's approach area connected.
+static void test_automatic_placement_access() {
+  auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  World w = production_world();
+  production_object(w, 11, 0, 8, 8); w.objects.back().town_hall = true;
+  w.side_state.resize(8); w.side_state[0].money = 100000;
+  GameSim sim(rules); sim.init(w);
+  int duration = 0;
+  for (const auto& item : sim.menu(w, 0)) if (item.type == 12) duration = item.time;
+  CHECK(duration > 0);
+  Command buy; buy.type = Pct::Build; buy.a = 12; buy.ids = {1};
+  for (int i = 0; i < 12; ++i) sim.submit(buy);
+  production_steps(sim, w, duration * 12 + 1);
+  CHECK(w.side_state[0].queue.empty() && w.objects.size() == 13);
+  path::NavGrid nav(w.terrain.w, w.terrain.h);
+  for (const auto& object : w.objects) {
+    if (!object.alive || object.removed) continue;
+    const auto& type = rules->type(object.type);
+    if (!type.structure) continue;
+    int tx = int(object.cur_x >> 8) / kTilePx, ty = int(object.cur_y >> 8) / kTilePx;
+    int x0, y0, x1, y1; GameSim::footprint(type, tx, ty, x0, y0, x1, y1);
+    for (int y = y0; y <= y1; ++y) for (int x = x0; x <= x1; ++x)
+      if (GameSim::occupies(type, tx, ty, x, y)) nav.add_block(x, y, 1, 1, 1);
+  }
+  path::FlowField field; path::Cell outside{0, 0};
+  field.build(nav, path::MoveClass::Small, &outside, 1);
+  CHECK(field.reachable(7, 7)); // the nearest approach to this hall must remain usable
+}
+
+static void test_blocked_producer_exit() {
+  auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  for (bool have_exit : {false, true}) {
+    World w = production_world();
+    production_object(w, 11, 0, 8, 8); w.objects.back().town_hall = true;
+    w.passability = {40, 40, std::vector<uint8_t>(1600, 0)};
+    if (have_exit) w.passability.v[12 * 40 + 12] = 2;
+    w.side_state.resize(8); w.side_state[0].money = 10000;
+    World initial = w; GameSim sim(rules); sim.init(w);
+    int duration = 0;
+    for (const auto& item : sim.menu(w, 0)) if (item.type == 0) duration = item.time;
+    CHECK(duration > 0);
+    Command buy; buy.type = Pct::Build; buy.a = 0; buy.ids = {1}; sim.submit(buy);
+    production_steps(sim, w, duration + 1);
+    if (have_exit) {
+      CHECK(w.objects.size() == 2 && w.side_state[0].queue.empty());
+      CHECK(w.objects.back().cur_x == tile_center_fixed(12) && w.objects.back().cur_y == tile_center_fixed(12));
+    } else {
+      CHECK(w.objects.size() == 1); // never embed a ground agent in blocked terrain
+      CHECK(w.side_state[0].queue.size() == 1);
+      if (!w.side_state[0].queue.empty()) {
+        CHECK(w.side_state[0].queue[0].started && w.side_state[0].queue[0].remaining == 0);
+        int cash = w.side_state[0].money;
+        Command cancel; cancel.type = Pct::QueueKill; sim.submit(cancel); production_steps(sim, w, 1);
+        CHECK(w.side_state[0].queue.empty() && w.side_state[0].money == cash);
+      }
+    }
+    auto replay = GameSim::replay(initial, rules, sim.log(), sim.tick_count());
+    CHECK(replay->state_hash(initial) == sim.state_hash(w));
+  }
+}
+
 static void test_population_difficulty_modes() {
   auto rules = std::make_shared<RulesData>();
   CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
@@ -2491,6 +2729,10 @@ int main(int argc, char** argv) {
     test_pure();
     test_movement_rules();
     test_sight();
+    test_building_placement();
+    test_mine_construction_flow();
+    test_automatic_placement_access();
+    test_blocked_producer_exit();
     test_production();
     test_town_production();
     test_town_service();

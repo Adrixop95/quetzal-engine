@@ -106,7 +106,8 @@ static void wire_values() {
   c.a = std::numeric_limits<int32_t>::min();
   c.b = std::numeric_limits<int32_t>::max(); c.c = -123;
   c.ids = {0, UINT32_MAX};  // Nothing commands carry data without interpreting IDs.
-  require(a.link.submit({c}) && b.link.submit({}), "Seal signed wire values");
+  Command place = c; place.type = Pct::PlaceBuilding;
+  require(a.link.submit({c, place}) && b.link.submit({}), "Seal signed wire values and placement command");
   for (const auto& p : a.link.packets()) b.link.receive(p);
   for (const auto& p : b.link.packets()) a.link.receive(p);
   require(a.link.step(a.sim, a.w) && b.link.step(b.sim, b.w), "Apply decoded wire values");

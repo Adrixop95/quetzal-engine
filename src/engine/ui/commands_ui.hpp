@@ -66,6 +66,8 @@ class CommandsUi {
   TargetMode mode_ = TargetMode::None;
   int placing_ = -1;
   uint32_t placing_member_ = 0;
+  int placing_town_ = -1;
+  Pct placing_command_ = Pct::Build;
   int page_ = 0;
   int queue_offset_ = 0, queue_town_ = -1;
   int pressed_control_ = 0;

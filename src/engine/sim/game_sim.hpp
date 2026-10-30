@@ -20,10 +20,16 @@ constexpr int kAnimConstruct = 6;
 
 struct MenuItem {
   int type = 0;
-  bool construct = false;     // place on the map (true) or queue production (false)
+  bool construct = false;     // original build-tree map flag; also controls uniqueness
+  bool place = false;         // UI placement for every non-upgrade structure
   int price = 0, time = 0;
-  bool enabled = false;       // prerequisites + money + not disabled
+  bool enabled = false;       // prerequisites, uniqueness and DisabledID; payment is checked at start
   const char* why_not = "";
+};
+
+struct PlacementCell {
+  int x = 0, y = 0;
+  const char* blocked = nullptr; // null = valid; static English reason otherwise
 };
 
 class GameSim : public Simulation {
@@ -45,10 +51,14 @@ class GameSim : public Simulation {
 
   // Queries for the UI.
   std::vector<MenuItem> menu(const World& w, int side, int town = -1) const;
-  bool can_place(const World& w, int side, int type, int tx, int ty, const char** why = nullptr, const QueueItem* reservation = nullptr) const;
+  bool can_place(const World& w, int side, int type, int tx, int ty, const char** why = nullptr, const QueueItem* reservation = nullptr, int town = -1) const;
+  std::vector<PlacementCell> placement_cells(const World& w, int side, int type, int tx, int ty,
+      int town = -1, const QueueItem* reservation = nullptr) const;
   const RulesData& rules() const { return *rules_; }
-  // Footprint rectangle (tiles) of a structure type centred on tile (tx, ty).
+  // Bounding rectangle of occupied tiles; use occupies() for the actual shape.
   static void footprint(const TypeRules& r, int tx, int ty, int& x0, int& y0, int& x1, int& y1);
+
+  static bool occupies(const TypeRules& r, int tx, int ty, int x, int y);
 
   // Mission script (.scn). Triggers run once per tick before orders.
   bool attach_script(const std::string& scn_path) { return script_.load(scn_path); }
@@ -94,7 +104,9 @@ class GameSim : public Simulation {
   const Object* town_hall(const World& w, int town) const;
   int upgrade_level(int race, int type) const;
   void cancel_production(World& w, SideState& side, size_t index);
+  void block_footprint(const TypeRules& r, int tx, int ty, int delta);
   bool finish_structure(World& w, int side, const QueueItem& item);
+  bool automatic_site(const World& w, int side, int type, int tx, int ty, int town) const;
   // Only spawn variants and effect slots consume this stream; audio has its own stream.
   uint32_t next_visual_rand() { visual_rng_ = visual_rng_ * 1664525u + 1013904223u; return visual_rng_ >> 8; }
 

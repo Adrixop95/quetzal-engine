@@ -74,8 +74,8 @@ and `engine` checks pass with the complete private map copy under dummy SDL in
 | Auto-attack of visible enemies (idle and attack-moving units) | V visibility gate / P tactic integration | Side brightness >32, hostility and known weapon eligibility gate candidates. Nearest enemy, lower-id ties and four-tick per-object scanning remain placeholders; original tactic bounds, 100-entry arrays and 15..23-tick scans are not implemented |
 | Death and corpses | P / V effect metadata | Marine corpses remain 480 ticks; vehicles spawn 152 and ground debris 113, known-radius structures select rubble 116/115/114 for 250 ticks; unknown radii retain provisional rubble 116. Airborne altitude remains open |
 | Simulation fog brightness and exploration | V formulas / synthetic checks | Every active tick: global daylight plus saturated glow (maximum 152), minimum side vision darkness, nonnegative difference; previous exploration capped at 32. Raw brightness replaces invented 0/96/152 states. Renderer integration remains separate |
-| Building construction: placement on free tiles, progress = adjusted build time, stages = animation slot 0 | V formula/stages, engine placement | Hall/speed/computer time applies to placed construction. Original placement/worker and exact completion semantics remain open |
-| Building footprint in tiles | P | desc d4/d5 (px) rounded up, centred on the clicked tile |
+| Building construction: town queue, progress = adjusted build time, stages = animation slot 0 | V formula/stages / P live timing and worker semantics | Placed mines/farms/defences share the town queue and cancellation/refund path. Progress adds HP without erasing damage. Original worker participation, start/completion tick alignment and damaged-construction transitions remain unmeasured; see task 47 |
+| Building footprint in tiles | V descriptor mask / P fallback | Building d6..d54 and Defence d9..d57 form a 7x7 mask centred at (3,3); only value 2 occupies a tile. Navigation, reservations and preview share it. Missing masks retain the old d4/d5 rectangle fallback; clearance cells with value 1 remain unverified |
 | Town production: construction and units share one active item per town | V inspected control flow / engine regression, P exact timing and spawn | FIFO waiting orders are unpaid; payment and speed/time selection happen at start. Capacity is 50 waiting items plus active work. Active pause is town-local; cancellation refunds unbuilt paid work. Missing/incomplete halls suspend timers. See task 36 below for evidence and limits |
 | Building income and repair supply | V formulas / synthetic checks | Descriptor occupancy cells equal to 2 weight resource channels A/B with d60/d61; periodic/scheduled 7200-tick clock from StartTime. Gold and d62/d320 repair supplies have separate accumulators. Completed same-town warehouse applies once to farms only. Missing resource map contributes zero terrain bytes |
 | Starting money = side `StartMoney` | V | `.mp` |
@@ -1525,3 +1525,131 @@ pre-commit gates passed; five private-input/network checks skipped.
 The [L6 method](parity.md#l6-audio-event-comparison-2026-10-29) records commands,
 formats, exit codes and evidence limits. No original audio, IDs or trace values
 are public fixtures.
+
+## Task 47: placement, footprint grid and construction (2026-10-30)
+
+**Reproduce before fixing:** the unchanged Release build and pre-commit passed.
+The new deterministic `engine_unit` regression then failed eight assertions:
+a barracks' western occupied arm was accepted over blocked terrain, an empty
+corner was rejected, a ground unit was ignored, a remote site and an empty mine
+site were accepted, the mine button submitted automatic production instead of
+entering placement, a mixed-validity footprint had no green cells, and a progress
+update erased construction damage. These checks use invented terrain, objects
+and software-renderer pixels without game assets.
+
+**Independent implementation:** Building and Defence descriptor masks now drive
+placement checks, queued reservations, navigation insertion/removal, upgrades,
+death, cancellation and debug teleport. Occupancy is centred on the clicked tile,
+not inferred from the sprite's pixel bounds. Explicit placement is checked both
+when ordered and before payment/start; a newly occupied waiting site suspends its
+order. Moving ground objects are checked against the occupied tiles using their
+current collision discs. Flying objects and removed/dead objects do not obstruct
+placement. Ordinary structures need clear terrain; mines use the resource map.
+
+Every non-upgrade structure button enters placement mode, including all three
+factions' mines and repeatable farms/defences. The preview follows the current
+camera/cursor and draws each occupied tile with its own validity. It is drawn
+above terrain and below objects/fog; it is hidden over the panel, minimap and
+modal UI. Left-click confirms a legal site; an invalid click keeps placement
+active; right-click or Escape cancels without payment. Placement binds the
+producing town when the mode starts and cancels if its remembered member
+vanishes. Build-tree uniqueness flags are separate from this UI decision.
+
+`PlaceBuilding` (engine command extension 0x52) supplies explicit coordinates for
+flag-0 structures. Existing `Build` flag-0 logs/AI orders retain automatic
+placement; hall upgrades remain in-place operations. Both paths use the same
+placement checks. The new command is accepted by command-log/save and lockstep
+validation. Invalid-tag tests now use the next unsupported extension, 0x53.
+
+Explicit construction is paid only when it starts at the head of its town queue.
+The town hall owns production; this implementation introduces no worker unit or
+worker requirement. Pause holds elapsed work and HP. Each progress tick adds
+only that tick's HP contribution, retaining prior damage; completion switches to
+the built animation, and harvesting starts on the following tick. Slot 0 stages
+still seek the established HP-based construction frame, including the initial
+interval without a body frame. Cancellation removes the live incomplete object
+and its exact navigation mask, with the existing 8.8 unbuilt-payment refund.
+Destroyed construction yields no refund. Occupied-mask bounds also replace
+sprite dimensions for the existing approximate structure reach and producer
+exit offsets.
+
+| Rule | Evidence | Boundary |
+| --- | --- | --- |
+| Descriptor occupancy and construction frame selector | V existing descriptor/render contracts | Shared mask replaces the sprite rectangle; value-1 clearance semantics remain open |
+| Town-local radius | P | Chebyshev distance at most 16 tiles from the live completed producing hall; original metric and radius need measurement |
+| Terrain and mines | P placement / V resource-map format | Ordinary occupied cells need passability 2. Mines require positive channel B in at least one occupied cell; mineral-bearing cells may use blocked terrain. Deposit threshold, channel naming, terrain exceptions and slope/clearance rules need live controls |
+| Collision and reservations | V engine construction / P original collision geometry | Exact mask overlap, current ground-object discs and waiting-site reservations; mobile disc radii remain provisional |
+| Valid/blocked preview colours | P | RGBA (60,220,60,110)/(230,50,60,110), outlines alpha 230; original colours, opacity, grid shape and line width are unmeasured |
+| Start, workers, damage growth, completion and refunds | V engine construction / P original timing and worker participation | Shared town queue and prior task 36 refund calculation; no live construction equivalence claimed |
+| New live measurements | P unmeasured | Isolated reference launch failed before the game started; no colours, rules or timings inferred |
+
+**Reference attempt:** a private game copy under ignored
+`work/placement-game/` has read-only resource/executable symlinks and ordinary
+Maps/Saves/config files. A bounded UI capture script used the supplied reference
+binary, both dummy SDL drivers and `unshare -rn`. Loopback setup failed with
+`Cannot open netlink socket: Operation not permitted`; launch output is retained
+in `work/placement-probe/launch.log`. Isolation was not bypassed. Repeat this
+experiment on a host supporting namespace interface setup before promoting P
+rows. The aligned live reference observer/record-replay dependencies described
+in V02 remain unresolved; the independent implementation and synthetic checks do
+not require them.
+
+**Coverage:** three-faction mine UI selection, invalid/valid clicks, right-click
+and Escape cancellation, zoomed cursor coordinates, stable town identity with
+sparse town numbers, empty/mineral controls, map/radius boundaries, mixed red/green
+pixels, payment, stages, pause, cancellation/refund, footprint release,
+completion/first harvest and serialized command-log replay. Existing mixed
+construction/unit queue, hall upgrade, destruction and long deterministic
+simulation checks remain required. No original assets or captures are tracked.
+
+**Landing correction against develop `5eff2ea`:** the previous validation used
+the older worktree base. A fresh archive of current develop passed its baseline
+suite; applying the first task 47 patch reproduced the reported `ai_skirmish`
+failure, including no waves, firing or losses in the final five-minute interval.
+The earlier richer-resource/road fixture adjustment was not a sufficient landing
+check and has been removed.
+
+Two new engine regressions reproduce construction-related problems independently
+of strategist timing. Twelve automatic farms can seal the producer's approach
+area; automatic placement now leaves a one-tile gap between occupied structure
+masks, including AI map-construction offers. A completed ground unit was created
+at a fixed exit even when every tile was blocked; production now retains the
+preferred exit when it fits, otherwise searches tile centres in stable square
+rings out to 16 tiles. If no collision-free ground exit fits, the paid queue item
+waits at zero; it remains cancellable with no unbuilt-work refund. A single-free-
+tile control and command-log replay verify successful fallback and suspension.
+These spacing/search choices are P engine policies, not measured original rules.
+Blocked placement cells skip unnecessary object scans, and automatic spacing uses
+bounding rectangles to avoid testing distant masks.
+
+The twenty-minute pressure/replay fixture now holds technology constant with
+mission DisabledID: initial village (11), footmen (0) and repeatable farms (12).
+Its original terrain, resource richness 130, 2000 starting cash, economy script
+and synthetic hall HP are retained. This isolates sustained opposition from
+unmeasured high-tech campaign balance when footprints/formations change.
+Development, prerequisites, defences, higher-tech offers and town-local commands
+retain their separate unit coverage. Every original per-five-minute offensive
+wave/firing/loss/birth assertion, both-producer survival check and per-tick
+viewing-side/replay comparison is retained. The strategist state machine, production price/time formulas and assertions
+are unchanged.
+
+The corrected current-develop soak observed offensive waves 3/3/1/4, firing
+304/816/278/3304, losses 21/25/21/28 and births 32/32/32/35 across its four
+five-minute intervals, with final hash `374e05968c563276`. These are synthetic
+fixture observations, not reference measurements or campaign acceptance.
+
+**Final landing validation:** develop advanced during this correction. The final
+integration uses `1a4f9536349dce83f934a39de6a64deb9c476e4e`, including the later
+siege and UI-feedback changes. The UI tests send full press/release pairs and
+respect the shell's selection-change cancellation; the remembered producer is
+checked only while placement is active. This also avoids conflicting cancellation
+resets with the UI-feedback work.
+
+Release build and all 39 integration CTests passed: 33 passed, six skipped
+(five default private-data entries and restricted UDP process creation).
+`ai_skirmish` passed in 17.91 seconds with the original pressure assertions and
+unchanged 180-second timeout. The older worktree's full suite and separate
+private-installation formats/engine tests also passed under dummy SDL and
+`unshare -rn`. All pre-commit gates and whitespace checks passed.
+The integration copy preserves develop's changes outside this task; all tracked
+changes remain uncommitted because git metadata is read-only.

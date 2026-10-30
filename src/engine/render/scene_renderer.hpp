@@ -2,6 +2,7 @@
 // texture atlases: a full-screen terrain is a few SDL_RenderGeometry calls.
 #pragma once
 #include <memory>
+#include <functional>
 #include <vector>
 #include "engine/assets/daylight.hpp"
 #include "engine/platform/window.hpp"
@@ -38,7 +39,7 @@ class SceneRenderer {
   SceneRenderer(Window& win, const GameData& data, const World& world);
   bool ok() const { return font_ok_; }
   void set_sprite_provider(std::shared_ptr<const SpriteProvider> p) { provider_ = std::move(p); }
-  void draw(const Camera& cam, float alpha);
+  void draw(const Camera& cam, float alpha, const std::function<void()>& ground_overlay = {});
   // Time-of-day light: tint and ambient brightness before dynamic masks.
   void set_light(const Light& l);
   SDL_Color light_tint() const { return mod_; }

@@ -23,7 +23,7 @@ struct Reader {
 bool known(Pct type) {
   auto n = uint8_t(type);
   return (n >= uint8_t(Pct::PauseOn) && n <= uint8_t(Pct::Nothing)) ||
-         type == Pct::Stop || type == Pct::AttackMove;
+         type == Pct::Stop || type == Pct::AttackMove || type == Pct::PlaceBuilding;
 }
 std::optional<Bytes> encode(const std::vector<Command>& commands, uint8_t side) {
   if (commands.size() > 32) return {};

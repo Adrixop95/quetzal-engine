@@ -311,7 +311,7 @@ data::SpriteRef SceneRenderer::effect_frame(const Effect& e) const {
   return a.at_tick(e.slot, e.age, e.loop);
 }
 
-void SceneRenderer::draw(const Camera& cam, float alpha) {
+void SceneRenderer::draw(const Camera& cam, float alpha, const std::function<void()>& ground_overlay) {
   stats = {};
   SDL_Renderer* r = win_.renderer();
   SDL_SetRenderDrawColor(r, 8, 10, 14, 255);
@@ -330,6 +330,7 @@ void SceneRenderer::draw(const Camera& cam, float alpha) {
       SDL_RenderDrawLineF(r, cx, cy - rr, cx, cy + rr);
     }
   }
+  if (ground_overlay) ground_overlay();
   draw_objects(cam, alpha);
   fog_.update(r, world_);
   if (!mask_lighting_) fog_.draw(r, cam, world_);

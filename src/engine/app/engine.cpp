@@ -499,7 +499,11 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         scene.set_light(daylight.sample(world.mission.tileset, t));
       }
       minimap.set_tint(scene.light_tint());
-      scene.draw(cam, alpha);
+      scene.draw(cam, alpha, [&] {
+        if (world.outcome == kRunning && !pause.open && !submodal && !on_mm && !on_panel &&
+            !drag_minimap && !pan && in.mouse_inside)
+          cmdui.draw_ghost(win.renderer(), world, cam, in.mx, in.my);
+      });
       if (!show_panel) minimap.draw(win.renderer(), cam, alpha, &scene.fog());
       hud.mouse_x = in.mx; hud.mouse_y = in.my; hud.alpha = alpha;
       hud.sprites = scene.stats.sprites; hud.placeholders = scene.stats.placeholders; hud.geometry_calls = scene.stats.geometry_calls;
@@ -509,11 +513,6 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
                       SDL_Rect{8 * pscale, 40 * pscale, view_w - 16 * pscale, oh / 4}, pscale);
         if (audio && !audio->subtitle().empty()) draw_messages(win.renderer(), scene.font(), {{audio->subtitle(), 1}},
             SDL_Rect{8 * pscale, oh - 150 * pscale, view_w - 16 * pscale, 60 * pscale}, pscale);
-      }
-      {
-        int gx, gy;
-        GetMouse(&gx, &gy);
-        cmdui.draw_ghost(win.renderer(), world, cam, int(gx * sx), int(gy * sy));
       }
       std::string rendered_tooltip;
       if (show_panel) {

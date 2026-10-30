@@ -65,7 +65,9 @@ struct TypeRules {
   int range_px = 56;  Src range_src = Src::Placeholder;
   int dmg = 500, reload = 12; Src dmg_src = Src::Placeholder;  // placeholder only when no descriptor weapon is loaded
   int price = 0, time = 0; Src cost_src = Src::Placeholder;    // types.csv (price/time verified from the UI tooltip function)
-  int foot_w = 1, foot_h = 1; Src foot_src = Src::Placeholder; // footprint in tiles (Building desc d4/d5 px, rounded up)
+  std::array<int, 49> footprint_mask{}; // descriptor 7x7 grid, centred at (3,3); 2 = occupied
+  bool has_footprint_mask = false;
+  int foot_w = 1, foot_h = 1; Src foot_src = Src::Placeholder; // occupied-mask bounds; missing-mask fallback uses sprite dimensions
 };
 
 struct Prerequisite { int type = 0; bool side_wide = false; };

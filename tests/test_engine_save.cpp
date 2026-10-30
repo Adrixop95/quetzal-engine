@@ -101,7 +101,7 @@ static void malformed() {
   // Reject a bad second command without publishing the already parsed first one.
   auto partial = log;
   const size_t second = 8 + 28 + 4 * s.log.front().cmd.ids.size();
-  write_le(partial.data() + second + 8, uint32_t(0x52));
+  write_le(partial.data() + second + 8, uint32_t(0x53));
   check_log(partial);
   auto preserved = s.log;
   CHECK(!deserialize_log(partial, preserved));
