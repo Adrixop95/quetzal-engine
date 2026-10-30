@@ -7,6 +7,28 @@
 
 #include "aztec_rt.h"
 #include "dbg.h"
+#include "audio_trace.h"
+
+extern uint32_t rt_oracle_tick(void);
+static void trace_audio(uint32_t buffer, const char* kind, uint32_t flags) {
+  static SDL_SpinLock lock;
+  static int initialized;
+  static FILE* file;
+  static uint64_t sequence;
+  SDL_AtomicLock(&lock);
+  if (!initialized) {
+    initialized = 1;
+    const char* path = getenv("RT_AUDIO_LOG");
+    if (path && *path) {
+      file = fopen(path, "w");
+      if (!file) { perror("RT_AUDIO_LOG"); exit(1); }
+    }
+  }
+  if (file && !rt_audio_write(file, sequence++, rt_oracle_tick(), buffer, kind, flags)) {
+    perror("RT_AUDIO_LOG write"); exit(1);
+  }
+  SDL_AtomicUnlock(&lock);
+}
 
 enum { DS_OK = 0 };
 
@@ -135,6 +157,7 @@ static uint32_t com_release(CPU* c, uint32_t* a) {
   (void)c;
   SndBuf* s = com_host(a[0]);
   if (s && !s->primary) {  // buffers are released by the game when done
+    if (s->playing) trace_audio(a[0], "release", 0);
     if (audio_dev) SDL_LockAudioDevice(audio_dev);
     s->playing = 0;
     for (int i = 0; i < MAX_BUFS; i++) if (bufs[i] == s) bufs[i] = NULL;
@@ -187,13 +210,14 @@ static uint32_t buf_play(CPU* c, uint32_t* a) {  // res, prio, flags
   DBG_EVERY(20, "sound", "Play flags=%08x", a[3]);
   SndBuf* s = com_host(a[0]);
   ensure_audio();
+  if (!s->primary) trace_audio(a[0], "play", a[3]);
   DBG("sound", "Play buf=%08x flags=%08x size=%u rate=%d bits=%d ch=%d pos=%u vol=%d", a[0], a[3], s->bytes, s->rate, s->bits, s->channels, s->pos, s->vol_mb);
   LOCKED(s)
   s->playing = 1; s->looping = (a[3] & 1) != 0;
   UNLOCKED()
   return DS_OK;
 }
-static uint32_t buf_stop(CPU* c, uint32_t* a) { (void)c; SndBuf* s = com_host(a[0]); DBG("sound", "Stop buf=%08x pos=%u", a[0], s->pos); LOCKED(s) s->playing = 0; UNLOCKED() return DS_OK; }
+static uint32_t buf_stop(CPU* c, uint32_t* a) { (void)c; SndBuf* s = com_host(a[0]); DBG("sound", "Stop buf=%08x pos=%u", a[0], s->pos); if (!s->primary) trace_audio(a[0], "stop", 0); LOCKED(s) s->playing = 0; UNLOCKED() return DS_OK; }
 static uint32_t buf_setpos(CPU* c, uint32_t* a) { (void)c; SndBuf* s = com_host(a[0]); DBG("sound", "SetCurrentPosition buf=%08x -> %u", a[0], a[1]); LOCKED(s) s->pos = a[1] % (s->bytes ? s->bytes : 1); s->frac = 0; UNLOCKED() return DS_OK; }
 static uint32_t buf_setvol(CPU* c, uint32_t* a) { (void)c; SndBuf* s = com_host(a[0]); s->vol_mb = (int)a[1]; return DS_OK; }
 static uint32_t buf_setpan(CPU* c, uint32_t* a) { (void)c; SndBuf* s = com_host(a[0]); s->pan = (int)a[1]; return DS_OK; }

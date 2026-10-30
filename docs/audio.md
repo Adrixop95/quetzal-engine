@@ -100,11 +100,10 @@ salt changes the starting track.
 
 ## Headless event logs and checks
 
-`--audio-log FILE` writes successful playback requests as numeric
-records (the field names and meanings are defined here):
+`--audio-log FILE` writes JSONL accepted playback requests:
 
-```text
-tick kind source set sound
+```json
+{"seq":0,"tick":7,"kind":"sound","source":0,"set":1,"sound":1,"trigger":"combat"}
 ```
 
 Kinds: 0 sound, 1 loop start, 2 loop stop, 3 music start, 4 music stop,
@@ -118,6 +117,20 @@ speech calls use the current presentation event tick. These logs
 record requests, not samples actually delivered by the device. They contain no
 audio bytes. Keep logs from private banks under ignored `work/`.
 `--no-audio` disables playback and therefore produces no playback events.
+The values above are invented. Kinds are `sound`, `loop_start`, `loop_stop`,
+`music`, `music_stop`. For music, `sound` is the track number. Direct WAV calls
+have set 0. Object loop sources encode object ID and channel; effect sources
+have bit 63 set and encode source ID, animation and slot. One-shot sources are
+currently 0. Music starts and transitions use the caller's current world tick;
+scene events use the dispatch tick. Each stream uses consecutive sequence indices.
+Triggers describe engine dispatch contexts, and unknown provenance remains
+`unknown`; loop stops retain the start context. These logs record requests,
+not samples delivered by the device. Keep private-bank logs under ignored
+`work/parity/`. `--no-audio` disables playback and produces no playback events.
+
+The reference shim's `RT_AUDIO_LOG` and the L6 normalizer/comparator are described
+in [parity.md](parity.md#l6-audio-event-comparison-2026-10-29). Reference buffers
+still need audited resource/trigger mappings; raw traces cannot establish parity.
 
 The `audio_events` CTest creates invented XBE/WAV/Anim records in a temporary
 directory, uses the application's dispatcher and an AudioSystem without an SDL

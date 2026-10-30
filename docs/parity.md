@@ -498,3 +498,138 @@ Its synthetic controls establish tooling behavior only. Matching streams and
 exporting numbers do not audit commands, setup, units or identity mapping and
 never automatically promote a P scenario to M. See the scenario guide for the
 private format, exit codes and remaining integration contract.
+## L6 audio event comparison (2026-10-29)
+
+`tools/audio_parity.py` supplies the audio-specific comparison independently of
+task 42's shared scenario harness, which is absent from this checkout. It compares
+the **global request sequence**, including interleaved trigger classes. Sound ID,
+kind and trigger must match at each sequence index; ticks may differ by at most
+one. It reports the first divergent index and every difference, with counts and
+coverage for `selection`, `orders`, `combat`, `building`, `ui`, `music` and
+`ambient`. Unobserved classes remain `unobserved`; two empty streams return
+`no_events`, never a pass. Index comparison is deliberately conservative: one
+insertion can produce subsequent `identity_or_order` differences. Those counts
+are divergent sequence positions, not independent root causes.
+
+The clone's `--audio-log FILE` now emits JSONL with `seq`, `tick`, `kind`,
+`source`, `set`, `sound` and `trigger`. `sound` is the chosen WAV ID, or the track
+number for music. It logs accepted requests without requiring an audio device;
+`--no-audio` still disables requests. Music changes retain the caller's current
+world tick instead of resetting to zero. Structure animation requests use
+`building`; mobile attack/death and independently firing turret requests use `combat`; other mobile
+animation requests use `ambient`. These are engine dispatch labels, not measured
+original causes. Generic effects remain `unknown`. Loops retain their start
+trigger at stop, including unknown provenance. Selection/order/UI contexts can
+be supplied through `AudioSystem::event_trigger`, but the missing application
+voice/UI dispatchers are not invented by this instrumentation.
+
+The reference's `RT_AUDIO_LOG=FILE` hooks secondary DirectSound buffer Play,
+Stop and release while playing. It emits JSONL with `seq`, `tick`, `buffer`,
+`kind` (`play`, `stop`, `release`), `flags`, `sound:null` and `trigger:"unknown"`.
+The tick reads the existing command oracle clock at the request; this does not
+establish its phase relative to the clone. Writes are serialized, flushed and
+fail on an I/O error. Primary buffers and automatic callback exhaustion are
+excluded. No samples are recorded. Buffer handles are process-local identities,
+not sound IDs: the shim cannot infer a sound resource, causal trigger or music
+track from a handle. In particular streamed music may reuse one playing buffer
+across track changes. A rebuilt private runtime is required to enable the hook;
+the supplied prebuilt binary is never modified.
+
+### Private capture and normalization
+
+Use a fresh output directory for each attempt:
+
+```sh
+python3 -I tools/audio_parity.py probe \
+  --game /absolute/private/game --runtime /absolute/private/build/aztec_recomp \
+  --script /absolute/private/audio-input.txt \
+  --output work/parity/audio-attempt --timeout 60
+```
+
+Without `--script`, the probe only waits at startup and quits; it is a hook/setup
+smoke probe, not a six-trigger scenario. It reuses the mission runner's private
+installation copy and fail-closed `timeout ... unshare -rn` setup, with both SDL
+dummy drivers. Missing game/runtime inputs return 77 and a skip report. Failed
+isolation or runtime exit returns 1; there is no fallback outside isolation.
+Successful raw capture also returns 1 (`captured_unmapped`), because it alone is
+not a parity verdict. An absent trace reports
+`blocked_missing_audio_hook_or_no_requests`. Every probe report marks each class
+unmeasured. The script, game copy, invocation, process log and event trace remain
+under this worktree's ignored `work/parity/`.
+
+An audited private manifest must bind each raw file by `raw_sha256`, explicitly
+state `tick_offset`, and provide a header with `schema:1`, `scenario`, `contract`,
+`first_tick`, `last_tick` and `complete:true`. The contract must document resource
+identity namespaces, tick origin/phase and matching scenario/input conditions.
+Completeness is a driver/auditor assertion, not something inferred from silence
+in an event log. A truncated raw file fails against the original manifest digest;
+a newly asserted digest does not prove that the scenario finished. The probe
+alone cannot produce this manifest.
+
+For reference traces, `annotations` must map **every** decimal sequence index to
+an independently evidenced `{sound,kind,trigger}` object. Allowed normalized kinds
+are `sound`, `loop_start`, `loop_stop`, `music`, `music_stop`. Resolve IDs against
+the user's resources and triggers against isolated input/observer evidence,
+never by copying clone expectations or matching handles across processes. These
+mappings and any executable-derived observations stay private. Clone annotations
+may resolve only an `unknown` trigger; they cannot rewrite IDs, kinds or known
+triggers. No event can be dropped. Unknown IDs/triggers, sequence gaps,
+nonmonotonic/out-of-window ticks and incompatible capture contracts are rejected.
+A streamed music track transition missing from the shim requires additional
+reference instrumentation, rather than a fabricated annotation/event.
+
+```sh
+python3 -I tools/audio_parity.py normalize reference \
+  work/parity/audio-attempt/reference.jsonl work/parity/audio-attempt/reference-manifest.json \
+  --output work/parity/audio-attempt/reference-normalized.json
+python3 -I tools/audio_parity.py normalize clone \
+  work/parity/audio-attempt/clone.jsonl work/parity/audio-attempt/clone-manifest.json \
+  --output work/parity/audio-attempt/clone-normalized.json
+python3 -I tools/audio_parity.py compare \
+  work/parity/audio-attempt/reference-normalized.json work/parity/audio-attempt/clone-normalized.json \
+  --output work/parity/audio-attempt/diff.json
+```
+
+Normalized documents contain `header`, `event_count` and ordered `events`;
+each event has `seq`, `tick`, `sound`, `kind`, `trigger`. Full validation precedes
+comparison, including tail records after an early difference. CLI output files
+are created exclusively under `work/parity/`. Compare returns 0 for equal
+nonempty observed events, 1 for differences/no events and 2 for invalid input.
+Equality covers only the declared capture and observed classes.
+
+### Evidence and remaining dependencies
+
+The isolated local probe in `work/parity/l6-audio-probe/` used the supplied
+read-only installation and prebuilt runtime. It failed at loopback setup with
+`Cannot open netlink socket: Operation not permitted`, before launching the
+runtime. No reference sound ID, trigger, timing or music transition was measured.
+
+A separate clone-only scripted smoke run completed inside `unshare -rn` with
+both dummy SDL drivers and that private installation copy. Its nonempty JSONL
+trace parsed with consecutive sequence indices and nondecreasing ticks; outputs
+are in `work/parity/l6-clone-scripted/`. This checks the application's event-file
+path only. An earlier clone-only run in `work/parity/l6-clone-probe/` timed out
+and its partial trace is not accepted as a complete capture. No paired reference
+comparison or trigger-coverage claim follows from either run.
+
+| Trigger class | Current clone coverage by inspection | Differential evidence |
+| --- | --- | --- |
+| Selection | Voice dispatcher missing | unmeasured |
+| Orders | Acknowledgement dispatcher missing | unmeasured |
+| Combat | Animation requests; generic effects need causal annotations | unmeasured |
+| Building | Animation frame/header requests; speech announcements incomplete | unmeasured |
+| UI | Direct-WAV API can label requests; application dispatch missing | unmeasured |
+| Music | Track start/stop requests and caller tick | unmeasured |
+| Ambient | Mobile animation/loop requests | unmeasured |
+
+The independent pieces are implemented and synthetically checked. Full L6
+acceptance remains open: task 42's shared scenario/input runners, audited
+reference resource/trigger and clock mapping, streamed music transition
+instrumentation, and successful isolated paired captures are still needed.
+No V/M gameplay label is promoted. `audio_events`, `audio_trace` and
+`audio_parity` test invented banks, serialization and comparator rejection/
+ordering/tolerance behavior without game data. Reference shim sources also pass
+a standalone C syntax check; this does not verify a linked private runtime.
+The final Release build and CTest run passed all 28 runnable entries; five
+private-input/network entries skipped. All-file pre-commit gates and explicit
+gates for new files passed. Changes remain uncommitted in this worktree.
