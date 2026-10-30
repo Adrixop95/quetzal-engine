@@ -475,12 +475,27 @@ static void test_commands_ui() {
   auto click = [&](SDL_Rect rect) {
     Input in; in.mx = rect.x + rect.w / 2; in.my = rect.y + rect.h / 2;
     in.pressed[SDL_BUTTON_LEFT] = true; in.buttons[SDL_BUTTON_LEFT] = true;
+    ui.update(in, w, cam, 1, mm, false, panel);
+    in.pressed[SDL_BUTTON_LEFT] = in.buttons[SDL_BUTTON_LEFT] = false;
+    in.released[SDL_BUTTON_LEFT] = true;
     return ui.update(in, w, cam, 1, mm, false, panel);
   };
   CHECK(CommandsUi::action_enabled(PanelAction::Move, w));
   CHECK(!CommandsUi::action_enabled(PanelAction::Repair, w));
   CHECK(!CommandsUi::action_enabled(PanelAction::Garrison, w));
   auto before = sim.state_hash(w);
+  Input lost; lost.mx = l.commands[0].x + 1; lost.my = l.commands[0].y + 1;
+  lost.pressed[SDL_BUTTON_LEFT] = lost.buttons[SDL_BUTTON_LEFT] = true;
+  ui.update(lost, w, cam, 1, mm, false, panel);
+  lost.pressed[SDL_BUTTON_LEFT] = lost.buttons[SDL_BUTTON_LEFT] = false;
+  lost.focused = false;
+  // SDL can retain a press edge when focus is lost later in the same event pump.
+  lost.pressed[SDL_BUTTON_LEFT] = true;
+  ui.update(lost, w, cam, 1, mm, false, panel);
+  lost.pressed[SDL_BUTTON_LEFT] = false;
+  lost.focused = true; lost.released[SDL_BUTTON_LEFT] = true;
+  ui.update(lost, w, cam, 1, mm, false, panel);
+  CHECK(!ui.wants_left_click() && sim.state_hash(w) == before);
   click(l.commands[0]);
   CHECK(ui.target_mode() == TargetMode::Move);
   CHECK(sim.state_hash(w) == before && sim.log().empty());
@@ -521,6 +536,16 @@ static void test_commands_ui() {
   w.selection.ids = {3};
   CHECK(!CommandsUi::action_enabled(PanelAction::Destroy, w));
   w.selection.ids = {1};
+  // Availability can change while the mouse is held; release must recheck it.
+  Input held; held.mx = l.production[0].x + 1; held.my = l.production[0].y + 1;
+  held.pressed[SDL_BUTTON_LEFT] = held.buttons[SDL_BUTTON_LEFT] = true;
+  ui.update(held, w, cam, 1, mm, false, panel);
+  w.mission.sides[0].disabled.push_back(sim.menu(w, 0)[0].type);
+  held.pressed[SDL_BUTTON_LEFT] = held.buttons[SDL_BUTTON_LEFT] = false;
+  held.released[SDL_BUTTON_LEFT] = true;
+  ui.update(held, w, cam, 1, mm, false, panel);
+  tick(); CHECK(w.side_state[0].queue.empty());
+  w.mission.sides[0].disabled.pop_back();
   click(l.production[0]);
   CHECK(w.side_state[0].money == 2000 && w.side_state[0].queue.empty());
   tick();
@@ -1914,9 +1939,23 @@ static void test_parallel_town_production() {
   ui_world.selection.ids = {2}; CommandsUi ui(&ui_sim);
   Camera camera; Minimap minimap; SDL_Rect panel{0, 0, 204, 700};
   auto layout = CommandsUi::layout(panel, 1);
-  Input click; click.pressed[SDL_BUTTON_LEFT] = true;
-  click.mx = layout.queue[0].x + 1; click.my = layout.queue[0].y + 1;
-  ui.update(click, ui_world, camera, 1, minimap, false, panel);
+  auto click_control = [&](const SDL_Rect& rect) {
+    Input click; click.mx = rect.x + 1; click.my = rect.y + 1;
+    click.pressed[SDL_BUTTON_LEFT] = click.buttons[SDL_BUTTON_LEFT] = true;
+    ui.update(click, ui_world, camera, 1, minimap, false, panel);
+    click.pressed[SDL_BUTTON_LEFT] = click.buttons[SDL_BUTTON_LEFT] = false;
+    click.released[SDL_BUTTON_LEFT] = true;
+    ui.update(click, ui_world, camera, 1, minimap, false, panel);
+  };
+  // Release-based pause stays scoped to the selected town.
+  click_control(layout.pause);
+  production_steps(ui_sim, ui_world, 1);
+  CHECK(ui_sim.log().back().cmd.type == Pct::PauseBuild && ui_sim.log().back().cmd.ids == std::vector<uint32_t>{2});
+  CHECK(!ui_world.side_state[0].queue[0].paused && ui_world.side_state[0].queue[1].paused);
+  click_control(layout.pause);
+  production_steps(ui_sim, ui_world, 1);
+  CHECK(!ui_world.side_state[0].queue[1].paused);
+  click_control(layout.queue[0]);
   production_steps(ui_sim, ui_world, 1);
   CHECK(ui_sim.log().back().cmd.type == Pct::QueueKill && ui_sim.log().back().cmd.a == 1);
   CHECK(ui_world.side_state[0].queue.size() == 1 && ui_world.side_state[0].queue[0].town == 0);
@@ -1924,14 +1963,21 @@ static void test_parallel_town_production() {
   // The panel admits orders beyond its eight visible slots and scrolls to cancel them.
   buy.ids = {2}; for (int i = 0; i < 9; ++i) ui_sim.submit(buy);
   production_steps(ui_sim, ui_world, 1);
-  click.mx = layout.production[0].x + 1; click.my = layout.production[0].y + 1;
-  ui.update(click, ui_world, camera, 1, minimap, false, panel);
+  click_control(layout.production[0]);
   production_steps(ui_sim, ui_world, 1);
   CHECK(ui_world.side_state[0].queue.size() == 11);
+  // Scrolling during capture must not cancel the newly exposed order on release.
+  Input held_queue; held_queue.mx = layout.queue[7].x + 1; held_queue.my = layout.queue[7].y + 1;
+  held_queue.pressed[SDL_BUTTON_LEFT] = held_queue.buttons[SDL_BUTTON_LEFT] = true;
+  ui.update(held_queue, ui_world, camera, 1, minimap, false, panel);
   Input scroll; scroll.mx = layout.queue[0].x + 1; scroll.my = layout.queue[0].y + 1; scroll.wheel = -1;
   CHECK(ui.update(scroll, ui_world, camera, 1, minimap, false, panel));
-  click.mx = layout.queue[7].x + 1; click.my = layout.queue[7].y + 1;
-  ui.update(click, ui_world, camera, 1, minimap, false, panel);
+  held_queue.pressed[SDL_BUTTON_LEFT] = held_queue.buttons[SDL_BUTTON_LEFT] = false;
+  held_queue.released[SDL_BUTTON_LEFT] = true;
+  ui.update(held_queue, ui_world, camera, 1, minimap, false, panel);
+  production_steps(ui_sim, ui_world, 1);
+  CHECK(ui_world.side_state[0].queue.size() == 11);
+  click_control(layout.queue[7]);
   production_steps(ui_sim, ui_world, 1);
   CHECK(ui_sim.log().back().cmd.type == Pct::QueueKill && ui_sim.log().back().cmd.a == 10);
   CHECK(ui_world.side_state[0].queue.size() == 10);
