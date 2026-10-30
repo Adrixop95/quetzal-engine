@@ -68,8 +68,8 @@ class TriageControls(unittest.TestCase):
             "field_difference", "object_lifecycle", "blocked_observation_contract"})
         draft = self.drafts / "field_difference.md"
         text = draft.read_text()
-        self.assertTrue(str(first.relative_to(ROOT)) in text)
-        self.assertTrue(str(second.relative_to(ROOT)) in text)
+        self.assertTrue(json.dumps(str(first.relative_to(ROOT))) in text)
+        self.assertTrue(json.dumps(str(second.relative_to(ROOT))) in text)
         self.assertTrue("Review required" in text)
         self.assertTrue("not an established gameplay defect" in text)
         draft.write_text("Reviewer edits\n")
