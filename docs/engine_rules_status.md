@@ -1377,6 +1377,34 @@ skipped because original saves are intentionally excluded. Pre-commit and
 full campaign completion, reference parity or native Windows behavior.
 
 
+## Parity triage and matrix tooling (2026-10-30)
+
+**Construction / synthetic evidence:** task 42's harness is available, and
+`tools/parity_triage.py` groups its direct or nested first-divergence reports
+into private review drafts under ignored `work/parity/tasks/`. It preserves
+existing reviewer edits and never queues work. `tools/parity_matrix.py` writes
+only aggregate scenario-result, pass/fail/skip and category counts to
+[parity_matrix.md](parity_matrix.md). Unknown private categories use a fixed
+public bucket; absent layer metadata remains `Unknown`. Invalid/conflicting
+metadata fails rather than inventing coverage. See [parity.md](parity.md) for
+selection, repeated-run counting, output restrictions and exit codes.
+
+CTest `parity_triage_matrix` exercises invented diffs without game data:
+grouping, nested harness reports, first-category extraction, classification,
+deterministic aggregate counts, exclusion of private values, draft preservation,
+malformed input, path/symlink restrictions and missing-input skips. A fresh
+actual harness invocation with `synthetic_l0` and `private_l0` produced one
+mocked equality and one absent-private-input skip; these are the committed
+matrix's two results. No live game process or reference measurement was used.
+The audited reference observer/identity and replay adapters remain missing.
+No simulation rule or P/M/V evidence label changes; reporting completion does
+not close whole-game parity.
+
+Validation: baseline and final worktree-local Release builds passed with
+`AZTEC_GEN_DIR=`. The final full CTest suite passed 32 entries and skipped six
+(five private-data checks and the restricted UDP process check). Pre-commit
+gates passed for tracked files and explicitly for the new tools, test and matrix.
+
 ## Task 36: mixed construction and unit queues (2026-10-29)
 
 **Reproduction:** `test_mixed_production_queue` in `engine_unit` failed before the
