@@ -138,7 +138,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
     GameSim* game = nullptr;
     if (!sim) {
       if (o.wander) sim = std::make_unique<WanderSimulation>();
-      else if (o.sim) { auto gs = std::make_unique<GameSim>(rules); game = gs.get(); sim = std::move(gs); }
+      else if (o.sim) { auto gs = std::make_unique<GameSim>(rules, o.modifications); game = gs.get(); sim = std::move(gs); }
       else sim = std::make_unique<NullSimulation>();
     }
     CommandsUi cmdui(game);
@@ -235,6 +235,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
     PauseMenu pause;
     TextOverlay briefing;
     AudioOptions audio_options;
+    ModificationOptions modification_options;
     const std::string briefing_text = mission_briefing(data, world.mission.file_name);
     const std::string next_mission = world.original_save ? "" : next_campaign_mission(data, world.mission.file_name);
     std::string notice;
@@ -291,8 +292,16 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       if (in.hit(SDL_SCANCODE_F11)) win.cycle_borderless();
       if (in.hit(SDL_SCANCODE_RETURN) && in.alt) win.toggle_fullscreen();
       notice_left = std::max(0.0, notice_left - dt);
-      const bool submodal = briefing.open || audio_options.open;
-      if (briefing.open) briefing.update(in);
+      const bool submodal = briefing.open || audio_options.open || modification_options.open;
+      if (modification_options.open) {
+        const auto before = o.modifications.bits();
+        modification_options.update(in, o, ow, oh, pscale);
+        if (game && before != o.modifications.bits()) {
+          Command change; change.type = Pct::SetModifications; change.a = int(o.modifications.bits());
+          game->submit(change);
+        }
+      }
+      else if (briefing.open) briefing.update(in);
       else if (audio_options.open) audio_options.update(in, o, ow, oh, pscale);
       if (submodal) consume_input();
       if (world.outcome != kRunning && !submodal) {
@@ -318,6 +327,9 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         PauseMenu::Action pa = world.outcome == kRunning && !submodal ? pause.update(in, ow, oh, pscale) : PauseMenu::Action::None;
         if (pa == PauseMenu::Action::Briefing) briefing.show("Briefing / objectives", briefing_text);
         if (pa == PauseMenu::Action::Audio) audio_options.open = true;
+        if (pa == PauseMenu::Action::Modifications) {
+          modification_options.open = true;
+        }
         if (pa == PauseMenu::Action::Resume) pause.open = false;
         bool do_save = pa == PauseMenu::Action::Save || (in.ctrl && in.hit(SDL_SCANCODE_S));
         bool do_load = pa == PauseMenu::Action::Load || (in.ctrl && in.hit(SDL_SCANCODE_L));
@@ -335,7 +347,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
           SaveData sd;
           sd.mission = world.mission.file_name; sd.content_hash = session_content; sd.tick = game->tick_count(); sd.hash = game->state_hash(world);
           sd.script_hash = file_hash(data.map_file(world.mission.file_name, "scn"));
-          sd.cam_x = cam.x; sd.cam_y = cam.y; sd.cam_zoom = cam.zoom; sd.log = game->log();
+          sd.cam_x = cam.x; sd.cam_y = cam.y; sd.cam_zoom = cam.zoom; sd.log = game->log(); sd.modifications = game->initial_modifications();
           std::string dir = data.root() + "/Saves";
           std::error_code sec;
           fs::create_directories(dir, sec);
@@ -369,6 +381,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
             if (audio) audio->stop_effects();
             world = std::move(fresh);
             game = ns.get();
+            o.modifications = game->modifications();
             sim = std::move(ns);
             cmdui.set_sim(game);
             cam.x = sd.cam_x; cam.y = sd.cam_y; cam.zoom = sd.cam_zoom;
@@ -549,6 +562,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       pause.draw(win.renderer(), scene.font(), ow, oh, pscale);
       briefing.draw(win.renderer(), scene.font(), ow, oh, pscale);
       audio_options.draw(win.renderer(), scene.font(), o, ow, oh, pscale);
+      modification_options.draw(win.renderer(), scene.font(), o, ow, oh, pscale);
       if (world.outcome != kRunning) OutcomeMenu::draw(win.renderer(), scene.font(), ow, oh, pscale,
           world.outcome == kVictory, campaign_number(world.mission.file_name) == 15, !next_mission.empty());
       if (notice_left > 0) draw_messages(win.renderer(), scene.font(), {{notice, 1}},

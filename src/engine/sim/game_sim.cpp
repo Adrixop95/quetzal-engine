@@ -35,7 +35,8 @@ Order resumed_order(uint8_t resume) {
 }
 }  // namespace
 
-GameSim::GameSim(std::shared_ptr<const RulesData> rules) : rules_(std::move(rules)) {}
+GameSim::GameSim(std::shared_ptr<const RulesData> rules, Modifications modifications)
+    : rules_(std::move(rules)), modifications_(modifications), initial_modifications_(modifications) {}
 
 void GameSim::footprint(const TypeRules& r, int tx, int ty, int& x0, int& y0, int& x1, int& y1) {
   if (r.has_footprint_mask) {
@@ -74,6 +75,7 @@ void GameSim::attach_agent(Object& o) {
 }
 
 void GameSim::init(World& w) {
+  modifications_ = initial_modifications_;
   tick_ = w.original_save ? w.tick : 0;
   w.tick = tick_;
   pending_.clear();
@@ -503,11 +505,15 @@ void GameSim::apply(World& w, const Command& c) {
           if (std::find(g.begin(), g.end(), o->id) == g.end()) g.push_back(o->id);
       }
       break;
+    case Pct::SetModifications:
+      if (c.a >= 0 && Modifications::valid(uint32_t(c.a))) modifications_ = Modifications::from_bits(uint32_t(c.a));
+      break;
     case Pct::PauseBuild: {
-      if (!ss || c.a < 0 || c.a > 2) break;
+      if (!ss || c.a < 0 || c.a > 2 || c.b < 0) break;
       int town = producing_town(w, c.side, c.ids);
       for (size_t i = 0; i < ss->queue.size(); ++i) {
         auto& q = ss->queue[i];
+        if (c.b > 0 && size_t(c.b - 1) != i) continue;
         if (q.town != town || !q.started) continue;
         if (c.a == 2) cancel_production(w, *ss, i);
         else q.paused = c.a == 1;
@@ -542,7 +548,14 @@ void GameSim::apply(World& w, const Command& c) {
       if (place && (c.b < 0 || c.c < 0 || c.b >= w.terrain.w || c.c >= w.terrain.h ||
                             !can_place(w, c.side, c.a, c.b, c.c, &why, nullptr, ti))) break;
       QueueItem q{c.a, std::max(1, mi->time), std::max(1, mi->time), ti, 0};
-      if (place) { q.tile_x = c.b; q.tile_y = c.c; }
+      if (place) {
+        q.tile_x = c.b; q.tile_y = c.c;
+        q.object = spawn(w, q.type, c.side, c.b * kTilePx + kTilePx / 2,
+                         c.c * kTilePx + kTilePx / 2, 0, true);
+        auto* object = w.find_mut(q.object);
+        object->town = w.mission.towns[size_t(ti)].index;
+        object->build_total = q.total;
+      }
       ss->queue.push_back(q);
       break;
     }
@@ -645,7 +658,7 @@ bool GameSim::menu_ok(const World& w, int side, const BuildItem& it, int town, c
   // Queued farms, mines and defences remain repeatable; upgrades have their own guard above.
   if (it.construct) {
     for (const Object& o : w.objects)
-      if (!o.removed && o.alive && o.side == side && o.town == td.index && o.type == it.type) {
+      if ((!reservation || o.id != reservation->object) && !o.removed && o.alive && o.side == side && o.town == td.index && o.type == it.type) {
         *why = "already built"; return false;
       }
     for (const auto& q : w.side_state[side].queue)
@@ -707,12 +720,12 @@ std::vector<PlacementCell> GameSim::placement_cells(const World& w, int side, in
     else {
       // P: mineral-bearing rock may host mines; ordinary structures need clear terrain.
       if (nav_.terrain(x, y) < 2 && !mineral) reason = "terrain blocked";
-      else if (nav_.blocked(x, y, path::MoveClass::Large) && nav_.terrain(x, y) >= 2) reason = "occupied";
+      else if ((!reservation || !reservation->object) && nav_.blocked(x, y, path::MoveClass::Large) && nav_.terrain(x, y) >= 2) reason = "occupied";
       // A known terrain/navigation rejection needs no further collision scans.
       if (reason) { cells.push_back({x, y, reason}); continue; }
       // Query structure masks as well: deposits must never bypass a dynamic blocker.
       for (const auto& object : w.objects) {
-        if (!object.alive || object.removed || object.type < 0) continue;
+        if (!object.alive || object.removed || object.type < 0 || (reservation && object.id == reservation->object)) continue;
         const auto& other = rules_->type(object.type);
         if (other.structure) {
           // In-place upgrades temporarily remove the old hall's navigation footprint.
@@ -761,12 +774,21 @@ void GameSim::economy(World& w) {
   std::vector<uint32_t> completed;
   for (size_t s = 0; s < w.side_state.size(); s++) {
     SideState& ss = w.side_state[s];
-    // Storage remains in command insertion order; each town advances only its first item.
+    // Stable insertion order arbitrates shared cash. Only the enabled modification
+    // gives buildings independent timers; the default keeps one lane per town.
     std::vector<int> advanced;
     for (size_t i = 0; i < ss.queue.size();) {
       QueueItem& q = ss.queue[i];
-      if (std::find(advanced.begin(), advanced.end(), q.town) != advanced.end()) { ++i; continue; }
-      advanced.push_back(q.town);
+      if (q.object) {
+        const auto* object = w.find(q.object);
+        if (!object || !object->alive || object->removed) { ss.queue.erase(ss.queue.begin() + i); continue; }
+      }
+      const bool construction = modifications_.parallel_construction && rules_->type(q.type).structure &&
+          upgrade_level(w.mission.towns[size_t(q.town)].race, q.type) < 0;
+      if (!construction) {
+        if (std::find(advanced.begin(), advanced.end(), q.town) != advanced.end()) { ++i; continue; }
+        advanced.push_back(q.town);
+      }
       const Object* hall = town_hall(w, q.town);
       // A missing producer suspends production rather than spawning at the side start.
       if (!hall || hall->side != int(s) || hall->progress < 1000) { ++i; continue; }
@@ -788,19 +810,7 @@ void GameSim::economy(World& w) {
         q.total = q.remaining = std::max(1, offer.time);
         ss.money -= q.paid;
         if (q.town < int(w.ai_towns.size())) w.ai_towns[q.town].spent += q.paid;
-        if (q.tile_x >= 0) {
-          q.object = spawn(w, q.type, int(s), q.tile_x * kTilePx + kTilePx / 2,
-                           q.tile_y * kTilePx + kTilePx / 2, 0, true);
-          auto* o = w.find_mut(q.object);
-          o->town = town.index; o->build_total = q.total;
-        }
-      }
-      if (q.object) {
-        const auto* o = w.find(q.object);
-        if (!o || !o->alive || o->removed) {
-          ss.queue.erase(ss.queue.begin() + i); // destroyed construction has no cancellation refund
-          continue;
-        }
+        if (auto* object = w.find_mut(q.object)) object->build_total = q.total;
       }
       if (q.paused) { ++i; continue; }
       if (q.remaining > 0) --q.remaining;
@@ -1385,7 +1395,7 @@ uint64_t GameSim::state_hash(const World& w) const {
   auto mix = [&](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
   // Hash contract 2: fixed-width integer values, ordered containers and explicit sizes.
   // Rules and loaded sight resources must be identical (content compatibility is separate).
-  mix(2); mix(w.tick); mix(w.script_side); mix(bool(w.original_save));
+  mix(2); mix(initial_modifications_.bits()); mix(modifications_.bits()); mix(w.tick); mix(w.script_side); mix(bool(w.original_save));
   mix(w.terrain.w); mix(w.terrain.h); mix(w.mission.tileset);
   mix(w.resources.w); mix(w.resources.h); mix(w.resources.v.size());
   for (auto value : w.resources.v) mix(value);
@@ -1468,14 +1478,14 @@ uint64_t GameSim::state_hash(const World& w) const {
 }
 
 std::unique_ptr<GameSim> GameSim::replay(World& fresh, std::shared_ptr<const RulesData> rules, const std::vector<LoggedCommand>& log,
-                                         uint64_t until_tick, const std::string& scn_path, ReplayObserver before_commands) {
+                                         uint64_t until_tick, const std::string& scn_path, ReplayObserver before_commands, Modifications modifications) {
   uint64_t previous = 0;
   for (const auto& entry : log) {
     if (!entry.tick || entry.tick < previous || entry.tick > until_tick)
       throw std::invalid_argument("command log is unordered or outside replay horizon");
     previous = entry.tick;
   }
-  auto sim = std::make_unique<GameSim>(std::move(rules));
+  auto sim = std::make_unique<GameSim>(std::move(rules), modifications);
   if (!scn_path.empty() && !sim->attach_script(scn_path)) throw std::invalid_argument("cannot load replay script");
   sim->init(fresh);
   size_t i = 0;

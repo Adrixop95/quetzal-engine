@@ -74,9 +74,9 @@ and `engine` checks pass with the complete private map copy under dummy SDL in
 | Auto-attack of visible enemies (idle and attack-moving units) | V visibility gate / P tactic integration | Side brightness >32, hostility and known weapon eligibility gate candidates. Nearest enemy, lower-id ties and four-tick per-object scanning remain placeholders; original tactic bounds, 100-entry arrays and 15..23-tick scans are not implemented |
 | Death and corpses | P / V effect metadata | Marine corpses remain 480 ticks; vehicles spawn 152 and ground debris 113, known-radius structures select rubble 116/115/114 for 250 ticks; unknown radii retain provisional rubble 116. Airborne altitude remains open |
 | Simulation fog brightness and exploration | V formulas / synthetic checks | Every active tick: global daylight plus saturated glow (maximum 152), minimum side vision darkness, nonnegative difference; previous exploration capped at 32. Raw brightness replaces invented 0/96/152 states. Renderer integration remains separate |
-| Building construction: town queue, progress = adjusted build time, stages = animation slot 0 | V formula/stages / P live timing and worker semantics | Placed mines/farms/defences share the town queue and cancellation/refund path. Progress adds HP without erasing damage. Original worker participation, start/completion tick alignment and damaged-construction transitions remain unmeasured; see task 47 |
+| Building construction: town queue, progress = adjusted build time, stages = animation slot 0 | V formula/stages / P live timing and worker semantics | Accepted placements immediately create unpaid, idle placeholders. Default production remains serial; the optional parallel construction modification gives each building an independent timer. Cancellation removes waiting placeholders without refund and refunds active unbuilt work. Progress adds HP without erasing damage. Original worker participation, start/completion tick alignment and damaged-construction transitions remain unmeasured; see task 47 |
 | Building footprint in tiles | V descriptor mask / P fallback | Building d6..d54 and Defence d9..d57 form a 7x7 mask centred at (3,3); only value 2 occupies a tile. Navigation, reservations and preview share it. Missing masks retain the old d4/d5 rectangle fallback; clearance cells with value 1 remain unverified |
-| Town production: construction and units share one active item per town | V inspected control flow / engine regression, P exact timing and spawn | FIFO waiting orders are unpaid; payment and speed/time selection happen at start. Capacity is 50 waiting items plus active work. Active pause is town-local; cancellation refunds unbuilt paid work. Missing/incomplete halls suspend timers. See task 36 below for evidence and limits |
+| Town production: construction and units share one active item per town by default | V inspected control flow / engine regression, P exact timing and spawn | FIFO waiting orders are unpaid; payment and speed/time selection happen at start. Capacity is 50 waiting items plus active work. Active pause is town-local; cancellation refunds unbuilt paid work. Missing/incomplete halls suspend timers. See task 36 and the task 48 update below for evidence, placeholder semantics and the opt-in parallel construction modification |
 | Building income and repair supply | V formulas / synthetic checks | Descriptor occupancy cells equal to 2 weight resource channels A/B with d60/d61; periodic/scheduled 7200-tick clock from StartTime. Gold and d62/d320 repair supplies have separate accumulators. Completed same-town warehouse applies once to farms only. Missing resource map contributes zero terrain bytes |
 | Starting money = side `StartMoney` | V | `.mp` |
 | Garrison | engine / V semantic fact | Extracts live mobile town members into a fresh tactic and selects it. Explicit mission town membership and hall identity, invalid-owner checks, empty/repeated extraction, hash and save/replay checks. Reference packet field layout and live comparison remain unverified |
@@ -1407,6 +1407,9 @@ gates passed for tracked files and explicitly for the new tools, test and matrix
 
 ## Task 36: mixed construction and unit queues (2026-10-29)
 
+Historical record: task 48 below changes placeholder creation time and adds an
+optional parallel construction mode. Default town progression remains serial.
+
 **Reproduction:** `test_mixed_production_queue` in `engine_unit` failed before the
 fix: construction appeared while earlier unit orders were pending, queued orders
 consumed cash, and pausing town 0 also stopped town 1. It uses invented terrain
@@ -1589,7 +1592,9 @@ placement; hall upgrades remain in-place operations. Both paths use the same
 placement checks. The new command is accepted by command-log/save and lockstep
 validation. Invalid-tag tests now use the next unsupported extension, 0x53.
 
-Explicit construction is paid only when it starts at the head of its town queue.
+Explicit construction is paid only when it starts at the head of its town queue
+by default. Task 48 below moves placeholder creation to command acceptance and
+adds an optional independent building scheduler.
 The town hall owns production; this implementation introduces no worker unit or
 worker requirement. Pause holds elapsed work and HP. Each progress tick adds
 only that tick's HP contribution, retaining prior damage; completion switches to
@@ -1681,3 +1686,58 @@ private-installation formats/engine tests also passed under dummy SDL and
 `unshare -rn`. All pre-commit gates and whitespace checks passed.
 The integration copy preserves develop's changes outside this task; all tracked
 changes remain uncommitted because git metadata is read-only.
+
+
+## Task 48: placeholders and optional parallel construction (2026-10-30)
+
+**V engine construction / P live placeholder parity:** an accepted explicit build
+or placement command immediately spawns a visible, one-HP building at construction
+stage zero, with its navigation footprint. It remains unpaid with zero elapsed
+work until production starts. Start rechecks prerequisites and cash without
+rejecting its own placeholder. Waiting cancellation removes the placeholder and
+blocker with no refund. Active cancellation retains the established unbuilt-paid
+fraction refund; destroyed placeholders or construction yield no refund.
+
+**Default original-style progression:** construction, automatic structures, hall
+upgrades and units retain one active item per town and FIFO order, including
+unaffordable-head stalls. Task 36 records V private reference control-flow
+inspection for that policy. Immediate placeholder creation is the required
+original-style behavior, but its live visual/start timing remains P here.
+
+**Clone-only modification, V engine construction:** `parallel_construction` is off
+by default. When enabled, ordinary buildings (explicit and automatic) advance
+independently of each other and the unit queue. Units and hall upgrades retain
+one serial lane per town. Shared cash is spent in insertion order; each start
+chooses the current speed and records its price/duration. Missing/incomplete
+halls suspend work. Capacity stays 50 waiting items per town plus started work.
+The AI keeps its existing conservative busy-town planning policy and uses the
+same production scheduler. Automatic structures retain placement at completion.
+Switching the modification off makes existing work obey the serial policy again.
+
+[Game modifications](modifications.md) documents persisted preferences, CLI,
+front-end/pause-menu toggles, logged live changes, save metadata and lockstep.
+The panel retains scrolling slots, individual progress/cancellation/refund and
+unit order. Placed active constructions show active/paused markers and support
+Shift-click pause/resume; the main pause control targets one item. All future
+simulation inputs are hashed, including initial and current modification sets.
+AZS3 replay version 4 records initial modifications and rejects older versions.
+
+**L1 attempt, no new M/V reference evidence:** a private game copy with resource
+symlinks, private Maps/Saves and copied settings was prepared in
+`work/parallel-production-game`. The supplied reference runtime was requested via
+`tools/zstat_run.sh zparallel work/parallel-production-probe 12000` with command
+and state logs, dummy SDL drivers and `unshare -rn`. It failed at loopback setup:
+`Cannot open netlink socket: Operation not permitted`. The game did not launch;
+no record/replay or placeholder observations were produced. Parallel construction
+is explicitly a product modification, not a parity claim. Exact placeholder
+visuals, worker involvement and completion alignment remain P. A functioning
+normalized reference observer/runner is still needed for measured L1 comparison;
+implementation and synthetic tests do not depend on that missing evidence.
+
+**Synthetic coverage:** default serial training and visible unpaid placeholders,
+waiting cancellation and released placement; two independent paid sites with
+serial units in parallel mode; duplicate-site rejection; individual pause,
+resume, cancellation and refunds; cash stalls and payment speed; queue hash
+sensitivity; save metadata and per-tick continuation/replay equality in both modes;
+logged mode changes; preference parsing/persistence and UI toggles; initial
+lockstep mismatch rejection. Existing default AI economy smoke coverage remains.

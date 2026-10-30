@@ -4,6 +4,7 @@
 #include <utility>
 #include <vector>
 #include "engine/sim/commands.hpp"
+#include "engine/sim/modifications.hpp"
 
 namespace aztec::engine {
 
@@ -11,9 +12,9 @@ class GameSim;
 class RulesData;
 struct World;
 
-inline constexpr uint32_t kSaveFormatVersion = 3;
+inline constexpr uint32_t kSaveFormatVersion = 4;
 // Bump whenever simulation semantics or state hashing change incompatibly.
-inline constexpr uint32_t kSaveReplayVersion = 3;
+inline constexpr uint32_t kSaveReplayVersion = 4;
 inline constexpr size_t kMaxSaveBytes = kMaxLogBytes + 512;
 inline constexpr uint64_t kMaxSaveTicks = 12 * 60 * 60 * 24; // 24 simulation hours
 
@@ -24,6 +25,7 @@ struct SaveData {
   uint64_t script_hash = 0;     // FNV-1a of the mission .scn file used (0 = no script); loading refuses a different script
   uint64_t content_hash = 0;   // mission/rules/input manifest fingerprint
   float cam_x = 0, cam_y = 0, cam_zoom = 1;
+  Modifications modifications; // initial set; later changes are commands in log
   std::vector<LoggedCommand> log;
 };
 

@@ -2222,7 +2222,62 @@ static void test_parallel_town_production() {
 
 }
 
-// Reproduces construction bypassing town production and payment for waiting orders.
+// Default production stays serial, but every accepted placement is visible immediately.
+static void test_default_construction_placeholders() {
+  auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  World initial = production_world();
+  production_object(initial, 11, 0, 5, 5); initial.objects.back().town_hall = true;
+  initial.side_state.resize(8); initial.side_state[0].money = 10000;
+  World w = initial; GameSim sim(rules); sim.init(w);
+  Command unit; unit.type = Pct::Build; unit.a = 0; unit.ids = {1}; sim.submit(unit);
+  Command place; place.type = Pct::PlaceBuilding; place.a = 12; place.ids = {1};
+  place.b = 12; place.c = 12; sim.submit(place);
+  place.b = 18; place.c = 18; sim.submit(place);
+  production_steps(sim, w, 1);
+  CHECK(w.objects.size() == 3 && w.side_state[0].queue.size() == 3);
+  for (size_t i : {1u, 2u}) {
+    const auto& q = w.side_state[0].queue[i]; const auto* object = w.find(q.object);
+    CHECK(!q.started && q.paid == 0 && object && object->progress == 0);
+    CHECK(object->build_elapsed == 0 && object->hp == 1 && object->anim_state == kAnimConstruct);
+  }
+  CHECK(w.side_state[0].money == 9900 && !sim.can_place(w, 0, 12, 18, 18));
+  production_steps(sim, w, 4);
+  CHECK(w.side_state[0].queue[0].remaining == 95 && w.objects[1].progress == 0 && w.objects[2].progress == 0);
+  SaveData saved; saved.mission = "serial-placeholder"; saved.tick = sim.tick_count();
+  saved.hash = sim.state_hash(w); saved.log = sim.log(); saved.modifications = sim.initial_modifications();
+  SaveData decoded; CHECK(deserialize_save(serialize_save(saved), decoded));
+  World restored = initial;
+  auto replay = GameSim::replay(restored, rules, decoded.log, decoded.tick, "", {}, decoded.modifications);
+  CHECK(replay->state_hash(restored) == saved.hash && !decoded.modifications.parallel_construction);
+  const uint32_t cancelled = w.side_state[0].queue[2].object;
+  Command cancel; cancel.type = Pct::QueueKill; cancel.a = 2;
+  sim.submit(cancel); replay->submit(cancel);
+  production_steps(sim, w, 1); production_steps(*replay, restored, 1);
+  CHECK(w.find(cancelled)->removed && w.side_state[0].money == 9900 && sim.can_place(w, 0, 12, 18, 18));
+  CHECK(sim.state_hash(w) == replay->state_hash(restored));
+  for (int i = 0; i < 10; ++i) {
+    production_steps(sim, w, 1); production_steps(*replay, restored, 1);
+    CHECK(sim.state_hash(w) == replay->state_hash(restored));
+  }
+  // A logged live toggle releases buildings; switching off serializes them again.
+  Command toggle; toggle.type = Pct::SetModifications; toggle.a = 1;
+  sim.submit(toggle); production_steps(sim, w, 1);
+  CHECK(w.side_state[0].queue[1].started && w.objects[1].build_elapsed == 1);
+  toggle.a = 0; sim.submit(toggle); production_steps(sim, w, 2);
+  CHECK(w.objects[1].build_elapsed == 1);
+  // With parallel mode disabled again, the second building waits for the first.
+  sim.submit(place);
+  production_steps(sim, w, w.side_state[0].queue[0].remaining);
+  CHECK(w.side_state[0].queue.size() == 2);
+  production_steps(sim, w, 3);
+  CHECK(w.side_state[0].queue[0].started && w.find(w.side_state[0].queue[0].object)->build_elapsed == 4);
+  CHECK(!w.side_state[0].queue[1].started && w.find(w.side_state[0].queue[1].object)->build_elapsed == 0);
+  World fresh = initial;
+  auto toggled = GameSim::replay(fresh, rules, sim.log(), sim.tick_count());
+  CHECK(toggled->state_hash(fresh) == sim.state_hash(w));
+}
+
+// Buildings progress independently while each town trains units in FIFO order.
 static void test_mixed_production_queue() {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
   World w = production_world();
@@ -2230,80 +2285,108 @@ static void test_mixed_production_queue() {
   production_object(w, 11, 1, 30, 30); w.objects.back().town_hall = true;
   production_object(w, 14, 0, 10, 5);
   w.side_state.resize(8); w.side_state[0].money = 10000;
-  World initial = w; GameSim sim(rules); sim.init(w);
+  World initial = w; GameSim sim(rules, {true}); sim.init(w);
   Command buy; buy.type = Pct::Build; buy.a = 0; buy.ids = {1};
-  sim.submit(buy);
-  buy.a = 1; buy.ids = {3}; sim.submit(buy); // another building in the same town
-  buy.a = 15; buy.b = 18; buy.c = 18; sim.submit(buy);
-  buy.a = 0; buy.ids = {2}; sim.submit(buy);
+  sim.submit(buy); sim.submit(buy);
+  // Place two repeatable farms, including a second placement on the same site.
+  Command place; place.type = Pct::PlaceBuilding; place.a = 12; place.ids = {1};
+  place.b = 12; place.c = 12; sim.submit(place); sim.submit(place);
+  place.b = 18; place.c = 18; sim.submit(place);
+  buy.ids = {2}; sim.submit(buy);
   production_steps(sim, w, 1);
-  CHECK(w.objects.size() == 3); // waiting construction must not start independently
-  CHECK(w.side_state[0].queue.size() == 4);
-  CHECK(w.side_state[0].money == 9800); // one paid item per town
-  Command cancel; cancel.type = Pct::QueueKill; cancel.a = 1;
-  sim.submit(cancel); production_steps(sim, w, 1);
-  CHECK(w.side_state[0].money == 9800); // a waiting order has no payment to refund
-  Command pause; pause.type = Pct::PauseBuild; pause.a = 1; pause.ids = {1};
+  CHECK(w.objects.size() == 5 && w.side_state[0].queue.size() == 5);
+  const auto& queue = w.side_state[0].queue;
+  CHECK(queue[0].remaining == 99 && queue[1].remaining == 100 && !queue[1].started);
+  CHECK(queue[2].started && queue[3].started && queue[2].object != queue[3].object);
+  CHECK(queue[2].remaining == queue[2].total - 1 && queue[3].remaining == queue[3].total - 1);
+  CHECK(w.side_state[0].money == 10000 - queue[0].paid - queue[2].paid - queue[3].paid - queue[4].paid);
+  production_steps(sim, w, 5);
+  CHECK(w.find(queue[2].object)->build_elapsed == 6 && w.find(queue[3].object)->build_elapsed == 6);
+
+  // Target either construction without pausing its neighbours or unit training.
+  Command pause; pause.type = Pct::PauseBuild; pause.a = 1; pause.b = 4; pause.ids = {1};
   sim.submit(pause);
-  int first = w.side_state[0].queue[0].remaining;
-  int other = w.side_state[0].queue.back().remaining;
+  int unit_remaining = queue[0].remaining, building_remaining = queue[2].remaining;
+  int paused_remaining = queue[3].remaining;
   production_steps(sim, w, 3);
-  CHECK(w.side_state[0].queue[0].remaining == first);
-  CHECK(w.side_state[0].queue.back().remaining == other - 3);
-  // Pausing holds the active item and every later item in that town only.
-  CHECK(w.side_state[0].queue[1].paid == 0 && !w.side_state[0].queue[1].started);
+  CHECK(queue[0].remaining == unit_remaining - 3 && queue[1].remaining == 100);
+  CHECK(queue[2].remaining == building_remaining - 3 && queue[3].remaining == paused_remaining);
   auto changes_queue_hash = [&](auto change) {
-    World altered = w; change(altered.side_state[0].queue[0]);
+    World altered = w; change(altered.side_state[0].queue[3]);
     CHECK(sim.state_hash(w) != sim.state_hash(altered));
   };
   changes_queue_hash([](auto& q) { q.started = !q.started; });
   changes_queue_hash([](auto& q) { q.paused = !q.paused; });
+  changes_queue_hash([](auto& q) { ++q.remaining; });
+  changes_queue_hash([](auto& q) { ++q.paid; });
   changes_queue_hash([](auto& q) { ++q.tile_x; });
   changes_queue_hash([](auto& q) { ++q.tile_y; });
   changes_queue_hash([](auto& q) { ++q.object; });
-  pause.a = 0; sim.submit(pause);
-  production_steps(sim, w, first);
-  CHECK(w.side_state[0].queue.size() == 1 && w.side_state[0].queue[0].type == 15);
-  CHECK(!w.side_state[0].queue[0].started && w.objects.size() == 5);
-  production_steps(sim, w, 1);
-  CHECK(w.objects.size() == 6 && w.objects.back().type == 15 && w.objects.back().progress < 1000);
-  auto& q = w.side_state[0].queue.front();
-  CHECK(q.started && q.object == w.objects.back().id);
-  production_steps(sim, w, 10);
-  int progress = w.objects.back().progress;
-  pause.a = 1; sim.submit(pause); production_steps(sim, w, 5);
-  CHECK(w.objects.back().progress == progress);
-  World paused_replay = initial;
-  auto paused_sim = GameSim::replay(paused_replay, rules, sim.log(), sim.tick_count());
-  CHECK(paused_sim->state_hash(paused_replay) == sim.state_hash(w));
-  int refund = q.refund(), cash = w.side_state[0].money;
-  CHECK(refund > 0 && refund < q.paid);
-  pause.a = 2; sim.submit(pause); production_steps(sim, w, 1);
-  CHECK(w.side_state[0].queue.empty() && w.objects.back().removed);
-  CHECK(w.side_state[0].money == cash + refund);
-  CHECK(sim.can_place(w, 0, 15, 18, 18));
-  auto replay = GameSim::replay(initial, rules, sim.log(), sim.tick_count());
-  CHECK(replay->state_hash(initial) == sim.state_hash(w));
+  SaveData save; save.mission = "synthetic-parallel-production";
+  save.tick = sim.tick_count(); save.hash = sim.state_hash(w); save.log = sim.log(); save.modifications = sim.initial_modifications();
+  SaveData decoded; CHECK(deserialize_save(serialize_save(save), decoded));
+  World restored = initial;
+  auto continuation = GameSim::replay(restored, rules, decoded.log, decoded.tick, "", {}, decoded.modifications);
+  CHECK(continuation->state_hash(restored) == decoded.hash);
 
-  // FIFO waits for money; later cheap orders never overtake the unaffordable head.
-  World poor = production_world(); production_object(poor, 11, 0, 5, 5);
-  poor.objects.back().town_hall = true;
-  GameSim ps(rules); ps.init(poor);
-  buy.ids = {1}; buy.a = 14; buy.b = 18; buy.c = 18; ps.submit(buy);
-  buy.a = 0; ps.submit(buy); production_steps(ps, poor, 2);
-  CHECK(poor.side_state[0].queue.size() == 2 && poor.objects.size() == 1);
-  CHECK(poor.side_state[0].queue[0].paid == 0 && poor.side_state[0].queue[1].paid == 0);
-  poor.side_state[0].money = 100;
-  production_steps(ps, poor, 1);
-  CHECK(poor.side_state[0].money == 100 && !poor.side_state[0].queue[1].started);
-  cancel.a = 0; ps.submit(cancel); production_steps(ps, poor, 1);
-  CHECK(poor.side_state[0].money == 0 && poor.side_state[0].queue[0].started);
-  // Cancellation of a paid item returns only its unbuilt fraction, once.
-  production_steps(ps, poor, 49);
-  CHECK(poor.side_state[0].queue[0].refund() == 50);
-  ps.submit(cancel); production_steps(ps, poor, 1);
-  ps.submit(cancel); production_steps(ps, poor, 1);
-  CHECK(poor.side_state[0].queue.empty() && poor.side_state[0].money == 50);
+  // UI targets the second live construction even while the first unit is active.
+  CommandsUi ui(&sim); Camera camera; Minimap minimap; SDL_Rect panel{0, 0, 204, 700};
+  auto layout = CommandsUi::layout(panel, 1);
+  auto click = [&](int slot, bool shift) {
+    Input in; in.mx = layout.queue[slot].x + 1; in.my = layout.queue[slot].y + 1; in.shift = shift;
+    in.pressed[SDL_BUTTON_LEFT] = in.buttons[SDL_BUTTON_LEFT] = true;
+    ui.update(in, w, camera, 1, minimap, false, panel);
+    in.pressed[SDL_BUTTON_LEFT] = in.buttons[SDL_BUTTON_LEFT] = false; in.released[SDL_BUTTON_LEFT] = true;
+    ui.update(in, w, camera, 1, minimap, false, panel);
+  };
+  click(3, true); production_steps(sim, w, 1);
+  CHECK(sim.log().back().cmd.type == Pct::PauseBuild && sim.log().back().cmd.b == 4);
+  CHECK(!w.side_state[0].queue[3].paused && w.side_state[0].queue[3].remaining == paused_remaining - 1);
+  const uint32_t cancelled = w.side_state[0].queue[3].object;
+  int cash = w.side_state[0].money, refund = w.side_state[0].queue[3].refund();
+  click(3, false); production_steps(sim, w, 1);
+  CHECK(sim.log().back().cmd.type == Pct::QueueKill && sim.log().back().cmd.a == 3);
+  CHECK(w.side_state[0].money == cash + refund && w.find(cancelled)->removed);
+  CHECK(sim.can_place(w, 0, 12, 18, 18));
+  Command cancel; cancel.type = Pct::QueueKill;
+  // Continue the saved world with the same commands, then compare every later tick.
+  for (size_t i = decoded.log.size(); i < sim.log().size(); ++i) {
+    continuation->submit(sim.log()[i].cmd); production_steps(*continuation, restored, 1);
+  }
+  CHECK(continuation->state_hash(restored) == sim.state_hash(w));
+  for (int i = 0; i < 220; ++i) {
+    production_steps(sim, w, 1); production_steps(*continuation, restored, 1);
+    CHECK(continuation->state_hash(restored) == sim.state_hash(w));
+  }
+  CHECK(w.side_state[0].queue.empty());
+  World replay_world = initial;
+  std::vector<LoggedCommand> log; CHECK(deserialize_log(serialize_log(sim.log()), log));
+  auto replay = GameSim::replay(replay_world, rules, log, sim.tick_count(), "", {}, {true});
+  CHECK(replay->state_hash(replay_world) == sim.state_hash(w));
+
+  // A cash stall blocks the default lane, but parallel construction leaves unit training independent.
+  for (bool enabled : {false, true}) {
+    World poor = production_world(); production_object(poor, 11, 0, 5, 5);
+    poor.objects.back().town_hall = true;
+    GameSim ps(rules, {enabled}); ps.init(poor);
+    buy.ids = {1}; buy.a = 14; buy.b = 18; buy.c = 18; ps.submit(buy);
+    buy.a = 0; ps.submit(buy); production_steps(ps, poor, 2);
+    CHECK(poor.side_state[0].queue.size() == 2 && poor.objects.size() == 2);
+    CHECK(poor.side_state[0].queue[0].paid == 0 && poor.side_state[0].queue[1].paid == 0);
+    poor.side_state[0].money = 100;
+    production_steps(ps, poor, 1);
+    CHECK(poor.side_state[0].money == (enabled ? 0 : 100));
+    CHECK(poor.side_state[0].queue[1].started == enabled);
+    cancel.a = 0; ps.submit(cancel); production_steps(ps, poor, 1);
+    CHECK(poor.side_state[0].money == 0 && poor.side_state[0].queue[0].started);
+    // Cancellation of a paid item returns only its unbuilt fraction, once.
+    production_steps(ps, poor, poor.side_state[0].queue[0].remaining - 50);
+    CHECK(poor.side_state[0].queue[0].refund() == 50);
+    ps.submit(cancel); production_steps(ps, poor, 1);
+    ps.submit(cancel); production_steps(ps, poor, 1);
+    CHECK(poor.side_state[0].queue.empty() && poor.side_state[0].money == 50);
+
+  }
 
   // A waiting item's price and duration use the speed when it starts.
   World priced = production_world(); production_object(priced, 11, 0, 5, 5);
@@ -2737,6 +2820,7 @@ int main(int argc, char** argv) {
     test_town_production();
     test_town_service();
     test_parallel_town_production();
+    test_default_construction_placeholders();
     test_mixed_production_queue();
     test_projectiles();
     test_object_initialization();

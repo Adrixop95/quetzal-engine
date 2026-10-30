@@ -215,7 +215,7 @@ int main() {
     std::vector<engine::LoggedCommand> log;
     if (engine::deserialize_log(d, log)) CHECK(engine::serialize_log(log) == d);
   });
-  for (uint32_t tag : {0u, 0x53u, 0x10017u}) {
+  for (uint32_t tag : {0u, 0x54u, 0x10017u}) {
     Bytes bad = engine::serialize_log(saved.log); word(bad, 16, tag);
     CHECK(!engine::deserialize_log(bad, commands)); CHECK(engine::serialize_log(commands) == engine::serialize_log(saved.log));
   }

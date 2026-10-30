@@ -16,7 +16,7 @@ bool valid_command(const Command& c) {
   auto type = uint8_t(c.type);
   return c.side < 8 && c.ids.size() <= kMaxCommandIds &&
       ((type >= uint8_t(Pct::PauseOn) && type <= uint8_t(Pct::Nothing)) ||
-       c.type == Pct::Stop || c.type == Pct::AttackMove || c.type == Pct::PlaceBuilding);
+       c.type == Pct::Stop || c.type == Pct::AttackMove || c.type == Pct::PlaceBuilding || c.type == Pct::SetModifications);
 }
 
 std::vector<uint8_t> serialize_log(const std::vector<LoggedCommand>& log) {

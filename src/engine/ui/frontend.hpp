@@ -28,7 +28,7 @@ bool play_video(Window& win, const std::string& path);
 // In-game pause overlay.
 class PauseMenu {
  public:
-  enum class Action { None, Resume, Briefing, Audio, Save, Load, Restart, Menu, Quit };
+  enum class Action { None, Resume, Briefing, Audio, Modifications, Save, Load, Restart, Menu, Quit };
   bool open = false;
   Action update(const Input& in, int ow, int oh, int scale);   // handles clicks while open
   void draw(SDL_Renderer* r, const Font& font, int ow, int oh, int scale) const;
@@ -39,6 +39,14 @@ class PauseMenu {
 
 // Presentation-only controls shared by the front-end and paused mission.
 class AudioOptions {
+ public:
+  bool open = false;
+  static SDL_Rect row(int index, int width, int height, int scale);
+  void update(const Input& in, Options& options, int width, int height, int scale);
+  void draw(SDL_Renderer* r, const Font& font, const Options& options, int width, int height, int scale) const;
+};
+
+class ModificationOptions {
  public:
   bool open = false;
   static SDL_Rect row(int index, int width, int height, int scale);

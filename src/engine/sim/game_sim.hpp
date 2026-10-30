@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include "engine/sim/commands.hpp"
+#include "engine/sim/modifications.hpp"
 #include "engine/sim/path/mover.hpp"
 #include "engine/sim/rules.hpp"
 #include "engine/sim/script_runner.hpp"
@@ -34,7 +35,9 @@ struct PlacementCell {
 
 class GameSim : public Simulation {
  public:
-  explicit GameSim(std::shared_ptr<const RulesData> rules);
+  explicit GameSim(std::shared_ptr<const RulesData> rules, Modifications modifications = {});
+  Modifications modifications() const { return modifications_; }
+  Modifications initial_modifications() const { return initial_modifications_; }
   void init(World& w) override;
   void tick(World& w) override;
 
@@ -76,7 +79,7 @@ class GameSim : public Simulation {
   using ReplayObserver = std::function<void(uint64_t, const World&, const GameSim&)>;
   static std::unique_ptr<GameSim> replay(World& fresh, std::shared_ptr<const RulesData> rules,
                                          const std::vector<LoggedCommand>& log, uint64_t until_tick,
-                                         const std::string& scn_path = "", ReplayObserver before_commands = {});
+                                         const std::string& scn_path = "", ReplayObserver before_commands = {}, Modifications modifications = {});
 
  private:
   void apply(World& w, const Command& c);
@@ -113,6 +116,7 @@ class GameSim : public Simulation {
   std::shared_ptr<const RulesData> rules_;
   path::NavGrid nav_;
   std::unique_ptr<path::MoveSystem> mover_;
+  Modifications modifications_, initial_modifications_;
   ScriptRunner script_;
   std::vector<Command> pending_;
   std::vector<LoggedCommand> log_;

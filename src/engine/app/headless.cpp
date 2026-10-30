@@ -178,6 +178,7 @@ int run_headless(int argc, char** argv) {
   if (const char* value = std::getenv("AZTEC_GAME")) game = value;
   int max_ticks = 43200, interval = 120, save_tick = 0;
   bool auto_orders = true;
+  Modifications modifications;
   try {
     bool mission_given = false;
     for (int i = 1; i < argc; ++i) {
@@ -187,6 +188,7 @@ int run_headless(int argc, char** argv) {
         return argv[i];
       };
       if (a == "--game") game = value();
+      else if (a == "--mod") { if (!modifications.set(value())) throw std::runtime_error("invalid modification"); }
       else if (a == "--rules-dir") rules_dir = value();
       else if (a == "--max-ticks") max_ticks = number(value(), 1);
       else if (a == "--order-interval") interval = number(value(), 1);
@@ -199,7 +201,7 @@ int run_headless(int argc, char** argv) {
       else if (a == "--resume") resume_path = value();
       else if (a == "--no-auto-orders") auto_orders = false;
       else if (a == "--help") {
-        std::puts("usage: aztec_engine --headless --game DIR --rules-dir DIR [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE] [--tick-hashes FILE] [--save-at N --save FILE] [--resume FILE] MISSION");
+        std::puts("usage: aztec_engine --headless --game DIR --rules-dir DIR [--mod parallel_construction=on|off] [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE] [--tick-hashes FILE] [--save-at N --save FILE] [--resume FILE] MISSION");
         return 0;
       } else if (a.empty() || a[0] == '-' || mission_given) throw std::runtime_error("unexpected argument: " + a);
       else { report.mission = a; mission_given = true; }
@@ -212,7 +214,7 @@ int run_headless(int argc, char** argv) {
     if (!load_world(data, report.mission, world, error)) throw std::runtime_error(error);
     auto rules = std::make_shared<RulesData>();
     if (!rules->load_dir(rules_dir)) throw std::runtime_error("cannot load rules from " + rules_dir);
-    auto session = std::make_unique<GameSim>(rules);
+    auto session = std::make_unique<GameSim>(rules, modifications);
     Script script;
     const std::string scn = data.map_file(world.mission.file_name, "scn");
     if (scn.empty()) report.script_errors.push_back("missing mission script");
@@ -322,7 +324,7 @@ int run_headless(int argc, char** argv) {
         SaveData saved;
         saved.mission = world.mission.file_name;
         saved.tick = sim.tick_count(); saved.hash = report.hash;
-        saved.script_hash = file_hash(scn); saved.content_hash = content; saved.log = sim.log();
+        saved.script_hash = file_hash(scn); saved.content_hash = content; saved.log = sim.log(); saved.modifications = sim.initial_modifications();
         if (!write_save(save_path, saved)) throw std::runtime_error("cannot write mid-mission save");
       }
       report.trace = (report.trace ^ report.hash) * 1099511628211ull;

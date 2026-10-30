@@ -70,23 +70,27 @@ std::vector<uint8_t> serialize_save(const SaveData& s) {
   scalar(v, s.cam_x); scalar(v, s.cam_y); scalar(v, s.cam_zoom);
   scalar(v, uint32_t(log.size()));
   v.insert(v.end(), log.begin(), log.end());
+  scalar(v, s.modifications.bits());
   scalar(v, checksum(v, v.size()));
   return v;
 }
 
 bool deserialize_save(const std::vector<uint8_t>& v, SaveData& out) {
-  if (v.size() < 80 || v.size() > kMaxSaveBytes || std::memcmp(v.data(), "AZS3", 4) != 0 ||
+  if (v.size() < 84 || v.size() > kMaxSaveBytes || std::memcmp(v.data(), "AZS3", 4) != 0 ||
       read_le<uint64_t>(v.data() + v.size() - 8) != checksum(v, v.size() - 8)) return false;
   size_t o = 4;
-  uint32_t version, replay, n, ln;
+  uint32_t version, replay, n, ln, modifications;
   if (!get(v, o, version) || version != kSaveFormatVersion || !get(v, o, replay) || replay != kSaveReplayVersion ||
       !get(v, o, n) || !n || n > 128 || n > v.size() - o) return false;
   SaveData parsed;
   parsed.mission.assign(reinterpret_cast<const char*>(v.data() + o), n); o += n;
   if (!get(v, o, parsed.tick) || !get(v, o, parsed.hash) || !get(v, o, parsed.script_hash) ||
       !get(v, o, parsed.content_hash) || !get(v, o, parsed.cam_x) || !get(v, o, parsed.cam_y) ||
-      !get(v, o, parsed.cam_zoom) || !get(v, o, ln) || o > v.size() - 8 || ln != v.size() - 8 - o) return false;
-  std::vector<uint8_t> log(v.begin() + o, v.end() - 8);
+      !get(v, o, parsed.cam_zoom) || !get(v, o, ln) || o > v.size() - 12 || ln != v.size() - 12 - o) return false;
+  std::vector<uint8_t> log(v.begin() + o, v.end() - 12);
+  o += ln;
+  if (!get(v, o, modifications) || !Modifications::valid(modifications)) return false;
+  parsed.modifications = Modifications::from_bits(modifications);
   if (!deserialize_log(log, parsed.log) || !valid_save(parsed)) return false;
   out = std::move(parsed);
   return true;
@@ -196,7 +200,7 @@ std::unique_ptr<GameSim> replay_save(const SaveData& s, World& fresh,
     GameSim probe(rules);
     if (!probe.attach_script(script_path)) { error = "Cannot parse save script"; return {}; }
   }
-  auto sim = GameSim::replay(candidate, std::move(rules), s.log, s.tick, script_path);
+  auto sim = GameSim::replay(candidate, std::move(rules), s.log, s.tick, script_path, {}, s.modifications);
   if (sim->tick_count() != s.tick || sim->state_hash(candidate) != s.hash) {
     error = "Save replay hash mismatch"; return {};
   }

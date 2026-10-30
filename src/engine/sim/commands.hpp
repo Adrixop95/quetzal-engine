@@ -16,6 +16,7 @@ enum class Pct : uint8_t {
   AddToGroup = 0x19, DestroyHere = 0x1a, Birth = 0x1b, Build = 0x1c, Garrison = 0x1d, RepairMode = 0x1e,
   AttackMode = 0x1f, BuildMode = 0x20, PauseBuild = 0x21, QueueKill = 0x22, SelectByNo = 0x23, FollowTeam = 0x24,
   Nothing = 0x25,
+  SetModifications = 0x53, // a = complete modification bitset; engine session command
   Stop = 0x50,        // ids
   PlaceBuilding = 0x52, // a = structure type; b,c = centre tile; optional town member ids[0]
   AttackMove = 0x51,  // ids, a,b = target px
@@ -41,7 +42,8 @@ enum class Pct : uint8_t {
 //   BuildMode: a = runtime speed 0 slow / 1 normal / 2 fast.
 //   QueueKill: a = side storage index to cancel; waiting orders are unpaid, active orders refund unbuilt work.
 //   PauseBuild: ids[0] selects a town member (absent = first town); a = 1 pause / 0 resume / 2 cancel active.
-//   PauseBuild affects only the current item. PauseOn/PauseOff pause the whole simulation.
+//   PauseBuild: b = 0 targets the first started item; b > 0 targets side storage index b-1 in that town.
+//   PauseBuild affects only that item. PauseOn/PauseOff pause the whole simulation.
 struct Command {
   Pct type = Pct::Nothing;
   uint8_t side = 0;

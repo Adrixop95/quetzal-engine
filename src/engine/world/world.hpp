@@ -95,7 +95,7 @@ struct QueueItem {
   int type = 0, remaining = 0, total = 0, town = -1, paid = 0;
   bool started = false, paused = false;
   int tile_x = -1, tile_y = -1; // explicit map placement; negative for automatic production
-  uint32_t object = 0;         // live construction, created when payment succeeds
+  uint32_t object = 0;         // live placeholder, created when placement is accepted
 
   int refund() const {
     const int completed = std::clamp(int(int64_t(total - remaining) * 256 / std::max(1, total)), 0, 256);
