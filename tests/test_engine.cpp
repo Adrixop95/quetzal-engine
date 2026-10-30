@@ -640,6 +640,136 @@ static void run_scenario(World& w, GameSim& sim, int ticks, bool commands) {
 }
 
 // Synthetic combat checks run without installed assets, using the public rules tables.
+static void test_siege_ranged() {
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  auto scene = [](int type, int distance) {
+    World w;
+    w.terrain.w = w.terrain.h = 40; w.terrain.cells.resize(1600);
+    w.relation[0][1] = w.relation[1][0] = kEnemy;
+    Object shooter; shooter.id = 1; shooter.type = type; shooter.hp = 20000;
+    shooter.teleport(to_fixed(400), to_fixed(400));
+    Object target; target.id = 2; target.type = 14; target.side = 1; target.hp = 30000;
+    target.teleport(to_fixed(400 + distance), to_fixed(400));
+    w.objects = {shooter, target};
+    return w;
+  };
+  for (auto [type, range, reload] : {std::tuple{3,250,35}, {4,290,45}, {83,200,30}}) {
+    CHECK(rules->type(type).armed);
+    const auto shot = rules->attack(type, 14);
+    CHECK(shot.damage_known && shot.getters_known && shot.damage > 0);
+    CHECK(shot.range_px == range && shot.reload == reload);
+    for (bool explicit_order : {false, true}) {
+      World initial = scene(type, 180), w = initial;
+      GameSim sim(rules); sim.init(w);
+      if (explicit_order) {
+        Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
+        sim.submit(attack);
+      }
+      int launches = 0;
+      for (int tick = 1; tick <= 2 * reload + 4; ++tick) {
+        w.begin_tick(); sim.tick(w);
+        if (w.objects[0].has_fired && w.objects[0].cooldown == reload) ++launches;
+        CHECK(w.objects[0].cur_x == to_fixed(400));
+        World replay_world = initial;
+        auto replay = GameSim::replay(replay_world, rules, sim.log(), tick);
+        CHECK(replay->state_hash(replay_world) == sim.state_hash(w));
+      }
+      CHECK(w.objects[0].target == 2 && launches == 3);
+      CHECK(w.objects[1].hp < 30000);
+    }
+    // These weapon classes have no positive minimum range. A nearby target
+    // must not cause a retreat, a melee substitution or an immediate hit.
+    World close = scene(type, 80);
+    GameSim close_sim(rules); close_sim.init(close);
+    Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
+    close_sim.submit(attack); close.begin_tick(); close_sim.tick(close);
+    CHECK(close.objects[0].has_fired && !close.effects.empty());
+    CHECK(close.objects[0].cur_x == to_fixed(400) && close.objects[1].hp == 30000);
+    CHECK(close.effects.size() == (type == 83 ? 1u : 2u));
+    if (close.effects.size() == 2) CHECK(close.effects[0].y != close.effects[1].y);
+
+    const auto& target_rules = rules->type(14);
+    const int reach = range + rules->type(type).radius_px +
+        std::max(target_rules.foot_w, target_rules.foot_h) * 24;
+    for (int outside : {0, 1}) {
+      World edge = scene(type, reach + outside);
+      edge.objects[0].attack_mode = AttackMode::Direct;
+      GameSim edge_sim(rules); edge_sim.init(edge); edge_sim.submit(attack);
+      edge.begin_tick(); edge_sim.tick(edge);
+      CHECK(edge.objects[0].has_fired == (outside == 0));
+    }
+
+    // Direct mode respects the descriptor range and does not pursue.
+    World far = scene(type, 600);
+    far.objects[0].attack_mode = AttackMode::Direct;
+    GameSim direct(rules); direct.init(far); direct.submit(attack);
+    for (int tick = 0; tick < 20; ++tick) { far.begin_tick(); direct.tick(far); }
+    CHECK(!far.objects[0].has_fired && far.effects.empty());
+    CHECK(far.objects[0].cur_x == to_fixed(400));
+
+    // A wall separates the two objects. Reachable firing ground exists on
+    // the source's side; aiming movement at the occupied target tile fails.
+    World approach = scene(type, 500);
+    approach.passability = {40, 40, std::vector<uint8_t>(1600, 2)};
+    for (int y = 0; y < 40; ++y) approach.passability.v[y * 40 + 16] = 0;
+    GameSim pursuit(rules); pursuit.init(approach); pursuit.submit(attack);
+    for (int tick = 0; tick < 100; ++tick) { approach.begin_tick(); pursuit.tick(approach); }
+    CHECK(approach.objects[0].has_fired);
+    CHECK(approach.objects[0].cur_x < to_fixed(16 * 48));
+    CHECK(approach.objects[0].cur_x > to_fixed(400));
+  }
+  TypeRules victim;
+  CHECK(rules->blast_damage(3, victim, 0) == 3000);
+  CHECK(rules->blast_damage(3, victim, 38) == 3000); // inner radius plus victim extent
+  CHECK(rules->blast_damage(3, victim, 62) == 1500);
+  CHECK(rules->blast_damage(3, victim, 86) == 0);
+  CHECK(rules->blast_damage(3, victim, 87) == 0);
+  victim.structure = true;
+  CHECK(rules->blast_damage(3, victim, 62) == 1195);
+  victim.flier = true;
+  CHECK(rules->blast_damage(3, victim, 0) == 0);
+
+  // Ball shots aim at a launch-time position and damage objects at the actual
+  // landing point. Moving the target away must not deliver a guaranteed hit.
+  World w = scene(83, 180);
+  GameSim sim(rules); sim.init(w);
+  Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
+  sim.submit(attack); w.begin_tick(); sim.tick(w);
+  CHECK(w.effects.size() == 1 && w.effects[0].kind == data::EffectClass::BallExpl);
+  if (!w.effects.empty()) {
+    CHECK(w.effects[0].height > 0 && w.effects[0].payload_id == 3);
+    auto hash = sim.state_hash(w);
+    auto& e = w.effects[0];
+    for (int* field : {&e.payload_id, &e.velocity_x, &e.velocity_y, &e.altitude, &e.vertical_speed, &e.gravity}) {
+      ++*field; CHECK(sim.state_hash(w) != hash); --*field;
+    }
+  }
+  sim.teleport(w, 2, 1200, 400);
+  Command stop; stop.type = Pct::Stop; stop.ids = {1}; sim.submit(stop);
+  for (int tick = 0; tick < 15; ++tick) { w.begin_tick(); sim.tick(w); }
+  CHECK(w.objects[1].hp == 30000);
+
+  // A spatial blast evaluates each victim and includes allies; it cannot reuse
+  // the damage calculated for the original target or hit airborne bystanders.
+  World blast;
+  blast.terrain.w = blast.terrain.h = 20; blast.terrain.cells.resize(400);
+  for (int i = 0; i < 4; ++i) {
+    Object o; o.id = uint32_t(i + 1); o.type = i == 3 ? 7 : 0; o.hp = 10000;
+    o.teleport(to_fixed(i == 1 ? 262 : i == 2 ? 287 : 200), to_fixed(200));
+    blast.objects.push_back(o);
+  }
+  GameSim blast_sim(rules); blast_sim.init(blast);
+  Effect impact; impact.kind = data::EffectClass::BallExpl; impact.flight = true;
+  impact.source = 99; impact.payload_id = 3;
+  impact.x = impact.end_x = to_fixed(200); impact.y = impact.end_y = to_fixed(200);
+  blast.effects.push_back(impact);
+  blast.begin_tick(); blast_sim.tick(blast);
+  CHECK(blast.objects[0].hp == 7000 && blast.objects[1].hp == 8500);
+  CHECK(blast.objects[2].hp == 10000 && blast.objects[3].hp == 10000);
+  CHECK(blast.objects[0].last_hit_by == 99);
+}
+
 static void test_projectiles() {
   auto rules = std::make_shared<RulesData>();
   CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
@@ -674,7 +804,7 @@ static void test_projectiles() {
       continue;
     }
     CHECK(!a.effects.empty() && a.effects.front().flight);
-    CHECK(a.objects[0].cooldown == shot.reload + 1);
+    CHECK(a.objects[0].cooldown == shot.reload + (type == 3 || type == 4 ? 0 : 1));
 
     CHECK(a.objects[1].hp == 30000);  // firing does not apply damage early
     CHECK(sa.state_hash(a) == sb.state_hash(b));
@@ -2079,9 +2209,9 @@ static void test_descriptor_combat() {
   ground = TypeRules{}; ground.category_e8 = true;
   CHECK(rules->weapon(11, ground).damage == 2250);
   CHECK(rules->weapon(16, ground).damage == 18000);
-  CHECK(!rules->weapon(7, ground).damage_known); // unresolved composite children
-  CHECK(!rules->weapon(19, ground).damage_known); // delegated class 7
-  CHECK(!rules->weapon(3, target).damage_known); // class 7
+  CHECK(rules->weapon(7, ground).damage_known && rules->weapon(7, ground).getters_known);
+  CHECK(!rules->weapon(19, ground).getters_known); // standalone FireThrow scheduling unresolved
+  CHECK(!rules->weapon(3, target).getters_known);
   CHECK(!rules->weapon(34, target).damage_known); // burn
   CHECK(!rules->weapon(999, target).damage_known);
   CHECK(rules->attack(0, 0).reload == 9 && rules->attack(0, 0).range_px == 10);
@@ -2322,6 +2452,7 @@ int main(int argc, char** argv) {
     test_mixed_production_queue();
     test_projectiles();
     test_object_initialization();
+    test_siege_ranged();
     test_descriptor_combat();
     test_script_animation_clocks();
     test_animation_producers();
