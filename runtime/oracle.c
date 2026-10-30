@@ -120,10 +120,13 @@ static const Rec* find_rec(uint32_t frame, uint32_t side) {
   return NULL;
 }
 
+// Reuse the command oracle's clock; no wall-clock-to-tick estimate for audio.
+uint32_t rt_oracle_tick(void) { return GU32(0x4c5730); }
+
 void f_0043d120(CPU* c) {   // uint __cdecl FUN_0043d120(int side, uint32_t* out)
   if (!mode_init) init_mode();
   uint32_t side = GU32(GREG(c, 0x10) + 4), out = GU32(GREG(c, 0x10) + 8);
-  uint32_t frame = GU32(0x4c5730);
+  uint32_t frame = rt_oracle_tick();
   if (frame != 0 && GU8(0x4cc394)) { log_state(frame); pathlog_tick(frame); }
   if (replay) {
     uint32_t ret = GU32(GREG(c, 0x10));
