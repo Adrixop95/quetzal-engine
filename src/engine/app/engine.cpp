@@ -220,7 +220,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       game->submit(c);
     }
     for (int i = 0; i < o.pre_ticks; i++) { world.begin_tick(); sim->tick(world); }
-    if (audio) audio->start_music(world.mission.music, world.mission.music_mask, 0);
+    if (audio) { audio->event_tick = world.tick; audio->start_music(world.mission.music, world.mission.music_mask, 0); }
     auto emit_audio = [&] {
       const auto* ap = dynamic_cast<const AnimSpriteProvider*>(provider.get());
       if (!audio || !ap) return;
@@ -492,6 +492,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       if (audio) {
         audio->set_volumes(o.sfx_volume, o.music_volume, o.speech_volume);
         audio->acknowledgement = o.acknowledgement; audio->subtitles = o.subtitles;
+        audio->event_tick = world.tick;
         audio->update(dt);
       }
       // Render. Day clock: mission StartTime + simulation ticks (+ interpolation).
@@ -637,10 +638,8 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       if (!audio_log) { std::fprintf(stderr, "Cannot open audio log: %s\n", o.audio_log.c_str()); return 1; }
     }
     AudioSystem audio;
-    if (audio_log) audio.event_sink = [audio_log](const AudioEvent& event) {
-      std::fprintf(audio_log.get(), "%llu %d %llu %u %u\n", static_cast<unsigned long long>(event.tick), int(event.kind),
-          static_cast<unsigned long long>(event.source), event.set, event.sound);
-      std::fflush(audio_log.get());
+    if (audio_log) audio.event_sink = [audio_log, sequence = uint64_t(0)](const AudioEvent& event) mutable {
+      write_audio_event(audio_log.get(), event, sequence++);
     };
     AudioSystem* audio_ptr = nullptr;
     if (o.audio) { audio.init(o.game_dir); audio.set_volumes(o.sfx_volume, o.music_volume, o.speech_volume); audio_ptr = &audio; }

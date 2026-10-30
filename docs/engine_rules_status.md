@@ -2,6 +2,9 @@
 
 Simulation: `src/engine/sim/game_sim.*` (12 Hz, fixed-point harvests and original float32 price factors, driven by the command queue in `commands.hpp`). Data comes from `docs/data/*.csv`, loaded at run time (`rules.*`). The reference specification is [rules_summary.md](rules_summary.md) with details in [rules_types.md](rules_types.md) and [rules_ai.md](rules_ai.md). New reference findings below do not imply engine implementation changes.
 Movement and pathfinding: `src/engine/sim/path/` (movement agents; the interface is swappable: `GameSim` only uses `MoveSystem`).
+The [path quality regression](rules_movement.md#9-wall-side-destination-regression-2026-10-29)
+keeps group destination slots in the anchor's visible arrival area. This corrects
+wall-side stalls in synthetic engine tests; reference formation parity remains open.
 Legend: **V** = verified against the original (code or screenshot), **M** = measured on the recompiled original, **P** = placeholder (invented, to be replaced).
 
 ## Cursor confinement (task 39, 2026-10-29)
@@ -411,6 +414,10 @@ Private reports/logs are in `work/ai-probe/engine-m{1,4}-{1,2}.*`.
 | Music: `Music=N` -> track N, otherwise `MusicMask`; next track when one ends | V (format and ascending cyclic order), V construction / synthetic checks | `music_allowed_mask` in `core/audio`; no simulation RNG or mission-name salt |
 | Animation state loops, building/projectile/effect sounds | V construction / synthetic checks; simulation timing remains P where unresolved | Header loops and frame entries use a read-only scene snapshot; visibility/distance/load/exit cleanup checked in `audio_events` |
 | Independent effects/music/speech gain, acknowledgement suppression and speech WAV/caption API | V construction / synthetic checks, P replacement/duration policy | Separate speech gain, UTF-8 captions, missing-WAV/muted/no-device fallback; six presentation seconds, outside World/hash/replay. Selection/order/announcement producers still need evidenced IDs; see [audio evidence](audio.md) |
+| Pan = (x - view centre x) clamped to +-4000 hundredths of dB; attenuation: none up to 500 px, linear to -4000 at 800 px, silent beyond | V (`docs/formats.md`), P (100 units = 1 dB) | the "fog cell >= 0x21" condition is not applied |
+| Music: `Music=N` -> track N, otherwise `MusicMask`; next track when one ends | V format / synthetic engine coverage; O live parity | Ascending available-track cycle; `music_allowed_mask` in `core/audio`; no mission-name seed |
+| State loops, animation building/effect sounds, volumes | synthetic engine coverage / O reference timing | See [audio dispatch inventory](audio.md); selection/order speech, subtitles, announcements and UI dispatch remain incomplete |
+| L6 audio request traces and ordered comparison | V construction / O reference identity and parity | JSONL clone events with dispatch triggers; reference buffer requests require audited private sound/trigger mapping. Global order and one-tick tolerance; absent classes stay unobserved. [L6 evidence and blockers](parity.md#l6-audio-event-comparison-2026-10-29) |
 
 ## Saves
 | Rule | Status | Notes |
@@ -1436,3 +1443,33 @@ A bounded engine mission 1 smoke run exited successfully with no script executio
 errors, ending in defeat at tick 1196 of a 1200-tick limit; it is neither a winning
 route nor a reference comparison. These results do not close the live timing/HP
 and reference observer dependencies above.
+
+## L6 audio event audit (2026-10-29)
+
+The audio-specific normalizer/comparator is independent of the absent task 42
+shared scenario harness. Synthetic controls cover all seven trigger classes,
+interleaved order, missing/extra requests, ID/kind differences, one-tick timing,
+incomplete/malformed captures and rejection of unresolved reference identities.
+The engine dispatcher supplies building/mobile-animation contexts, preserves
+loop provenance and timestamps music with the current caller tick. Direct
+selection/order/UI context tests exercise the API; they do not implement or
+verify those missing application dispatchers. Generic effects remain unknown.
+
+The reference sound shim records buffer Play/Stop/release requests against the
+existing command clock. It has no resource-ID/trigger observer or streamed music
+track-change observer. Raw handles are never treated as sound IDs. Reference
+normalization therefore requires independently audited private annotations and
+tick alignment; the probe alone cannot supply them. Full L6 acceptance remains
+open pending those observers, shared scenarios and successful paired captures.
+
+The private isolated attempt under `work/parity/l6-audio-probe/` failed at
+namespace loopback setup with a denied netlink socket, before the supplied
+runtime launched. Selection, orders, combat, building, UI, music and ambient
+comparison results are all unmeasured. No gameplay rule is promoted to M/V.
+An isolated clone-only scripted smoke run produced a valid nonempty event file;
+it verifies logging integration only. An earlier timed-out clone probe remains
+a failed/incomplete capture. Release build, 28 runnable CTest checks and
+pre-commit gates passed; five private-input/network checks skipped.
+The [L6 method](parity.md#l6-audio-event-comparison-2026-10-29) records commands,
+formats, exit codes and evidence limits. No original audio, IDs or trace values
+are public fixtures.

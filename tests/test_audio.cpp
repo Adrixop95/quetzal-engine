@@ -101,23 +101,28 @@ int main() {
   };
   tick(0); CHECK(events.size() == 2);
   CHECK(events[0].kind == AudioEvent::Kind::Sound && events[0].set == 1 && events[0].sound == 1);
+  CHECK(events[0].trigger == AudioEvent::Trigger::Ambient);
   CHECK(events[1].kind == AudioEvent::Kind::LoopStart && events[1].set == 2);
   tick(1); CHECK(events.size() == 2);
   tick(2); CHECK(events.size() == 3 && events.back().tick == 3);  // same sprite, different frame
   tick(4); CHECK(events.size() == 4);
   tick(5); CHECK(events.size() == 4);  // held frame does not retrigger
   visible = false; tick(6); CHECK(events.back().kind == AudioEvent::Kind::LoopStop);
+  CHECK(events.back().trigger == AudioEvent::Trigger::Ambient);
   visible = true; tick(7); CHECK(events.back().kind == AudioEvent::Kind::LoopStart);
   w.objects[0].cur_x = to_fixed(900); tick(8); CHECK(events.back().kind == AudioEvent::Kind::LoopStop);
   w.objects[0].cur_x = 0;
   w.objects[0].anim_state = int(data::AnimState::Attack); tick(0);
   CHECK(events[events.size() - 2].kind == AudioEvent::Kind::Sound);
+  CHECK(events[events.size() - 2].trigger == AudioEvent::Trigger::Combat);
   w.objects[0].anim_state = int(data::AnimState::Die); tick(0);
   CHECK(events.back().kind == AudioEvent::Kind::Sound);
   w.objects[0].removed = true; tick(1); CHECK(events.back().kind == AudioEvent::Kind::LoopStop);
   w.objects[0].removed = false; w.objects[0].type = 3;
   w.objects[0].anim_state = int(data::AnimState::Attack); w.objects[0].attack_tick = 0;
   tick(1); CHECK(events[events.size() - 2].kind == AudioEvent::Kind::Sound); // turret
+  w.objects[0].anim_state = int(data::AnimState::Move); tick(0);
+  CHECK(events.back().trigger == AudioEvent::Trigger::Combat); // independently firing turret
   audio.stop_effects(); events.clear();
   w.objects[0].type = 10; w.objects[0].attack_tick = -1;
   w.objects[0].anim_state = int(data::AnimState::Construct);
@@ -126,6 +131,7 @@ int main() {
   w.objects[0].hp = 100; w.objects[0].progress = 1000;
   w.objects[0].anim_state = int(data::AnimState::Idle);
   tick(0); CHECK(events.size() == 2); // built sequence and its ambient header
+  CHECK(events[0].trigger == AudioEvent::Trigger::Building);
   w.objects[0].anim_state = int(data::AnimState::Die);
   w.objects[0].destruction_radius = 90;
   tick(0); // destruction variant 0 needs slot 0
@@ -133,12 +139,15 @@ int main() {
   audio.stop_effects(); w.objects.clear(); events.clear();
   Effect effect; effect.anim = 4; effect.slot = 1; w.effects.push_back(effect);
   tick(0); CHECK(events.size() == 2); // effects use their own age clock
+  CHECK(events[0].trigger == AudioEvent::Trigger::Unknown);
   w.effects[0].age = 1; tick(1); CHECK(events.size() == 2);
   w.effects[0].age = 2; tick(2); CHECK(events.size() == 3);
   w.effects.clear(); tick(3); CHECK(events.back().kind == AudioEvent::Kind::LoopStop);
+  CHECK(events.back().trigger == AudioEvent::Trigger::Unknown);
   audio.stop_effects();
-  events.clear(); audio.start_music(0, 3, 99);
+  events.clear(); audio.event_tick = 101; audio.start_music(0, 3, 99);
   CHECK(audio.current_track() == 1); CHECK(events.size() == 1);
+  CHECK(events[0].tick == 101 && events[0].trigger == AudioEvent::Trigger::Music);
   int16_t samples[16]{}; audio.mixer().mix(samples, 8); audio.update();
   CHECK(audio.current_track() == 2);
   audio.mixer().mix(samples, 8); audio.update(); CHECK(audio.current_track() == 1);
@@ -148,6 +157,32 @@ int main() {
   audio.start_music(1, 0, 0); audio.start_music(0, 0, 0);
   CHECK(audio.current_track() == 0 && !audio.mixer().music_playing());
   audio.stop_effects();
+  // Explicit trigger context supports future selection/order/UI dispatchers;
+  // these direct calls do not claim those app dispatchers exist.
+  for (auto trigger : {AudioEvent::Trigger::Selection, AudioEvent::Trigger::Orders, AudioEvent::Trigger::UI}) {
+    audio.event_trigger = trigger; audio.event_tick = 200;
+    CHECK(audio.play_sound(1) == 1);
+    CHECK(events.back().trigger == trigger && events.back().tick == 200);
+  }
+  FILE* trace = std::tmpfile();
+  CHECK(trace != nullptr);
+  if (trace) {
+    write_audio_event(trace, events.back(), 7);
+    std::rewind(trace);
+    char line[512]{};
+    CHECK(std::fgets(line, sizeof line, trace) != nullptr);
+    CHECK(std::strstr(line, "\"seq\":7,\"tick\":200") != nullptr);
+    CHECK(std::strstr(line, "\"trigger\":\"ui\"") != nullptr);
+    CHECK(std::strstr(line, "\"sound\":1") != nullptr);
+    std::fclose(trace);
+  }
+  // A loop with unknown provenance keeps that label when another context stops it.
+  audio.event_trigger = AudioEvent::Trigger::Unknown;
+  audio.loop_at(999, 1, 0, 0, 0, 0);
+  audio.event_trigger = AudioEvent::Trigger::Combat;
+  audio.stop_effects();
+  CHECK(events.back().kind == AudioEvent::Kind::LoopStop && events.back().trigger == AudioEvent::Trigger::Unknown);
+  audio.event_trigger = AudioEvent::Trigger::Unknown;
   auto pcm = std::make_shared<Pcm>(Pcm{100, 200});
   Mixer mixer; mixer.sfx_volume = 1;
   auto handle = mixer.play(pcm, 1, 1, true); mixer.mix(samples, 8);
@@ -161,6 +196,21 @@ int main() {
   CHECK(audio.subtitle() == "Ready" && events.size() == 2);
   CHECK(events[0].kind == AudioEvent::Kind::Subtitle && events[0].sound == 1 && events[0].tick == 42);
   CHECK(events[1].kind == AudioEvent::Kind::Speech && events[1].tick == 42);
+  trace = std::tmpfile();
+  CHECK(trace != nullptr);
+  if (trace) {
+    write_audio_event(trace, events[0], 0);
+    write_audio_event(trace, events[1], 1);
+    std::rewind(trace);
+    char line[512]{};
+    CHECK(std::fgets(line, sizeof line, trace) != nullptr);
+    CHECK(std::strstr(line, "\"kind\":\"subtitle\"") != nullptr);
+    CHECK(std::strstr(line, "\"tick\":42") != nullptr);
+    CHECK(std::fgets(line, sizeof line, trace) != nullptr);
+    CHECK(std::strstr(line, "\"kind\":\"speech\"") != nullptr);
+    CHECK(std::strstr(line, "\"tick\":42") != nullptr);
+    std::fclose(trace);
+  }
   audio.mixer().mix(samples, 1); CHECK(samples[0] == 100);
   audio.acknowledgement = false; const auto event_count = events.size();
   CHECK(audio.play_speech(1, true) == 0 && events.size() == event_count);

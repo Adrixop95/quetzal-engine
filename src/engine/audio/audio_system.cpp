@@ -3,11 +3,25 @@
 #include <algorithm>
 #include <cstdio>
 #include <cmath>
+#include <stdexcept>
 
 #include "engine/assets/game_data.hpp"
 #include "core/text.hpp"
 
 namespace aztec::engine {
+
+const char* audio_trigger_name(AudioEvent::Trigger trigger) {
+  static const char* names[] = {"unknown", "selection", "orders", "combat", "building", "ui", "music", "ambient"};
+  return names[int(trigger)];
+}
+
+void write_audio_event(FILE* file, const AudioEvent& e, uint64_t sequence) {
+  static const char* kinds[] = {"sound", "loop_start", "loop_stop", "music", "music_stop", "speech", "subtitle"};
+  const int written = std::fprintf(file, "{\"seq\":%llu,\"tick\":%llu,\"kind\":\"%s\",\"source\":%llu,\"set\":%u,\"sound\":%u,\"trigger\":\"%s\"}\n",
+      static_cast<unsigned long long>(sequence), static_cast<unsigned long long>(e.tick), kinds[int(e.kind)],
+      static_cast<unsigned long long>(e.source), e.set, e.sound, audio_trigger_name(e.trigger));
+  if (written < 0 || std::fflush(file) != 0) throw std::runtime_error("Cannot write audio event log");
+}
 
 AudioSystem::~AudioSystem() {
   if (dev_) { SDL_CloseAudioDevice(dev_); dev_ = 0; }
@@ -124,7 +138,7 @@ void AudioSystem::loop_at(uint64_t source, uint32_t set, float x, float y, float
   }
   if (it != loops_.end()) {
     { std::lock_guard<std::mutex> lock(mu_); mixer_.stop(it->second.voice); }
-    emit({AudioEvent::Kind::LoopStop, source, it->second.set, it->second.sound});
+    emit({AudioEvent::Kind::LoopStop, source, it->second.set, it->second.sound, 0, it->second.trigger});
     loops_.erase(it);
   }
   const uint32_t id = choose(set);
@@ -132,14 +146,14 @@ void AudioSystem::loop_at(uint64_t source, uint32_t set, float x, float y, float
   if (!pcm || pcm->empty()) return;
   uint64_t voice;
   { std::lock_guard<std::mutex> lock(mu_); voice = mixer_.play(pcm, p.left, p.right, true); }
-  loops_[source] = {set, id, voice, true};
+  loops_[source] = {set, id, voice, true, event_trigger};
   emit({AudioEvent::Kind::LoopStart, source, set, id});
 }
 void AudioSystem::end_scene_tick() {
   for (auto it = loops_.begin(); it != loops_.end();) {
     if (it->second.seen) { ++it; continue; }
     { std::lock_guard<std::mutex> lock(mu_); mixer_.stop(it->second.voice); }
-    emit({AudioEvent::Kind::LoopStop, it->first, it->second.set, it->second.sound});
+    emit({AudioEvent::Kind::LoopStop, it->first, it->second.set, it->second.sound, 0, it->second.trigger});
     it = loops_.erase(it);
   }
 }
@@ -153,7 +167,6 @@ void AudioSystem::stop_effects() {
 
 void AudioSystem::start_music(int music, uint32_t mask, int salt) {
   stop_music();
-  event_tick = 0;
   allowed_.clear();
   uint32_t available = 0;
   for (const auto& t : tracks_) if (t.first >= 1 && t.first <= 32) available |= 1u << (t.first - 1);
