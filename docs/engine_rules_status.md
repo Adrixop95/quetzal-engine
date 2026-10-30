@@ -2,6 +2,9 @@
 
 Simulation: `src/engine/sim/game_sim.*` (12 Hz, fixed-point harvests and original float32 price factors, driven by the command queue in `commands.hpp`). Data comes from `docs/data/*.csv`, loaded at run time (`rules.*`). The reference specification is [rules_summary.md](rules_summary.md) with details in [rules_types.md](rules_types.md) and [rules_ai.md](rules_ai.md). New reference findings below do not imply engine implementation changes.
 Movement and pathfinding: `src/engine/sim/path/` (movement agents; the interface is swappable: `GameSim` only uses `MoveSystem`).
+The [path quality regression](rules_movement.md#9-wall-side-destination-regression-2026-10-29)
+keeps group destination slots in the anchor's visible arrival area. This corrects
+wall-side stalls in synthetic engine tests; reference formation parity remains open.
 Legend: **V** = verified against the original (code or screenshot), **M** = measured on the recompiled original, **P** = placeholder (invented, to be replaced).
 
 ## Cursor confinement (task 39, 2026-10-29)
