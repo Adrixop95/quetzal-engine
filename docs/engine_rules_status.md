@@ -1382,3 +1382,56 @@ A bounded engine mission 1 smoke run exited successfully with no script executio
 errors, ending in defeat at tick 1196 of a 1200-tick limit; it is neither a winning
 route nor a reference comparison. These results do not close the live timing/HP
 and reference observer dependencies above.
+
+## UI interaction feedback (2026-10-29, partial parity)
+
+**Reproduction:** the asset-independent `ui_screenshots` test was extended before
+changing the engine. Invented twelve-frame command sprites exposed a frozen
+selected command, and an exact whole-button comparison exposed the extra hover
+rectangle. Both failed on the baseline. No original pixels are test fixtures.
+
+**Reference facts (V, local resource and control inspection):** common command
+resources 257/268/269/275/288/301 contain twelve stacked rotation frames; Menu
+282 contains two 60x22 frames. The Menu control selects its second frame while
+pressed, clears depression when dragged out, and activates on release inside.
+The shared command control advances its rotation counter on presentation updates;
+mode-specific selectors return that counter while active and frame zero otherwise.
+The production grid uses palette shade 9 for an available entry and shade 1 for
+an unavailable entry. Its normal path does not add the engine's gold hover border
+or construction-letter overlay. These facts were checked locally at the shared
+control, Menu, active-mode and production-grid selectors; they are inspection
+evidence, not a successful reference playback or a measurement of elapsed time.
+
+**Independent implementation:** Menu depression now uses its recovered frame and
+captures press/release. Command-card activation also captures an enabled control
+and rechecks availability on release; dragging to another control, losing focus,
+changing selection or cancelling cannot activate the original control. Queue
+length changes invalidate a held queue control. Active targeting and town-service
+controls use the recovered rotation frames. A presentation-only counter advances
+once per input/render update, including while the simulation is paused; repeated
+rendering of the same snapshot is pure. The counter and capture state never enter
+simulation hashes or command logs. Production availability uses the original
+palette shades, and generic command/production borders and the construction-letter
+overlay are removed. Selection changes clear stale targeting/placement and paging.
+
+**Checks:** synthetic captures cover both font paths and four window/scale layouts,
+exact idle/hover regions, selected-frame changes and twelve-update wraparound,
+Menu hold/drag/re-entry/release/focus loss, and indexed production palette states.
+Command tests cover release-time availability and replay hashes. A private dummy-SDL
+mission 1 script selected a unit, activated Move and cancelled it inside
+`unshare -rn`; captures remain under ignored `work/ui-feedback/`.
+
+**Open (P):** the reference probe again failed before launch at namespace loopback
+setup (`Cannot open netlink socket: Operation not permitted`). Synchronized visual
+comparison and wall-clock animation cadence remain unverified. The existing
+engine allocation and semantics of command-card cells, town-service indicators,
+production paging/queues, tooltip timing and unsupported original modes remain
+partial; this change does not establish full mission 1 UI parity. Full service
+and upgrade presentation still depends on the incomplete town-command work
+identified in the earlier UI inventory. No runtime code or private assets changed.
+
+**Final validation (2026-10-30):** the worktree-local Release build passed with
+`AZTEC_GEN_DIR=`. CTest passed 26 entries and skipped five (four checks requiring
+private data in the default configuration and the restricted UDP process check).
+All pre-commit hooks passed. The separate private-data `test_engine` check also
+passed inside `unshare -rn` with dummy SDL and the private installation copy.

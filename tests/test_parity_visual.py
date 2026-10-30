@@ -200,7 +200,7 @@ class VisualTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         rows = [json.loads(line) for line in trace.read_text().splitlines()]
         self.assertTrue(rows[0]['buttons'][0]['hover'])
-        self.assertEqual(rows[1]['target_mode'], 1)  # Press activates Move; release keeps it active.
+        self.assertEqual(rows[1]['target_mode'], 0)  # Press captures Move; release activates it.
         self.assertTrue(rows[1]['left_down'])
         self.assertFalse(rows[2]['left_down'])
         self.assertEqual(rows[2]['target_mode'], 1)

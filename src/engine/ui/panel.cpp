@@ -50,10 +50,10 @@ void Panel::draw(SDL_Renderer* r, SpriteStore& store, const Font& font, int gold
     y += h;
   }
   const auto layout = in_game_panel_layout(rect_, sc);
-  auto sprite = [&](int id, SDL_Rect box) {
+  auto sprite = [&](int id, SDL_Rect box, int frame = 0) {
     const auto& image = store.get(key(id));
     if (!image.ok()) return false;
-    SDL_Rect source = image.frame_rect(0);
+    SDL_Rect source = image.frame_rect(frame < image.frames ? frame : 0);
     SDL_RenderCopy(r, store.atlas().page(image.region.page), &source, &box);
     return true;
   };
@@ -63,7 +63,7 @@ void Panel::draw(SDL_Renderer* r, SpriteStore& store, const Font& font, int gold
     SDL_RenderFillRect(r, &layout.card);
   }
   int ts = font.ui_scale(sc);
-  if (!sprite(282, layout.menu))
+  if (!sprite(282, layout.menu, menu_pressed_ ? 1 : 0))
     font.draw(r, layout.menu.x + 4 * sc, layout.menu.y + 4 * sc, "MENU", ts, {235, 220, 170, 255});
   std::string g = std::to_string(gold);
   font.draw(r, rect_.x + (kPanelW - 12) * sc - font.width(g, ts),
@@ -75,6 +75,21 @@ void Panel::draw(SDL_Renderer* r, SpriteStore& store, const Font& font, int gold
     y0 += font.height(ts) + 2 * sc;
   }
   if (!tooltip.empty()) draw_tooltip(r, font, tooltip);
+}
+
+bool Panel::update_menu(const Input& in, bool enabled) {
+  const SDL_Rect box = menu_rect();
+  const SDL_Point point{in.mx, in.my};
+  if (!enabled || !in.focused) {
+    menu_down_ = menu_pressed_ = false;
+    return false;
+  }
+  const bool inside = in.mouse_inside && SDL_PointInRect(&point, &box);
+  if (in.pressed[SDL_BUTTON_LEFT]) menu_down_ = inside;
+  const bool clicked = menu_down_ && inside && in.released[SDL_BUTTON_LEFT];
+  if (in.released[SDL_BUTTON_LEFT] || !in.buttons[SDL_BUTTON_LEFT]) menu_down_ = false;
+  menu_pressed_ = menu_down_ && inside;
+  return clicked;
 }
 
 bool Panel::contains(int x, int y) const {

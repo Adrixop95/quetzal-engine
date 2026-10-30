@@ -31,7 +31,7 @@ struct CommandPanelLayout {
 class CommandsUi {
  public:
   explicit CommandsUi(GameSim* sim = nullptr);
-  void set_sim(GameSim* s) { sim_ = s; cancel_mode(); }
+  void set_sim(GameSim* s) { sim_ = s; cancel_mode(); selection_.clear(); ui_frame_ = 0; }
   bool active() const { return sim_ != nullptr; }
   void set_bindings(std::vector<KeyBinding> bindings) { bindings_ = std::move(bindings); }
   bool action_hit(const Input& in, const char* action) const;
@@ -45,7 +45,7 @@ class CommandsUi {
   bool wants_left_click() const { return mode_ != TargetMode::None || placing_ >= 0; }
   bool attack_move() const { return mode_ == TargetMode::Attack; }
   TargetMode target_mode() const { return mode_; }
-  void cancel_mode() { mode_ = TargetMode::None; placing_ = -1; }
+  void cancel_mode() { mode_ = TargetMode::None; placing_ = -1; pressed_control_ = 0; }
   int placing() const { return placing_; }
   std::string draw_menu(SDL_Renderer* r, SpriteStore& store, const Font& font, const StrBase& strings, const World& w,
                         const SDL_Rect& panel, int scale, int mx, int my) const;
@@ -68,6 +68,11 @@ class CommandsUi {
   uint32_t placing_member_ = 0;
   int page_ = 0;
   int queue_offset_ = 0, queue_town_ = -1;
+  int pressed_control_ = 0;
+  size_t pressed_queue_size_ = 0;
+  // Presentation frames only: never participate in simulation or replay hashes.
+  uint32_t ui_frame_ = 0;
+  std::vector<uint32_t> selection_;
   bool right_down_ = false, right_moved_ = false;
   int rx_ = 0, ry_ = 0;
 };

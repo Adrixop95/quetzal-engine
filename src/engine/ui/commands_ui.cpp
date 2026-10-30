@@ -39,7 +39,7 @@ std::vector<size_t> production_queue(const World& w, int town) {
   return indices;
 }
 const char* const kLabels[] = {"Move", "Attack", "Stop", "Repair", "Garrison", "Destroy"};
-// Contact sheets: common:257,268,269,275,288,301. Frame 0 is the face-on button.
+// Common command resources contain twelve rotation frames. Idle uses frame zero.
 constexpr int kButtons[] = {275, 257, 268, 301, 288, 269};
 
 bool blit(SDL_Renderer* r, SpriteStore& store, SpriteKey key, const SDL_Rect& box, int frame = 0, bool enabled = true) {
@@ -242,9 +242,20 @@ void CommandsUi::activate(PanelAction action, const World& w) {
 
 bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alpha, const Minimap& mm, bool in_world, const SDL_Rect& panel) {
   if (!sim_) return false;
+  if (!in.focused) {
+    pressed_control_ = 0;
+    right_down_ = right_moved_ = false;
+    return false;
+  }
+  ++ui_frame_;
   w.selection.ids.erase(std::remove_if(w.selection.ids.begin(), w.selection.ids.end(), [&](uint32_t id) {
     const Object* o = w.find(id); return !o || o->removed || !o->alive;
   }), w.selection.ids.end());
+  if (selection_ != w.selection.ids) {
+    cancel_mode();
+    selection_ = w.selection.ids;
+    page_ = 0;
+  }
   if (w.selection.ids.empty() && placing_ < 0) mode_ = TargetMode::None;
   if (in.hit(SDL_SCANCODE_ESCAPE)) cancel_mode();
   if (bound_hit(in, SDL_SCANCODE_H)) activate(PanelAction::Stop, w);
@@ -285,7 +296,7 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
     right_moved_ = false;
   }
   const int selected_town = production_town(w);
-  if (queue_town_ != selected_town) { queue_town_ = selected_town; queue_offset_ = 0; }
+  if (queue_town_ != selected_town) { queue_town_ = selected_town; queue_offset_ = 0; pressed_control_ = 0; }
   auto visible_queue = production_queue(w, selected_town);
   queue_offset_ = std::clamp(queue_offset_, 0, std::max(0, int(visible_queue.size()) - 8));
   if (in.wheel != 0 && panel.w > 0) {
@@ -293,13 +304,18 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
     bool over_queue = contains(boxes.pause, in.mx, in.my);
     for (const auto& box : boxes.queue) over_queue |= contains(box, in.mx, in.my);
     if (over_queue) {
+      pressed_control_ = 0;
       queue_offset_ = std::clamp(queue_offset_ + (in.wheel < 0 ? 8 : -8), 0,
                                std::max(0, int(visible_queue.size()) - 8));
       return true;
     }
   }
-  if (!in.pressed[SDL_BUTTON_LEFT]) return false;
-  if ((in_world || mm.contains(in.mx, in.my)) && mode_ != TargetMode::None) {
+  if (in.hit(SDL_SCANCODE_ESCAPE)) pressed_control_ = 0;
+  if (!in.pressed[SDL_BUTTON_LEFT] && !in.released[SDL_BUTTON_LEFT]) {
+    if (!in.buttons[SDL_BUTTON_LEFT]) pressed_control_ = 0;
+    return false;
+  }
+  if (in.pressed[SDL_BUTTON_LEFT] && (in_world || mm.contains(in.mx, in.my)) && mode_ != TargetMode::None) {
     float wx, wy;
     if (mm.contains(in.mx, in.my)) mm.to_world(in.mx, in.my, wx, wy);
     else { wx = cam.to_world_x(float(in.mx)); wy = cam.to_world_y(float(in.my)); }
@@ -311,7 +327,7 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
     cancel_mode();
     return true;
   }
-  if (in_world && placing_ >= 0) {
+  if (in.pressed[SDL_BUTTON_LEFT] && in_world && placing_ >= 0) {
     int tx = int(std::floor(cam.to_world_x(float(in.mx)) / kTilePx)), ty = int(std::floor(cam.to_world_y(float(in.my)) / kTilePx));
     if (sim_->can_place(w, w.local_side, placing_, tx, ty)) {
       Command c; c.type = Pct::Build; c.side = uint8_t(w.local_side); c.a = placing_; c.b = tx; c.c = ty;
@@ -323,9 +339,11 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
   }
   const int scale = std::max(1, panel.w / 204);
   if (panel.w <= 0 || (!contains(panel, in.mx, in.my) &&
-      !contains(in_game_panel_layout(panel, scale).card, in.mx, in.my))) return false;
+      !contains(in_game_panel_layout(panel, scale).card, in.mx, in.my))) {
+    pressed_control_ = 0;
+    return false;
+  }
   auto l = layout(panel, scale);
-  for (size_t i = 0; i < l.commands.size(); i++) if (contains(l.commands[i], in.mx, in.my)) activate(PanelAction(i), w);
   int town = production_town(w);
   auto queue = production_queue(w, town);
   const int waiting = int(std::count_if(queue.begin(), queue.end(), [&](size_t i) {
@@ -334,11 +352,38 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
   auto items = sim_->menu(w, w.local_side, town);
   int count = int(l.production.size()), pages = std::max(1, (int(items.size()) + count - 1) / count);
   page_ = std::clamp(page_, 0, pages - 1);
-  if (contains(l.previous, in.mx, in.my)) page_ = (page_ + pages - 1) % pages;
-  if (contains(l.next, in.mx, in.my)) page_ = (page_ + 1) % pages;
+  // Capture a control on press, then activate only when released over that
+  // same enabled control. Recompute availability before accepting the release.
+  int control = 0;
+  for (size_t i = 0; i < l.commands.size(); ++i)
+    if (contains(l.commands[i], in.mx, in.my) && action_enabled(PanelAction(i), w, &sim_->rules())) control = int(i) + 1;
+  if (pages > 1 && contains(l.previous, in.mx, in.my)) control = 20;
+  if (pages > 1 && contains(l.next, in.mx, in.my)) control = 21;
+  for (int i = 0; i < count && page_ * count + i < int(items.size()); ++i) {
+    const auto& item = items[size_t(page_ * count + i)];
+    if (item.enabled && waiting < kProductionQueueCapacity && contains(l.production[size_t(i)], in.mx, in.my))
+      control = 100 + item.type;
+  }
+  if (w.local_side >= 0 && w.local_side < int(w.side_state.size())) {
+    if (!queue.empty() && w.side_state[w.local_side].queue[queue.front()].started && contains(l.pause, in.mx, in.my)) control = 22;
+    for (size_t i = 0; i + queue_offset_ < queue.size() && i < l.queue.size(); ++i)
+      if (contains(l.queue[i], in.mx, in.my)) control = 200 + int(queue[i + queue_offset_]);
+  }
+  if (in.pressed[SDL_BUTTON_LEFT]) {
+    pressed_control_ = control;
+    pressed_queue_size_ = queue.size();
+  }
+  if (!in.released[SDL_BUTTON_LEFT]) return true;
+  const bool clicked = in.focused && control && control == pressed_control_ &&
+      (control < 200 || pressed_queue_size_ == queue.size());
+  pressed_control_ = 0;
+  if (!clicked) return true;
+  for (size_t i = 0; i < l.commands.size(); i++) if (control == int(i) + 1) activate(PanelAction(i), w);
+  if (control == 20) page_ = (page_ + pages - 1) % pages;
+  if (control == 21) page_ = (page_ + 1) % pages;
   for (int i = 0; i < count && page_ * count + i < int(items.size()); i++) {
     const auto& m = items[size_t(page_ * count + i)];
-    if (contains(l.production[size_t(i)], in.mx, in.my) && m.enabled &&
+    if (control == 100 + m.type && m.enabled &&
         waiting < kProductionQueueCapacity) {
       cancel_mode();
       if (m.construct) { placing_ = m.type; placing_member_ = production_member(w, town); }
@@ -351,13 +396,13 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
   }
   if (w.local_side >= 0 && w.local_side < int(w.side_state.size())) {
     const SideState& ss = w.side_state[w.local_side];
-    if (!queue.empty() && ss.queue[queue.front()].started && contains(l.pause, in.mx, in.my)) {
+    if (!queue.empty() && ss.queue[queue.front()].started && control == 22) {
       Command c; c.type = Pct::PauseBuild; c.side = uint8_t(w.local_side);
       c.a = !ss.queue[queue.front()].paused;
       if (auto id = production_member(w, town)) c.ids = {id};
       sim_->submit(c);
     }
-    for (size_t i = 0; i + queue_offset_ < queue.size() && i < l.queue.size(); i++) if (contains(l.queue[i], in.mx, in.my)) {
+    for (size_t i = 0; i + queue_offset_ < queue.size() && i < l.queue.size(); i++) if (control == 200 + int(queue[i + queue_offset_])) {
       Command c; c.type = Pct::QueueKill; c.side = uint8_t(w.local_side);
       c.a = int(queue[i + queue_offset_]); sim_->submit(c);
     }
@@ -370,8 +415,8 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
   auto l = layout(panel, sc);
   const int ts = font.ui_scale(sc);
   std::string tip;
-  auto draw_icon = [&](int type, bool portrait, const SDL_Rect& rect, bool enabled = true, int side = -1) {
-    SpriteKey k; k.index = icon_sprite(type, portrait); k.team = uint8_t(w.side_color(side < 0 ? w.local_side : side));
+  auto draw_icon = [&](int type, bool portrait, const SDL_Rect& rect, bool enabled = true, int side = -1, int shade = 14) {
+    SpriteKey k; k.index = icon_sprite(type, portrait); k.shade = uint8_t(shade); k.team = uint8_t(w.side_color(side < 0 ? w.local_side : side));
     if (!k.index || !blit(r, store, k, rect, 0, enabled)) font.draw(r, rect.x + 4 * sc, rect.y + 8 * sc, "?", ts, {235, 220, 190, 255});
   };
   if (!w.selection.ids.empty()) {
@@ -393,9 +438,19 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
   for (size_t i = 0; i < l.commands.size(); i++) {
     bool enabled = action_enabled(PanelAction(i), w, &sim_->rules()), hover = contains(l.commands[i], mx, my);
     SpriteKey k; k.archive = ArchiveId::Common; k.index = kButtons[i]; k.shade = 0;
-    if (!blit(r, store, k, l.commands[i], 0, enabled)) font.draw(r, l.commands[i].x, l.commands[i].y, kLabels[i], ts, {220, 210, 180, 255});
     bool selected = (i == 0 && mode_ == TargetMode::Move) || (i == 1 && mode_ == TargetMode::Attack);
-    if (hover || selected) border(r, l.commands[i], enabled);
+    if (i == 3 || i == 5) {
+      for (uint32_t id : w.selection.ids) {
+        const Object* o = w.find(id);
+        if (!o || o->side != w.local_side || !o->alive || o->removed) continue;
+        for (const TownState& town : w.town_state)
+          if (town.index == o->town && town.side == o->side)
+            selected |= i == 3 ? o->town_hall && town.repair_mode != RepairMode::Off :
+                std::find(town.marked.begin(), town.marked.end(), id) != town.marked.end();
+      }
+    }
+    const int frame = enabled && selected ? int(ui_frame_ % 12) : 0;
+    if (!blit(r, store, k, l.commands[i], frame, enabled)) font.draw(r, l.commands[i].x, l.commands[i].y, kLabels[i], ts, {220, 210, 180, 255});
     if (hover) {
       tip = kLabels[i];
       const char* action = i == 3 ? "Repair" : i == 4 ? "Garrison" : i == 5 ? "Destroy" : nullptr;
@@ -442,9 +497,9 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
     const SDL_Rect& rect = l.production[size_t(i)];
     bool full = waiting >= kProductionQueueCapacity;
     bool enabled = m.enabled && !full;
-    draw_icon(m.type, false, rect, enabled);
-    border(r, rect, (enabled && contains(rect, mx, my)) || placing_ == m.type);
-    if (m.construct) font.draw(r, rect.x + 28 * sc, rect.y + 28 * sc, "B", ts, {255, 230, 120, 255});
+    // Production availability is encoded by the resource palette shades.
+    // Hover does not add a rectangle to the original command-card cells.
+    draw_icon(m.type, false, rect, true, -1, enabled ? 9 : 1);
     if (contains(rect, mx, my)) {
       tip = type_display_name(strings, m.type) + "\nCost: " + std::to_string(m.price) + "  Time: " + std::to_string(m.time);
       if (!m.enabled) tip += std::string("\nUnavailable: ") + m.why_not;

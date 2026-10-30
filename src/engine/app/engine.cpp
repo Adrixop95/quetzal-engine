@@ -313,9 +313,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         else if (world.outcome == kRunning) pause.open = !pause.open;
         else { exit_reason = PlayExit::ToMenu; leave = true; }
       }
-      const SDL_Point menu_point{in.mx, in.my};
-      const SDL_Rect menu_rect = panel.menu_rect();
-      if (world.outcome == kRunning && o.menu_session && show_panel && in.pressed[SDL_BUTTON_LEFT] && SDL_PointInRect(&menu_point, &menu_rect)) pause.open = true;
+      if (panel.update_menu(in, world.outcome == kRunning && o.menu_session && show_panel && !pause.open && !submodal)) pause.open = true;
       {
         PauseMenu::Action pa = world.outcome == kRunning && !submodal ? pause.update(in, ow, oh, pscale) : PauseMenu::Action::None;
         if (pa == PauseMenu::Action::Briefing) briefing.show("Briefing / objectives", briefing_text);
