@@ -114,6 +114,64 @@ mocked runners, exact first differences, lifecycle, truncation, contract
 mismatch, isolation failure propagation and real headless before-command
 observations using an invented installation.
 
+## Triage drafts and aggregate matrix (2026-10-30)
+
+Task 42's scenario harness is present. These reporting tools consume its
+`diff.json` files directly, including nested `work/parity/<run>/<scenario>/`
+directories and the direct `work/parity/<scenario>/` layout:
+
+```sh
+python3 -I tools/parity_triage.py --input work/parity/<run>
+python3 -I tools/parity_matrix.py --input work/parity/<run>
+ctest --test-dir build -R parity_triage_matrix --output-on-failure
+```
+
+Without `--input`, both scan this worktree's ignored `work/parity/` recursively.
+Directory symlinks and the drafts directory are excluded; symlinked diffs are
+rejected. Only `diff.json` files count, so run summaries and captures are never
+counted again. Each diff represents one scenario result; repeated runs count
+separately. Select one run explicitly for a bounded matrix. Scenarios without
+a diff are excluded, rather than inferred to have passed or skipped.
+
+Triage writes one English diagnostic prompt per distinct failure category to
+`work/parity/tasks/<category>.md`. Passes and skips create no prompt. Harness
+categories are read directly; visual comparisons with `category: different`
+use `first.category`. Experiment failures and blockers are diagnostic leads,
+not semantic defects, and drafts require reproduction and contract validation.
+Existing drafts retain reviewer edits. To collect a new set of source reports
+for the same categories, select a fresh `--output work/parity/tasks/<review>/`.
+A human or Claude must review and sanitize drafts before queuing; the tool
+never writes to `tasks/queue/`.
+
+The matrix defaults to [parity_matrix.md](parity_matrix.md). It publishes counts
+per layer and category only: no scenario IDs, paths, ticks, object IDs, fields,
+values, logs, captures or arbitrary private strings. A closed public category
+vocabulary maps unfamiliar categories to `unclassified` while retaining their
+distinct private drafts. Layers come from explicit diff metadata, adjacent
+`scenario.json`, or a matching row in the parent run's `report.json`. Conflicting
+or invalid layers fail; missing layers count under `Unknown`. Only
+`equal_observed_fields` and `equal_observed_visual_ui` pass, and `skipped` and
+`skipped_missing_private_inputs` skip; all other categories fail. Equality only
+covers the observed contract. The matrix can also be written privately with
+`--output work/parity/<review>.md`; other public destinations are rejected.
+
+Malformed JSON, duplicate keys, inconsistent first-divergence metadata and
+invalid destinations return 2 before replacing the matrix or creating drafts.
+Empty or absent input returns 77, writes a zero-count matrix, and creates no
+drafts. Nonempty valid input returns 0, including when it contains failures:
+these are report-generation commands, not parity acceptance gates.
+
+The committed counts were generated from the fresh private run
+`work/parity/triage-matrix-evidence-20261030/`, selecting `synthetic_l0` and
+`private_l0` with explicitly absent game/runtime paths. The synthetic mocked
+comparison passed and the private scenario skipped; no runtime launched.
+CTest `parity_triage_matrix` uses invented diffs to check category grouping,
+nested harness metadata, pass/fail/skip counts, unknown categories/layers,
+private-value exclusion, deterministic output, preserved reviewer edits,
+malformed inputs, path restrictions, symlinks and absent-input skips.
+These establish reporting behavior only. No gameplay M/V label changes;
+audited reference identity/normalization and packet adapters remain absent.
+
 ## Run the corpus
 
 First build the independent engine and run the checks in [SETUP.md](SETUP.md).
