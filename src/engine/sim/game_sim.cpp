@@ -38,8 +38,32 @@ Order resumed_order(uint8_t resume) {
 GameSim::GameSim(std::shared_ptr<const RulesData> rules) : rules_(std::move(rules)) {}
 
 void GameSim::footprint(const TypeRules& r, int tx, int ty, int& x0, int& y0, int& x1, int& y1) {
+  if (r.has_footprint_mask) {
+    x0 = tx + 3; y0 = ty + 3; x1 = tx - 3; y1 = ty - 3;
+    for (int i = 0; i < 49; ++i) if (r.footprint_mask[i] == 2) {
+      x0 = std::min(x0, tx + i % 7 - 3); x1 = std::max(x1, tx + i % 7 - 3);
+      y0 = std::min(y0, ty + i / 7 - 3); y1 = std::max(y1, ty + i / 7 - 3);
+    }
+    return;
+  }
   x0 = tx - (r.foot_w - 1) / 2; x1 = x0 + r.foot_w - 1;
   y0 = ty - (r.foot_h - 1) / 2; y1 = y0 + r.foot_h - 1;
+}
+
+bool GameSim::occupies(const TypeRules& r, int tx, int ty, int x, int y) {
+  if (r.has_footprint_mask) {
+    int dx = x - tx + 3, dy = y - ty + 3;
+    return dx >= 0 && dy >= 0 && dx < 7 && dy < 7 && r.footprint_mask[dy * 7 + dx] == 2;
+  }
+  int x0, y0, x1, y1; footprint(r, tx, ty, x0, y0, x1, y1);
+  return x >= x0 && x <= x1 && y >= y0 && y <= y1;
+}
+
+void GameSim::block_footprint(const TypeRules& r, int tx, int ty, int delta) {
+  int x0, y0, x1, y1; footprint(r, tx, ty, x0, y0, x1, y1);
+  for (int y = std::max(0, y0); y <= std::min(nav_.height() - 1, y1); ++y)
+    for (int x = std::max(0, x0); x <= std::min(nav_.width() - 1, x1); ++x)
+      if (occupies(r, tx, ty, x, y)) nav_.add_block(x, y, 1, 1, delta);
 }
 
 void GameSim::attach_agent(Object& o) {
@@ -98,9 +122,7 @@ void GameSim::init(World& w) {
     if (o.removed || !o.alive) continue;
     attach_agent(o);
     if (r.structure) {
-      int x0, y0, x1, y1;
-      footprint(r, px(o.cur_x) / kTilePx, px(o.cur_y) / kTilePx, x0, y0, x1, y1);
-      nav_.add_block(x0, y0, x1 - x0 + 1, y1 - y0 + 1, +1);
+      block_footprint(r, px(o.cur_x) / kTilePx, px(o.cur_y) / kTilePx, +1);
     }
   }
 }
@@ -135,6 +157,28 @@ int GameSim::upgrade_level(int race, int type) const {
   return -1;
 }
 
+bool GameSim::automatic_site(const World& w, int side, int type, int tx, int ty, int town) const {
+  if (!can_place(w, side, type, tx, ty, nullptr, nullptr, town)) return false;
+  const auto& candidate = rules_->type(type);
+  int x0, y0, x1, y1; footprint(candidate, tx, ty, x0, y0, x1, y1);
+  // Automatic towns need walkable gaps between structures. Exact mask overlap
+  // alone can pack irregular buildings into a ring that seals the producer.
+  // This is an engine planner policy, independent of manual placement rules.
+  for (const auto& object : w.objects) {
+    if (!object.alive || object.removed || !rules_->type(object.type).structure) continue;
+    const auto& other = rules_->type(object.type);
+    const int ox = px(object.cur_x) / kTilePx, oy = px(object.cur_y) / kTilePx;
+    int ox0, oy0, ox1, oy1; footprint(other, ox, oy, ox0, oy0, ox1, oy1);
+    if (x1 + 1 < ox0 || ox1 + 1 < x0 || y1 + 1 < oy0 || oy1 + 1 < y0) continue;
+    for (int y = y0; y <= y1; ++y) for (int x = x0; x <= x1; ++x) {
+      if (!occupies(candidate, tx, ty, x, y)) continue;
+      for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx)
+        if (occupies(other, ox, oy, x + dx, y + dy)) return false;
+    }
+  }
+  return true;
+}
+
 // Automatic placement is an engine policy pending reference placement evidence.
 // Search nearest square rings, with stable row/column tie breaking.
 bool GameSim::finish_structure(World& w, int side, const QueueItem& item) {
@@ -147,24 +191,21 @@ bool GameSim::finish_structure(World& w, int side, const QueueItem& item) {
   if (level >= 0) {
     Object* o = w.find_mut(hall->id);
     const TypeRules& old = rules_->type(o->type);
-    int x0, y0, x1, y1;
-    footprint(old, tx, ty, x0, y0, x1, y1);
-    nav_.add_block(x0, y0, x1 - x0 + 1, y1 - y0 + 1, -1);
-    if (!can_place(w, side, item.type, tx, ty)) {
-      nav_.add_block(x0, y0, x1 - x0 + 1, y1 - y0 + 1, +1);
+    block_footprint(old, tx, ty, -1);
+    if (!can_place(w, side, item.type, tx, ty, nullptr, nullptr, item.town)) {
+      block_footprint(old, tx, ty, +1);
       return false;
     }
     o->type = item.type; o->town_hall = true;
     o->hp_max = r.hp_max; o->hp = r.hp_max; o->secondary_hp = r.secondary_hp;
     o->harvest_ready = false; o->gold_harvest = {}; o->repair_harvest = {};
     o->anim_state = kAnimIdle; o->anim_tick = 0; o->body_tick = -1;
-    footprint(r, tx, ty, x0, y0, x1, y1);
-    nav_.add_block(x0, y0, x1 - x0 + 1, y1 - y0 + 1, +1);
+    block_footprint(r, tx, ty, +1);
     town.type = level;
     return true;
   }
   auto place = [&](int x, int y) {
-    if (!can_place(w, side, item.type, x, y)) return false;
+    if (!automatic_site(w, side, item.type, x, y, item.town)) return false;
     uint32_t id = spawn(w, item.type, side, x * kTilePx + kTilePx / 2, y * kTilePx + kTilePx / 2, 0, false);
     w.find_mut(id)->town = town.index;
     return true;
@@ -206,9 +247,7 @@ uint32_t GameSim::spawn(World& w, int type, int side, int pxx, int pyy, int hp, 
   Object& ref = w.objects.back();
   attach_agent(ref);
   if (r.structure) {
-    int x0, y0, x1, y1;
-    footprint(r, pxx / kTilePx, pyy / kTilePx, x0, y0, x1, y1);
-    nav_.add_block(x0, y0, x1 - x0 + 1, y1 - y0 + 1, +1);
+    block_footprint(r, pxx / kTilePx, pyy / kTilePx, +1);
   }
   return ref.id;
 }
@@ -231,9 +270,7 @@ void GameSim::kill(World& w, Object& o) {
     // small-rubble effect only when its radius is unavailable.
     if (o.destruction_radius < 0 && o.progress >= 1000)
       decoration(w, 116, int(next_visual_rand() % 20), o.cur_x, o.cur_y, -1, o.side);
-    int x0, y0, x1, y1;
-    footprint(r, px(o.cur_x) / kTilePx, px(o.cur_y) / kTilePx, x0, y0, x1, y1);
-    nav_.add_block(x0, y0, x1 - x0 + 1, y1 - y0 + 1, -1);
+    block_footprint(r, px(o.cur_x) / kTilePx, px(o.cur_y) / kTilePx, -1);
     // Keep known rubble visible for its resource lifetime; unknown radii and
     // construction cancellations remain explicit missing visual inputs.
     if (o.destruction_radius < 0 || o.progress < 1000) { o.removed = true; return; }
@@ -488,6 +525,7 @@ void GameSim::apply(World& w, const Command& c) {
         cancel_production(w, *ss, size_t(c.a));
       }
       break;
+    case Pct::PlaceBuilding:
     case Pct::Build: {
       if (!ss) break;
       const char* why = "";
@@ -499,10 +537,12 @@ void GameSim::apply(World& w, const Command& c) {
       if (!mi || !mi->enabled) break;
       if (std::count_if(ss->queue.begin(), ss->queue.end(),
                         [ti](const QueueItem& q) { return q.town == ti && !q.started; }) >= kProductionQueueCapacity) break;
-      if (mi->construct && (c.b < 0 || c.c < 0 || c.b >= w.terrain.w || c.c >= w.terrain.h ||
-                            !can_place(w, c.side, c.a, c.b, c.c, &why))) break;
+      const bool place = mi->construct || c.type == Pct::PlaceBuilding;
+      if (c.type == Pct::PlaceBuilding && !mi->place) break;
+      if (place && (c.b < 0 || c.c < 0 || c.b >= w.terrain.w || c.c >= w.terrain.h ||
+                            !can_place(w, c.side, c.a, c.b, c.c, &why, nullptr, ti))) break;
       QueueItem q{c.a, std::max(1, mi->time), std::max(1, mi->time), ti, 0};
-      if (mi->construct) { q.tile_x = c.b; q.tile_y = c.c; }
+      if (place) { q.tile_x = c.b; q.tile_y = c.c; }
       ss->queue.push_back(q);
       break;
     }
@@ -630,6 +670,7 @@ std::vector<MenuItem> GameSim::menu(const World& w, int side, int town) const {
     hostile_all = hostile_all && have_other;
     int speed = ti < int(w.town_speed.size()) ? w.town_speed[ti] : 1;
     m.type = it.type; m.construct = it.construct;
+    m.place = r.structure && upgrade_level(t.race, it.type) < 0;
     m.price = production_value(r.price, t.type, speed, computer, hostile_all, false);
     m.time = production_value(r.time, t.type, speed, computer, hostile_all, true);
     const char* why = "";
@@ -640,28 +681,69 @@ std::vector<MenuItem> GameSim::menu(const World& w, int side, int town) const {
   return out;
 }
 
-bool GameSim::can_place(const World& w, int side, int type, int tx, int ty, const char** why, const QueueItem* reservation) const {
-  (void)side;
-  const TypeRules& r = rules_->type(type);
-  int x0, y0, x1, y1;
-  footprint(r, tx, ty, x0, y0, x1, y1);
-  for (int y = y0; y <= y1; y++)
-    for (int x = x0; x <= x1; x++)
-      if (!nav_.in_bounds(x, y) || nav_.blocked(x, y, path::MoveClass::Large)) {
-        if (why) *why = "blocked";
-        return false;
+std::vector<PlacementCell> GameSim::placement_cells(const World& w, int side, int type, int tx, int ty,
+    int town, const QueueItem* reservation) const {
+  const auto& r = rules_->type(type);
+  if (!r.structure || !nav_.in_bounds(tx, ty)) return {{tx, ty, "outside map"}};
+  if (town < 0) town = town_index(w, side);
+  const Object* hall = town_hall(w, town);
+  const char* global = nullptr;
+  if (!hall || hall->side != side || hall->progress < 1000) global = "needs town hall";
+  // P: bounded town-local build area until the original distance metric is measured.
+  else if (std::max(std::abs(tx - px(hall->cur_x) / kTilePx),
+                    std::abs(ty - px(hall->cur_y) / kTilePx)) > 16) global = "too far from town hall";
+  const bool mine = type == 13 || type == 48 || type == 66;
+  int x0, y0, x1, y1; footprint(r, tx, ty, x0, y0, x1, y1);
+  // Reject pathological fallback descriptors without allocating an unbounded preview.
+  if (int64_t(x1) - x0 > 7 || int64_t(y1) - y0 > 7) return {{tx, ty, "invalid footprint"}};
+  bool deposit = false;
+  std::vector<PlacementCell> cells;
+  for (int y = y0; y <= y1; ++y) for (int x = x0; x <= x1; ++x) {
+    if (!occupies(r, tx, ty, x, y)) continue;
+    const bool mineral = mine && w.resources.in(x, y) && (w.resources.at(x, y) >> 8) > 0;
+    deposit |= mineral;
+    const char* reason = nullptr;
+    if (!nav_.in_bounds(x, y)) reason = "outside map";
+    else {
+      // P: mineral-bearing rock may host mines; ordinary structures need clear terrain.
+      if (nav_.terrain(x, y) < 2 && !mineral) reason = "terrain blocked";
+      else if (nav_.blocked(x, y, path::MoveClass::Large) && nav_.terrain(x, y) >= 2) reason = "occupied";
+      // A known terrain/navigation rejection needs no further collision scans.
+      if (reason) { cells.push_back({x, y, reason}); continue; }
+      // Query structure masks as well: deposits must never bypass a dynamic blocker.
+      for (const auto& object : w.objects) {
+        if (!object.alive || object.removed || object.type < 0) continue;
+        const auto& other = rules_->type(object.type);
+        if (other.structure) {
+          // In-place upgrades temporarily remove the old hall's navigation footprint.
+          if (&object == hall && upgrade_level(w.mission.towns[size_t(town)].race, type) >= 0) continue;
+          if (occupies(other, px(object.cur_x) / kTilePx, px(object.cur_y) / kTilePx, x, y)) reason = "occupied";
+        } else if (!other.flier) {
+          const int64_t ox = px(object.cur_x), oy = px(object.cur_y);
+          const int64_t cx = std::clamp(ox, int64_t(x) * kTilePx, int64_t(x + 1) * kTilePx);
+          const int64_t cy = std::clamp(oy, int64_t(y) * kTilePx, int64_t(y + 1) * kTilePx);
+          if ((ox - cx) * (ox - cx) + (oy - cy) * (oy - cy) < int64_t(other.radius_px) * other.radius_px)
+            reason = "unit in the way";
+        }
+        if (reason) break;
       }
-  // Waiting placement orders reserve their footprints without creating live buildings.
-  for (const auto& state : w.side_state) for (const auto& q : state.queue) {
-    if (&q == reservation || q.tile_x < 0 || q.started) continue;
-    int qx0, qy0, qx1, qy1;
-    footprint(rules_->type(q.type), q.tile_x, q.tile_y, qx0, qy0, qx1, qy1);
-    if (x0 <= qx1 && qx0 <= x1 && y0 <= qy1 && qy0 <= y1) {
-      if (why) *why = "reserved";
-      return false;
+      if (!reason) for (const auto& state : w.side_state) for (const auto& q : state.queue) {
+        if (&q == reservation || q.tile_x < 0 || q.started) continue;
+        if (occupies(rules_->type(q.type), q.tile_x, q.tile_y, x, y)) reason = "reserved";
+      }
     }
+    cells.push_back({x, y, reason ? reason : global});
   }
-  return true;
+  if (mine && !deposit) for (auto& cell : cells) if (!cell.blocked) cell.blocked = "needs mineral deposit";
+  return cells;
+}
+
+bool GameSim::can_place(const World& w, int side, int type, int tx, int ty, const char** why,
+    const QueueItem* reservation, int town) const {
+  const auto cells = placement_cells(w, side, type, tx, ty, town, reservation);
+  for (const auto& cell : cells) if (cell.blocked) { if (why) *why = cell.blocked; return false; }
+  if (why) *why = "";
+  return !cells.empty();
 }
 
 void GameSim::cancel_production(World& w, SideState& side, size_t index) {
@@ -669,9 +751,7 @@ void GameSim::cancel_production(World& w, SideState& side, size_t index) {
   const Object* construction = w.find(q.object);
   if (!q.object || (construction && construction->alive && !construction->removed)) side.money += q.refund();
   if (Object* o = w.find_mut(q.object); o && o->alive && !o->removed) {
-    int x0, y0, x1, y1;
-    footprint(rules_->type(o->type), px(o->cur_x) / kTilePx, px(o->cur_y) / kTilePx, x0, y0, x1, y1);
-    nav_.add_block(x0, y0, x1 - x0 + 1, y1 - y0 + 1, -1);
+    block_footprint(rules_->type(o->type), px(o->cur_x) / kTilePx, px(o->cur_y) / kTilePx, -1);
     o->alive = false; o->removed = true; o->hp = 0;
   }
   side.queue.erase(side.queue.begin() + index);
@@ -700,7 +780,7 @@ void GameSim::economy(World& w) {
         MenuItem offer;
         for (const auto& m : menu(w, int(s), q.town)) if (m.type == q.type) offer = m;
         if (ss.money < offer.price) { ++i; continue; }
-        if (q.tile_x >= 0 && !can_place(w, int(s), q.type, q.tile_x, q.tile_y, nullptr, &q)) {
+        if (q.tile_x >= 0 && !can_place(w, int(s), q.type, q.tile_x, q.tile_y, nullptr, &q, q.town)) {
           ++i; continue;
         }
         q.started = true;
@@ -725,9 +805,11 @@ void GameSim::economy(World& w) {
       if (q.paused) { ++i; continue; }
       if (q.remaining > 0) --q.remaining;
       if (auto* o = w.find_mut(q.object)) {
+        const int old_hp = std::max(1, int(int64_t(o->hp_max) * o->build_elapsed / q.total));
         o->build_elapsed = q.total - q.remaining;
         o->progress = std::min(1000, int(int64_t(o->build_elapsed) * 1000 / q.total));
-        o->hp = std::max(1, int(int64_t(o->hp_max) * o->progress / 1000));
+        const int new_hp = std::max(1, int(int64_t(o->hp_max) * o->build_elapsed / q.total));
+        o->hp = std::min(o->hp_max, o->hp + new_hp - old_hp);
         if (q.remaining == 0) { o->set_anim(kAnimIdle); o->body_tick = -1; }
       }
       bool finished = false;
@@ -735,12 +817,27 @@ void GameSim::economy(World& w) {
         if (q.object) { finished = true; completed.push_back(q.object); }
         else if (rules_->type(q.type).structure) finished = finish_structure(w, int(s), q);
         else {
-          int bx = px(hall->cur_x), by = px(hall->cur_y);
-          int fh = rules_->type(hall->type).foot_h;
-          int slot = int(spawn_counter_++ % 5);
-          uint32_t id = spawn(w, q.type, int(s), bx + (slot - 2) * 26, by + fh * 24 + 40, 0, false);
-          w.find_mut(id)->town = w.mission.towns[size_t(q.town)].index;
-          finished = true;
+          const auto& unit = rules_->type(q.type);
+          const int bx = px(hall->cur_x), by = px(hall->cur_y);
+          const int hx = bx / kTilePx, hy = by / kTilePx;
+          const auto move_class = unit.large ? path::MoveClass::Large : path::MoveClass::Small;
+          auto birth = [&](int x, int y) {
+            if (x < 0 || y < 0 || x >= w.terrain.w * kTilePx || y >= w.terrain.h * kTilePx) return false;
+            if (unit.mobile && nav_.disc_hits({to_fixed(x), to_fixed(y)}, unit.radius_px * 256, move_class)) return false;
+            uint32_t id = spawn(w, q.type, int(s), x, y, 0, false);
+            w.find_mut(id)->town = w.mission.towns[size_t(q.town)].index;
+            ++spawn_counter_; return true;
+          };
+          const int slot = int(spawn_counter_ % 5);
+          finished = birth(bx + (slot - 2) * 26, by + rules_->type(hall->type).foot_h * 24 + 40);
+          // The preferred exit can be covered by another construction mask.
+          // Search deterministically for a collision-free exit; if none fits,
+          // keep the paid item at zero rather than embedding its movement agent.
+          for (int radius = 1; radius <= 16 && !finished; ++radius)
+            for (int y = hy - radius; y <= hy + radius && !finished; ++y)
+              for (int x = hx - radius; x <= hx + radius && !finished; ++x)
+                if (std::max(std::abs(x - hx), std::abs(y - hy)) == radius)
+                  finished = birth(x * kTilePx + kTilePx / 2, y * kTilePx + kTilePx / 2);
         }
       }
       if (finished) ss.queue.erase(ss.queue.begin() + i);
@@ -757,9 +854,11 @@ void GameSim::economy(World& w) {
       bool queued = false;
       for (const auto& state : w.side_state) for (const auto& q : state.queue) queued |= q.object == o.id;
       if (queued) continue;
-      o.build_elapsed++;
-      o.progress = std::min(1000, o.build_elapsed * 1000 / std::max(1, o.build_total));
-      o.hp = std::max(1, int(int64_t(o.hp_max) * o.progress / 1000));
+      const int total = std::max(1, o.build_total);
+      const int before = std::max(1, int(int64_t(o.hp_max) * o.build_elapsed / total));
+      o.build_elapsed = std::min(total, o.build_elapsed + 1);
+      o.progress = int(int64_t(o.build_elapsed) * 1000 / total);
+      o.hp = std::min(o.hp_max, o.hp + std::max(1, int(int64_t(o.hp_max) * o.build_elapsed / total)) - before);
       if (o.progress >= 1000) { o.anim_state = kAnimIdle; o.anim_tick = 0; o.body_tick = -1; }
     } else if (o.side >= 0 && o.side < int(w.side_state.size())) {
       if (!o.harvest_ready) {
@@ -1271,7 +1370,10 @@ void GameSim::script_kill(World& w, uint32_t id) {
 void GameSim::teleport(World& w, uint32_t id, int pxx, int pyy) {
   Object* o = w.find_mut(id);
   if (!o) return;
+  const auto& r = rules_->type(o->type);
+  if (r.structure && o->alive && !o->removed) block_footprint(r, px(o->cur_x) / kTilePx, px(o->cur_y) / kTilePx, -1);
   o->teleport(to_fixed(pxx), to_fixed(pyy));
+  if (r.structure && o->alive && !o->removed) block_footprint(r, pxx / kTilePx, pyy / kTilePx, +1);
   if (o->mover >= 0) {
     path::Agent& a = mover_->agents_mut()[size_t(o->mover)];
     a.pos = a.prev_pos = a.win_start = {to_fixed(pxx), to_fixed(pyy)};

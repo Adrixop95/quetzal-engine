@@ -321,6 +321,20 @@ bool RulesData::load_dir(const std::string& dir) {
       if (t.kind != f.kind) continue;
       const auto r = row(rows, kind_param[id].second);
       if (r.size() <= size_t(f.hp + 1)) continue;
+      if ((f.kind == 2 || f.kind == 7) && r.size() >= size_t((f.kind == 2 ? 6 : 9) + 50)) {
+        const int first = f.kind == 2 ? 6 : 9;
+        for (int cell = 0; cell < 49; ++cell) t.footprint_mask[cell] = num(r, first + cell + 1);
+        t.has_footprint_mask = std::find(t.footprint_mask.begin(), t.footprint_mask.end(), 2) != t.footprint_mask.end();
+        if (t.has_footprint_mask) {
+          int x0 = 6, y0 = 6, x1 = 0, y1 = 0;
+          for (int cell = 0; cell < 49; ++cell) if (t.footprint_mask[cell] == 2) {
+            x0 = std::min(x0, cell % 7); x1 = std::max(x1, cell % 7);
+            y0 = std::min(y0, cell / 7); y1 = std::max(y1, cell / 7);
+          }
+          t.foot_w = x1 - x0 + 1; t.foot_h = y1 - y0 + 1;
+          t.foot_src = Src::Verified;
+        }
+      }
       t.hp_max = num(r, f.hp + 1); t.hp_src = Src::Verified;
       t.secondary_hp = f.secondary >= 0 ? num(r, f.secondary + 1) : 0;
       t.regen = f.regen >= 0 ? num(r, f.regen + 1) : 0;

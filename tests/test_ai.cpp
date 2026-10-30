@@ -240,6 +240,12 @@ static void scripted(std::shared_ptr<const RulesData> rules) {
 }
 static void smoke(std::shared_ptr<const RulesData> rules) {
   auto initial = world();
+  // Hold technology constant so this pressure/replay soak does not also assert
+  // campaign balance across changing building masks and formation geometry.
+  // Development branches and higher-tech offers have separate unit coverage.
+  for (auto& side : initial.mission.sides)
+    for (int type = 0; type < 90; ++type)
+      if (type != 0 && type != 11 && type != 12) side.disabled.push_back(type);
   for (auto& side : initial.side_state) side.money = 2000;
   // Rich synthetic terrain supports sustained combat while repeated farms remain available.
   initial.resources.v.assign(1600, 130);

@@ -17,6 +17,7 @@ enum class Pct : uint8_t {
   AttackMode = 0x1f, BuildMode = 0x20, PauseBuild = 0x21, QueueKill = 0x22, SelectByNo = 0x23, FollowTeam = 0x24,
   Nothing = 0x25,
   Stop = 0x50,        // ids
+  PlaceBuilding = 0x52, // a = structure type; b,c = centre tile; optional town member ids[0]
   AttackMove = 0x51,  // ids, a,b = target px
 };
 
@@ -35,6 +36,7 @@ enum class Pct : uint8_t {
 //   Empty ids on unit orders use the side's deterministic command selection.
 //   Build: a = item type (UGI); flag-1 construction uses b,c = footprint centre tile.
 //   Flag-0 entries ignore b,c: queue a unit, automatically placed structure, or in-place hall upgrade.
+//   PlaceBuilding explicitly places repeatable structures too; hall upgrades are rejected.
 //   Build/BuildMode: optional ids[0] selects an owned town member; absent = first owned town (engine convention).
 //   BuildMode: a = runtime speed 0 slow / 1 normal / 2 fast.
 //   QueueKill: a = side storage index to cancel; waiting orders are unpaid, active orders refund unbuilt work.

@@ -42,7 +42,7 @@ void GameSim::run_ai(World& w) {
           for (int y = town.y - radius; y <= town.y + radius; ++y)
             for (int x = town.x - radius; x <= town.x + radius; ++x) {
               if (std::max(std::abs(x - town.x), std::abs(y - town.y)) != radius ||
-                  !can_place(w, town.side, item.type, x, y)) continue;
+                  !automatic_site(w, town.side, item.type, x, y, int(ti))) continue;
               int64_t score = 0;
               if (h.terrain) for (int cell = 0; cell < 49; ++cell) if (h.occupancy[cell] == 2) {
                 int rx = x + cell % 7 - 3, ry = y + cell / 7 - 3;

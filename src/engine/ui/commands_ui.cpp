@@ -257,7 +257,11 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
     page_ = 0;
   }
   if (w.selection.ids.empty() && placing_ < 0) mode_ = TargetMode::None;
-  if (in.hit(SDL_SCANCODE_ESCAPE)) cancel_mode();
+  if (placing_ >= 0 && placing_member_) {
+    const auto* producer = w.find(placing_member_);
+    if (!producer || !producer->alive || producer->removed || producer->side != w.local_side) cancel_mode();
+  }
+  if (in.hit(SDL_SCANCODE_ESCAPE)) { const bool consumed = wants_left_click(); cancel_mode(); if (consumed) return true; }
   if (bound_hit(in, SDL_SCANCODE_H)) activate(PanelAction::Stop, w);
   if (bound_hit(in, SDL_SCANCODE_M)) activate(PanelAction::Move, w);
   if (bound_hit(in, SDL_SCANCODE_X)) activate(PanelAction::Attack, w);
@@ -329,11 +333,11 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
   }
   if (in.pressed[SDL_BUTTON_LEFT] && in_world && placing_ >= 0) {
     int tx = int(std::floor(cam.to_world_x(float(in.mx)) / kTilePx)), ty = int(std::floor(cam.to_world_y(float(in.my)) / kTilePx));
-    if (sim_->can_place(w, w.local_side, placing_, tx, ty)) {
-      Command c; c.type = Pct::Build; c.side = uint8_t(w.local_side); c.a = placing_; c.b = tx; c.c = ty;
+    if (sim_->can_place(w, w.local_side, placing_, tx, ty, nullptr, nullptr, placing_town_)) {
+      Command c; c.type = placing_command_; c.side = uint8_t(w.local_side); c.a = placing_; c.b = tx; c.c = ty;
       if (placing_member_) c.ids = {placing_member_};
       sim_->submit(c);
-      if (!in.shift && !action_down(in, "Add")) placing_ = -1;
+      if (!in.shift && !action_down(in, "Add")) cancel_mode();
     }
     return true;
   }
@@ -386,8 +390,10 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
     if (control == 100 + m.type && m.enabled &&
         waiting < kProductionQueueCapacity) {
       cancel_mode();
-      if (m.construct) { placing_ = m.type; placing_member_ = production_member(w, town); }
-      else {
+      if (m.place) {
+        placing_ = m.type; placing_member_ = production_member(w, town); placing_town_ = town;
+        placing_command_ = m.construct ? Pct::Build : Pct::PlaceBuilding;
+      } else {
         Command c; c.type = Pct::Build; c.side = uint8_t(w.local_side); c.a = m.type;
         if (uint32_t id = production_member(w, town)) c.ids = {id};
         sim_->submit(c);
@@ -531,17 +537,19 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
 void CommandsUi::draw_ghost(SDL_Renderer* r, const World& w, const Camera& cam, int mx, int my) const {
   if (!sim_ || placing_ < 0) return;
   int tx = int(std::floor(cam.to_world_x(float(mx)) / kTilePx)), ty = int(std::floor(cam.to_world_y(float(my)) / kTilePx));
-  int x0, y0, x1, y1;
-  GameSim::footprint(sim_->rules().type(placing_), tx, ty, x0, y0, x1, y1);
-  bool ok = sim_->can_place(w, w.local_side, placing_, tx, ty);
-  for (int y = y0; y <= y1; y++)
-    for (int x = x0; x <= x1; x++) {
-      SDL_FRect f{cam.to_screen_x(float(x * kTilePx)), cam.to_screen_y(float(y * kTilePx)), kTilePx * cam.zoom, kTilePx * cam.zoom};
-      SDL_SetRenderDrawColor(r, ok ? 60 : 230, ok ? 220 : 50, 60, 110);
-      SDL_RenderFillRectF(r, &f);
-      SDL_SetRenderDrawColor(r, 255, 255, 255, 160);
-      SDL_RenderDrawRectF(r, &f);
-    }
+  SDL_BlendMode old_blend; SDL_GetRenderDrawBlendMode(r, &old_blend);
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+  for (const auto& cell : sim_->placement_cells(w, w.local_side, placing_, tx, ty, placing_town_)) {
+    SDL_FRect f{cam.to_screen_x(float(cell.x * kTilePx)), cam.to_screen_y(float(cell.y * kTilePx)),
+                kTilePx * cam.zoom, kTilePx * cam.zoom};
+    const bool ok = !cell.blocked;
+    // P presentation colours until an isolated reference capture is available.
+    SDL_SetRenderDrawColor(r, ok ? 60 : 230, ok ? 220 : 50, 60, 110);
+    SDL_RenderFillRectF(r, &f);
+    SDL_SetRenderDrawColor(r, ok ? 60 : 230, ok ? 220 : 50, 60, 230);
+    SDL_RenderDrawRectF(r, &f);
+  }
+  SDL_SetRenderDrawBlendMode(r, old_blend);
 }
 
 }  // namespace aztec::engine
