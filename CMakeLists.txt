@@ -286,6 +286,9 @@ if(Python3_Interpreter_FOUND)
   set_tests_properties(determinism_processes PROPERTIES LABELS "unit" TIMEOUT 150)
   add_test(NAME parity_controls COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tools/parity_report.py self-test)
   set_tests_properties(parity_controls PROPERTIES LABELS "unit" TIMEOUT 20)
+  add_test(NAME parity_triage_matrix COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_triage.py)
+  set_tests_properties(parity_triage_matrix PROPERTIES LABELS "unit;parity" TIMEOUT 30)
   add_test(NAME parity_scenarios COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_run.py $<TARGET_FILE:aztec_engine>)
   set_tests_properties(parity_scenarios PROPERTIES LABELS "unit" TIMEOUT 30)
