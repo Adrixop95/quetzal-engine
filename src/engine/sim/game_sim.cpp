@@ -929,14 +929,34 @@ void GameSim::run_orders(World& w) {
       }
       if (o.cooldown == 0) {
         // Descriptor damage/reload feed provisional projectile flight; direct weapons hit immediately.
-        o.cooldown = std::max(1, shot.reload + 1);
+        const bool siege = (r.kind == 4 || r.kind == 6) && (r.weapon.klass == 0 || r.weapon.klass == 3);
+        o.cooldown = std::max(1, shot.reload + (siege ? 0 : 1));
         o.has_fired = true;
         o.anim_state = kAnimAttack; o.anim_tick = 0; o.attack_tick = 0;
         fire(w, o, *t, shot.damage);
       }
     } else if (o.attack_mode != AttackMode::Direct && ag && ((tick_ + o.id) % 6 == 0 || !moving)) {
       uint32_t aid = uint32_t(o.mover);
-      mover_->order_move(&aid, 1, {t->cur_x, t->cur_y});
+      path::Vec2 goal{t->cur_x, t->cur_y};
+      if (r.weapon.klass == 0 || r.weapon.klass == 3) {
+        // Choose a reachable firing tile even when the target's tile is blocked.
+        path::FlowField field;
+        path::Cell start{px(o.cur_x) / kTilePx, px(o.cur_y) / kTilePx};
+        field.build(nav_, ag->cls, &start, 1);
+        uint32_t best = path::FlowField::kInf;
+        bool found = false;
+        const int tx = px(t->cur_x), ty = px(t->cur_y);
+        for (int y = std::max(0, int((ty - reach) / kTilePx)); y <= std::min(nav_.height() - 1, int((ty + reach) / kTilePx)); ++y)
+          for (int x = std::max(0, int((tx - reach) / kTilePx)); x <= std::min(nav_.width() - 1, int((tx + reach) / kTilePx)); ++x) {
+            path::Vec2 candidate{tile_center_fixed(x), tile_center_fixed(y)};
+            const int64_t dx = px(candidate.x) - tx, dy = px(candidate.y) - ty;
+            if (dx * dx + dy * dy > reach * reach || !field.reachable(x, y) ||
+                nav_.disc_hits(candidate, ag->radius, ag->cls)) continue;
+            if (field.cost(x, y) < best) { best = field.cost(x, y); goal = candidate; found = true; }
+          }
+        if (!found) { mover_->stop(aid); continue; }
+      }
+      mover_->order_move(&aid, 1, goal);
     }
   }
 }
@@ -956,10 +976,16 @@ void GameSim::fire(World& w, const Object& source, Object& target, int damage) {
 
 void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& source, Object& target, int damage) {
   if (!weapon.components.empty()) {
-    // Preserve the measured/default total while per-component damage is unresolved.
-    int count = int(weapon.components.size());
-    for (int i = 0; i < count; i++)
-      fire_weapon(w, weapon.components[size_t(i)], source, target, damage / count + (i < damage % count ? 1 : 0));
+    const auto offset = path::with_length({target.cur_y - source.cur_y, source.cur_x - target.cur_x},
+                                          weapon.spread_px * 256);
+    for (size_t i = 0; i < weapon.components.size(); ++i) {
+      const auto& child = weapon.components[i];
+      auto shot = rules_->weapon(child.id, rules_->type(target.type), !w.hostile(source.side, target.side));
+      Object muzzle = source;
+      const int sign = i == 0 ? 1 : -1;
+      muzzle.cur_x += sign * offset.x; muzzle.cur_y += sign * offset.y;
+      if (shot.damage_known) fire_weapon(w, child, muzzle, target, shot.damage);
+    }
     return;
   }
   int dx = target.cur_x - source.cur_x, dy = target.cur_y - source.cur_y;
@@ -988,9 +1014,19 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
   e.slot = sequence.slot; e.loop = sequence.loop;
   e.x = e.prev_x = source.cur_x; e.y = e.prev_y = source.cur_y;
   e.end_x = target.cur_x; e.end_y = target.cur_y;
-  // Snapshot aim and straight flight are provisional; no floating point enters the simulation.
+  // Snapshot aim; ball projectiles retain a separate vertical fall.
   e.speed = std::max(1, weapon.speed) * 256;
   e.damage = damage; e.flight = true;
+  if (weapon.klass == 0) {
+    e.payload_id = weapon.payload_id;
+    e.end_y += to_fixed(2);
+    const path::Vec2 delta{e.end_x - e.x, e.end_y - e.y};
+    const auto velocity = path::with_length(delta, std::max(0, weapon.speed) * 256);
+    e.velocity_x = velocity.x; e.velocity_y = velocity.y;
+    e.altitude = to_fixed(24); e.height = 24;
+    const int duration = weapon.speed > 0 ? path::length(delta) / (weapon.speed * 256) : 0;
+    e.gravity = duration > 0 ? int(int64_t(e.altitude) * 2 / (int64_t(duration) * duration)) : 2 * 256;
+  }
   e.impact_anim = weapon.impact_anim; e.splash_px = weapon.splash_px; e.shockwave = weapon.shockwave;
   w.effects.push_back(e);
 }
@@ -1014,19 +1050,34 @@ void GameSim::advance_effects(World& w) {
       if (e.age < e.lifetime || e.loop) w.effects.push_back(e);
       continue;
     }
+    const bool ball = e.kind == data::EffectClass::BallExpl;
     path::Vec2 delta{e.end_x - e.x, e.end_y - e.y};
-    if (path::len2(delta) > int64_t(e.speed) * e.speed) {
+    if (ball) {
+      e.x += e.velocity_x; e.y += e.velocity_y;
+      e.altitude -= e.vertical_speed; e.vertical_speed += e.gravity;
+      e.height = std::max(0, e.altitude / 256); ++e.age;
+      if (e.altitude > 0) { w.effects.push_back(e); continue; }
+    } else if (path::len2(delta) > int64_t(e.speed) * e.speed) {
       auto step = path::with_length(delta, e.speed);
       e.x += step.x; e.y += step.y; e.age++;
       w.effects.push_back(e);
       continue;
     }
-    e.x = e.end_x; e.y = e.end_y;
+    if (!ball) { e.x = e.end_x; e.y = e.end_y; }
     if (e.impact_anim) decoration(w, e.impact_anim, int(next_visual_rand() % 3), e.x, e.y, 0, e.side);
     if (e.shockwave == data::kShockwaveAnim) decoration(w, e.shockwave, 0, e.x, e.y, 0, e.side);
     for (auto& o : w.objects) {
       if (!o.alive || o.removed) continue;
       int64_t dx = int64_t(o.cur_x) - e.x, dy = int64_t(o.cur_y) - e.y;
+      if (e.payload_id >= 0) {
+        int distance = path::length({int32_t(dx), int32_t(dy)}) / 256;
+        int damage = rules_->blast_damage(e.payload_id, rules_->type(o.type), distance);
+        if (damage > 0) {
+          o.hp -= damage; o.last_hit_by = e.source;
+          if (o.hp <= 0) kill(w, o);
+        }
+        continue;
+      }
       bool splash = e.splash_px > 0 && w.hostile(e.side, o.side) &&
                     dx * dx + dy * dy <= int64_t(e.splash_px * 256) * (e.splash_px * 256);
       if (o.id != e.target && !splash) continue;
@@ -1285,7 +1336,8 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(uint32_t(e.end_x)); mix(uint32_t(e.end_y)); mix(uint32_t(e.height));
     mix(uint32_t(e.prev_x)); mix(uint32_t(e.prev_y));
     mix(e.age); mix(e.lifetime); mix(e.speed); mix(e.damage); mix(e.splash_px);
-    mix(e.impact_anim); mix(e.shockwave); mix(e.flight); mix(e.loop);
+    mix(e.impact_anim); mix(e.shockwave); mix(e.payload_id); mix(e.flight); mix(e.loop);
+    mix(e.velocity_x); mix(e.velocity_y); mix(e.altitude); mix(e.vertical_speed); mix(e.gravity);
   }
   mix(w.town_state.size());
   for (const TownState& t : w.town_state) {

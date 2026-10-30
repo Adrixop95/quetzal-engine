@@ -36,9 +36,11 @@ int harvest_tick(HarvestState& state, int rate, int clock, int period,
 int production_value(int base, int hall_level, int speed, bool computer, bool hostile_all, bool time);
 
 struct WeaponRules {
+  int id = -1, payload_id = -1;
   int klass = -1, parameter = 0, anim = 0;
   int speed = 0, range = 0, reload = 0;
   int impact_anim = 0, splash_px = 0, shockwave = 0;
+  int spread_px = 0;
   bool muzzle = false;
   std::vector<WeaponRules> components;  // class 12 sums both child weapons
 };
@@ -54,6 +56,7 @@ struct TypeRules {
   bool service_damage_protected = false; // Building descriptor byte +0xec blocks explicit service damage
   int weapon_id = -1;
   int physical_armor = 0;
+  int blast_multiplier = 256;
   bool nonorganic = false, category_f4 = false, category_e8 = false, hypno = false;
   Src class_src = Src::Placeholder;
   int speed = 0;      Src speed_src = Src::Placeholder;   // fixed 24.8 px per tick; descriptor preferred over historical averages
@@ -104,6 +107,7 @@ class RulesData {
   void init_defaults();
   const TypeRules& type(int id) const { return id >= 0 && id < int(types_.size()) ? types_[id] : dummy_; }
   WeaponResult weapon(int weapon_id, const TypeRules& target, bool allied = false) const;
+  int blast_damage(int weapon_id, const TypeRules& target, int distance_px) const;
   WeaponResult attack(int attacker, int target, bool allied = false) const;
   // Historical observations for diagnostics only; never used to schedule attacks.
   bool has_duel(int attacker, int target, DuelEntry& out) const;

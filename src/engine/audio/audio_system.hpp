@@ -1,6 +1,7 @@
 // Sound effects + music through SDL audio. Silent (but functional) when no audio device is available.
 #pragma once
 #include <SDL.h>
+#include <cstdio>
 #include <map>
 #include <functional>
 #include <memory>
@@ -13,12 +14,17 @@
 namespace aztec::engine {
 
 struct AudioEvent {
+  enum class Trigger { Unknown, Selection, Orders, Combat, Building, UI, Music, Ambient };
   enum class Kind { Sound, LoopStart, LoopStop, Music, MusicStop, Speech, Subtitle };
   Kind kind;
   uint64_t source = 0;
   uint32_t set = 0, sound = 0;
   uint64_t tick = 0;
+  Trigger trigger = Trigger::Unknown;
 };
+
+const char* audio_trigger_name(AudioEvent::Trigger trigger);
+void write_audio_event(FILE* file, const AudioEvent& event, uint64_t sequence);
 
 class AudioSystem {
  public:
@@ -28,6 +34,7 @@ class AudioSystem {
   // Called on the main thread after successful playback requests, also without a device.
   std::function<void(const AudioEvent&)> event_sink;
   uint64_t event_tick = 0;
+  AudioEvent::Trigger event_trigger = AudioEvent::Trigger::Unknown;
   void begin_scene_tick();
   void loop_at(uint64_t source, uint32_t set, float x, float y, float cx, float cy);
   void end_scene_tick();
@@ -54,8 +61,14 @@ class AudioSystem {
 
  private:
   static void callback(void* user, Uint8* stream, int len);
-  void emit(AudioEvent event) { event.tick = event_tick; if (event_sink) event_sink(event); }
-  struct Loop { uint32_t set, sound; uint64_t voice; bool seen; };
+  void emit(AudioEvent event) {
+    event.tick = event_tick;
+    if (event.kind == AudioEvent::Kind::Music || event.kind == AudioEvent::Kind::MusicStop)
+      event.trigger = AudioEvent::Trigger::Music;
+    else if (event.kind != AudioEvent::Kind::LoopStop) event.trigger = event_trigger;
+    if (event_sink) event_sink(event);
+  }
+  struct Loop { uint32_t set, sound; uint64_t voice; bool seen; AudioEvent::Trigger trigger; };
   std::map<uint64_t, Loop> loops_;
   uint32_t choose(uint32_t set);
   std::shared_ptr<const Pcm> sound_pcm(uint32_t id);

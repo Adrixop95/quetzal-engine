@@ -271,13 +271,16 @@ bool RulesData::load_dir(const std::string& dir) {
     if (depth > 8) return w;
     auto ir = row(ids, id);
     if (ir.empty()) return w;
+    w.id = id;
     w.klass = num(ir, 1, -1); w.parameter = num(ir, 2);
     if (w.klass == 12) {
       auto pair = row(pairs, w.parameter);
       auto first = visual_weapon(num(pair, 1, -1), depth + 1);
       auto second = visual_weapon(num(pair, 2, -1), depth + 1);
       w = first;
+      w.id = id;
       w.components = {first, second};
+      w.spread_px = num(pair, 3);
       return w;
     }
     if (w.klass == 8) return visual_weapon(num(row(throws, w.parameter), 1, -1), depth + 1);
@@ -290,7 +293,8 @@ bool RulesData::load_dir(const std::string& dir) {
       auto secondary = row(ids, secondary_id);
       if (num(secondary, 1, -1) == 7) {
         auto splash = row(flames, num(secondary, 2));
-        w.impact_anim = num(splash, 1); w.splash_px = num(splash, 7);
+        w.payload_id = secondary_id;
+        w.impact_anim = num(splash, 1); w.splash_px = num(splash, 3);
       }
     } else if (w.klass == 7) {
       w.anim = 157; w.speed = 24; w.range = 96; w.reload = 12;
@@ -325,6 +329,8 @@ bool RulesData::load_dir(const std::string& dir) {
       t.weapon_id = f.weapon >= 0 ? num(r, f.weapon + 1, -1) : -1;
       t.armed = t.weapon_id >= 0;
       t.weapon = visual_weapon(t.weapon_id, 0);
+      if (t.kind == 0 || t.kind == 4 || t.kind == 6)
+        t.blast_multiplier = num(r, (t.kind == 6 ? 14 : t.kind == 0 ? 12 : 11) + 1, 256);
     }
   }
   // Scripted vessels and cameras have a zero maximum getter, not inferred health.
@@ -333,7 +339,8 @@ bool RulesData::load_dir(const std::string& dir) {
   }
   std::map<int, std::map<int, std::vector<int>>> tables;
   for (const auto& entry : std::vector<std::pair<int, std::string>>{
-      {1, "arrow1"}, {2, "w2_13"}, {8, "w8"}, {12, "w12"}}) {
+      {0, "ball0"}, {1, "arrow1"}, {2, "w2_13"}, {3, "axe3"},
+      {7, "w7"}, {8, "w8"}, {9, "w9"}, {12, "w12"}}) {
     for (const auto& row : read_csv(dir + "/weapon_class_" + entry.second + ".csv")) {
       std::vector<int> data;
       for (size_t i = 1; i < row.size(); ++i) data.push_back(num(row, i));
@@ -408,6 +415,19 @@ WeaponResult RulesData::weapon(int id, const TypeRules& target, bool allied) con
   return weapon_impl(id, target, allied, 0);
 }
 
+int RulesData::blast_damage(int id, const TypeRules& target, int distance) const {
+  auto it = weapons_.find(id);
+  if (it == weapons_.end() || it->second.kind != 7 || it->second.data.size() < 9) return 0;
+  const auto& d = it->second.data;
+  if (target.flier != bool(d[5])) return 0;
+  const int inner = target.radius_px + d[1], outer = target.radius_px + d[2];
+  if (distance > outer) return 0;
+  if (distance <= inner) return d[4];
+  int damage = int(int64_t(d[4]) * (outer - distance) / std::max(1, outer - inner));
+  if (target.structure) damage = category_damage(damage, {204});
+  return category_damage(damage, {target.blast_multiplier});
+}
+
 WeaponResult RulesData::attack(int attacker, int target, bool allied) const {
   const auto& a = type(attacker);
   if (a.weapon_id >= 0) return weapon(a.weapon_id, type(target), allied);
@@ -428,7 +448,39 @@ WeaponResult RulesData::weapon_impl(int id, const TypeRules& target, bool allied
     auto b = weapon_impl(d[1], target, allied, depth + 1);
     out.damage = a.damage + b.damage;
     out.damage_known = a.damage_known && b.damage_known;
-    // The sum is established; composite scheduling/range is not documented.
+    // Paired launchers use the first child's range and reload getters.
+    out.reload = a.reload; out.range_px = a.range_px; out.projectile_speed = a.projectile_speed;
+    out.getters_known = a.getters_known;
+    return out;
+  }
+  if ((w.kind == 0 && d.size() >= 5) || (w.kind == 3 && d.size() >= 6)) {
+    auto child = weapon_impl(d[w.kind == 0 ? 4 : 5], target, allied, depth + 1);
+    out = child;
+    if (w.kind == 3) {
+      int direct = target.flier || allied ? 0 : d[4];
+      if (target.nonorganic) direct = category_damage(direct, {176});
+      out.damage += (48 / std::max(1, d[1])) * direct;
+    }
+    out.reload = d[2]; out.range_px = d[3]; out.projectile_speed = d[1];
+    out.getters_known = true;
+    return out;
+  }
+  if (w.kind == 7 && d.size() >= 9) {
+    // Potential damage at the impact centre; actual blast damage is spatial.
+    out.damage = blast_damage(id, target, 0);
+    out.damage_known = true;
+    return out; // standalone FireThrow scheduling remains unresolved
+  }
+  if (w.kind == 9 && d.size() >= 8) {
+    std::vector<int> factors;
+    if (target.flier) factors.push_back(d[3]);
+    if (target.nonorganic) factors.push_back(d[4]);
+    if (target.category_f4) factors.push_back(d[5]);
+    if (target.category_e8) factors.push_back(d[6]);
+    if (target.structure) factors.push_back(d[7]);
+    out.damage = category_damage(d[0], factors);
+    out.damage += int((int64_t(d[1]) * target.physical_armor) >> 8);
+    out.damage_known = true;
     return out;
   }
   const bool arrow = w.kind == 1;
@@ -469,7 +521,7 @@ WeaponResult RulesData::weapon_impl(int id, const TypeRules& target, bool allied
     }
     if (target.flier) out.damage = 0;
   }
-  // Classes 0/3/7/9/11 and burn/projectile sequencing remain unresolved.
+  // Burn and standalone FireThrow scheduling remain unresolved.
   return out;
 }
 
