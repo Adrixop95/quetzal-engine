@@ -657,7 +657,9 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
     for (;;) {
       if (menu) {
         FrontendResult fr;
-        if (!run_frontend(win, data, opts, fr, open_brief)) break;
+        const bool selected = run_frontend(win, data, opts, fr, open_brief);
+        if (fr.failed) rc = 1;
+        if (!selected || !opts.menu_script.empty()) break;
         opts.menu_session = true;
         spec = fr.mission;
         open_brief.clear();

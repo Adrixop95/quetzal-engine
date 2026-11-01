@@ -15,6 +15,7 @@ namespace aztec::engine {
 struct FrontendResult {
   std::string mission;   // spec to play ("mission_3", "Pentagram")
   bool quit = false;
+  bool failed = false;  // automation input, trace or capture failure
 };
 
 // Runs the menus until a mission is chosen or the user quits. `opts` may be changed by the options screen.
