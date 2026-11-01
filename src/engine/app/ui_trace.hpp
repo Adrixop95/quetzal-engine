@@ -42,11 +42,10 @@ inline void trace_ui(std::ostream& out, int frame, const World& world, const Cam
   for (size_t i = 0; panel_visible && i < layout.commands.size(); ++i) {
     SDL_Point p{input.mx, input.my};
     bool hover = SDL_PointInRect(&p, &layout.commands[i]);
-    bool selected = (i == 0 && ui.target_mode() == TargetMode::Move) || (i == 1 && ui.target_mode() == TargetMode::Attack);
-    bool enabled = sim && CommandsUi::action_enabled(PanelAction(i), world, &sim->rules());
-    out << (i ? "," : "") << "{\"frame\":0,\"hover\":" << (hover ? "true" : "false")
-        << ",\"highlight\":" << ((hover || selected) ? "true" : "false")
-        << ",\"enabled\":" << (enabled ? "true" : "false") << '}';
+    const auto state = ui.button_state(PanelAction(i), world);
+    out << (i ? "," : "") << "{\"frame\":" << state.frame << ",\"hover\":" << (hover ? "true" : "false")
+        << ",\"highlight\":" << (state.highlight ? "true" : "false")
+        << ",\"enabled\":" << (state.enabled ? "true" : "false") << '}';
   }
   out << "],\"commands\":[";
   if (sim) {
