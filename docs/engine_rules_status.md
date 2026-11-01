@@ -1275,7 +1275,8 @@ invented specifications and the aggregate
 **Construction / synthetic evidence:** 19 P scenario specifications cover siege
 speed, damage/category controls, reload, range and projectile flight, mine build
 time/price/income, sight, regeneration and serial/two-town production. They use
-`docs/PARITY_TEST_PLAN.md` because task 42's harness is absent. Tasks 36/37/40
+`docs/PARITY_TEST_PLAN.md`; task 42's harness was absent during that attempt.
+The L0 harness now exists, but audited L1 adapters remain absent. Tasks 36/37/40
 are not present in this checkout either. `tools/parity_rules.py` generates
 private placement candidates and attempts isolated launch controls. Its separate
 comparison command reuses the strict normalized comparator, requires two equal
@@ -1790,3 +1791,26 @@ setup before launch; no reference parity labels or V19 acceptance were promoted.
 private-copy dummy-SDL namespace checks passed formats, engine integration and
 campaign script inventory. The new regressions are synthetic and require no game
 data. All pre-commit hooks and `git diff --check` passed.
+## L1/L2 rule iteration (2026-11-01, no new reference evidence)
+
+The initial run attempted all 19 existing L1 candidates and nine recorded L2
+missions; the final run attempted 26 L1 candidates and the same nine recordings.
+Every reference attempt failed before runtime launch at namespace loopback
+configuration with a denied netlink socket. No HP, armor, regeneration,
+production, income or repair rule can be inferred from these failures. Simulation
+code and M/V/P labels are unchanged.
+
+Seven new P specifications add barracks construction, single-unit training,
+organic/building regeneration, building/defence repair and farm income controls.
+The optional L1 clone runner uses a separate game snapshot made before reference
+execution. All 26 final clone candidate controls completed their full engine-local
+observation horizons; these are setup blockers, not L1 parity passes. Commands,
+damaged HP, town membership and other controls still require audited adapters.
+L2 clone replay remains dependent on missing packet/identity/observer adapters;
+no substitute replay or reference repeatability was claimed.
+
+Per-case L1/L2 diffs now feed the aggregate matrix and private triage directly.
+The final selected run contains 35 experiment failures and zero measured rules
+or semantic divergences. See [the iteration record](parity.md#l1l2-iteration-2026-11-01-blocked-measurements)
+for commands, evidence boundaries and remaining work. Asset-free controls cover
+clone horizon validation, failure aggregation and independent mutable game copies.

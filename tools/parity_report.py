@@ -288,7 +288,11 @@ def run_corpus(args):
             verdict = replay_mission(args, mission, command.parent, output / command.parent.name)
         except (OSError, ValueError, RuntimeError, StopIteration) as exc:
             verdict = result("experiment_failed", detail=str(exc))
-        report.append(dict(mission=mission, **verdict))
+        row = dict(id=command.parent.name, layer="L2", mission=mission, **verdict)
+        directory = output / command.parent.name
+        directory.mkdir(exist_ok=True)
+        write_json(directory / "diff.json", row)
+        report.append(row)
         write_json(output / "report.json", report)
         print(f"mission {mission}: {verdict['category']}")
     if not report:
@@ -297,6 +301,28 @@ def run_corpus(args):
 
 
 class Controls(unittest.TestCase):
+    def test_corpus_failures_emit_layered_diffs(self):
+        from argparse import Namespace
+        from unittest.mock import patch
+        private = ROOT / 'work/parity'
+        private.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=private) as temporary:
+            root = Path(temporary)
+            for mission in (1, 2):
+                recording = root / 'corpus' / f'm{mission}'
+                recording.mkdir(parents=True)
+                (recording / 'cmd.txt').write_text('')
+            args = Namespace(corpus=root / 'corpus', output=root / 'output')
+            with patch(__name__ + '.replay_mission', side_effect=RuntimeError('isolation denied')) as replay:
+                self.assertEqual(run_corpus(args), 1)
+                self.assertEqual(replay.call_count, 2)
+            rows = json.loads((args.output / 'report.json').read_text())
+            for row in rows:
+                self.assertEqual(row['layer'], 'L2')
+                self.assertEqual(row['category'], 'experiment_failed')
+                self.assertIsNone(row['tick'])
+                self.assertEqual(json.loads((args.output / row['id'] / 'diff.json').read_text()), row)
+
     def test_comparison(self):
         with tempfile.TemporaryDirectory() as temporary:
             a, b = Path(temporary) / "a", Path(temporary) / "b"

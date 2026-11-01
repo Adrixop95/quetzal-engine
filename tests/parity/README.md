@@ -1,18 +1,21 @@
 # L1 rule scenario specifications
 
-Task 42's `tools/parity_run.py` is absent in this checkout. The `l1_*.json`
+Task 42's `tools/parity_run.py` provides the L0 harness. The `l1_*.json`
 files follow the top-level contract in `docs/PARITY_TEST_PLAN.md`; nested keys
-are provisional until that harness is available. These are P specifications,
+remain provisional until audited L1 setup, command and observer adapters exist.
+Use `tools/parity_rules.py` for these specifications; `parity_run.py --layer L1`
+does not execute them. These are P specifications,
 with no measured expectations or original data. The task prompts 36, 37 and 40
 referenced by task 43 are also absent; no dependency implementation is assumed.
 
-There are 19 base cases: three siege movement cases, six target-category damage
+There are 26 base cases: three siege movement cases, six target-category damage
 controls, reload, range, projectile flight, mine construction, price, income,
-sight, regeneration, serial production and production in two towns. The controls
+sight, regeneration, serial production and production in two towns; plus barracks
+construction, single-unit training, farm income, organic/building regeneration
+and building/defence repair. The controls
 in each file describe required repeats and boundary cases; those repeats are
 pending work, not additional executed scenarios. Target type names are test
-selection labels, not measured armor classes. Repair and population are outside
-this task's requested subset of L1.
+selection labels, not measured armor classes. Population remains uncovered.
 
 `setup.preplaced_objects` names canonical scenario identities and type IDs;
 positions and command destinations are tiles. `input` contains abstract commands
@@ -32,6 +35,7 @@ List and attempt candidate launch probes:
 python3 -I tools/parity_rules.py list
 python3 -I tools/parity_rules.py probe \
   --game /absolute/private/game --runtime /absolute/private/aztec_recomp \
+  --engine "$PWD/build/aztec_engine" \
   --output work/parity/l1-new-run --timeout 45
 ```
 
@@ -54,6 +58,17 @@ particular, the empty-resource mine case is only a proposed zero-yield control.
 `pending.json` retains unimplemented commands and controls; it must be resolved
 before interpreting a map as an isolated rule experiment. No candidate launch
 can produce a parity pass or numeric expectation.
+
+With `--engine`, the clone receives a separate snapshot of each generated game
+before the reference launch can mutate it. Its bounded headless run also uses
+dummy SDL and `unshare -rn`, with automatic human orders and parallel construction
+disabled. It checks the complete engine-local observation horizon independently
+even when the reference fails. Success remains `blocked_setup_contract`: abstract
+commands, damaged HP and other controls have not been applied or audited. The
+engine-local observation header is never relabeled as an L1 contract.
+`runners.json` retains both diagnostics, and each scenario's `diff.json` plus the
+run summary declare layer L1 for triage/matrix collection. A launch or coverage
+failure takes precedence over a setup blocker; no semantic tick is invented.
 
 When audited adapters provide normalized observations in the JSONL format of
 `docs/parity.md`, compare two reference repeats before the clone:

@@ -8,7 +8,9 @@
 //   click X Y | rclick X Y | mclick X Y      move + press + release (left / right / middle)
 //   down | up | rdown | rup                  hold / release the left / right button
 //   drag X0 Y0 X1 Y1       left-button drag (box selection)
-//   key NAME               key press, SDL key names ("H", "A", "Space", "1", "Escape"), prefix ctrl+ / shift+
+//   key NAME               key press, SDL key names ("H", "A", "Space", "1", "Escape"), prefix ctrl+ / shift+ / alt+
+//   keydown NAME | keyup NAME    hold / release across frames, including mouse drags
+//                          modifier names: ctrl, shift, alt, lctrl/rctrl, lshift/rshift, lalt/ralt
 //   shot FILE.png          screenshot of the next rendered frame
 //   print                  one status line: tick, state hash, money, outcome, object counts
 //   expect NAME OP VALUE   NAME = money | tick | outcome (0 running, 1 victory, 2 defeat) | selection | units SIDE | towns SIDE | enemies;
@@ -38,14 +40,15 @@ class PlaytestScript {
 
  private:
   struct Line { std::string cmd; std::vector<std::string> args; int src_line = 0; };
-  void press_key(Input& in, const std::string& name, bool down);
+  void press_key(Input& in, const std::string& name, bool down, bool auto_release = false);
+  static void update_modifiers(Input& in);
   bool evaluate(const World& w, const Line& l);
   std::vector<Line> lines_;
   size_t pc_ = 0;
   int wait_ = 0;
   // pending releases for the frame after a click / key
   bool release_left_ = false, release_right_ = false, release_middle_ = false;
-  std::string release_key_;
+  std::vector<SDL_Scancode> release_keys_;
   int drag_phase_ = 0, dx0_ = 0, dy0_ = 0, dx1_ = 0, dy1_ = 0;
   int failures_ = 0;
 };

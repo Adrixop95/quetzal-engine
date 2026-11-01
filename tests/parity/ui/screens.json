@@ -1,0 +1,4173 @@
+{
+  "schema": 1,
+  "screens": [
+    {
+      "id": "splash",
+      "reach": "Start the program before profile selection; capture the splash transition.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "intro",
+      "reach": "Start the program with video enabled; capture a specified decoded video frame. Video frame stepping is missing.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "profile",
+      "reach": "Start reference, select a player and accept; clone has no player selector.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ]
+          ]
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "main-menu",
+      "reach": "Accept player selection; show the initial menu.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              239
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              160,
+              543
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "main-campaign-normal",
+      "reach": "Main menu, campaign button, normal state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "main-campaign-hover",
+      "reach": "Main menu, campaign button, hover state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              260
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "main-campaign-pressed",
+      "reach": "Main menu, campaign button, pressed state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Clone front-end activates on press and has no held-button visual state."
+        }
+      }
+    },
+    {
+      "id": "main-custom-map-normal",
+      "reach": "Main menu, custom-map button, normal state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "main-custom-map-hover",
+      "reach": "Main menu, custom-map button, hover state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              315
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "main-custom-map-pressed",
+      "reach": "Main menu, custom-map button, pressed state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Clone front-end activates on press and has no held-button visual state."
+        }
+      }
+    },
+    {
+      "id": "main-options-normal",
+      "reach": "Main menu, options button, normal state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "main-options-hover",
+      "reach": "Main menu, options button, hover state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              370
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "main-options-pressed",
+      "reach": "Main menu, options button, pressed state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Clone front-end activates on press and has no held-button visual state."
+        }
+      }
+    },
+    {
+      "id": "main-quit-normal",
+      "reach": "Main menu, quit button, normal state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "main-quit-hover",
+      "reach": "Main menu, quit button, hover state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              425
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "main-quit-pressed",
+      "reach": "Main menu, quit button, pressed state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Clone front-end activates on press and has no held-button visual state."
+        }
+      }
+    },
+    {
+      "id": "main-new-game-normal",
+      "reach": "Main menu, new-game button, normal state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "main-new-game-hover",
+      "reach": "Main menu, new-game button, hover state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "main-new-game-pressed",
+      "reach": "Main menu, new-game button, pressed state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "main-load-normal",
+      "reach": "Main menu, load button, normal state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "main-load-hover",
+      "reach": "Main menu, load button, hover state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "main-load-pressed",
+      "reach": "Main menu, load button, pressed state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "main-multiplayer-normal",
+      "reach": "Main menu, multiplayer button, normal state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "main-multiplayer-hover",
+      "reach": "Main menu, multiplayer button, hover state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "main-multiplayer-pressed",
+      "reach": "Main menu, multiplayer button, pressed state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "main-credits-normal",
+      "reach": "Main menu, credits button, normal state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "main-credits-hover",
+      "reach": "Main menu, credits button, hover state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "main-credits-pressed",
+      "reach": "Main menu, credits button, pressed state; original coordinates await observation.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "new-game",
+      "reach": "Main menu > New game.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "difficulty-easy",
+      "reach": "New game > Difficulty > easy.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "difficulty-normal",
+      "reach": "New game > Difficulty > normal.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "difficulty-hard",
+      "reach": "New game > Difficulty > hard.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "campaign-selection",
+      "reach": "Main menu > Campaign.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              239
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              160,
+              543
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              260
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "mission-selection-1",
+      "reach": "Campaign > select mission 1. Clone captures the campaign list; it opens briefing immediately on a mission press and has no separate selected-row state.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              239
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              160,
+              543
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              257
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              260
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "briefing-1",
+      "reach": "Campaign > mission 1 > Play; stop before Start.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              239
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              160,
+              543
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              257
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              544
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              260
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              200,
+              120
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "hud-mission-1",
+      "reach": "Start mission 1; capture after four clone simulation frames. Reference timing is presentation-based and unaligned.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              239
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              160,
+              543
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              257
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              544
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              700,
+              430
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        },
+        "clone": {
+          "mission": 1,
+          "input": [
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "mission-selection-2",
+      "reach": "Campaign > select mission 2. Clone captures the campaign list; it opens briefing immediately on a mission press and has no separate selected-row state.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              239
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              160,
+              543
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              277
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              260
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "briefing-2",
+      "reach": "Campaign > mission 2 > Play; stop before Start.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              239
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              160,
+              543
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              277
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              544
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              260
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              200,
+              172
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "hud-mission-2",
+      "reach": "Start mission 2; capture after four clone simulation frames. Reference timing is presentation-based and unaligned.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              239
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              160,
+              543
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              277
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              544
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              700,
+              430
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        },
+        "clone": {
+          "mission": 2,
+          "input": [
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "mission-selection-3",
+      "reach": "Campaign > select mission 3. Clone captures the campaign list; it opens briefing immediately on a mission press and has no separate selected-row state.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              239
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              160,
+              543
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              297
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              260
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "briefing-3",
+      "reach": "Campaign > mission 3 > Play; stop before Start.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              239
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              160,
+              543
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              297
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              544
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              260
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              200,
+              224
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "hud-mission-3",
+      "reach": "Start mission 3; capture after four clone simulation frames. Reference timing is presentation-based and unaligned.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              239
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              160,
+              543
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              297
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              544
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              700,
+              430
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        },
+        "clone": {
+          "mission": 3,
+          "input": [
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "mission-selection-4",
+      "reach": "Campaign > select mission 4. Clone captures the campaign list; it opens briefing immediately on a mission press and has no separate selected-row state.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              239
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              160,
+              543
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              317
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              260
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "briefing-4",
+      "reach": "Campaign > mission 4 > Play; stop before Start.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              239
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              160,
+              543
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              317
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              544
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              260
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              200,
+              276
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "hud-mission-4",
+      "reach": "Start mission 4; capture after four clone simulation frames. Reference timing is presentation-based and unaligned.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              239
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              160,
+              543
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              317
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              544
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              700,
+              430
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        },
+        "clone": {
+          "mission": 4,
+          "input": [
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "mission-selection-5",
+      "reach": "Campaign > select mission 5. Clone captures the campaign list; it opens briefing immediately on a mission press and has no separate selected-row state.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              239
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              160,
+              543
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              337
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              260
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "briefing-5",
+      "reach": "Campaign > mission 5 > Play; stop before Start.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              239
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              160,
+              543
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              337
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              544
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              260
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              200,
+              328
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "hud-mission-5",
+      "reach": "Start mission 5; capture after four clone simulation frames. Reference timing is presentation-based and unaligned.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              239
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              160,
+              543
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              337
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              544
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              700,
+              430
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        },
+        "clone": {
+          "mission": 5,
+          "input": [
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "custom-selection",
+      "reach": "Main menu > Custom map.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              315
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "load-empty",
+      "reach": "In-game pause menu > load; empty state. A reproducible slot fixture is needed.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "load-selected",
+      "reach": "In-game pause menu > load; selected state. A reproducible slot fixture is needed.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "load-confirmation",
+      "reach": "In-game pause menu > load; confirmation state. A reproducible slot fixture is needed.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "save-empty",
+      "reach": "In-game pause menu > save; empty state. A reproducible slot fixture is needed.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "save-selected",
+      "reach": "In-game pause menu > save; selected state. A reproducible slot fixture is needed.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "save-confirmation",
+      "reach": "In-game pause menu > save; confirmation state. A reproducible slot fixture is needed.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "options",
+      "reach": "Main menu > Options.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              370
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "options-video",
+      "reach": "Options > Video; clone exposes display settings on its combined options page.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              370
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "options-audio",
+      "reach": "Options > Audio.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              370
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              410
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "options-controls",
+      "reach": "Options > Controls; full clone controls editor is missing.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "options-game",
+      "reach": "Options > Game; clone game modifications panel.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              370
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              400,
+              460
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "credits",
+      "reach": "Main menu > Credits; clone credits screen is missing.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "multiplayer-connection",
+      "reach": "Main menu > Multiplayer > connection; clone lobby front end is missing.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "multiplayer-host",
+      "reach": "Main menu > Multiplayer > host; clone lobby front end is missing.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "multiplayer-join",
+      "reach": "Main menu > Multiplayer > join; clone lobby front end is missing.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "multiplayer-players",
+      "reach": "Main menu > Multiplayer > players; clone lobby front end is missing.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "multiplayer-ready",
+      "reach": "Main menu > Multiplayer > ready; clone lobby front end is missing.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "loading-mission-1",
+      "reach": "Start mission 1; intercept loading presentation. Clone loading observer is missing.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "loading-mission-2",
+      "reach": "Start mission 2; intercept loading presentation. Clone loading observer is missing.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "loading-mission-3",
+      "reach": "Start mission 3; intercept loading presentation. Clone loading observer is missing.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "loading-mission-4",
+      "reach": "Start mission 4; intercept loading presentation. Clone loading observer is missing.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "loading-mission-5",
+      "reach": "Start mission 5; intercept loading presentation. Clone loading observer is missing.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-footman",
+      "reach": "Mission fixture containing own FOOTMAN; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-rifleman",
+      "reach": "Mission fixture containing own RIFLEMAN; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-demolisher",
+      "reach": "Mission fixture containing own DEMOLISHER; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-truck-axethrower",
+      "reach": "Mission fixture containing own TRUCK_AXETHROWER; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-cannon",
+      "reach": "Mission fixture containing own CANNON; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-bear",
+      "reach": "Mission fixture containing own BEAR; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-knight",
+      "reach": "Mission fixture containing own KNIGHT; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-zeppelin",
+      "reach": "Mission fixture containing own ZEPPELIN; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-truck-flamethrower",
+      "reach": "Mission fixture containing own TRUCK_FLAMETHROWER; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-truck-katusha",
+      "reach": "Mission fixture containing own TRUCK_KATUSHA; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-rus-forpost",
+      "reach": "Mission fixture containing own RUS_FORPOST; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-rus-village",
+      "reach": "Mission fixture containing own RUS_VILLAGE; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-rus-farm",
+      "reach": "Mission fixture containing own RUS_FARM; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-rus-mine",
+      "reach": "Mission fixture containing own RUS_MINE; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-rus-barracks",
+      "reach": "Mission fixture containing own RUS_BARRACKS; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-rus-stable",
+      "reach": "Mission fixture containing own RUS_STABLE; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-rus-bearlair",
+      "reach": "Mission fixture containing own RUS_BEARLAIR; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-rus-watch-tower",
+      "reach": "Mission fixture containing own RUS_WATCH_TOWER; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-rus-warehouse",
+      "reach": "Mission fixture containing own RUS_WAREHOUSE; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-rus-town",
+      "reach": "Mission fixture containing own RUS_TOWN; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-rus-workshop",
+      "reach": "Mission fixture containing own RUS_WORKSHOP; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-rus-armory",
+      "reach": "Mission fixture containing own RUS_ARMORY; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-rus-labs",
+      "reach": "Mission fixture containing own RUS_LABS; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-rus-fortress-tower",
+      "reach": "Mission fixture containing own RUS_FORTRESS_TOWER; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-rus-fortress",
+      "reach": "Mission fixture containing own RUS_FORTRESS; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-rus-air-facility",
+      "reach": "Mission fixture containing own RUS_AIR_FACILITY; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-rus-cannon-tower",
+      "reach": "Mission fixture containing own RUS_CANNON_TOWER; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-archer",
+      "reach": "Mission fixture containing own ARCHER; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-mage",
+      "reach": "Mission fixture containing own MAGE; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-tuzem",
+      "reach": "Mission fixture containing own TUZEM; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-spider-crossbow",
+      "reach": "Mission fixture containing own SPIDER_CROSSBOW; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-jaguar",
+      "reach": "Mission fixture containing own JAGUAR; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-bizon",
+      "reach": "Mission fixture containing own BIZON; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-eagle",
+      "reach": "Mission fixture containing own EAGLE; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-deltaplan",
+      "reach": "Mission fixture containing own DELTAPLAN; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-spider-flamethrower",
+      "reach": "Mission fixture containing own SPIDER_FLAMETHROWER; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-spider-axethrower",
+      "reach": "Mission fixture containing own SPIDER_AXETHROWER; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-azt-forpost",
+      "reach": "Mission fixture containing own AZT_FORPOST; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-azt-village",
+      "reach": "Mission fixture containing own AZT_VILLAGE; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-azt-farm",
+      "reach": "Mission fixture containing own AZT_FARM; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-azt-warehouse",
+      "reach": "Mission fixture containing own AZT_WAREHOUSE; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-azt-barracks",
+      "reach": "Mission fixture containing own AZT_BARRACKS; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-azt-archer-tower",
+      "reach": "Mission fixture containing own AZT_ARCHER_TOWER; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-azt-hut",
+      "reach": "Mission fixture containing own AZT_HUT; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-azt-stable",
+      "reach": "Mission fixture containing own AZT_STABLE; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-azt-jaguarlair",
+      "reach": "Mission fixture containing own AZT_JAGUARLAIR; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-azt-nest",
+      "reach": "Mission fixture containing own AZT_NEST; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-azt-town",
+      "reach": "Mission fixture containing own AZT_TOWN; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-azt-mine",
+      "reach": "Mission fixture containing own AZT_MINE; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-azt-crossbow-tower",
+      "reach": "Mission fixture containing own AZT_CROSSBOW_TOWER; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-azt-temple",
+      "reach": "Mission fixture containing own AZT_TEMPLE; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-azt-workshop",
+      "reach": "Mission fixture containing own AZT_WORKSHOP; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-azt-air-facility",
+      "reach": "Mission fixture containing own AZT_AIR_FACILITY; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-ninja",
+      "reach": "Mission fixture containing own NINJA; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-hypno",
+      "reach": "Mission fixture containing own HYPNO; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-chief",
+      "reach": "Mission fixture containing own CHIEF; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-snowman",
+      "reach": "Mission fixture containing own SNOWMAN; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-elefant",
+      "reach": "Mission fixture containing own ELEFANT; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-wheel-katusha",
+      "reach": "Mission fixture containing own WHEEL_KATUSHA; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-wheel-firethrower",
+      "reach": "Mission fixture containing own WHEEL_FIRETHROWER; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-paraplan",
+      "reach": "Mission fixture containing own PARAPLAN; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-wheel-axethrower",
+      "reach": "Mission fixture containing own WHEEL_AXETHROWER; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-wheel-crossbow",
+      "reach": "Mission fixture containing own WHEEL_CROSSBOW; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-chi-forpost",
+      "reach": "Mission fixture containing own CHI_FORPOST; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-chi-village",
+      "reach": "Mission fixture containing own CHI_VILLAGE; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-chi-farm",
+      "reach": "Mission fixture containing own CHI_FARM; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-chi-mine",
+      "reach": "Mission fixture containing own CHI_MINE; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-chi-barracks",
+      "reach": "Mission fixture containing own CHI_BARRACKS; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-chi-firethrow-tower",
+      "reach": "Mission fixture containing own CHI_FIRETHROW_TOWER; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-chi-hypno-tower",
+      "reach": "Mission fixture containing own CHI_HYPNO_TOWER; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-chi-warehouse",
+      "reach": "Mission fixture containing own CHI_WAREHOUSE; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-chi-town",
+      "reach": "Mission fixture containing own CHI_TOWN; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-chi-hypno-school",
+      "reach": "Mission fixture containing own CHI_HYPNO_SCHOOL; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-chi-prison",
+      "reach": "Mission fixture containing own CHI_PRISON; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-chi-workshop",
+      "reach": "Mission fixture containing own CHI_WORKSHOP; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-chi-armory",
+      "reach": "Mission fixture containing own CHI_ARMORY; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-chi-fortress",
+      "reach": "Mission fixture containing own CHI_FORTRESS; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-chi-stable",
+      "reach": "Mission fixture containing own CHI_STABLE; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-chi-cave",
+      "reach": "Mission fixture containing own CHI_CAVE; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-chi-air-facility",
+      "reach": "Mission fixture containing own CHI_AIR_FACILITY; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-chi-watchtower",
+      "reach": "Mission fixture containing own CHI_WATCHTOWER; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-chi-airtower",
+      "reach": "Mission fixture containing own CHI_AIRTOWER; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-abdula",
+      "reach": "Mission fixture containing own ABDULA; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-catapult",
+      "reach": "Mission fixture containing own CATAPULT; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-boat",
+      "reach": "Mission fixture containing own BOAT; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-zeppelin2",
+      "reach": "Mission fixture containing own ZEPPELIN2; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-shipyard",
+      "reach": "Mission fixture containing own SHIPYARD; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-hopcannon",
+      "reach": "Mission fixture containing own HOPCANNON; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-johnka",
+      "reach": "Mission fixture containing own JOHNKA; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "command-card-camera",
+      "reach": "Mission fixture containing own CAMERA; select it and capture its command card. Per-type placement and reference selection fixture are pending.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "build-menu",
+      "reach": "Select a town and open its construction menu.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "placement-mode",
+      "reach": "Choose a building and move to a legal map location.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "selection-panel",
+      "reach": "Select an own unit; inspect selection details.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "minimap",
+      "reach": "Start mission 1; inspect minimap.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              239
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              160,
+              543
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              257
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              544
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              700,
+              430
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        },
+        "clone": {
+          "mission": 1,
+          "input": [
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "resource-bar",
+      "reach": "Start mission 1; inspect resources.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              239
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              160,
+              543
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              257
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              544
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              700,
+              430
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ]
+          ]
+        },
+        "clone": {
+          "mission": 1,
+          "input": [
+            [
+              "wait",
+              4
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "messages",
+      "reach": "Start mission 1 and trigger a specified message at a specified tick.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "pause-menu",
+      "reach": "Start mission 1 > Escape.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "mission": null,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              239
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              160,
+              543
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              257
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              140,
+              544
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "move",
+              700,
+              430
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              4
+            ],
+            [
+              "key",
+              "Escape"
+            ],
+            [
+              "wait",
+              2
+            ]
+          ]
+        },
+        "clone": {
+          "mission": 1,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "key",
+              "Escape"
+            ],
+            [
+              "wait",
+              2
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "objectives",
+      "reach": "Start mission 1 > Objectives.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "mission": 1,
+          "input": [
+            [
+              "wait",
+              4
+            ],
+            [
+              "key",
+              "Escape"
+            ],
+            [
+              "wait",
+              2
+            ],
+            [
+              "move",
+              400,
+              200
+            ],
+            [
+              "down"
+            ],
+            [
+              "up"
+            ],
+            [
+              "wait",
+              2
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "mission-result-victory",
+      "reach": "Complete a mission with a deterministic winning command replay.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "mission-result-defeat",
+      "reach": "Lose a mission with a deterministic losing command replay.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "victory",
+      "reach": "Finish the campaign; show final victory.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    },
+    {
+      "id": "defeat",
+      "reach": "Lose the campaign mission; show defeat.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Reference navigation and observation boundary need isolated validation."
+        },
+        "clone": {
+          "blocked": "Screen or deterministic setup route is not implemented."
+        }
+      }
+    }
+  ]
+}
