@@ -16,7 +16,7 @@ class AnimSpriteProvider : public SpriteProvider {
   bool pick_shadow(const ObjectState& st, SpriteDraw& out) const override { return make(st, out, true); }
   // Raw frame lookup (also used by tests/tools).
   data::SpriteRef frame_for(const ObjectState& st) const;
-  std::vector<data::SpriteRef> sound_frames(const ObjectState& st) const;
+  std::vector<data::SpriteRef> sound_frames(const ObjectState& st, bool include_decorations = true) const;
   std::vector<SpriteDraw> parts(const ObjectState& st) const override;
   std::vector<SpriteItem> items(const ObjectState& st) const override;
   int light_mask(const ObjectState& st) const override { return frame_for(st).light; }
@@ -28,6 +28,8 @@ class AnimSpriteProvider : public SpriteProvider {
   bool boat_phase_complete(int phase, int orientation, uint32_t tick) const;
 
  private:
+  struct Decoration { data::SpriteRef frame; int height, dy; };
+  std::vector<Decoration> decorations(const ObjectState& st) const;
   bool make(const ObjectState& st, SpriteDraw& out, bool shadow) const;
   data::SpriteDb db_;
   int vision_[90] = {};

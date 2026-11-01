@@ -1557,6 +1557,36 @@ The [L6 method](parity.md#l6-audio-event-comparison-2026-10-29) records commands
 formats, exit codes and evidence limits. No original audio, IDs or trace values
 are public fixtures.
 
+### L6 iteration (2026-11-01, partial)
+
+Three synthetic regressions were reproduced before correction: missing provider
+fallback decoration requests, loop cleanup targeting the surviving decoration
+after an earlier one ends, and duplicate fire requests when a simulation effect
+owns the fire. Rendering and audio now share decoration selection, preserve
+channel positions, and apply the renderer's existing fire ownership suppression.
+No simulation state, RNG, commands or timing rules were changed.
+
+The application dispatcher exports an invented log that task 45's comparator
+matches across 37 requests, with exact ticks additionally required by the test.
+Tests cover construction silence, built/damaged objects, healing, visibility,
+distance, removal, held frames and independently ending death decorations.
+Loop source checks supplement the comparator's sound/kind/trigger contract.
+The 1,200-tick audio-independence test now includes damaged/dying objects and
+retains complete hash equality at every tick plus replay equality.
+
+The isolated reference capture failed before launch at namespace loopback setup;
+all seven live trigger-class comparisons remain unmeasured. Two isolated clone
+smokes completed using separate private game copies; audio enabled/disabled
+runs reached the same final simulation hash. The enabled run logged requests.
+These results establish engine integration only. Selection/order speech, UI cues,
+production/completion announcements, generic effect provenance and original music
+transition timing remain open. Task 45 tooling is available; audited reference
+identity/trigger/music observers and synchronized paired scenarios are still
+required. Private logs and before/after diffs remain in `work/parity/`.
+The final Release build, all 34 runnable CTest checks and cached pre-commit
+hooks passed; six private-input/network checks skipped. The task 45 normalize
+and compare CLI commands also passed the final invented capture.
+
 ## Task 47: placement, footprint grid and construction (2026-10-30)
 
 **Reproduce before fixing:** the unchanged Release build and pre-commit passed.

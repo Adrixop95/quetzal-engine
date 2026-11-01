@@ -237,7 +237,8 @@ aztec_warnings(test_audio_trace)
 add_test(NAME audio_trace COMMAND test_audio_trace)
 set_tests_properties(audio_trace PROPERTIES LABELS "unit;audio")
 if(Python3_Interpreter_FOUND)
-  add_test(NAME audio_parity COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_audio_parity.py)
+  add_test(NAME audio_parity COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_audio_parity.py
+    --engine-test $<TARGET_FILE:test_audio>)
   set_tests_properties(audio_parity PROPERTIES LABELS "unit;audio" TIMEOUT 20)
 endif()
 
