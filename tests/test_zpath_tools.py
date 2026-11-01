@@ -71,6 +71,18 @@ class LogTests(unittest.TestCase):
         self.assertEqual(summary['status'], 'ok')
 
 class LayoutTests(unittest.TestCase):
+    def test_delayed_group_receives_full_observation_budget(self):
+        if not BENCHMARK:
+            self.skipTest('pass path_bench to check delayed group budgets')
+        # The second park order starts at tick 200. Its 450-tick budget must
+        # continue past global tick 450, as the reference analyzer does.
+        output = subprocess.check_output([BENCHMARK, '--json', '--n', '30', '--ticks', '450', 'park'], text=True)
+        result = json.loads(output)
+        self.assertEqual(result['arrived'], 30)
+        self.assertEqual(result['lost'], 0)
+        self.assertEqual(result['ticks'], 450)
+        self.assertLess(result['makespan'], 450)
+
     def test_cpp_and_reference_generator_geometry(self):
         if not BENCHMARK:
             self.skipTest('pass path_bench to check cross-language course geometry')
@@ -82,6 +94,29 @@ class LayoutTests(unittest.TestCase):
                 self.assertEqual(course['grid'], [''.join(map(str, row)) for row in grid])
                 self.assertEqual(course['start'], list(start))
                 self.assertEqual(course['goal'], list(goal))
+
+class ComparisonTests(unittest.TestCase):
+    def test_stalls_and_no_arrivals_are_reported(self):
+        # An unreachable order has no arrival tick or distance ratio. It still
+        # has useful stuck/idle metrics, and must not crash the Markdown report.
+        reference = dict(course='sealed', n=1, fog='explored', ticks=130, status='ok',
+                         arrived=0, makespan=None, mean_path_ratio=None, stuck=1, max_idle_ticks=130)
+        clone = dict(reference, makespan=-1, mean_path_ratio=0, max_idle_ticks=125)
+        invalid = dict(course='sealed', n=1, fog='fog', ticks=130, status='missing_units')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name, row in [('valid', reference), ('invalid', invalid)]:
+                (root / name).mkdir()
+                (root / name / 'summary.json').write_text(json.dumps(row))
+            (root / 'clone.jsonl').write_text(json.dumps(clone) + '\n')
+            subprocess.run([sys.executable, '-I', str(ROOT / 'tools/zpath_compare.py'),
+                            str(root), str(root / 'clone.jsonl'), str(root / 'report')],
+                           check=True, capture_output=True, text=True)
+            report = (root / 'report_compare.md').read_text()
+            self.assertTrue('distance ratio / stuck / max idle' in report)
+            self.assertTrue('0/1 / unmeasured / unmeasured / 1 / 130' in report)
+            self.assertTrue('0/1 / unmeasured / unmeasured / 1 / 125' in report)
+            self.assertTrue('missing_units' in report)
 
 if __name__ == '__main__':
     BENCHMARK = sys.argv.pop(1) if len(sys.argv) > 1 else None

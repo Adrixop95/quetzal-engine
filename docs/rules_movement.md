@@ -354,3 +354,92 @@ dummy SDL and `unshare -rn` produced identical reports through 600 ticks and
 21 commands, with no reported stalled orders. Both stopped at the requested
 horizon with unmet victory conditions; this is neither mission completion nor
 reference movement parity.
+
+## 10. L3 disconnected selections and observation budgets (2026-11-01)
+
+A synthetic group spanning disconnected terrain exposed a destination assignment
+failure: the first member's nearest-reachable fallback became the anchor for
+members in every region. Members outside that region received unreachable slots
+and kept moving against walls. The regression uses a 32x20 open grid with sealed
+columns 10 and 20, two radius-18, speed-9 Small agents per region at columns
+4/14/24 and rows 8/11, and a shared destination at tile (28,10). Positions begin
+at tile centres. In a 300-tick diagnostic, the previous mover settled only 2/6
+members and recorded 31 jam windows. The corrected mover settles 6/6, with the
+last settlement at elapsed tick 30 and no jam windows. Settlement is distinct
+from the six-tile goal-disk arrival metric: members cannot reach the clicked
+region through sealed walls.
+
+When a group member cannot reach the destination under the group's strict
+terrain class, `order_move` now checks connectivity from the first member and
+splits disconnected members into separate orders. Each subgroup computes its
+own reachable anchor and destination lattice. Connected selections retain the
+existing shared field and slot policy. Tests cover three components, both
+selection directions, replacement orders, wall clearance and repeated hashes.
+Connectivity is checked when assigning an order; later terrain or footprint
+changes do not repartition existing orders.
+This fixes engine fallback behavior; it does not recover reference formation
+spacing, reservations or stuck recovery.
+
+A second iteration found a measurement error in delayed group orders:
+`path_bench --json --n 30 --ticks 450 park` previously ended at global tick 450,
+giving the second group only 250 observed ticks. The benchmark now runs through
+the last order's full budget and freezes each member's statistics at its own
+budget. The synthetic regression requires all 30 broad-radius arrivals within
+450 ticks per order. `zpath_compare.py` now includes stuck count and maximum
+idle ticks in Markdown and renders absent arrival ticks/ratios as unmeasured,
+including valid no-arrival reference runs. An invented-log test covers that
+case and retention of rejected reference status.
+
+The short park probe changes from 10/30 reported arrivals (20 falsely lost)
+to 30/30, with makespan 406 ticks relative to the delayed order. The previous
+159-tick makespan described only the first group's arrivals.
+
+### Comparison evidence and remaining limits
+
+The 48 existing course/count configurations (1/10/30 units, 1490 ticks per
+order) retain identical hashes and movement metrics after the mover correction:
+656/656 broad-radius arrivals and zero stuck units. A stuck unit here means a
+non-arrival with at least 120 idle ticks at the end, not a jam-window detection.
+The shorter park-budget regression changes the observation window, not speed.
+
+The read-only archive reanalysis again accepts 14 open/gap runs and rejects
+105 runs as `missing_units`; another 11 manifests lack position logs. The
+following 30-unit measurements use the section 5 arrival disk, budget and
+centre-route distance denominator. All listed valid runs have zero stuck units.
+Reference values are archived observations, not a fresh record/replay result.
+
+| Course | Reference fog: ticks / path ratio / max idle | Reference explored | Engine |
+|---|---|---|---|
+| open | 448 / 1.037 / 12 | 398 / 0.922 / 12 | 378 / 0.880 / 2 |
+| gap1 | 661 / 1.156 / 92 | 548 / 0.978 / 99 | 468 / 0.928 / 6 |
+| corr1 | unmeasured | unmeasured | 468 / 0.937 / 3 |
+| rooms | unmeasured | unmeasured | 440 / 0.900 / 3 |
+| clusters | unmeasured | unmeasured | 399 / 0.885 / 9 |
+| swap1 | unmeasured | unmeasured | 713 / 1.107 / 10 |
+| mixed | unmeasured | unmeasured | 809 / 0.889 / 2 |
+
+A fresh `zpath_run.sh corr1 30 explored` invocation selected the supplied runtime
+and read-only installation, made a private game copy with resource symlinks,
+selected both dummy SDL drivers, and used `timeout` with `unshare -rn`. It failed
+at loopback setup with `Cannot open netlink socket: Operation not permitted`
+(exit 1), before the runtime launched. Private inputs, failed probe, reanalyzed
+summaries, before/after JSONL, CSV/Markdown comparisons and synthetic diagnostics
+remain under ignored `work/parity/l3/`.
+
+No numeric arrival-tick epsilon or engine/reference path-ratio acceptance bound
+is defined by the L3 plan; the six-tile disk is an observation criterion. These
+results therefore establish no tolerance pass. V02 normalized reference
+record/replay and the remaining V04/V05 initialization, footprint and collision
+audits remain incomplete dependencies. Unreachable selections, moving groups,
+formation spacing and jam recovery still need paired reference measurements.
+Boat/Johnka routes remain unimplemented; air movement and stationary-vessel
+synthetic integration/replay tests pass, but do not establish boat or flight
+parity. The opposing one-tile traffic overlap/squeezing limitation in section 5
+also remains open.
+
+Validation: baseline and final Release builds and all 34 runnable CTest entries
+pass, including `ai_skirmish`; five private-data checks and the restricted UDP
+process check skip. The final benchmark-tool assertions also pass separately.
+All pre-commit hooks pass using a private copy of the local cache; initial hook
+environment fetching failed because remote DNS was unavailable. Git metadata
+was left untouched and changes remain uncommitted.

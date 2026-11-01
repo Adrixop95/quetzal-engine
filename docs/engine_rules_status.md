@@ -2,6 +2,18 @@
 
 Simulation: `src/engine/sim/game_sim.*` (12 Hz, fixed-point harvests and original float32 price factors, driven by the command queue in `commands.hpp`). Data comes from `docs/data/*.csv`, loaded at run time (`rules.*`). The reference specification is [rules_summary.md](rules_summary.md) with details in [rules_types.md](rules_types.md) and [rules_ai.md](rules_ai.md). New reference findings below do not imply engine implementation changes.
 Movement and pathfinding: `src/engine/sim/path/` (movement agents; the interface is swappable: `GameSim` only uses `MoveSystem`).
+The [L3 iteration](rules_movement.md#10-l3-disconnected-selections-and-observation-budgets-2026-11-01)
+fixes unreachable slots for selections spanning disconnected regions: a six-unit
+synthetic diagnostic improves from 2/6 settled in 300 ticks to 6/6 by tick 30,
+with jam windows falling from 31 to zero. Tests cover replacement orders and
+deterministic hashes. The 48 existing course/count results retain hashes and
+movement metrics (656 arrivals, zero stuck). Delayed benchmark orders now receive
+the full per-order observation budget; comparison reports include stuck/idle
+metrics and handle absent arrivals. These are engine/tool construction checks.
+Archived open/gap observations remain the only accepted reference route results;
+the fresh isolated probe failed at namespace setup before launch. L3 tolerance
+acceptance, formation/boat/flight parity and the V02/V04/V05 dependencies remain
+open; no measured reference steering parameters were introduced.
 The [path quality regression](rules_movement.md#9-wall-side-destination-regression-2026-10-29)
 keeps group destination slots in the anchor's visible arrival area. This corrects
 wall-side stalls in synthetic engine tests; reference formation parity remains open.
