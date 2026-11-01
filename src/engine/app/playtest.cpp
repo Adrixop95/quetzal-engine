@@ -42,22 +42,40 @@ bool PlaytestScript::load(const std::string& path, std::string& err) {
   return true;
 }
 
-void PlaytestScript::press_key(Input& in, const std::string& name_in, bool down) {
+void PlaytestScript::update_modifiers(Input& in) {
+  in.ctrl = in.down(SDL_SCANCODE_LCTRL) || in.down(SDL_SCANCODE_RCTRL);
+  in.shift = in.down(SDL_SCANCODE_LSHIFT) || in.down(SDL_SCANCODE_RSHIFT);
+  in.alt = in.down(SDL_SCANCODE_LALT) || in.down(SDL_SCANCODE_RALT);
+}
+
+void PlaytestScript::press_key(Input& in, const std::string& name_in, bool down, bool auto_release) {
   std::string name = name_in;
-  bool ctrl = false, shift = false;
+  std::vector<SDL_Scancode> keys;
   for (;;) {
     std::string lo = lower(name);
-    if (lo.rfind("ctrl+", 0) == 0) { ctrl = true; name = name.substr(5); }
-    else if (lo.rfind("shift+", 0) == 0) { shift = true; name = name.substr(6); }
+    if (lo.rfind("ctrl+", 0) == 0) { keys.push_back(SDL_SCANCODE_LCTRL); name = name.substr(5); }
+    else if (lo.rfind("shift+", 0) == 0) { keys.push_back(SDL_SCANCODE_LSHIFT); name = name.substr(6); }
+    else if (lo.rfind("alt+", 0) == 0) { keys.push_back(SDL_SCANCODE_LALT); name = name.substr(4); }
     else break;
   }
   SDL_Scancode sc = SDL_GetScancodeFromName(name.c_str());
+  const std::string alias = lower(name);
+  if (alias == "ctrl" || alias == "lctrl") sc = SDL_SCANCODE_LCTRL;
+  else if (alias == "rctrl") sc = SDL_SCANCODE_RCTRL;
+  else if (alias == "shift" || alias == "lshift") sc = SDL_SCANCODE_LSHIFT;
+  else if (alias == "rshift") sc = SDL_SCANCODE_RSHIFT;
+  else if (alias == "alt" || alias == "lalt") sc = SDL_SCANCODE_LALT;
+  else if (alias == "ralt") sc = SDL_SCANCODE_RALT;
   if (sc == SDL_SCANCODE_UNKNOWN) { std::fprintf(stderr, "playtest: unknown key %s\n", name.c_str()); return; }
-  in.key_down[sc] = down;
-  if (down) in.key_hit[sc] = true;
-  in.ctrl = ctrl && down;
-  in.shift = shift && down;
-  release_key_ = down ? name_in : "";
+  keys.push_back(sc);
+  for (SDL_Scancode key : keys) {
+    if (down && !in.key_down[key]) {
+      in.key_hit[key] = true;
+      if (auto_release) release_keys_.push_back(key);
+    }
+    in.key_down[key] = down;
+  }
+  update_modifiers(in);
 }
 
 bool PlaytestScript::evaluate(const World& w, const Line& l) {
@@ -87,7 +105,9 @@ bool PlaytestScript::step(Input& in, const World& w, const GameSim* sim, Playtes
   if (release_left_) { in.buttons[SDL_BUTTON_LEFT] = false; in.released[SDL_BUTTON_LEFT] = true; release_left_ = false; }
   if (release_right_) { in.buttons[SDL_BUTTON_RIGHT] = false; in.released[SDL_BUTTON_RIGHT] = true; release_right_ = false; }
   if (release_middle_) { in.buttons[SDL_BUTTON_MIDDLE] = false; in.released[SDL_BUTTON_MIDDLE] = true; release_middle_ = false; }
-  if (!release_key_.empty()) { press_key(in, release_key_, false); in.ctrl = in.shift = false; release_key_.clear(); }
+  for (SDL_Scancode key : release_keys_) in.key_down[key] = false;
+  release_keys_.clear();
+  update_modifiers(in);
   if (drag_phase_ > 0) {
     // 1: move to start, 2: press, 3: move to end (buttons held), 4: release
     switch (drag_phase_) {
@@ -116,7 +136,10 @@ bool PlaytestScript::step(Input& in, const World& w, const GameSim* sim, Playtes
     if (l.cmd == "rdown") { in.buttons[SDL_BUTTON_RIGHT] = true; in.pressed[SDL_BUTTON_RIGHT] = true; return true; }
     if (l.cmd == "rup") { in.buttons[SDL_BUTTON_RIGHT] = false; in.released[SDL_BUTTON_RIGHT] = true; return true; }
     if (l.cmd == "drag") { dx0_ = num(0); dy0_ = num(1); dx1_ = num(2); dy1_ = num(3); drag_phase_ = 1; return step(in, w, sim, req); }
-    if (l.cmd == "key" && !l.args.empty()) { press_key(in, l.args[0], true); return true; }
+    if (l.cmd == "key" || l.cmd == "keydown" || l.cmd == "keyup") {
+      if (!l.args.empty()) press_key(in, l.args[0], l.cmd != "keyup", l.cmd == "key");
+      return true;
+    }
     if (l.cmd == "shot" && !l.args.empty()) { req.shot = l.args[0]; return true; }
     if (l.cmd == "print") {
       int units[8] = {};

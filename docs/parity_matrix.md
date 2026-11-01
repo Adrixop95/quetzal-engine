@@ -6,9 +6,9 @@ passes do not establish original-game parity. Unreported scenarios are excluded.
 
 | Layer | Scenarios | Pass | Fail | Skip |
 | --- | ---: | ---: | ---: | ---: |
-| L0 | 2 | 1 | 0 | 1 |
-| L1 | 0 | 0 | 0 | 0 |
-| L2 | 0 | 0 | 0 | 0 |
+| L0 | 0 | 0 | 0 | 0 |
+| L1 | 26 | 0 | 26 | 0 |
+| L2 | 9 | 0 | 9 | 0 |
 | L3 | 0 | 0 | 0 | 0 |
 | L4 | 0 | 0 | 0 | 0 |
 | L5 | 0 | 0 | 0 | 0 |
@@ -16,7 +16,7 @@ passes do not establish original-game parity. Unreported scenarios are excluded.
 | L7 | 0 | 0 | 0 | 0 |
 | L8 | 0 | 0 | 0 | 0 |
 | Unknown | 0 | 0 | 0 | 0 |
-| Total | 2 | 1 | 0 | 1 |
+| Total | 35 | 0 | 35 | 0 |
 
 | Category | Results |
 | --- | ---: |
@@ -36,3 +36,4 @@ real laptop devices or engine/reference comparison was performed. The release
 workflow now requires extracted zip smoke on `windows-latest`; its result is
 pending execution. See [engine_rules_status.md](engine_rules_status.md#windows-package-and-laptop-readiness-2026-11-01)
 and [SETUP.md](SETUP.md#windows-package-quick-start) for boundaries and instructions.
+| experiment_failed | 35 |

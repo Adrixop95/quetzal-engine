@@ -22,7 +22,7 @@ spec.loader.exec_module(visual)
 
 class VisualTests(unittest.TestCase):
     def setUp(self):
-        private = ROOT / 'work/parity'
+        private = ROOT / 'work/parity/ui'
         private.mkdir(parents=True, exist_ok=True)
         self.temp = tempfile.TemporaryDirectory(dir=private)
         self.addCleanup(self.temp.cleanup)
@@ -212,10 +212,38 @@ class VisualTests(unittest.TestCase):
         self.assertEqual(rows[11]['target_mode'], 0)
         self.assertEqual(visual.image_file(capture)[:3], (800, 600, 3))
         original = trace.read_text()
+        original_pixels = visual.image_file(capture)
         result = subprocess.run(argv, env=dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy'),
                                 capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(original, trace.read_text())
+        self.assertEqual(original_pixels, visual.image_file(capture))
+
+        # Exercise held modifiers through actual gameplay frames, including a drag
+        # and repeat keydown. These controls are independent of reference parity.
+        script.write_text((ROOT / 'tests/parity/ux-held-input.txt').read_text().replace('quit', f'shot {capture}\nquit'))
+        result = subprocess.run(argv, env=dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy'),
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('unknown command', result.stderr)
+        rows = [json.loads(line) for line in trace.read_text().splitlines()]
+        self.assertEqual(len(rows), 22)  # Includes the screenshot and quit frames.
+        for frame, row in enumerate(rows[:20], 1):
+            self.assertEqual(row['modifiers'], [int(frame <= 3), int(5 <= frame <= 11), int(18 <= frame <= 19)])
+            self.assertEqual(row['left_down'], frame in (7, 8))
+        self.assertGreater(rows[15]['camera'][0], rows[11]['camera'][0])
+        # The current camera coasts after release; check deceleration rather than
+        # claiming that its unmeasured reference behaviour stops immediately.
+        self.assertGreater(rows[19]['camera'][0], rows[16]['camera'][0])
+        self.assertLess(rows[19]['camera'][0] - rows[18]['camera'][0],
+                        rows[16]['camera'][0] - rows[15]['camera'][0])
+        original = trace.read_text()
+        original_pixels = visual.image_file(capture)
+        result = subprocess.run(argv, env=dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy'),
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(original, trace.read_text())
+        self.assertEqual(original_pixels, visual.image_file(capture))
 
 
 if __name__ == '__main__':

@@ -16,6 +16,7 @@
 #include "engine/render/png.hpp"
 #include "engine/ui/cursor.hpp"
 #include "engine/ui/campaign.hpp"
+#include "engine/app/playtest.hpp"
 
 namespace fs = std::filesystem;
 
@@ -131,6 +132,11 @@ class Screen {
   int brief_scroll_ = 0;
   bool quit_ = false;
   std::string chosen_;
+  PlaytestScript capture_script_;
+  World capture_world_;
+  bool scripted_ = false;
+  uint64_t capture_frame_ = 0;
+  std::string capture_shot_;
   MenuScript script_;
   MenuScript::Request request_;
   std::ofstream trace_;
@@ -197,9 +203,14 @@ void Screen::frame_begin() {
   SDL_Event e;
   float sx, sy;
   win_.mouse_scale(sx, sy);
-  while (SDL_PollEvent(&e)) {
+  while (!scripted_ && SDL_PollEvent(&e)) {
     win_.handle_event(e);
     if (opts_.menu_script.empty() || e.type == SDL_QUIT) in_.handle(e, sx, sy);
+  }
+  if (scripted_) {
+    PlaytestRequest request;
+    if (!capture_script_.step(in_, capture_world_, nullptr, request) || request.quit) quit_ = true;
+    capture_shot_ = request.shot;
   }
   if (!opts_.menu_script.empty()) {
     request_ = script_.step(frame_, in_);
@@ -246,8 +257,11 @@ void Screen::frame_end() {
       }
     }
   }
-  const uint32_t cursor_ms = opts_.menu_script.empty() ? SDL_GetTicks() : uint32_t(uint64_t(frame_) * 1000 / 60);
+  const uint32_t cursor_ms = scripted_ ? uint32_t(capture_frame_ * 1000 / 12)
+      : opts_.menu_script.empty() ? SDL_GetTicks() : uint32_t(uint64_t(frame_) * 1000 / 60);
   cursor_.draw(win_.renderer(), store_, in_.mx, in_.my, CursorKind::Arrow, std::max(1, int(std::lround(L_.s))), cursor_ms);
+  if (!capture_shot_.empty()) save_png(win_.renderer(), capture_shot_);
+  ++capture_frame_;
   if (!request_.shot.empty() && !save_png(win_.renderer(), request_.shot)) {
     std::fprintf(stderr, "Cannot capture menu frame: %s\n", request_.shot.c_str());
     failed_ = quit_ = true;
@@ -291,6 +305,14 @@ void Screen::frame_end() {
 
 bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
   std::string error;
+  if (const char* path = std::getenv("AZTEC_UI_SCRIPT")) {
+    if (!capture_script_.load(path, error)) {
+      std::fprintf(stderr, "%s\n", error.c_str());
+      out.quit = true;
+      return false;
+    }
+    scripted_ = true;
+  }
   if (!opts_.menu_script.empty() && !script_.load(opts_.menu_script, error)) {
     std::fprintf(stderr, "%s\n", error.c_str()); out.quit = out.failed = true; return false;
   }
