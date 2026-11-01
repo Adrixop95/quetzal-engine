@@ -40,9 +40,38 @@ class RuleControls(unittest.TestCase):
         cases = rules.scenarios()
         self.assertEqual({c['mechanic'] for c in cases}, {
             'speed', 'damage_armor', 'reload', 'range', 'projectile_flight',
-            'build_time', 'price', 'income', 'sight', 'regeneration'})
+            'build_time', 'train_time', 'price', 'income', 'sight', 'regeneration', 'repair'})
         self.assertEqual(len({c['id'] for c in cases}), len(cases))
         self.assertTrue(all(c['evidence'] == 'P' and 'expectations' not in c for c in cases))
+
+    def test_clone_control_checks_complete_engine_local_observations(self):
+        for name in ('clone', 'truncated'):
+            (self.root / name / 'game').mkdir(parents=True)
+
+        def execute(argv, directory, timeout, extra, *, setup_network):
+            self.assertFalse(setup_network)
+            self.assertEqual(extra['AZTEC_GAME'], str(directory / 'game'))
+            self.assertTrue('--no-auto-orders' in argv)
+            self.assertTrue('parallel_construction=off' in argv)
+            meta = dict(schema=1, mission=0, phase='before_commands', contract='engine-index-v1',
+                        fields=['hp', 'side', 'type', 'x', 'y'], first_tick=1, last_tick=2)
+            (directory / 'observations.jsonl').write_text('\n'.join(json.dumps(row) for row in
+                [meta, dict(tick=1, objects={}), dict(tick=2, objects={})]) + '\n')
+            rules.report.write_json(directory / 'report.json', dict(
+                ticks=2, script_errors=[], unsupported_executions=0))
+
+        with patch.object(rules.report, 'execute', side_effect=execute):
+            verdict = rules.clone_probe(self.case, self.root / 'engine', self.root / 'clone', 1)
+        self.assertEqual(verdict['category'], 'blocked_setup_contract')
+        self.assertIsNone(verdict['tick'])
+        # A successful process exit cannot hide an incomplete observation stream.
+        def truncated(*args, **kwargs):
+            execute(*args, **kwargs)
+            path = args[1] / 'observations.jsonl'
+            path.write_text('\n'.join(path.read_text().splitlines()[:-1]) + '\n')
+        with patch.object(rules.report, 'execute', side_effect=truncated):
+            with self.assertRaises(ValueError):
+                rules.clone_probe(self.case, self.root / 'engine', self.root / 'truncated', 1)
 
     def test_expectations_and_first_divergence(self):
         a, b, c = self.observations('a'), self.observations('b'), self.observations('c', 3)
@@ -110,24 +139,35 @@ class RuleControls(unittest.TestCase):
                 self.assertTrue('-ec' in argv)
                 self.assertEqual(kwargs['env']['SDL_VIDEODRIVER'], 'dummy')
                 self.assertEqual(kwargs['env']['SDL_AUDIODRIVER'], 'dummy')
+                (Path(kwargs['cwd']) / 'game/profile.plr').write_text('reference mutation')
                 return failure
             return original(argv, **kwargs)
 
-        with patch.object(rules.subprocess, 'run', side_effect=isolated) as run:
+        blocked = rules.report.result('blocked_setup_contract')
+        with patch.object(rules.subprocess, 'run', side_effect=isolated) as run, \
+                patch.object(rules, 'clone_probe', return_value=blocked) as clone:
             output = self.root / 'probe'
-            self.assertEqual(rules.probe([self.case], source, runtime, output, 1), 1)
+            self.assertEqual(rules.probe([self.case], source, runtime, output, 1, runtime), 1)
             self.assertEqual(run.call_count, 2)
+            clone.assert_called_once()
         candidate = output / self.case['id'] / 'game'
         self.assertTrue((candidate / 'Res').is_symlink())
         self.assertFalse((candidate / 'Maps').is_symlink())
         self.assertFalse((candidate / 'Maps/mission_1.mp').exists())
         self.assertEqual((source / 'Maps/mission_1.map').read_bytes(), terrain)
         self.assertEqual((source / 'profile.plr').read_text(), 'unchanged')
+        self.assertEqual((candidate / 'profile.plr').read_text(), 'reference mutation')
+        self.assertEqual((output / self.case['id'] / 'clone/game/profile.plr').read_text(), 'unchanged')
         dat = (candidate / f"Maps/{self.case['id']}.dat").read_bytes()
         self.assertEqual((dat[0], dat[16 * 90 + 16]), (0, 2))
         row = json.loads((output / 'report.json').read_text())[0]
         self.assertEqual(row['category'], 'experiment_failed')
         self.assertIsNone(row['tick'])
+        self.assertEqual(json.loads((output / self.case['id'] / 'diff.json').read_text()), row)
+        self.assertEqual(row['layer'], 'L1')
+        runners = json.loads((output / self.case['id'] / 'runners.json').read_text())
+        self.assertEqual(runners['reference']['category'], 'experiment_failed')
+        self.assertEqual(runners['clone']['category'], 'blocked_setup_contract')
         with self.assertRaises(ValueError):
             rules.report.private_output(ROOT / 'docs/invalid')
 

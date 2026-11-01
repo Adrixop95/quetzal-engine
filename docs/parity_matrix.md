@@ -6,9 +6,9 @@ passes do not establish original-game parity. Unreported scenarios are excluded.
 
 | Layer | Scenarios | Pass | Fail | Skip |
 | --- | ---: | ---: | ---: | ---: |
-| L0 | 2 | 1 | 0 | 1 |
-| L1 | 0 | 0 | 0 | 0 |
-| L2 | 0 | 0 | 0 | 0 |
+| L0 | 0 | 0 | 0 | 0 |
+| L1 | 26 | 0 | 26 | 0 |
+| L2 | 9 | 0 | 9 | 0 |
 | L3 | 0 | 0 | 0 | 0 |
 | L4 | 0 | 0 | 0 | 0 |
 | L5 | 0 | 0 | 0 | 0 |
@@ -16,7 +16,7 @@ passes do not establish original-game parity. Unreported scenarios are excluded.
 | L7 | 0 | 0 | 0 | 0 |
 | L8 | 0 | 0 | 0 | 0 |
 | Unknown | 0 | 0 | 0 | 0 |
-| Total | 2 | 1 | 0 | 1 |
+| Total | 35 | 0 | 35 | 0 |
 
 | Category | Results |
 | --- | ---: |
@@ -39,3 +39,4 @@ not establish original-game parity or supply per-region game mismatch rankings.
 HUD, minimap, command/selection/resource panels, tooltips/fonts/cursors,
 placement colors, construction stages, health bars and selection circles remain
 pending aligned comparison. Private artifacts stay in ignored `work/parity/`.
+| experiment_failed | 35 |

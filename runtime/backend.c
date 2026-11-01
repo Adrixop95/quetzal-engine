@@ -26,6 +26,8 @@ static SDL_Renderer* ren;
 static SDL_Texture* tex;
 static int tex_w, tex_h, tex_is16;
 static int mode_w = 640, mode_h = 480;
+static void ui_capture_present(void);
+static void ui_capture_start(void);
 static pthread_t main_thread;
 static int main_thread_set;
 
@@ -367,6 +369,7 @@ static void backend_present_copy_impl(const void* pixels, int pitch, int w, int 
 void backend_present(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette) {
   dump_frame(pixels, pitch, w, h, bpp, palette);
   if (ren) backend_present_copy_impl(pixels, pitch, w, h, bpp, palette);
+  ui_capture_present();
 }
 static void backend_present_copy_impl(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette) {
   {
@@ -423,6 +426,11 @@ static volatile int greq_dirty;
 static pthread_mutex_t greq_lock = PTHREAD_MUTEX_INITIALIZER;
 void backend_present_guest(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette) {
   guest_presents++;
+  if (getenv("RT_UI_SCRIPT")) {
+    backend_present_copy_impl(pixels, pitch, w, h, bpp, palette);
+    ui_capture_present();
+    return;
+  }
   dump_frame(pixels, pitch, w, h, bpp, palette);
   pthread_mutex_lock(&greq_lock);
   greq.px = pixels; greq.pitch = pitch; greq.w = w; greq.h = h; greq.bpp = bpp;
@@ -692,12 +700,64 @@ static void* script_thread(void* arg) {
   return NULL;
 }
 void backend_start_script(void) {
+  if (getenv("RT_UI_SCRIPT")) { ui_capture_start(); return; }
   const char* path = getenv("RT_SCRIPT");
   if (!path) return;
   static char saved[512];
   snprintf(saved, sizeof saved, "%s", path);
   pthread_t t;
   pthread_create(&t, NULL, script_thread, saved);
+}
+
+// Opt-in presentation-index schedule. Unlike RT_SCRIPT this has no worker or sleeps.
+// It schedules input for the next guest presentation; it does not synchronize simulation ticks.
+static FILE* ui_script;
+static unsigned ui_frame, ui_next;
+static char ui_command[32];
+static int ui_x, ui_y, ui_capture;
+static void ui_read(void) {
+  char line[256];
+  if (!fgets(line, sizeof line, ui_script)) rt_fatal("UI script must end with quit");
+  ui_x = ui_y = 0;
+  if (sscanf(line, "%u %31s %d %d", &ui_next, ui_command, &ui_x, &ui_y) < 2 || ui_next < ui_frame)
+    rt_fatal("Invalid UI frame schedule");
+}
+static void ui_apply(void) {
+  while (ui_next == ui_frame) {
+    if (!strcmp(ui_command, "move")) {
+      g_mouse_x = ui_x; g_mouse_y = ui_y;
+      backend_set_virtual_cursor(ui_x, ui_y);
+      tgt_x = ui_x; tgt_y = ui_y; tgt_valid = 1;
+    } else if (!strcmp(ui_command, "down")) g_mouse_btn[0] = 1;
+    else if (!strcmp(ui_command, "up")) g_mouse_btn[0] = 0;
+    else if (!strcmp(ui_command, "keydown") && ui_x >= 0 && ui_x < 256) g_dik_down[ui_x] = 1;
+    else if (!strcmp(ui_command, "keyup") && ui_x >= 0 && ui_x < 256) g_dik_down[ui_x] = 0;
+    else if (!strcmp(ui_command, "shot")) ui_capture = 1;
+    else if (!strcmp(ui_command, "quit")) { fclose(ui_script); fflush(NULL); _exit(0); }
+    else rt_fatal("Unknown UI script command: %s", ui_command);
+    ui_read();
+  }
+}
+static void ui_capture_start(void) {
+  const char* path = getenv("RT_UI_SCRIPT");
+  ui_script = fopen(path, "r");
+  if (!ui_script) rt_fatal("Cannot open UI script: %s", path);
+  fprintf(stderr, "UI capture contract: guest-present-v1\n");
+  ui_read();
+  ui_apply();
+}
+static void ui_present_main(void* unused) { (void)unused; present_stage(); }
+static void ui_capture_present(void) {
+  if (!ui_script) return;
+  if (ui_capture) {
+    ui_capture = 0;
+    ++shot_index;
+    shot_pending = 1;
+    run_on_main(ui_present_main, NULL);
+    if (shot_pending) rt_fatal("UI capture did not complete");
+  }
+  ++ui_frame;
+  ui_apply();
 }
 
 void backend_apply_window_mode(int mode) {

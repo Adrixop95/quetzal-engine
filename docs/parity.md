@@ -505,7 +505,8 @@ No visual/UI rule is promoted to M/V. The aggregate evidence table is
 [parity_visual_ui_results.md](parity_visual_ui_results.md).
 ## L1 rule micro-experiments (2026-10-29, partial task 43)
 
-Task 42's scenario harness is absent (`tools/parity_run.py` is not present).
+At this initial attempt, task 42's scenario harness was absent. The L0 harness
+is now present; the audited L1 setup/command/observer adapters remain absent.
 The 19 P specifications in `tests/parity/l1_*.json` use the top-level schema in
 [PARITY_TEST_PLAN.md](PARITY_TEST_PLAN.md), with provisional nested keys described
 in [the scenario guide](../tests/parity/README.md). Referenced task prompts
@@ -691,3 +692,57 @@ a standalone C syntax check; this does not verify a linked private runtime.
 The final Release build and CTest run passed all 28 runnable entries; five
 private-input/network entries skipped. All-file pre-commit gates and explicit
 gates for new files passed. Changes remain uncommitted in this worktree.
+
+## L1/L2 iteration (2026-11-01, blocked measurements)
+
+Baseline Release build, all available synthetic CTest checks and pre-commit
+passed before the private runs. The first iteration attempted all 19 existing
+L1 candidates and all nine recorded L2 missions. Every reference attempt failed
+at namespace loopback setup with `Cannot open netlink socket: Operation not
+permitted`, before runtime launch. No semantic first divergence was available.
+Isolation was retained; no engine rule was changed from these failures.
+
+Seven additional P specifications cover barracks construction, single-unit
+training, organic and building regeneration, building and defence repair, and
+farm income with warehouse/day-boundary controls. Existing six target-category
+cases still require observed armor/category identities. Controls and repeated
+branches described in specifications remain pending experiments, not executed
+coverage. No measured constants or expectations were added to the repository.
+
+The final bounded run used:
+
+```sh
+python3 -I tools/parity_rules.py probe \
+  --game /home/adrox/aztec-re/game \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --engine "$PWD/build/aztec_engine" \
+  --output work/parity/l1-l2-20261101-final/l1 --timeout 45
+python3 -I tools/parity_report.py run \
+  --corpus /home/adrox/aztec-re/work/corpus \
+  --game /home/adrox/aztec-re/game \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --output work/parity/l1-l2-20261101-final/l2 --timeout 45
+python3 -I tools/parity_matrix.py --input work/parity/l1-l2-20261101-final
+```
+
+All 26 L1 reference launches and nine L2 replay attempts again failed at the
+same setup step. All 26 independent clone candidate controls completed their
+full engine-local observation horizons without script/unsupported-execution
+errors. They remain `blocked_setup_contract`, not L1 passes: the high-level
+commands and setup controls were not implemented. L2 clone packet replay could
+not run: reference repeatability failed before launch and the audited packet,
+identity and normalized observer adapters are still missing. No command packet
+was guessed, and no engine hash was compared with a reference pool hash.
+
+Both tools now retain per-case `diff.json` files with explicit L1/L2 metadata,
+so triage and the matrix include the actual attempted cases. The committed
+matrix selects only the final run: 26 L1 and nine L2 experiment failures, zero
+passes or skips. Runner blockers are subordinate diagnostics and are not counted
+as additional cases. A private diagnostic draft groups the shared failure;
+no gameplay defect was established or queued. Private maps, observations and
+logs remain under ignored `work/parity/`.
+
+Next measurement requires a host where the documented namespace network setup
+works, then audited setup, commands, identities, units and tick boundaries.
+Production branches, positive resource yields, repair supply, regeneration
+threshold/service repeats and armor behavior remain unmeasured by these runs.
