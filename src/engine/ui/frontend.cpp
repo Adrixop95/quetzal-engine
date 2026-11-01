@@ -13,6 +13,7 @@
 #include "engine/render/png.hpp"
 #include "engine/ui/cursor.hpp"
 #include "engine/ui/campaign.hpp"
+#include "engine/app/playtest.hpp"
 
 namespace fs = std::filesystem;
 
@@ -123,6 +124,11 @@ class Screen {
   int brief_scroll_ = 0;
   bool quit_ = false;
   std::string chosen_;
+  PlaytestScript capture_script_;
+  World capture_world_;
+  bool scripted_ = false;
+  uint64_t capture_frame_ = 0;
+  std::string capture_shot_;
 };
 
 void Screen::load_lists() {
@@ -181,9 +187,14 @@ void Screen::frame_begin() {
   SDL_Event e;
   float sx, sy;
   win_.mouse_scale(sx, sy);
-  while (SDL_PollEvent(&e)) {
+  while (!scripted_ && SDL_PollEvent(&e)) {
     win_.handle_event(e);
     in_.handle(e, sx, sy);
+  }
+  if (scripted_) {
+    PlaytestRequest request;
+    if (!capture_script_.step(in_, capture_world_, nullptr, request) || request.quit) quit_ = true;
+    capture_shot_ = request.shot;
   }
   win_.output_size(ow_, oh_);
   L_.fit(ow_, oh_);
@@ -224,11 +235,23 @@ void Screen::frame_end() {
       }
     }
   }
-  cursor_.draw(win_.renderer(), store_, in_.mx, in_.my, CursorKind::Arrow, std::max(1, int(std::lround(L_.s))), SDL_GetTicks());
+  cursor_.draw(win_.renderer(), store_, in_.mx, in_.my, CursorKind::Arrow, std::max(1, int(std::lround(L_.s))),
+               scripted_ ? uint32_t(capture_frame_ * 1000 / 12) : SDL_GetTicks());
+  if (!capture_shot_.empty()) save_png(win_.renderer(), capture_shot_);
+  ++capture_frame_;
   SDL_RenderPresent(win_.renderer());
 }
 
 bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
+  if (const char* path = std::getenv("AZTEC_UI_SCRIPT")) {
+    std::string error;
+    if (!capture_script_.load(path, error)) {
+      std::fprintf(stderr, "%s\n", error.c_str());
+      out.quit = true;
+      return false;
+    }
+    scripted_ = true;
+  }
   load_lists();
   if (!open_briefing.empty()) enter_briefing(open_briefing);
   const SDL_Color gold{240, 215, 150, 255}, white{240, 240, 240, 255};

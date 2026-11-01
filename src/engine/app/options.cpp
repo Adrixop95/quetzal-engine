@@ -72,6 +72,7 @@ const char* usage_text() {
          "  --ui-trace FILE    write raw UI state and submitted commands per rendered frame\n"
          "  --script FILE      playtest script: synthetic clicks/keys, screenshots, expectations (virtual time)\n"
          "  --no-menu          start the default mission directly instead of the front-end menu\n"
+         "  --menu-session     enable pause and objectives menus when starting a mission directly\n"
          "  --audio-log FILE  write playback events as text\n"
          "  --no-audio         silent;  --volume V  all audio volumes 0..1\n"
          "  --sfx-volume V --music-volume V --speech-volume V   independent volumes 0..1\n"
@@ -147,6 +148,7 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     else if (a == "--no-acknowledgement") o.acknowledgement = false;
     else if (a == "--no-subtitles") o.subtitles = false;
     else if (a == "--no-menu") o.no_menu = true;
+    else if (a == "--menu-session") o.menu_session = true;
     else if (a == "--ui-trace") { if (!next(v)) return false; o.ui_trace = v; }
     else if (a == "--script") { if (!next(v)) return false; o.script = v; }
     else if (a == "--cmd-move" || a == "--cmd-attack-move") { if (!next(v)) return false; if (std::sscanf(v, "%d,%d", &o.cmd_x, &o.cmd_y) != 2) { err = "bad " + a; return false; } o.cmd_attack_move = a != "--cmd-move"; }
