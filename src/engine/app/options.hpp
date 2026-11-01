@@ -37,6 +37,8 @@ struct Options {
   bool acknowledgement = true, subtitles = true;
   std::string ui_trace;            // --ui-trace FILE: raw per-frame UI observations
   std::string script;              // --script FILE: headless playtest (see app/playtest.hpp)
+  std::string menu_script;         // --menu-script FILE: frame-scheduled front-end input
+  std::string menu_trace;          // --menu-trace FILE: raw front-end observations
   int cmd_x = -1, cmd_y = -1; bool cmd_attack_move = false;  // --cmd-move / --cmd-attack-move X,Y (tiles) for the --select group
   std::string rules_dir;           // --rules-dir DIR; otherwise packaged rules or source-tree docs/data
   bool sim = true;                 // --no-sim: static world (no game logic)

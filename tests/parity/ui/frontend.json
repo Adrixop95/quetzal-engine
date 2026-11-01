@@ -1,0 +1,352 @@
+{
+  "schema": 1,
+  "id": "frontend-route",
+  "evidence": "P",
+  "resolution": [
+    800,
+    600
+  ],
+  "screens": {
+    "main-normal": "main",
+    "main-hover": "main",
+    "main-held": "main",
+    "campaign": "campaign",
+    "custom": "custom",
+    "briefing": "briefing",
+    "options": "options",
+    "audio": "audio",
+    "modifications": "modifications",
+    "main-returned": "main"
+  },
+  "clone": [
+    {
+      "frame": 0,
+      "command": "shot",
+      "args": [
+        "main-normal"
+      ]
+    },
+    {
+      "frame": 1,
+      "command": "move",
+      "args": [
+        310,
+        250
+      ]
+    },
+    {
+      "frame": 1,
+      "command": "shot",
+      "args": [
+        "main-hover"
+      ]
+    },
+    {
+      "frame": 2,
+      "command": "down",
+      "args": []
+    },
+    {
+      "frame": 2,
+      "command": "shot",
+      "args": [
+        "main-held"
+      ]
+    },
+    {
+      "frame": 3,
+      "command": "up",
+      "args": []
+    },
+    {
+      "frame": 4,
+      "command": "shot",
+      "args": [
+        "campaign"
+      ]
+    },
+    {
+      "frame": 5,
+      "command": "keydown",
+      "args": [
+        "Escape"
+      ]
+    },
+    {
+      "frame": 6,
+      "command": "keyup",
+      "args": [
+        "Escape"
+      ]
+    },
+    {
+      "frame": 7,
+      "command": "move",
+      "args": [
+        310,
+        300
+      ]
+    },
+    {
+      "frame": 7,
+      "command": "down",
+      "args": []
+    },
+    {
+      "frame": 8,
+      "command": "up",
+      "args": []
+    },
+    {
+      "frame": 9,
+      "command": "shot",
+      "args": [
+        "custom"
+      ]
+    },
+    {
+      "frame": 10,
+      "command": "keydown",
+      "args": [
+        "Escape"
+      ]
+    },
+    {
+      "frame": 11,
+      "command": "keyup",
+      "args": [
+        "Escape"
+      ]
+    },
+    {
+      "frame": 12,
+      "command": "move",
+      "args": [
+        310,
+        250
+      ]
+    },
+    {
+      "frame": 12,
+      "command": "down",
+      "args": []
+    },
+    {
+      "frame": 13,
+      "command": "up",
+      "args": []
+    },
+    {
+      "frame": 14,
+      "command": "move",
+      "args": [
+        100,
+        110
+      ]
+    },
+    {
+      "frame": 14,
+      "command": "down",
+      "args": []
+    },
+    {
+      "frame": 15,
+      "command": "up",
+      "args": []
+    },
+    {
+      "frame": 16,
+      "command": "shot",
+      "args": [
+        "briefing"
+      ]
+    },
+    {
+      "frame": 17,
+      "command": "keydown",
+      "args": [
+        "Escape"
+      ]
+    },
+    {
+      "frame": 18,
+      "command": "keyup",
+      "args": [
+        "Escape"
+      ]
+    },
+    {
+      "frame": 19,
+      "command": "keydown",
+      "args": [
+        "Escape"
+      ]
+    },
+    {
+      "frame": 20,
+      "command": "keyup",
+      "args": [
+        "Escape"
+      ]
+    },
+    {
+      "frame": 21,
+      "command": "move",
+      "args": [
+        310,
+        360
+      ]
+    },
+    {
+      "frame": 21,
+      "command": "down",
+      "args": []
+    },
+    {
+      "frame": 22,
+      "command": "up",
+      "args": []
+    },
+    {
+      "frame": 23,
+      "command": "shot",
+      "args": [
+        "options"
+      ]
+    },
+    {
+      "frame": 24,
+      "command": "move",
+      "args": [
+        310,
+        400
+      ]
+    },
+    {
+      "frame": 24,
+      "command": "down",
+      "args": []
+    },
+    {
+      "frame": 25,
+      "command": "up",
+      "args": []
+    },
+    {
+      "frame": 26,
+      "command": "shot",
+      "args": [
+        "audio"
+      ]
+    },
+    {
+      "frame": 27,
+      "command": "keydown",
+      "args": [
+        "Escape"
+      ]
+    },
+    {
+      "frame": 28,
+      "command": "keyup",
+      "args": [
+        "Escape"
+      ]
+    },
+    {
+      "frame": 29,
+      "command": "move",
+      "args": [
+        310,
+        450
+      ]
+    },
+    {
+      "frame": 29,
+      "command": "down",
+      "args": []
+    },
+    {
+      "frame": 30,
+      "command": "up",
+      "args": []
+    },
+    {
+      "frame": 31,
+      "command": "shot",
+      "args": [
+        "modifications"
+      ]
+    },
+    {
+      "frame": 32,
+      "command": "keydown",
+      "args": [
+        "Escape"
+      ]
+    },
+    {
+      "frame": 33,
+      "command": "keyup",
+      "args": [
+        "Escape"
+      ]
+    },
+    {
+      "frame": 34,
+      "command": "keydown",
+      "args": [
+        "Escape"
+      ]
+    },
+    {
+      "frame": 35,
+      "command": "keyup",
+      "args": [
+        "Escape"
+      ]
+    },
+    {
+      "frame": 36,
+      "command": "move",
+      "args": [
+        0,
+        0
+      ]
+    },
+    {
+      "frame": 36,
+      "command": "shot",
+      "args": [
+        "main-returned"
+      ]
+    },
+    {
+      "frame": 37,
+      "command": "close",
+      "args": []
+    }
+  ],
+  "reference": {
+    "timing": "wall_clock_unaligned",
+    "screens": [
+      "player-select",
+      "campaign",
+      "briefing"
+    ],
+    "input": [
+      "wait 1500",
+      "shot",
+      "click 140 239",
+      "wait 300",
+      "click 160 543",
+      "wait 500",
+      "shot",
+      "click 140 257",
+      "click 140 544",
+      "wait 500",
+      "shot",
+      "quit"
+    ]
+  }
+}
