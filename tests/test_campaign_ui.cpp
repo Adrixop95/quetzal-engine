@@ -9,6 +9,7 @@
 #include "engine/ui/campaign.hpp"
 #include "engine/ui/frontend.hpp"
 #include "engine/app/engine.hpp"
+#include "engine/app/menu_script.hpp"
 
 using namespace aztec::engine;
 static int failures = 0;
@@ -94,6 +95,31 @@ int main(int argc, char** argv) {
     CHECK(!parse({"engine", "--speech-volume", bad}, invalid));
   }
   CHECK(SDL_Init(SDL_INIT_VIDEO) == 0);
+  // Frame input preserves holds, edges, modifiers and window-close semantics.
+  write(root / "menu-input.txt", "0 move 310 250\n0 down\n1 keydown Left Alt\n2 keydown Return\n3 up\n3 keyup Return\n3 keyup Left Alt\n4 close\n");
+  MenuScript menu_script; std::string script_error;
+  CHECK(menu_script.load((root / "menu-input.txt").string(), script_error));
+  Input scripted;
+  for (int frame = 0; frame <= 4; ++frame) {
+    scripted.begin_frame(); const auto request = menu_script.step(frame, scripted); CHECK(!request.quit);
+    CHECK(scripted.mx == 310 && scripted.my == 250);
+    if (frame == 0) CHECK(scripted.pressed[SDL_BUTTON_LEFT]);
+    if (frame == 1) CHECK(scripted.alt && scripted.buttons[SDL_BUTTON_LEFT] && !scripted.pressed[SDL_BUTTON_LEFT]);
+    if (frame == 2) CHECK(scripted.alt && scripted.hit(SDL_SCANCODE_RETURN));
+    if (frame == 3) CHECK(!scripted.alt && scripted.released[SDL_BUTTON_LEFT] && !scripted.down(SDL_SCANCODE_RETURN));
+    if (frame == 4) CHECK(scripted.quit);
+  }
+  CHECK(menu_script.step(5, scripted).quit);
+  for (const char* invalid : {"", "0 missing\n", "-1 down\n", "100001 down\n", "1 down\n0 up\n", "0 keydown UnknownKeyName\n", "0 move 1\n", "0 close extra\n", "0 shot\n"}) {
+    write(root / "invalid-menu.txt", invalid);
+    CHECK(!menu_script.load((root / "invalid-menu.txt").string(), script_error));
+  }
+  Options menu_options;
+  CHECK(parse({"engine", "--menu-script", "input.txt", "--menu-trace", "trace.jsonl"}, menu_options) && menu_options.menu);
+  for (const char* incompatible : {"--no-menu", "--list", "1"}) {
+    Options invalid;
+    CHECK(!parse({"engine", "--menu-script", "input.txt", incompatible}, invalid));
+  }
   for (auto size : {SDL_Point{800, 493}, SDL_Point{800, 600}, SDL_Point{1024, 768}, SDL_Point{1600, 1200}}) {
     const int w = size.x, h = size.y, sc = w == 1600 ? 2 : 1;
     SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_ARGB8888); CHECK(surface);
@@ -172,5 +198,34 @@ int main(int argc, char** argv) {
   options.script = (root / "controls.txt").string(); options.audio = false; options.light = false;
   options.window.width = 800; options.window.height = 600; options.window.software = true; options.window.vsync = false;
   CHECK(run_engine(options) == 0);
+  // Drive the actual front-end without assets or the legacy screen-walk shortcut.
+  options.script.clear(); options.menu = true; options.menu_session = false;
+  options.menu_script = (root / "menus.txt").string();
+  options.menu_trace = (root / "menu.jsonl").string();
+  auto read = [](const std::filesystem::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(in), {});
+  };
+  const auto capture = (root / "menu.png").string();
+  write(options.menu_script,
+      "0 shot " + capture + "\n1 move 310 250\n1 down\n2 up\n3 keydown Escape\n4 keyup Escape\n"
+      "5 move 310 360\n5 down\n6 up\n7 move 310 400\n8 down\n9 up\n"
+      "10 keydown Escape\n11 keyup Escape\n12 keydown Escape\n13 keyup Escape\n14 close\n");
+  CHECK(run_engine(options) == 0);
+  const auto first_trace = read(options.menu_trace), first_capture = read(capture);
+  CHECK(!first_capture.empty());
+  CHECK(std::count(first_trace.begin(), first_trace.end(), '\n') == 15);
+  CHECK(first_trace.find("\"rendered_screen\":\"main\",\"next_screen\":\"campaign\"") != std::string::npos);
+  CHECK(first_trace.find("\"rendered_screen\":\"audio\",\"next_screen\":\"options\"") != std::string::npos);
+  CHECK(first_trace.find("\"quit\":true") != std::string::npos);
+  CHECK(run_engine(options) == 0);
+  CHECK(read(options.menu_trace) == first_trace && read(capture) == first_capture);
+  write(options.menu_script, "0 move 310 250\n0 down\n1 up\n2 move 100 110\n2 down\n3 up\n4 keydown Return\n");
+  CHECK(run_engine(options) == 0); // choosing a mission ends automation before simulation
+  CHECK(read(options.menu_trace).find("\"mission\":\"mission_1\"") != std::string::npos);
+  write(options.menu_script, "0 shot " + (root / "missing/capture.png").string() + "\n");
+  CHECK(run_engine(options) == 1); // capture failures must reach the caller
+  write(options.menu_script, "0 invalid\n");
+  CHECK(run_engine(options) == 1);
   return failures ? 1 : 0;
 }
