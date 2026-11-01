@@ -1,0 +1,18 @@
+# Independent input automation control; no reference measurements.
+keydown ctrl
+key ctrl+1
+move 200 200
+keyup ctrl
+keydown rshift
+drag 100 100 240 240
+key A
+wait 1
+keyup rshift
+keydown Right
+wait 2
+keydown Right
+keyup Right
+keydown alt
+wait 1
+keyup alt
+quit

@@ -28,6 +28,7 @@ inline void trace_ui(std::ostream& out, int frame, const World& world, const Cam
       << ",\"tick\":" << world.tick << ",\"phase\":\"after_input_before_present\",\"camera\":["
       << cam.x << ',' << cam.y << ',' << cam.zoom << "],\"alpha\":" << alpha
       << ",\"mouse\":[" << input.mx << ',' << input.my << "],\"left_down\":" << (input.buttons[SDL_BUTTON_LEFT] ? "true" : "false")
+      << ",\"modifiers\":[" << int(input.ctrl) << ',' << int(input.shift) << ',' << int(input.alt) << ']'
       << ",\"target_mode\":" << int(ui.target_mode()) << ",\"placing\":" << ui.placing()
       << ",\"panel\":" << (panel_visible ? "true" : "false") << ",\"menu\":" << (menu_open ? "true" : "false")
       << ",\"cursor\":{\"shape\":\"" << cursors[int(cursor)] << "\",\"visible\":" << (cursor_visible ? "true" : "false")

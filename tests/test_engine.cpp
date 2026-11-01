@@ -23,6 +23,7 @@
 #include "engine/data/terrain_sprites.hpp"
 #include "engine/assets/sprite_provider.hpp"
 #include "engine/platform/clock.hpp"
+#include "engine/app/playtest.hpp"
 #include "engine/sim/game_sim.hpp"
 #include "engine/sim/sight.hpp"
 #include "engine/sim/savegame.hpp"
@@ -37,6 +38,38 @@ using namespace aztec;
 using namespace aztec::engine;
 static int failures = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); failures++; } } while (0)
+
+static void test_held_script_input() {
+  TempDir directory;
+  const auto script = directory.path() / "held.txt";
+  std::ofstream(script) << "keydown ctrl\nkey ctrl+1\nmove 200 200\nkeyup ctrl\n"
+      "keydown rshift\ndrag 100 100 240 240\nkey A\nwait 1\nkeyup rshift\n"
+      "keydown Right\nwait 2\nkeydown Right\nkeyup Right\nkeydown alt\nwait 1\nkeyup alt\nquit\n";
+  PlaytestScript player;
+  std::string error;
+  CHECK(player.load(script.string(), error));
+  Input input;
+  World world;
+  for (int frame = 1; frame <= 20; ++frame) {
+    input.begin_frame();
+    PlaytestRequest request;
+    CHECK(player.step(input, world, nullptr, request));
+    CHECK(input.ctrl == (frame <= 3));
+    CHECK(input.shift == (frame >= 5 && frame <= 11));
+    CHECK(input.alt == (frame == 18 || frame == 19));
+    CHECK(input.down(SDL_SCANCODE_1) == (frame == 2));
+    CHECK(input.hit(SDL_SCANCODE_1) == (frame == 2));
+    CHECK(input.down(SDL_SCANCODE_A) == (frame == 10));
+    CHECK(input.down(SDL_SCANCODE_RIGHT) == (frame >= 13 && frame <= 16));
+    CHECK(input.hit(SDL_SCANCODE_RIGHT) == (frame == 13));
+    CHECK(input.buttons[SDL_BUTTON_LEFT] == (frame == 7 || frame == 8));
+    CHECK(input.pressed[SDL_BUTTON_LEFT] == (frame == 7));
+    CHECK(input.released[SDL_BUTTON_LEFT] == (frame == 9));
+    if (frame == 8) CHECK(input.mx == 240 && input.my == 240);
+  }
+  PlaytestRequest request;
+  CHECK(!player.step(input, world, nullptr, request) && request.quit);
+}
 
 static void test_movement_rules() {
   // Invented descriptors: parameter lookup, low-byte class flags and speed precedence.
@@ -2809,6 +2842,7 @@ static void test_audio_data(const std::string& dir) {
 
 int main(int argc, char** argv) {
   if (argc == 2 && std::string(argv[1]) == "--pure") {
+    test_held_script_input();
     test_pure();
     test_movement_rules();
     test_sight();

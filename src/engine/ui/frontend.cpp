@@ -5,9 +5,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 
 #include "core/text.hpp"
 #include "core/visfile.hpp"
+#include "engine/app/menu_script.hpp"
+#include "engine/app/ui_trace.hpp"
 #include "engine/assets/mission.hpp"
 #include "engine/render/sprite_store.hpp"
 #include "engine/render/png.hpp"
@@ -56,6 +59,10 @@ class Screen {
 
  private:
   enum class Mode { Main, Campaign, Custom, Briefing, Options, Audio, Modifications };
+  static const char* mode_name(Mode mode) {
+    static const char* names[] = {"main", "campaign", "custom", "briefing", "options", "audio", "modifications"};
+    return names[int(mode)];
+  }
 
   void background(uint32_t id) {
     const StoredSprite& s = store_.get(common_key(id));
@@ -73,6 +80,7 @@ class Screen {
   }
   bool hover(const Button& b) const { return mx_ >= b.x && my_ >= b.y && mx_ < b.x + b.w && my_ < b.y + b.h; }
   void draw_button(const Button& b, bool enabled = true) {
+    observed_buttons_.push_back({b, enabled, hover(b)});
     SDL_Renderer* r = win_.renderer();
     SDL_Rect d{L_.X(b.x), L_.Y(b.y), L_.W(b.w), L_.W(b.h)};
     bool h = hover(b) && enabled;
@@ -129,6 +137,14 @@ class Screen {
   bool scripted_ = false;
   uint64_t capture_frame_ = 0;
   std::string capture_shot_;
+  MenuScript script_;
+  MenuScript::Request request_;
+  std::ofstream trace_;
+  struct ObservedButton { Button button; bool enabled, hover; };
+  std::vector<ObservedButton> observed_buttons_;
+  int frame_ = 0;
+  Mode rendered_mode_ = Mode::Main;
+  bool failed_ = false;
 };
 
 void Screen::load_lists() {
@@ -189,13 +205,19 @@ void Screen::frame_begin() {
   win_.mouse_scale(sx, sy);
   while (!scripted_ && SDL_PollEvent(&e)) {
     win_.handle_event(e);
-    in_.handle(e, sx, sy);
+    if (opts_.menu_script.empty() || e.type == SDL_QUIT) in_.handle(e, sx, sy);
   }
   if (scripted_) {
     PlaytestRequest request;
     if (!capture_script_.step(in_, capture_world_, nullptr, request) || request.quit) quit_ = true;
     capture_shot_ = request.shot;
   }
+  if (!opts_.menu_script.empty()) {
+    request_ = script_.step(frame_, in_);
+    if (request_.quit) quit_ = true;
+  }
+  observed_buttons_.clear();
+  rendered_mode_ = mode_;
   win_.output_size(ow_, oh_);
   L_.fit(ow_, oh_);
   mx_ = int((in_.mx - L_.ox) / L_.s);
@@ -207,13 +229,13 @@ void Screen::frame_begin() {
 }
 
 // Developer aid: AZTEC_MENU_SHOT=dir makes the front-end walk through its screens, saving a PNG of each, then quit.
-static void save_png(SDL_Renderer* r, const std::string& path) {
+static bool save_png(SDL_Renderer* r, const std::string& path) {
   int w, h;
   SDL_GetRendererOutputSize(r, &w, &h);
   std::vector<uint8_t> px(size_t(w) * h * 4);
-  if (SDL_RenderReadPixels(r, nullptr, SDL_PIXELFORMAT_RGBA32, px.data(), w * 4) != 0) return;
+  if (SDL_RenderReadPixels(r, nullptr, SDL_PIXELFORMAT_RGBA32, px.data(), w * 4) != 0) return false;
   for (size_t i = 3; i < px.size(); i += 4) px[i] = 255;
-  write_png(path, w, h, px);
+  return write_png(path, w, h, px);
 }
 
 void Screen::frame_end() {
@@ -235,22 +257,68 @@ void Screen::frame_end() {
       }
     }
   }
-  cursor_.draw(win_.renderer(), store_, in_.mx, in_.my, CursorKind::Arrow, std::max(1, int(std::lround(L_.s))),
-               scripted_ ? uint32_t(capture_frame_ * 1000 / 12) : SDL_GetTicks());
+  const uint32_t cursor_ms = scripted_ ? uint32_t(capture_frame_ * 1000 / 12)
+      : opts_.menu_script.empty() ? SDL_GetTicks() : uint32_t(uint64_t(frame_) * 1000 / 60);
+  cursor_.draw(win_.renderer(), store_, in_.mx, in_.my, CursorKind::Arrow, std::max(1, int(std::lround(L_.s))), cursor_ms);
   if (!capture_shot_.empty()) save_png(win_.renderer(), capture_shot_);
   ++capture_frame_;
+  if (!request_.shot.empty() && !save_png(win_.renderer(), request_.shot)) {
+    std::fprintf(stderr, "Cannot capture menu frame: %s\n", request_.shot.c_str());
+    failed_ = quit_ = true;
+  }
+  if (trace_.is_open()) {
+    trace_ << "{\"schema\":1,\"contract\":\"engine-menu-raw-v1\",\"frame\":" << frame_
+           << ",\"phase\":\"after_input_before_present\",\"rendered_screen\":\"" << mode_name(rendered_mode_)
+           << "\",\"next_screen\":\"" << mode_name(mode_) << "\",\"mouse\":[" << in_.mx << ',' << in_.my
+           << "],\"left_down\":" << (in_.buttons[SDL_BUTTON_LEFT] ? "true" : "false")
+           << ",\"pressed\":" << (in_.pressed[SDL_BUTTON_LEFT] ? "true" : "false")
+           << ",\"released\":" << (in_.released[SDL_BUTTON_LEFT] ? "true" : "false")
+           << ",\"cursor\":\"arrow\",\"cursor_ms\":" << cursor_ms << ",\"buttons\":[";
+    for (size_t i = 0; i < observed_buttons_.size(); ++i) {
+      const auto& b = observed_buttons_[i];
+      trace_ << (i ? "," : "") << "{\"label\":"; trace_string(trace_, b.button.text);
+      trace_ << ",\"rect\":[" << b.button.x << ',' << b.button.y << ',' << b.button.w << ',' << b.button.h
+             << "],\"enabled\":" << (b.enabled ? "true" : "false")
+             << ",\"hover\":" << (b.hover ? "true" : "false")
+             << ",\"held\":" << (b.hover && in_.buttons[SDL_BUTTON_LEFT] ? "true" : "false") << '}';
+    }
+    trace_ << "],\"mission\":"; trace_string(trace_, chosen_);
+    trace_ << ",\"keys_hit\":[";
+    bool first_key = true;
+    for (int k = 0; k < SDL_NUM_SCANCODES; ++k) if (in_.key_hit[k]) {
+      trace_ << (first_key ? "" : ",") << k; first_key = false;
+    }
+    trace_ << "],\"options\":{\"edge_scroll\":" << (opts_.edge_scroll ? "true" : "false")
+           << ",\"fog\":" << (opts_.fog ? "true" : "false") << ",\"light\":" << (opts_.light ? "true" : "false")
+           << ",\"sfx\":" << opts_.sfx_volume << ",\"music\":" << opts_.music_volume << ",\"speech\":" << opts_.speech_volume
+           << ",\"acknowledgement\":" << (opts_.acknowledgement ? "true" : "false")
+           << ",\"subtitles\":" << (opts_.subtitles ? "true" : "false") << '}';
+    trace_ << ",\"quit\":" << (quit_ ? "true" : "false") << ",\"capture\":";
+    trace_string(trace_, request_.shot);
+    trace_ << ",\"audio_observed\":false}\n";
+    trace_.flush();
+    if (!trace_) { std::fprintf(stderr, "Cannot write menu trace\n"); failed_ = quit_ = true; }
+  }
   SDL_RenderPresent(win_.renderer());
+  ++frame_;
 }
 
 bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
+  std::string error;
   if (const char* path = std::getenv("AZTEC_UI_SCRIPT")) {
-    std::string error;
     if (!capture_script_.load(path, error)) {
       std::fprintf(stderr, "%s\n", error.c_str());
       out.quit = true;
       return false;
     }
     scripted_ = true;
+  }
+  if (!opts_.menu_script.empty() && !script_.load(opts_.menu_script, error)) {
+    std::fprintf(stderr, "%s\n", error.c_str()); out.quit = out.failed = true; return false;
+  }
+  if (!opts_.menu_trace.empty()) {
+    trace_.open(opts_.menu_trace);
+    if (!trace_) { std::fprintf(stderr, "Cannot open menu trace\n"); out.quit = out.failed = true; return false; }
   }
   load_lists();
   if (!open_briefing.empty()) enter_briefing(open_briefing);
@@ -369,6 +437,7 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
     frame_end();
   }
   out.quit = quit_ && chosen_.empty();
+  out.failed = failed_;
   out.mission = chosen_;
   return !out.quit;
 }

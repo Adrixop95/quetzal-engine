@@ -71,6 +71,8 @@ const char* usage_text() {
          "  --rules-dir DIR    override packaged rules (source builds use docs/data);  --no-sim  no game logic\n"
          "  --ui-trace FILE    write raw UI state and submitted commands per rendered frame\n"
          "  --script FILE      playtest script: synthetic clicks/keys, screenshots, expectations (virtual time)\n"
+         "  --menu-script FILE frame-scheduled menu input; exit when a mission is chosen\n"
+         "  --menu-trace FILE  raw per-frame front-end observations\n"
          "  --no-menu          start the default mission directly instead of the front-end menu\n"
          "  --menu-session     enable pause and objectives menus when starting a mission directly\n"
          "  --audio-log FILE  write playback events as text\n"
@@ -151,6 +153,8 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     else if (a == "--menu-session") o.menu_session = true;
     else if (a == "--ui-trace") { if (!next(v)) return false; o.ui_trace = v; }
     else if (a == "--script") { if (!next(v)) return false; o.script = v; }
+    else if (a == "--menu-script") { if (!next(v)) return false; o.menu_script = v; }
+    else if (a == "--menu-trace") { if (!next(v)) return false; o.menu_trace = v; }
     else if (a == "--cmd-move" || a == "--cmd-attack-move") { if (!next(v)) return false; if (std::sscanf(v, "%d,%d", &o.cmd_x, &o.cmd_y) != 2) { err = "bad " + a; return false; } o.cmd_attack_move = a != "--cmd-move"; }
     else if (a == "--select") { if (!next(v)) return false; if (std::sscanf(v, "%d,%d,%d,%d", &o.select_x0, &o.select_y0, &o.select_x1, &o.select_y1) != 4) { err = "bad --select"; return false; } }
     else if (a == "--no-light") o.light = false;
@@ -174,6 +178,9 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
   }
   if (!o.screenshot.empty() && o.frames <= 0) o.frames = 5;
   o.menu = o.original_save.empty() && !o.mission_given && o.screenshot.empty() && o.script.empty() && !o.no_menu;
+  if ((!o.menu_script.empty() || !o.menu_trace.empty()) && (!o.menu || o.list || !o.sheet_spec.empty())) {
+    err = "Menu automation requires front-end mode (no mission, load, script, screenshot or --no-menu)"; return false;
+  }
   return true;
 }
 
