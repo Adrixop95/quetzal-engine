@@ -37,18 +37,23 @@ static void test_window(DisplayMode mode) {
   CHECK(!grabbed());  // front-end
   window.set_gameplay_active(true);
   CHECK(grabbed());  // regression: the old window never requested a grab
-  window.set_mode(mode);
+  CHECK(window.set_mode(mode));
+  CHECK(window.mode() == mode);
+  const Uint32 display_flags = SDL_GetWindowFlags(window.sdl()) & SDL_WINDOW_FULLSCREEN_DESKTOP;
+  CHECK(bool(display_flags & SDL_WINDOW_FULLSCREEN) == (mode != DisplayMode::Windowed));
+  if (mode == DisplayMode::Borderless) CHECK(display_flags == SDL_WINDOW_FULLSCREEN_DESKTOP);
+  // SDL can promote exclusive requests to desktop fullscreen when no matching mode exists.
   CHECK(grabbed());
   CHECK(SDL_GetRelativeMouseMode() == SDL_FALSE);
   CHECK((SDL_GetWindowFlags(window.sdl()) & SDL_WINDOW_KEYBOARD_GRABBED) == 0);
 
   focus(SDL_WINDOWEVENT_FOCUS_LOST);
   CHECK(!grabbed());
-  window.set_mode(DisplayMode::Windowed);
+  CHECK(window.set_mode(DisplayMode::Windowed));
   CHECK(!grabbed());
   focus(SDL_WINDOWEVENT_FOCUS_GAINED);
   CHECK(grabbed());
-  window.set_mode(mode);
+  CHECK(window.set_mode(mode));
   key(SDL_SCANCODE_LALT, true);
   CHECK(!grabbed());
   key(SDL_SCANCODE_TAB, true);

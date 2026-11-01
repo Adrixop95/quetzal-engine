@@ -750,8 +750,8 @@ actual archives before smoke testing. `tools/package_release.py` stages only the
 engine, tracked public rules metadata and package documentation/license. Linux
 bundling collects transitive shared dependencies, Debian copyright notices,
 common license texts, exact source versions and their source archives/patches;
-the host supplies glibc and drivers. Windows uses static SDL2/MSVC runtime linkage
-and carries SDL2 source and license. Publication also includes the exact public
+the host supplies glibc and drivers. Windows now bundles SDL2 and MSVC runtime
+DLLs and carries SDL2 source and dependency notices (see the readiness update below). Publication also includes the exact public
 engine source archive and checksums. No game files, oracle or lifted code are
 inputs. See [PACKAGES.md](PACKAGES.md) for external installation setup and the
 optional separately installed ffmpeg dependency.
@@ -772,7 +772,7 @@ missing rules. No private installation or reference process was used.
 
 **Pending dependency / release evidence:** local staging on Fedora uses host
 libraries and is explicitly marked non-distributable. Debian dependency/source
-collection, clean-runner Linux package execution, static Windows linkage and
+collection, clean-runner Linux package execution, Windows DLL loading and
 native Windows smoke execution require the release CI jobs; none was run here.
 V17's code/build matrix exists, but green remote gates and branch protection
 remain unverified. GitHub PR refresh failed at the API connection, so no unmerged
@@ -1741,3 +1741,43 @@ resume, cancellation and refunds; cash stalls and payment speed; queue hash
 sensitivity; save metadata and per-tick continuation/replay equality in both modes;
 logged mode changes; preference parsing/persistence and UI toggles; initial
 lockstep mismatch rejection. Existing default AI economy smoke coverage remains.
+
+## Windows package and laptop readiness (2026-11-01)
+
+**Construction evidence, no simulation parity claim:** Windows release build and
+fresh-runner zip smoke jobs target `windows-latest`. The package stages the
+independent executable, allowlisted SDL2/MSVC runtime DLLs, public rules, GPL
+license, dependency notices, SDL2 source and installation README. The smoke job
+removes compiler/vcpkg directories from PATH. Windows DLL execution and release
+publication still require an actual successful workflow run; this Linux worktree
+cannot establish those results.
+
+Both application modes accept literal `game=DIR` settings, including CRLF,
+backslashes, drive letters and spaces. Precedence is CLI, nonempty `AZTEC_GAME`,
+settings, then `./game`. Normal slot saves, campaign progress and modification
+preferences use SDL's per-user application directory; `AZTEC_USER_DIR` selects an
+absolute isolated profile. No automatic migration from installation-local saves
+occurs. Explicit headless output paths and `--modifications-file` remain overrides.
+Fullscreen requests check SDL's result before changing the tracked display mode.
+The mission frame limit now also works without requesting a screenshot.
+
+**Local synthetic evidence:** Release build and full CTest pass (34 passed;
+five private-data checks and the restricted network-process check skipped).
+Pre-commit passes. A relocated local package passes under `unshare -rn` with dummy
+SDL video/audio: repeated victory at tick 10, mixed-case resource/mission names,
+spaces in paths, settings/environment/CLI selection and precedence, per-user
+slot save/load, bounded exclusive/borderless startup, and malformed/missing input
+errors. Synthetic Windows staging preserves the required files and rejects an
+unallowlisted runtime path before creating a package. No Windows DLL was executed
+in that staging check. The portability test checks SDL's native preference path,
+literal invented Windows settings and successful dummy audio-device startup,
+plus graceful failure with an unavailable audio driver. Cursor/focus/Alt/F9 and
+fullscreen state/flag checks run through SDL's dummy driver, which can promote
+exclusive requests to desktop fullscreen when no matching display mode exists.
+
+**Remaining acceptance:** native Windows path and DLL loading need CI results.
+Physical cursor confinement, Alt+Tab, DPI scaling, fullscreen driver transitions,
+sleep/resume and speakers/headphones need Windows laptop testing. Dummy drivers
+and synthetic replay do not establish hardware behavior or reference-game parity.
+No task dependency is needed for these setup changes; full campaign acceptance
+and reference comparisons remain separate outstanding work.

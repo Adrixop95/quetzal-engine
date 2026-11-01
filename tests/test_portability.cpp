@@ -3,6 +3,8 @@
 #include "engine/assets/game_data.hpp"
 #include "engine/assets/mission.hpp"
 #include "engine/audio/mixer.hpp"
+#include "engine/audio/audio_system.hpp"
+#include "engine/app/options.hpp"
 #include "engine/sim/savegame.hpp"
 #include "temp_dir.hpp"
 #include <array>
@@ -65,5 +67,53 @@ int main() {
   CHECK(!find_file_ci((root / "RES").string(), "pal.xbe").empty());
   CHECK(find_file_ci((root / "absent").string(), "pal.xbe").empty());
   CHECK(find_file_ci(root.string(), "absent").empty());
+  // Verify SDL's native per-user default before isolating writes in this process.
+  CHECK(SDL_setenv("AZTEC_USER_DIR", "", 1) == 0);
+  char* native_preferences = SDL_GetPrefPath("Quetzal", "Engine");
+  CHECK(native_preferences);
+  CHECK(std::filesystem::path(user_file("settings.ini")) ==
+        std::filesystem::path(native_preferences) / "settings.ini");
+  SDL_free(native_preferences);
+  const auto profile = directory.path() / "User Settings";
+  CHECK(SDL_setenv("AZTEC_USER_DIR", profile.string().c_str(), 1) == 0);
+  CHECK(SDL_setenv("AZTEC_GAME", "", 1) == 0);
+  const auto settings = user_file("settings.ini");
+  // An invented Windows path must remain literal even on other test hosts.
+  { std::ofstream file(settings, std::ios::binary); file << "game=C:\\Games\\Aztec Empire\r\n"; }
+  auto parse = [&](std::vector<std::string> args, Options& options) {
+    std::vector<char*> raw;
+    for (auto& a : args) raw.push_back(a.data());
+    std::string error; bool usage = false;
+    return parse_options(int(raw.size()), raw.data(), options, error, usage);
+  };
+  Options configured;
+  CHECK(parse({"engine"}, configured));
+  CHECK(configured.game_dir == "C:\\Games\\Aztec Empire");
+  CHECK(SDL_setenv("AZTEC_GAME", root.string().c_str(), 1) == 0);
+  CHECK(parse({"engine"}, configured) && configured.game_dir == root.string());
+  CHECK(parse({"engine", "--game", "D:\\Other Games"}, configured));
+  CHECK(configured.game_dir == "D:\\Other Games");
+  CHECK(!parse({"engine", "--settings", (profile / "missing.ini").string()}, configured));
+  CHECK(!parse({"engine", "--settings"}, configured));
+  { std::ofstream file(settings); file << "game=\n"; }
+  CHECK(!parse({"engine"}, configured));
+  CHECK(save_modifications(default_modifications_file(), {}));
+  CHECK(std::filesystem::is_regular_file(profile / "modifications.ini"));
+
+  // Startup must open a dummy SDL device even when optional sound assets are absent.
+  CHECK(SDL_setenv("SDL_AUDIODRIVER", "dummy", 1) == 0);
+  {
+    AudioSystem audio;
+    CHECK(!audio.init(root.string()));
+    CHECK(audio.device_ok());
+  }
+  SDL_QuitSubSystem(SDL_INIT_AUDIO);
+  CHECK(SDL_setenv("SDL_AUDIODRIVER", "quetzal-missing-driver", 1) == 0);
+  {
+    AudioSystem unavailable;
+    CHECK(!unavailable.init(root.string()));
+    CHECK(!unavailable.device_ok());
+  }
+  SDL_Quit();
   return 0;
 }

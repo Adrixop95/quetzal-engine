@@ -2,7 +2,11 @@
 
 Engine saves are independent command-log replays, not original `.sav` files.
 The pause menu and Ctrl+S/Ctrl+L use `Saves/engine_slot1.azs` for the current
-mission. Loading a slot requires starting that mission; a fresh process can then
+mission, inside SDL's per-user `Quetzal/Engine` directory (normally
+`%APPDATA%\Quetzal\Engine` on Windows), rather than the game installation.
+`AZTEC_USER_DIR` selects an absolute profile directory for isolated runs.
+See [SETUP.md](SETUP.md) for copying older engine saves to the new location.
+Loading a slot requires starting that mission; a fresh process can then
 load it. Imported original-save worlds cannot use this replay format.
 
 ## Compatibility and encoding
