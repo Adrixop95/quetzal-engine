@@ -167,3 +167,57 @@ Keep every capture containing original assets in ignored `work/`; never commit
 it. For a future differential comparison, align mission, camera, selection,
 gold, UI scale, cursor, tooltip delay and message state before measuring each UI
 region separately. Report exact agreement and tolerant mismatch rates separately.
+
+### Frame-scripted UI catalogue
+
+`tools/ui_capture.py` reads `tests/parity/ui/screens.json`. Each entry has separate
+reference and clone routes; an explicit blocker replaces an unavailable route.
+See [ui_screens.md](ui_screens.md) for the inventory and measurement limits.
+
+```sh
+python3 tools/ui_capture.py --list
+python3 tools/ui_capture.py --screen hud-mission-1 --phase before \
+  --game /absolute/path/to/read-only/game \
+  --runtime /absolute/path/to/rebuilt/aztec_recomp
+# After a change, repeat with --phase after and the same --output directory.
+```
+
+The default output is this worktree's ignored `work/parity/ui/`. A phase must be
+fresh. Both runners use separate private game copies for each repetition, dummy
+SDL video/audio, a kill timeout and `unshare -rn`. Reference network setup remains
+mandatory and fails closed. At least two independent processes must produce
+identical source capture bytes. Canonical lossless RGB PNGs are also compared.
+The tool records exact differing-pixel counts, mismatch fractions, mean absolute
+error, root mean square error and maximum channel error when both images exist.
+`before-after.json` retains null for unavailable measurements. Failed or blocked
+captures return a nonzero exit status; missing images never count as zero error.
+
+The reference needs a runtime rebuilt with the opt-in `RT_UI_SCRIPT` hook in
+`runtime/backend.c`; the supplied prebuilt runtime may lack it. Build privately
+inside the current worktree, using the user's local generated source directory:
+
+```sh
+cmake -S . -B build_ui_reference -DCMAKE_BUILD_TYPE=Release \
+  -DAZTEC_GEN_DIR=/absolute/path/to/private/work/gen
+cmake --build build_ui_reference --target aztec_recomp --parallel 2
+```
+
+`RT_UI_SCRIPT` is an absolute guest-presentation schedule, with lines such as
+`4 move 140 239`, `5 down`, `6 up`, `10 shot`, `11 quit`.
+The hook applies input before the next guest presentation and captures the
+composed renderer synchronously. It replaces the threaded `RT_SCRIPT` path.
+It does **not** virtualize the reference clock. A presentation can be a partial
+redraw; menus may stop presenting while idle. Thus the hook is experimental,
+may time out, and cannot establish tick alignment or deterministic reference
+rendering until measured. Do not substitute millisecond sleeps for these gaps.
+
+The clone front end accepts `AZTEC_UI_SCRIPT` using the existing playtest grammar:
+`wait N` counts rendered frames, `move`, `down`, `up`, `key`, `shot PATH`, `quit`.
+Cursor animation uses frame-derived time. This script is limited to the front
+end; mission captures start the requested mission directly using `--script`.
+`--menu-session` enables pause/objectives when launching a mission directly.
+Gameplay scripts advance one simulation tick per frame; front-end scripts do not
+advance a world. Reference and clone frame counts are not equivalent simulation
+observations. L4 structural masks/alignment and L5 shared semantic UI/command
+observers remain prerequisites for parity claims; existing `parity_visual.py`
+can compare aligned bundles once those observations exist.
