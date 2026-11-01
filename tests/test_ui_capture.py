@@ -42,9 +42,9 @@ class CaptureTests(unittest.TestCase):
 
     def test_explicit_frame_schedule(self):
         route = {'mission': None, 'input': [['wait', 3], ['move', 140, 239], ['down'], ['up'], ['key', 'Escape']]}
-        ref, clone = capture.scripts(route, Path('/tmp/frame.png'))
+        ref, clone = capture.scripts(route, Path('frame.png'))
         self.assertEqual(ref, '3 move 140 239\n4 down\n5 up\n6 keydown 1\n7 keyup 1\n8 shot\n9 quit\n')
-        self.assertEqual(clone, 'wait 3\nmove 140 239\ndown\nup\nkey Escape\nwait 1\nshot /tmp/frame.png\nquit\n')
+        self.assertEqual(clone, 'wait 3\nmove 140 239\ndown\nup\nkey Escape\nwait 1\nshot frame.png\nquit\n')
 
     def test_lossless_metrics(self):
         with tempfile.TemporaryDirectory() as temp:
