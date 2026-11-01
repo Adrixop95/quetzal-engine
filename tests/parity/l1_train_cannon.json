@@ -1,0 +1,62 @@
+{
+  "id": "l1_train_cannon",
+  "layer": "L1",
+  "map": {
+    "template": "mission_1",
+    "generator": "make_zstat",
+    "passability": "clear_interior",
+    "resources": "empty_control"
+  },
+  "setup": {
+    "sides": [
+      0,
+      1
+    ],
+    "money": 10000,
+    "preplaced_objects": [
+      {
+        "id": "hall",
+        "type": 10,
+        "x": 16,
+        "y": 16,
+        "side": 0
+      },
+      {
+        "id": "workshop",
+        "type": 20,
+        "x": 22,
+        "y": 16,
+        "side": 0
+      }
+    ],
+    "tech": "record_and_hold_constant",
+    "controls": [
+      "Audit town membership, unit prerequisites, town level and selected training speed before acceptance.",
+      "Record acceptance, debit, first decrement and spawn boundaries separately; disable other production and income.",
+      "Repeat each legal speed and town level with identical initial state; include pause/resume and insufficient-cash controls."
+    ]
+  },
+  "input": [
+    {
+      "tick": 12,
+      "command": "queue",
+      "town": "hall",
+      "type": 4
+    }
+  ],
+  "observe": {
+    "first_tick": 1,
+    "last_tick": 720,
+    "fields": [
+      "queue_length",
+      "remaining",
+      "spawn_count",
+      "money",
+      "active",
+      "paid"
+    ]
+  },
+  "tolerance": 0,
+  "evidence": "P",
+  "mechanic": "train_time"
+}
