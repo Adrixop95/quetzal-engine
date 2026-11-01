@@ -321,6 +321,40 @@ The isolated reference control failed during namespace network setup before
 launch. V02/V05/V10/V11 adapters and mission objective validation remain open;
 V12 is not complete. Camera activation still ignores its second argument.
 
+## L8 validation attempt (2026-11-01, partial)
+
+The isolated reference launch preflight failed before game startup at loopback
+configuration (`Cannot open netlink socket: Operation not permitted`). It used
+the external read-only game/runtime, private writable Maps/Saves/settings,
+read-only asset symlinks, dummy SDL and `unshare -rn`. Private files are under
+`work/parity/l8-launch/`. No original AI behaviour was observed and no numeric
+reference expectations are committed. Composition, expansion, launch thresholds,
+defence latency and retreat remain unresolved. The existing planner policies are
+unchanged; no reference match is claimed.
+
+Independent work completed despite the missing reference observations:
+
+- `parity_ai` checks a numeric event-window comparator with invented inputs:
+  inclusive timing/composition bounds from at least two references, total force
+  size, missing/extra events, required behaviour classes, unstable reference
+  coverage, malformed captures, private output paths and missing-input skip 77.
+  It consumes event captures; audited observers and controlled passive-player /
+  defence / retreat scenarios are still required. See `tests/parity/README.md`.
+- The existing 14,400-tick skirmish retains every activity, viewing-side hash and
+  replay assertion. Each five-minute interval additionally requires **each side**
+  to make purchases, produce armed mobile recruits and fire. Wave composition
+  checks count actual released members, require autonomous armed troops and
+  verify the synthetic scenario's enabled footman-only composition for both sides.
+  These stronger checks pass without changes to AI policy or scenario inputs.
+
+Baseline Release build and CTest passed (34 passed, six skipped). Pre-commit
+passed using a writable copy of the existing cached hook environments; downloading
+new hook environments failed because DNS was unavailable. Final Release build,
+CTest (35 passed, six skipped) and pre-commit, including both new Python files,
+passed. Synthetic validation
+does not close the missing reference observer, movement/combat/economy or tactic
+dependencies described below.
+
 ## Computer player (`ai/planner.*`, `sim/ai.cpp` adapter)
 Controlled sides have `OnlyComp=1` and are not neutral. The pure planner reads
 world state and validated purchase/placement offers, returning its next state and

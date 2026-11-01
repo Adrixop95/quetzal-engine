@@ -316,8 +316,11 @@ add_test(NAME ui_screenshots COMMAND test_ui_screenshots ${CMAKE_CURRENT_BINARY_
 set_tests_properties(ui_screenshots PROPERTIES LABELS "unit" TIMEOUT 30
   ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
 
-# L1 specifications and measurement bookkeeping use synthetic inputs in CI.
+# L1 specifications and L8 event-window comparisons use synthetic inputs in CI.
 if(Python3_Interpreter_FOUND)
+  add_test(NAME parity_ai COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_ai.py)
+  set_tests_properties(parity_ai PROPERTIES LABELS "unit;parity" TIMEOUT 20)
   add_test(NAME parity_rules COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_rules.py)
   set_tests_properties(parity_rules PROPERTIES LABELS "unit;parity" TIMEOUT 20)
