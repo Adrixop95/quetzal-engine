@@ -80,7 +80,7 @@ def land(name):
                         + " ".join(conflicted) + ". Resolve every conflict preserving the intent of BOTH sides (the task adds a feature, develop gained "
                         "other features in the same files). Remove all markers, make the project build and tests pass (cmake -S . -B build_sup "
                         "-DAZTEC_GEN_DIR= && cmake --build build_sup && ctest --test-dir build_sup), keep everything English. Do NOT run git "
-                        "write commands; leave the resolved files in the working tree.")
+                        "write commands; leave the resolved files in the working tree.", fallback=False)
         bad = verify_land(conflicted) if conflicted else ""
         if bad:
             log("could not resolve patch conflicts for", name, bad)
@@ -153,10 +153,22 @@ MAX_ATTEMPTS = 3
 STUCK = set()
 
 
-def codex_in_land(prompt, timeout=3000):
+CLAUDE_TOOLS = ["Read", "Edit", "Write", "Bash(cmake:*)", "Bash(ctest:*)", "Bash(ninja:*)", "Bash(grep:*)", "Bash(ls:*)",
+                "Bash(git status:*)", "Bash(git diff:*)", "Bash(git show:*)", "Bash(git log:*)"]
+
+
+def codex_in_land(prompt, timeout=3000, fallback=True):
+    """Run Codex in LAND; when its usage limit is hit, fall back to Claude Haiku (open PR flows only, no git writes)."""
     r = subprocess.run(["codex", "exec", "-C", LAND, "-s", "workspace-write", prompt],
                        text=True, capture_output=True, timeout=timeout)
-    return (r.stdout + r.stderr)[-400:]
+    out = r.stdout + r.stderr
+    if fallback and "usage limit" in out:
+        log("Codex limit hit, falling back to Claude Haiku")
+        c = subprocess.run(["claude", "-p", "--model", "haiku", "--permission-mode", "acceptEdits",
+                            "--add-dir", LAND, "--allowedTools", *CLAUDE_TOOLS],
+                           input=prompt, cwd=LAND, text=True, capture_output=True, timeout=timeout)
+        out = c.stdout + c.stderr
+    return out[-400:]
 
 
 def verify_land(files):
