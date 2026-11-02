@@ -1,4 +1,5 @@
 // Unit tests for src/engine/sim/path (plain asserts, no framework). usage: test_path
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -110,6 +111,36 @@ static void test_large_class() {
   CHECK(ms.agents()[large].pos.x < 15 * kTileFix);   // large unit cannot pass; ends on its side of the wall
 }
 
+static u64 run_disconnected_group(bool reverse) {
+  NavGrid g(32, 20);
+  for (int y = 0; y < 20; ++y) {
+    g.set_terrain(10, y, 0);
+    g.set_terrain(20, y, 0);
+  }
+  MoveSystem ms(g);
+  std::vector<u32> ids;
+  for (int x : {4, 14, 24}) for (int y : {8, 11})
+    ids.push_back(ms.add_agent({x * kTileFix + kTileFix / 2, y * kTileFix + kTileFix / 2},
+                              18 * kFix, 9 * kFix, MoveClass::Small));
+  if (reverse) std::reverse(ids.begin(), ids.end());
+  // Exercise both an unreachable first member and a reachable first member.
+  // Each region needs its own arrival area, including after a replacement order.
+  for (int gx : {28, 2}) {
+    ms.order_move(ids.data(), int(ids.size()), {gx * kTileFix + kTileFix / 2, 10 * kTileFix + kTileFix / 2});
+    for (const Agent& a : ms.agents()) {
+      CHECK(int(a.slot.x / kTileFix) / 10 == int(a.id / 2));
+      CHECK(!g.disc_hits(a.slot, a.radius, a.cls));
+    }
+    for (int t = 0; t < 300; ++t) ms.tick();
+    for (const Agent& a : ms.agents()) {
+      CHECK(a.state == AgentState::Arrived);
+      CHECK(int(a.pos.x / kTileFix) / 10 == int(a.id / 2));
+      CHECK(!g.disc_hits(a.pos, a.radius, a.cls));
+    }
+  }
+  return ms.state_hash();
+}
+
 static void test_dynamic_block() {
   NavGrid g(30, 20); for (int y = 0; y < 20; ++y) for (int x = 0; x < 30; ++x) g.set_terrain(x, y, (x == 0 || y == 0 || x == 29 || y == 19) ? 0 : 2);
   FlowField ff; Cell goal{25, 10}; ff.build(g, MoveClass::Small, &goal, 1);
@@ -180,6 +211,10 @@ int main() {
   test_math(); test_field_vs_astar(); test_no_corner_cut(); test_courses(); test_determinism(); test_unreachable_goal(); test_large_class(); test_dynamic_block();
   const u64 wall_run = run_goal_beside_wall();
   CHECK(wall_run == run_goal_beside_wall());
+  for (bool reverse : {false, true}) {
+    const u64 disconnected = run_disconnected_group(reverse);
+    CHECK(disconnected == run_disconnected_group(reverse));
+  }
   test_random_stress();
   printf("%d checks, %d failed\n", g_checks, g_fail);
   return g_fail ? 1 : 0;
