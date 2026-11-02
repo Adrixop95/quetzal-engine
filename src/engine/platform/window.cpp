@@ -27,18 +27,20 @@ bool Window::create(const WindowOptions& o) {
   SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
   SDL_ShowCursor(SDL_DISABLE);  // the engine draws its own cursor every frame
   focused_ = (SDL_GetWindowFlags(win_) & SDL_WINDOW_INPUT_FOCUS) != 0;
-  set_mode(o.mode);
-  return true;
+  return set_mode(o.mode);
 }
 
-void Window::set_mode(DisplayMode m) {
-  mode_ = m;
-  switch (m) {
-    case DisplayMode::Windowed: SDL_SetWindowFullscreen(win_, 0); break;
-    case DisplayMode::Borderless: SDL_SetWindowFullscreen(win_, SDL_WINDOW_FULLSCREEN_DESKTOP); break;
-    case DisplayMode::Fullscreen: SDL_SetWindowFullscreen(win_, SDL_WINDOW_FULLSCREEN); break;
+bool Window::set_mode(DisplayMode m) {
+  Uint32 flags = 0;
+  if (m == DisplayMode::Borderless) flags = SDL_WINDOW_FULLSCREEN_DESKTOP;
+  if (m == DisplayMode::Fullscreen) flags = SDL_WINDOW_FULLSCREEN;
+  if (SDL_SetWindowFullscreen(win_, flags) != 0) {
+    std::fprintf(stderr, "SDL_SetWindowFullscreen: %s\n", SDL_GetError());
+    return false;
   }
+  mode_ = m;
   apply_mouse_grab();
+  return true;
 }
 
 void Window::apply_mouse_grab() {

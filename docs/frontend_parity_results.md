@@ -50,7 +50,7 @@ reference screenshot, sound sequence or state sequence was obtained. No
 original-versus-clone before/after error rate can be calculated for any screen.
 No behavioral parity fix is claimed.
 
-Reproduction uses `tools/ui_capture.py` with `--game`, `--runtime`, `--clone`
+Reproduction uses `tools/ui_capture.py frontend` with `--game`, `--runtime`, `--clone`
 and a fresh `--output work/parity/ui/NAME`. The default scenario is
 `tests/parity/ui/frontend.json`. Each process has its own private game copy;
 immutable resources are symlinks and writable installation state is copied.

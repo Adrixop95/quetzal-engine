@@ -15,6 +15,31 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 import audio_parity as audio
 
+ENGINE_TEST = None
+
+
+def decoration_capture():
+    """Expected requests from the invented banks in test_audio.cpp, never an oracle trace."""
+    events = []
+    for tick, kinds in (
+            (301, ('sound', 'loop_start', 'sound', 'loop_start')),
+            (303, ('sound', 'sound')), (304, ('sound', 'sound')),
+            (306, ('loop_stop',)), (307, ('loop_stop',)),
+            (308, ('loop_start', 'loop_start')), (309, ('loop_stop', 'loop_stop')),
+            (310, ('loop_start', 'loop_start')), (311, ('loop_stop', 'loop_stop')),
+            (312, ('sound', 'loop_start', 'sound', 'loop_start')),
+            (314, ('sound', 'sound')), (315, ('sound', 'sound')),
+            (317, ('loop_stop', 'loop_stop')),
+            (318, ('sound', 'loop_start', 'sound', 'loop_start')),
+            (320, ('sound', 'sound')), (321, ('sound', 'loop_stop')),
+            (323, ('loop_stop',))):
+        for kind in kinds:
+            events.append(dict(seq=len(events), tick=tick, sound=1, kind=kind,
+                               trigger='building' if tick < 312 else 'combat'))
+    return dict(header=dict(schema=1, scenario='invented-decoration-audio',
+                            contract='synthetic-decoration-v1', first_tick=299,
+                            last_tick=323, complete=True), events=events, event_count=len(events))
+
 
 def capture(events=None):
     if events is None:
@@ -26,6 +51,26 @@ def capture(events=None):
 
 
 class AudioParityTests(unittest.TestCase):
+    def test_engine_decoration_event_log(self):
+        if ENGINE_TEST is None:
+            self.skipTest('engine audio test executable not supplied')
+        with tempfile.TemporaryDirectory() as folder:
+            raw = Path(folder) / 'audio.jsonl'
+            result = subprocess.run([ENGINE_TEST, '--event-log', str(raw)],
+                                    capture_output=True, text=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            expected = decoration_capture()
+            manifest = dict(header=expected['header'], tick_offset=0,
+                            raw_sha256=hashlib.sha256(raw.read_bytes()).hexdigest())
+            actual = audio.normalize(raw, manifest, 'clone')
+            comparison = audio.compare(expected, actual)
+            self.assertEqual(comparison['category'], 'equal_observed_events', comparison['first'])
+            # The L6 acceptance allows one tick; the synthetic contract is exact.
+            self.assertEqual(actual, expected)
+            rows = [json.loads(line) for line in raw.read_text().splitlines()]
+            stops = [(e['tick'], e['source']) for e in rows if e['tick'] >= 318 and e['kind'] == 'loop_stop']
+            self.assertEqual(stops, [(321, (1 << 16) | 1), (323, (1 << 16) | 2)])
+
     def test_clone_speech_and_subtitle_events_preserve_order(self):
         events = [dict(seq=i, tick=2, sound=100, kind=kind, trigger='orders')
                   for i, kind in enumerate(('subtitle', 'speech'))]
@@ -203,4 +248,7 @@ class AudioParityTests(unittest.TestCase):
 
 
 if __name__ == '__main__':
+    if len(sys.argv) >= 3 and sys.argv[1] == '--engine-test':
+        ENGINE_TEST = sys.argv[2]
+        del sys.argv[1:3]
     unittest.main()

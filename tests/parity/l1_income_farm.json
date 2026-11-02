@@ -1,0 +1,62 @@
+{
+  "id": "l1_income_farm",
+  "layer": "L1",
+  "map": {
+    "template": "mission_1",
+    "generator": "make_zstat",
+    "passability": "clear_interior",
+    "resources": "empty_control"
+  },
+  "setup": {
+    "sides": [
+      0,
+      1
+    ],
+    "money": 10000,
+    "preplaced_objects": [
+      {
+        "id": "hall",
+        "type": 10,
+        "x": 16,
+        "y": 16,
+        "side": 0
+      },
+      {
+        "id": "farm",
+        "type": 12,
+        "x": 26,
+        "y": 16,
+        "side": 0
+      },
+      {
+        "id": "warehouse",
+        "type": 18,
+        "x": 20,
+        "y": 20,
+        "side": 0
+      }
+    ],
+    "tech": "record_and_hold_constant",
+    "controls": [
+      "Empty resource map is a zero-resource control, not a measurement of a positive farm yield.",
+      "Audit completed same-town warehouse membership; pair with no warehouse and incomplete/foreign warehouse controls.",
+      "Repeat with separately audited nonzero resource patches, occupied footprint and starting day-clock phase.",
+      "Observe every tick across a day boundary; separate harvest income, maintenance, spending and repair supply."
+    ]
+  },
+  "input": [],
+  "observe": {
+    "first_tick": 1,
+    "last_tick": 8640,
+    "fields": [
+      "money",
+      "town_income",
+      "active",
+      "day_clock",
+      "repair_supply"
+    ]
+  },
+  "tolerance": 0,
+  "evidence": "P",
+  "mechanic": "income"
+}

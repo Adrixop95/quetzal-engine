@@ -20,6 +20,11 @@ namespace aztec::engine {
 enum class PanelAction { Move, Attack, Stop, Repair, Garrison, Destroy };
 enum class TargetMode { None, Move, Attack };
 
+struct CommandButtonState {
+  int frame = 0;
+  bool enabled = false, highlight = false;
+};
+
 // Shared by drawing, hit testing, and pure tests. All rectangles include the panel origin.
 struct CommandPanelLayout {
   SDL_Rect portrait{}, summary{}, previous{}, next{}, pause{};
@@ -52,6 +57,8 @@ class CommandsUi {
   void draw_ghost(SDL_Renderer* r, const World& w, const Camera& cam, int mx, int my) const;
   static CommandPanelLayout layout(const SDL_Rect& panel, int scale);
   static bool action_enabled(PanelAction action, const World& w, const RulesData* rules = nullptr);
+  // Shared presentation state for rendering and UI observations; hover only adds a tooltip.
+  CommandButtonState button_state(PanelAction action, const World& w) const;
   static int icon_slot(int kind);
   // Resolves icons/portraits from the user's Units.xbe animation sequences, never from embedded pixels.
   uint32_t icon_sprite(int type, bool portrait) const;

@@ -86,6 +86,14 @@ void Minimap::draw(SDL_Renderer* r, const Camera& cam, float alpha, const Fog* f
   SDL_Rect b{rect_.x - 2, rect_.y - 2, rect_.w + 4, rect_.h + 4};
   SDL_SetRenderDrawColor(r, 0, 0, 0, 220);
   SDL_RenderFillRect(r, &b);
+  // Keep edge markers and camera outlines within the map, while respecting
+  // an enclosing UI clip. The decorative frame above retains the caller's clip.
+  SDL_Rect previous{};
+  const bool clipped = SDL_RenderIsClipEnabled(r);
+  SDL_RenderGetClipRect(r, &previous);
+  SDL_Rect clip = rect_;
+  if (clipped && !SDL_IntersectRect(&rect_, &previous, &clip)) return;
+  SDL_RenderSetClipRect(r, &clip);
   SDL_SetTextureColorMod(tex_, tint_.r, tint_.g, tint_.b);
   SDL_RenderCopy(r, tex_, nullptr, &rect_);
   if (fog) fog->draw_minimap(r, rect_);
@@ -106,6 +114,7 @@ void Minimap::draw(SDL_Renderer* r, const Camera& cam, float alpha, const Fog* f
   SDL_FRect c{x0, y0, std::max(1.f, x1 - x0), std::max(1.f, y1 - y0)};
   SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
   SDL_RenderDrawRectF(r, &c);
+  SDL_RenderSetClipRect(r, clipped ? &previous : nullptr);
 }
 
 }  // namespace aztec::engine
