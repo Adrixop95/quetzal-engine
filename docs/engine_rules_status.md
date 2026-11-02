@@ -750,8 +750,8 @@ actual archives before smoke testing. `tools/package_release.py` stages only the
 engine, tracked public rules metadata and package documentation/license. Linux
 bundling collects transitive shared dependencies, Debian copyright notices,
 common license texts, exact source versions and their source archives/patches;
-the host supplies glibc and drivers. Windows uses static SDL2/MSVC runtime linkage
-and carries SDL2 source and license. Publication also includes the exact public
+the host supplies glibc and drivers. Windows now bundles SDL2 and MSVC runtime
+DLLs and carries SDL2 source and dependency notices (see the readiness update below). Publication also includes the exact public
 engine source archive and checksums. No game files, oracle or lifted code are
 inputs. See [PACKAGES.md](PACKAGES.md) for external installation setup and the
 optional separately installed ffmpeg dependency.
@@ -772,7 +772,7 @@ missing rules. No private installation or reference process was used.
 
 **Pending dependency / release evidence:** local staging on Fedora uses host
 libraries and is explicitly marked non-distributable. Debian dependency/source
-collection, clean-runner Linux package execution, static Windows linkage and
+collection, clean-runner Linux package execution, Windows DLL loading and
 native Windows smoke execution require the release CI jobs; none was run here.
 V17's code/build matrix exists, but green remote gates and branch protection
 remain unverified. GitHub PR refresh failed at the API connection, so no unmerged
@@ -1771,6 +1771,93 @@ sensitivity; save metadata and per-tick continuation/replay equality in both mod
 logged mode changes; preference parsing/persistence and UI toggles; initial
 lockstep mismatch rejection. Existing default AI economy smoke coverage remains.
 
+## Windows package and laptop readiness (2026-11-01)
+
+**Construction evidence, no simulation parity claim:** Windows release build and
+fresh-runner zip smoke jobs target `windows-latest`. The package stages the
+independent executable, allowlisted SDL2/MSVC runtime DLLs, public rules, GPL
+license, dependency notices, SDL2 source and installation README. The smoke job
+removes compiler/vcpkg directories from PATH. Windows DLL execution and release
+publication still require an actual successful workflow run; this Linux worktree
+cannot establish those results.
+
+Both application modes accept literal `game=DIR` settings, including CRLF,
+backslashes, drive letters and spaces. Precedence is CLI, nonempty `AZTEC_GAME`,
+settings, then `./game`. Normal slot saves, campaign progress and modification
+preferences use SDL's per-user application directory; `AZTEC_USER_DIR` selects an
+absolute isolated profile. No automatic migration from installation-local saves
+occurs. Explicit headless output paths and `--modifications-file` remain overrides.
+Fullscreen requests check SDL's result before changing the tracked display mode.
+The mission frame limit now also works without requesting a screenshot.
+
+**Local synthetic evidence:** Release build and full CTest pass (34 passed;
+five private-data checks and the restricted network-process check skipped).
+Pre-commit passes. A relocated local package passes under `unshare -rn` with dummy
+SDL video/audio: repeated victory at tick 10, mixed-case resource/mission names,
+spaces in paths, settings/environment/CLI selection and precedence, per-user
+slot save/load, bounded exclusive/borderless startup, and malformed/missing input
+errors. Synthetic Windows staging preserves the required files and rejects an
+unallowlisted runtime path before creating a package. No Windows DLL was executed
+in that staging check. The portability test checks SDL's native preference path,
+literal invented Windows settings and successful dummy audio-device startup,
+plus graceful failure with an unavailable audio driver. Cursor/focus/Alt/F9 and
+fullscreen state/flag checks run through SDL's dummy driver, which can promote
+exclusive requests to desktop fullscreen when no matching display mode exists.
+
+**Remaining acceptance:** native Windows path and DLL loading need CI results.
+Physical cursor confinement, Alt+Tab, DPI scaling, fullscreen driver transitions,
+sleep/resume and speakers/headphones need Windows laptop testing. Dummy drivers
+and synthetic replay do not establish hardware behavior or reference-game parity.
+No task dependency is needed for these setup changes; full campaign acceptance
+and reference comparisons remain separate outstanding work.
+## Campaign driver fixes (2026-11-01, partial task 50)
+
+**Engine construction / synthetic evidence:** headless scripted move and
+attack-move selection/validation now accept flying units as well as ground
+mobiles, matching the ordinary command handler. Previously flying IDs were
+rejected or omitted. Automatic exercising now filters hostile destinations using
+the existing weapon result's known getters and positive known damage, so an
+ineligible nearby target cannot divert a unit from an eligible one. No combat,
+AI or script rule was changed. Both regressions failed before their fixes;
+synthetic checks cover flight orders, exact save continuation and automatic
+versus explicit eligible-target orders including rolling tick digests.
+
+**Private evidence:** all 15 missions were run twice with computer AI and private
+regroup orders under `unshare -rn` with both SDL dummy drivers and private game
+copies. Final 24-tick pairs matched throughout; fourteen fresh-process tick-12
+save continuations matched. Mission 11 lost at tick 1 before saving. No crashes,
+wall timeouts or static unreachable findings occurred in this short sweep; no
+mission won. Mission 4 also reproduced flying-ID refusal with the baseline and
+movement with the fixed executable. Mission 7/9 orders address computer troops
+because the current loader places no player mobile units; transport/cargo
+behavior remains unexercised. See the [current campaign matrix](playthrough.md#campaign-fix-iteration-2026-11-01-partial)
+for per-mission action execution counts and longer bounded runs. Raw plans,
+hashes, saves, executable/rules snapshots and diagnostics remain under ignored
+`work/parity/`.
+
+The final 1,200-tick sweep with tick-600 saves and a 20-second process limit
+produced paired defeats in missions 1, 3, 4, 10 and 11; paired tick limits in
+2, 5, 6, 7 and 9; and paired wall timeouts in 8, 12, 13, 14 and 15. All ten
+completed pairs matched throughout; six save continuations matched. No crashes
+or victories occurred. Completed reports had no static unreachable findings or
+stalled movement IDs; the five wall-limited pairs have unverified hash/save
+evidence. These are coverage-driver observations, not validated player routes
+or proof of hangs. The full per-mission table is in playthrough.md.
+
+**Dependencies / limits:** the initial mission-11 protected-group check refers to
+town scenario membership, which the current team-tactic lookup does not resolve.
+The complete town/tactic, ownership/capture and transport models remain missing;
+no speculative alias or action no-op was introduced. Required transport action
+sites and mission-6 missing-trigger warnings remain as previously inventoried.
+Winning routes, general objective reachability and interactive progression remain
+unverified. A reference recording control again failed at namespace loopback
+setup before launch; no reference parity labels or V19 acceptance were promoted.
+
+**Validation:** Release build and full CTest passed, with 34 passed and six skipped
+(five default private-data checks and restricted UDP processes). Separate
+private-copy dummy-SDL namespace checks passed formats, engine integration and
+campaign script inventory. The new regressions are synthetic and require no game
+data. All pre-commit hooks and `git diff --check` passed.
 ## L1/L2 rule iteration (2026-11-01, no new reference evidence)
 
 The initial run attempted all 19 existing L1 candidates and nine recorded L2

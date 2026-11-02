@@ -96,11 +96,13 @@ void drive(GameSim& sim, const World& w) {
   for (const Object& o : w.objects) {
     if (!o.alive || o.removed || o.side != side || o.type < 0 || o.order != uint8_t(Order::Idle)) continue;
     const auto& rules = sim.rules().type(o.type);
-    if (!rules.mobile || !rules.armed) continue;
+    if (!(rules.mobile || rules.flier) || !rules.armed) continue;
     const Object* target = nullptr;
     int64_t best = std::numeric_limits<int64_t>::max();
     for (const Object& enemy : w.objects) {
       if (!enemy.alive || enemy.removed || enemy.type < 0 || !w.hostile(side, enemy.side)) continue;
+      const auto shot = sim.rules().attack(o.type, enemy.type);
+      if (!shot.damage_known || !shot.getters_known || shot.damage <= 0) continue;
       int64_t dx = (enemy.cur_x >> 8) - (o.cur_x >> 8), dy = (enemy.cur_y >> 8) - (o.cur_y >> 8);
       int64_t dist = dx * dx + dy * dy;
       if (dist < best) { best = dist; target = &enemy; }
@@ -175,11 +177,12 @@ void audit(const Script& script, const World& w, Report& report) {
 int run_headless(int argc, char** argv) {
   Report report;
   std::string game = "game", rules_dir = default_rules_dir(), orders_path, output, observations_path, hashes_path, save_path, resume_path;
-  if (const char* value = std::getenv("AZTEC_GAME")) game = value;
   int max_ticks = 43200, interval = 120, save_tick = 0;
   bool auto_orders = true;
   Modifications modifications;
   try {
+    std::string settings_error;
+    if (!configured_game_dir(argc, argv, game, settings_error)) throw std::runtime_error(settings_error);
     bool mission_given = false;
     for (int i = 1; i < argc; ++i) {
       std::string a = argv[i];
@@ -188,6 +191,7 @@ int run_headless(int argc, char** argv) {
         return argv[i];
       };
       if (a == "--game") game = value();
+      else if (a == "--settings") { value(); }
       else if (a == "--mod") { if (!modifications.set(value())) throw std::runtime_error("invalid modification"); }
       else if (a == "--rules-dir") rules_dir = value();
       else if (a == "--max-ticks") max_ticks = number(value(), 1);
@@ -201,7 +205,7 @@ int run_headless(int argc, char** argv) {
       else if (a == "--resume") resume_path = value();
       else if (a == "--no-auto-orders") auto_orders = false;
       else if (a == "--help") {
-        std::puts("usage: aztec_engine --headless --game DIR --rules-dir DIR [--mod parallel_construction=on|off] [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE] [--tick-hashes FILE] [--save-at N --save FILE] [--resume FILE] MISSION");
+        std::puts("usage: aztec_engine --headless [--settings FILE] --game DIR --rules-dir DIR [--mod parallel_construction=on|off] [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE] [--tick-hashes FILE] [--save-at N --save FILE] [--resume FILE] MISSION");
         return 0;
       } else if (a.empty() || a[0] == '-' || mission_given) throw std::runtime_error("unexpected argument: " + a);
       else { report.mission = a; mission_given = true; }
@@ -306,11 +310,13 @@ int run_headless(int argc, char** argv) {
       while (next < orders.size() && orders[next].tick == tick) {
         Command command = orders[next].command;
         if (orders[next].all) for (const auto& o : world.objects)
-          if (o.alive && !o.removed && o.side == command.side && o.type >= 0 && rules->type(o.type).mobile) command.ids.push_back(o.id);
+          if (o.alive && !o.removed && o.side == command.side && o.type >= 0 &&
+              (rules->type(o.type).mobile || rules->type(o.type).flier)) command.ids.push_back(o.id);
         if (command.ids.empty()) throw std::runtime_error("order has no live mobile objects at tick " + std::to_string(tick));
         for (auto id : command.ids) {
           const auto* o = world.find(id);
-          if (!o || !o->alive || o->removed || o->side != command.side || o->type < 0 || !rules->type(o->type).mobile)
+          if (!o || !o->alive || o->removed || o->side != command.side || o->type < 0 ||
+              !(rules->type(o->type).mobile || rules->type(o->type).flier))
             throw std::runtime_error("invalid order object at tick " + std::to_string(tick));
         }
         sim.submit(std::move(command));

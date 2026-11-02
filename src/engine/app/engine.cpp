@@ -348,11 +348,11 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
           sd.mission = world.mission.file_name; sd.content_hash = session_content; sd.tick = game->tick_count(); sd.hash = game->state_hash(world);
           sd.script_hash = file_hash(data.map_file(world.mission.file_name, "scn"));
           sd.cam_x = cam.x; sd.cam_y = cam.y; sd.cam_zoom = cam.zoom; sd.log = game->log(); sd.modifications = game->initial_modifications();
-          std::string dir = data.root() + "/Saves";
+          std::string dir = user_file("Saves");
           std::error_code sec;
           fs::create_directories(dir, sec);
           uint64_t current_content = 0;
-          bool saved = save_content_ok && current_save_content(data, world, spec, loaded_rules_dir, current_content) &&
+          bool saved = !sec && save_content_ok && current_save_content(data, world, spec, loaded_rules_dir, current_content) &&
               current_content == session_content && write_save(dir + "/engine_slot1.azs", sd);
           std::printf(saved ? "saved game (tick %llu)\n" : "save failed (tick %llu)\n", (unsigned long long)sd.tick);
           notify(saved ? "Game saved" : "Save failed");
@@ -362,7 +362,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
           notify("Loading an engine replay into an imported world is unsupported");
         if (game && do_load && !world.original_save) {
           SaveData sd;
-          std::string path = data.root() + "/Saves/engine_slot1.azs";
+          std::string path = user_file("Saves/engine_slot1.azs");
           World fresh;
           std::string lerr = "Invalid or incompatible save";
           std::unique_ptr<GameSim> ns;
@@ -437,13 +437,13 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         end_shown = true; paused = true; pause.open = false; cmdui.cancel_mode();
         consume_input();
         if (world.outcome == kVictory && o.menu_session && !pt && !world.original_save && campaign_number(world.mission.file_name)) {
-          const std::string path = data.root() + "/Saves/engine_campaign.txt";
+          const std::string path = user_file("Saves/engine_campaign.txt");
           CampaignProgress progress;
           std::error_code ec;
           const bool exists = fs::exists(path, ec);
           const bool readable = !ec && (!exists || progress.load(path));
           progress.record(world.mission.file_name, true);
-          fs::create_directories(data.root() + "/Saves", ec);
+          fs::create_directories(user_file("Saves"), ec);
           if (!readable || ec || !progress.save(path)) notify("Campaign progress could not be saved");
         }
       }
@@ -598,9 +598,11 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         pending_shot.clear();
       }
       frame++;
-      if (!o.screenshot.empty() && frame >= o.frames) {
-        if (!save_screenshot(win.renderer(), o.screenshot)) { std::fprintf(stderr, "screenshot failed\n"); rc = 1; }
-        else std::printf("saved %s (%dx%d)\n", o.screenshot.c_str(), ow, oh);
+      if (o.frames > 0 && frame >= o.frames) {
+        if (!o.screenshot.empty()) {
+          if (!save_screenshot(win.renderer(), o.screenshot)) { std::fprintf(stderr, "screenshot failed\n"); rc = 1; }
+          else std::printf("saved %s (%dx%d)\n", o.screenshot.c_str(), ow, oh);
+        }
         break;
       }
       SDL_RenderPresent(win.renderer());
