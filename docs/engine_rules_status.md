@@ -1743,6 +1743,54 @@ sensitivity; save metadata and per-tick continuation/replay equality in both mod
 logged mode changes; preference parsing/persistence and UI toggles; initial
 lockstep mismatch rejection. Existing default AI economy smoke coverage remains.
 
+## Campaign driver fixes (2026-11-01, partial task 50)
+
+**Engine construction / synthetic evidence:** headless scripted move and
+attack-move selection/validation now accept flying units as well as ground
+mobiles, matching the ordinary command handler. Previously flying IDs were
+rejected or omitted. Automatic exercising now filters hostile destinations using
+the existing weapon result's known getters and positive known damage, so an
+ineligible nearby target cannot divert a unit from an eligible one. No combat,
+AI or script rule was changed. Both regressions failed before their fixes;
+synthetic checks cover flight orders, exact save continuation and automatic
+versus explicit eligible-target orders including rolling tick digests.
+
+**Private evidence:** all 15 missions were run twice with computer AI and private
+regroup orders under `unshare -rn` with both SDL dummy drivers and private game
+copies. Final 24-tick pairs matched throughout; fourteen fresh-process tick-12
+save continuations matched. Mission 11 lost at tick 1 before saving. No crashes,
+wall timeouts or static unreachable findings occurred in this short sweep; no
+mission won. Mission 4 also reproduced flying-ID refusal with the baseline and
+movement with the fixed executable. Mission 7/9 orders address computer troops
+because the current loader places no player mobile units; transport/cargo
+behavior remains unexercised. See the [current campaign matrix](playthrough.md#campaign-fix-iteration-2026-11-01-partial)
+for per-mission action execution counts and longer bounded runs. Raw plans,
+hashes, saves, executable/rules snapshots and diagnostics remain under ignored
+`work/parity/`.
+
+The final 1,200-tick sweep with tick-600 saves and a 20-second process limit
+produced paired defeats in missions 1, 3, 4, 10 and 11; paired tick limits in
+2, 5, 6, 7 and 9; and paired wall timeouts in 8, 12, 13, 14 and 15. All ten
+completed pairs matched throughout; six save continuations matched. No crashes
+or victories occurred. Completed reports had no static unreachable findings or
+stalled movement IDs; the five wall-limited pairs have unverified hash/save
+evidence. These are coverage-driver observations, not validated player routes
+or proof of hangs. The full per-mission table is in playthrough.md.
+
+**Dependencies / limits:** the initial mission-11 protected-group check refers to
+town scenario membership, which the current team-tactic lookup does not resolve.
+The complete town/tactic, ownership/capture and transport models remain missing;
+no speculative alias or action no-op was introduced. Required transport action
+sites and mission-6 missing-trigger warnings remain as previously inventoried.
+Winning routes, general objective reachability and interactive progression remain
+unverified. A reference recording control again failed at namespace loopback
+setup before launch; no reference parity labels or V19 acceptance were promoted.
+
+**Validation:** Release build and full CTest passed, with 34 passed and six skipped
+(five default private-data checks and restricted UDP processes). Separate
+private-copy dummy-SDL namespace checks passed formats, engine integration and
+campaign script inventory. The new regressions are synthetic and require no game
+data. All pre-commit hooks and `git diff --check` passed.
 ## L1/L2 rule iteration (2026-11-01, no new reference evidence)
 
 The initial run attempted all 19 existing L1 candidates and nine recorded L2

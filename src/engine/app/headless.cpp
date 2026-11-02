@@ -96,11 +96,13 @@ void drive(GameSim& sim, const World& w) {
   for (const Object& o : w.objects) {
     if (!o.alive || o.removed || o.side != side || o.type < 0 || o.order != uint8_t(Order::Idle)) continue;
     const auto& rules = sim.rules().type(o.type);
-    if (!rules.mobile || !rules.armed) continue;
+    if (!(rules.mobile || rules.flier) || !rules.armed) continue;
     const Object* target = nullptr;
     int64_t best = std::numeric_limits<int64_t>::max();
     for (const Object& enemy : w.objects) {
       if (!enemy.alive || enemy.removed || enemy.type < 0 || !w.hostile(side, enemy.side)) continue;
+      const auto shot = sim.rules().attack(o.type, enemy.type);
+      if (!shot.damage_known || !shot.getters_known || shot.damage <= 0) continue;
       int64_t dx = (enemy.cur_x >> 8) - (o.cur_x >> 8), dy = (enemy.cur_y >> 8) - (o.cur_y >> 8);
       int64_t dist = dx * dx + dy * dy;
       if (dist < best) { best = dist; target = &enemy; }
@@ -306,11 +308,13 @@ int run_headless(int argc, char** argv) {
       while (next < orders.size() && orders[next].tick == tick) {
         Command command = orders[next].command;
         if (orders[next].all) for (const auto& o : world.objects)
-          if (o.alive && !o.removed && o.side == command.side && o.type >= 0 && rules->type(o.type).mobile) command.ids.push_back(o.id);
+          if (o.alive && !o.removed && o.side == command.side && o.type >= 0 &&
+              (rules->type(o.type).mobile || rules->type(o.type).flier)) command.ids.push_back(o.id);
         if (command.ids.empty()) throw std::runtime_error("order has no live mobile objects at tick " + std::to_string(tick));
         for (auto id : command.ids) {
           const auto* o = world.find(id);
-          if (!o || !o->alive || o->removed || o->side != command.side || o->type < 0 || !rules->type(o->type).mobile)
+          if (!o || !o->alive || o->removed || o->side != command.side || o->type < 0 ||
+              !(rules->type(o->type).mobile || rules->type(o->type).flier))
             throw std::runtime_error("invalid order object at tick " + std::to_string(tick));
         }
         sim.submit(std::move(command));

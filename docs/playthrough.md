@@ -62,7 +62,8 @@ cannot replace that evidence.
 The simulation retains the existing computer-player AI and mission trigger/path
 orders. Every 120 ticks, the default exercising policy purchases the first
 affordable mobile item for the human side when its queue is empty, and sends
-idle armed mobile units toward their nearest live hostile object. Distance ties
+idle armed mobile units toward their nearest live hostile object for which the
+weapon has known getters and positive known damage. Distance ties
 use stable object order. This policy uses engine state, including unseen objects;
 it is a coverage driver rather than a model of a human player. It does not grant
 money, teleport units, force outcomes or implement mission-specific solutions.
@@ -79,8 +80,8 @@ pass `--orders-dir work/orders`. Each optional `mission_N.orders` contains:
 ```
 
 Ticks are one-based. Commands are `move` and `attack-move`; omitted IDs select
-all live mobile objects belonging to that side at execution time. Explicit IDs
-are the engine's stable one-based IDs. Coordinates must be inside the loaded
+all live ground or flying mobile objects belonging to that side at execution
+time. Explicit IDs are the engine's stable one-based IDs. Coordinates must be inside the loaded
 terrain; side indices are 0 through 7. Orders are stably sorted by tick, submitted
 after automatic orders, and use the normal simulation command queue. Invalid
 syntax, an order beyond the tick budget, an empty selection, or invalid/dead/
@@ -248,3 +249,104 @@ first-difference detection, truncated/gapped transcripts, incompatible script
 refusal, missing coverage and scenario validation. The synthetic retry fixture
 changes its script between attempts; it tests harness bookkeeping, not the real
 Retry UI or a playable same-input recovery route.
+
+## Campaign fix iteration (2026-11-01, partial)
+
+Two headless-driver defects have synthetic regressions. Scripted movement now
+accepts flying units for both implicit selection and explicit IDs, matching the
+ordinary command handler. Previously, an explicit flying ID failed validation,
+and implicit selection omitted it. The automatic exercising policy now excludes
+targets without known weapon getters and positive known damage. Previously, a
+nearby flying scout could divert infantry from a ground target it could damage.
+These are driver corrections; simulation combat, AI and script semantics are
+unchanged. Existing flying types are unarmed; no flying combat pursuit behavior
+has been added or verified.
+
+Both regressions failed before their corresponding fixes. The synthetic flight
+fixture covers move/attack-move orders, implicit/explicit selection, changed
+simulation state and exact fresh-process save continuation. The targeting
+fixture compares automatic orders with an explicit order toward an eligible
+target. It checks both the terminal hash and rolling tick digest.
+
+The final private smoke sweep used initial regroup orders alongside the automatic
+policy and computer AI, 24 ticks, a tick-12 save and a 20-second process limit.
+All 15 pairs matched every tick; fourteen save continuations matched. Mission 11
+ended in defeat at tick 1 before saving. There were no crashes, wall timeouts,
+static unreachable-objective findings or stalled movement reports in this sweep.
+Every mission still had unmet victory conditions at termination. These narrow
+diagnostics do not establish objective reachability or absence of later hangs.
+
+| Mission | 24-tick outcome | Paired hashes | Save continuation | Unsupported sites / executions per run |
+| --- | --- | --- | --- | --- |
+| 1 | Tick limit | Equal | Equal | 0 / 0 |
+| 2 | Tick limit | Equal | Equal | 4 / 0 |
+| 3 | Tick limit | Equal | Equal | 0 / 0 |
+| 4 | Tick limit | Equal | Equal | 0 / 0 |
+| 5 | Tick limit | Equal | Equal | 0 / 0 |
+| 6 | Tick limit | Equal | Equal | 0 / 0; two missing-trigger warnings |
+| 7 | Tick limit | Equal | Equal | 5 / 5 |
+| 8 | Tick limit | Equal | Equal | 0 / 0 |
+| 9 | Tick limit | Equal | Equal | 5 / 4 |
+| 10 | Tick limit | Equal | Equal | 0 / 0 |
+| 11 | Defeat at tick 1 | Equal | Not reached | 0 / 0 |
+| 12 | Tick limit | Equal | Equal | 0 / 0 |
+| 13 | Tick limit | Equal | Equal | 0 / 0 |
+| 14 | Tick limit | Equal | Equal | 0 / 0 |
+| 15 | Tick limit | Equal | Equal | 5 / 0 |
+
+The final longer sweep used the same orders, 1,200 ticks (100 simulated seconds),
+a tick-600 save and a 20-second process limit. Both runs produced the listed
+outcome in every row. There were no crashes or victories. All ten completed
+pairs matched every tick; six matched save continuations. The five wall-limited
+pairs remain unverified, and exceeding this budget does not prove a hang.
+Completed reports had no static unreachable findings or stalled movement IDs;
+unmet victory conditions remain investigation leads, not proof of impossibility.
+
+| Mission | Longer-run outcome / final tick | Paired hashes | Save continuation |
+| --- | --- | --- | --- |
+| 1 | Defeat / 316 | Equal | Not reached |
+| 2 | Tick limit / 1200 | Equal | Equal |
+| 3 | Defeat / 968 | Equal | Equal |
+| 4 | Defeat / 294 | Equal | Not reached |
+| 5 | Tick limit / 1200 | Equal | Equal |
+| 6 | Tick limit / 1200 | Equal | Equal |
+| 7 | Tick limit / 1200 | Equal | Equal |
+| 8 | Wall timeout | Unverified | Unverified |
+| 9 | Tick limit / 1200 | Equal | Equal |
+| 10 | Defeat / 586 | Equal | Not reached |
+| 11 | Defeat / 1 | Equal | Not reached |
+| 12 | Wall timeout | Unverified | Unverified |
+| 13 | Wall timeout | Unverified | Unverified |
+| 14 | Wall timeout | Unverified | Unverified |
+| 15 | Wall timeout | Unverified | Unverified |
+
+Mission 4's orders explicitly exercise a computer flying unit. A separate
+24-tick observation probe confirms movement; the same order fails with the
+baseline executable. Missions 7 and 9 have no placed player mobile units in the
+current loader, so their initial regroup orders address computer units. The
+player policy remains active, but this does not exercise boarding, cargo or a
+player completion route. Other initial regroup orders address player units.
+Order plans, copied executable/rules, transcripts, saves and matrices remain in
+ignored `work/parity/campaign-final-smoke/` and `work/parity/campaign-final/`.
+Both campaigns require victory and intentionally return failure without one.
+
+Mission 11's initial data puts the protected scenario group in a town, while
+`ScriptRunner::tactic_members` currently matches explicit object tactic IDs;
+town members have no such IDs. This explains its initial false `valid` condition.
+Correct town/tactic lookup, ownership transfer and capture behavior still need
+the incomplete tactic model and reference evidence. Assigning every town member
+a team tactic would also change autonomous AI eligibility; no such workaround
+was applied. Transport actions/cargo in missions 2, 7, 9 and 15 remain dependent
+on the incomplete movement/transport and script work. Winning routes, mission
+progression and interactive acceptance remain pending for all 15 missions.
+
+An isolated reference recording control failed at loopback setup with a netlink
+permission error before launching the runtime. No recording or replay evidence
+was produced; logs remain in `work/parity/campaign-reference/`. No reference
+rule or parity status is promoted by these engine self-comparisons.
+
+Validation: Release build and the full CTest suite passed (34 passed, six skipped:
+five private-data entries and restricted UDP processes). Separate private-copy,
+dummy-SDL checks under `unshare -rn` passed formats, engine integration and the
+campaign script inventory. Synthetic regressions require no game installation.
+All pre-commit hooks and `git diff --check` also passed.
