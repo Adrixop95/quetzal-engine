@@ -19,7 +19,7 @@ class Window {
  public:
   ~Window();
   bool create(const WindowOptions& o);
-  void set_mode(DisplayMode m);
+  bool set_mode(DisplayMode m);
   DisplayMode mode() const { return mode_; }
   void cycle_borderless();    // F11
   void toggle_fullscreen();   // Alt+Enter

@@ -424,6 +424,24 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
   return true;
 }
 
+CommandButtonState CommandsUi::button_state(PanelAction action, const World& w) const {
+  if (!sim_) return {};
+  const bool enabled = action_enabled(action, w, &sim_->rules());
+  bool selected = (action == PanelAction::Move && mode_ == TargetMode::Move) ||
+                  (action == PanelAction::Attack && mode_ == TargetMode::Attack);
+  if (action == PanelAction::Repair || action == PanelAction::Destroy) {
+    for (uint32_t id : w.selection.ids) {
+      const Object* o = w.find(id);
+      if (!o || o->side != w.local_side || !o->alive || o->removed) continue;
+      for (const TownState& town : w.town_state)
+        if (town.index == o->town && town.side == o->side)
+          selected |= action == PanelAction::Repair ? o->town_hall && town.repair_mode != RepairMode::Off :
+              std::find(town.marked.begin(), town.marked.end(), id) != town.marked.end();
+    }
+  }
+  return {enabled && selected ? int(ui_frame_ % 12) : 0, enabled, enabled && selected};
+}
+
 std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Font& font, const StrBase& strings, const World& w,
                                   const SDL_Rect& panel, int sc, int mx, int my) const {
   auto l = layout(panel, sc);
@@ -450,21 +468,10 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
   } else font.draw(r, l.summary.x, l.summary.y + 12 * sc, "No selection", ts, {210, 200, 180, 255});
   if (!sim_) return {};
   for (size_t i = 0; i < l.commands.size(); i++) {
-    bool enabled = action_enabled(PanelAction(i), w, &sim_->rules()), hover = contains(l.commands[i], mx, my);
+    const auto state = button_state(PanelAction(i), w);
+    bool enabled = state.enabled, hover = contains(l.commands[i], mx, my);
     SpriteKey k; k.archive = ArchiveId::Common; k.index = kButtons[i]; k.shade = 0;
-    bool selected = (i == 0 && mode_ == TargetMode::Move) || (i == 1 && mode_ == TargetMode::Attack);
-    if (i == 3 || i == 5) {
-      for (uint32_t id : w.selection.ids) {
-        const Object* o = w.find(id);
-        if (!o || o->side != w.local_side || !o->alive || o->removed) continue;
-        for (const TownState& town : w.town_state)
-          if (town.index == o->town && town.side == o->side)
-            selected |= i == 3 ? o->town_hall && town.repair_mode != RepairMode::Off :
-                std::find(town.marked.begin(), town.marked.end(), id) != town.marked.end();
-      }
-    }
-    const int frame = enabled && selected ? int(ui_frame_ % 12) : 0;
-    if (!blit(r, store, k, l.commands[i], frame, enabled)) font.draw(r, l.commands[i].x, l.commands[i].y, kLabels[i], ts, {220, 210, 180, 255});
+    if (!blit(r, store, k, l.commands[i], state.frame, enabled)) font.draw(r, l.commands[i].x, l.commands[i].y, kLabels[i], ts, {220, 210, 180, 255});
     if (hover) {
       tip = kLabels[i];
       const char* action = i == 3 ? "Repair" : i == 4 ? "Garrison" : i == 5 ? "Destroy" : nullptr;

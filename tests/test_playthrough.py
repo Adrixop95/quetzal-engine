@@ -91,6 +91,39 @@ class PlaythroughTests(unittest.TestCase):
         self.assertTrue('exceeds run limit' in self.run_engine('--orders', str(orders), code=1)['error'])
         self.assertEqual(self.run_engine('--max-ticks', '0', code=1)['status'], 'error')
 
+    def test_flying_orders_and_save_continuation(self):
+        mission = self.maps / 'Mission_1.mp'
+        mission.write_text(mission.read_text().replace('Unit0=1,1,3,100', 'Unit0=1,1,7,100'))
+        orders = Path(self.temp.name) / 'flight.orders'
+        first = Path(self.temp.name) / 'first.txt'
+        second = Path(self.temp.name) / 'second.txt'
+        save = Path(self.temp.name) / 'flight.azs'
+        for selection in ('', ' 1'):
+            with self.subTest(selection=selection):
+                orders.write_text(f'1 move 0 5 2{selection}\n7 attack-move 0 6 3{selection}\n')
+                route = ('--no-auto-orders', '--orders', str(orders))
+                baseline = self.run_engine(*route, '--tick-hashes', str(first),
+                                           '--save-at', '5', '--save', str(save))
+                self.assertEqual(baseline['commands'], 2)
+                resumed = self.run_engine(*route, '--tick-hashes', str(second), '--resume', str(save))
+                runs = [dict(returncode=0, engine=r, tick_hashes=str(p))
+                        for r, p in ((baseline, first), (resumed, second))]
+                self.assertTrue(harness.paired_hashes(*runs, start=5)['equal'])
+                self.assertNotEqual(baseline['state_hash'], self.run_engine('--no-auto-orders')['state_hash'])
+
+    def test_automatic_orders_skip_ineligible_targets(self):
+        mission = self.maps / 'Mission_1.mp'
+        mission.write_text(mission.read_text()
+                           .replace('Teams=2', 'Teams=3')
+                           .replace('Unit0=1,1,3,100', 'Unit0=1,1,0,100')
+                           .replace('Unit0=6,6,3,100', 'Unit0=2,1,7,100') +
+                           '[Team2]\nSide=1\nUnits=1\nUnit0=6,6,3,100\n')
+        orders = Path(self.temp.name) / 'eligible.orders'
+        orders.write_text('1 attack-move 0 6 6 1\n')
+        expected = self.run_engine('--no-auto-orders', '--orders', str(orders))
+        # The nearer flying scout cannot be damaged by this infantry weapon.
+        self.assertEqual(self.run_engine(), expected)
+
     def test_discovery_and_private_copy(self):
         (self.maps / 'custom.mp').write_text('not a campaign')
         (self.maps / 'mission_10.MP').write_text('invented mission')

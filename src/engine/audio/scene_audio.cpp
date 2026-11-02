@@ -1,4 +1,5 @@
 #include "engine/audio/scene_audio.hpp"
+#include <algorithm>
 #include "engine/world/object_state.hpp"
 #include "engine/world/type_info.hpp"
 
@@ -23,7 +24,10 @@ void emit_scene_audio(const World& world, const AnimSpriteProvider& provider,
     const auto trigger = type && type->is_structure() ? AudioEvent::Trigger::Building :
         (o.anim_state == int(data::AnimState::Attack) || o.anim_state == int(data::AnimState::Die)
          ? AudioEvent::Trigger::Combat : AudioEvent::Trigger::Ambient);
-    const auto frames = provider.sound_frames(st);
+    // Match the renderer: simulation-owned fire replaces the fallback decoration.
+    const bool simulated_fire = o.alive && std::any_of(world.effects.begin(), world.effects.end(),
+        [&](const Effect& e) { return e.loop && e.source == o.id; });
+    const auto frames = provider.sound_frames(st, !simulated_fire);
     for (size_t i = 0; i < frames.size(); ++i) {
       audio.event_trigger = i > 0 && st.attack_tick >= 0 && trigger == AudioEvent::Trigger::Ambient
           ? AudioEvent::Trigger::Combat : trigger;

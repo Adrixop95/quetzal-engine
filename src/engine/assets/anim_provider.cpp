@@ -91,14 +91,15 @@ data::SpriteRef AnimSpriteProvider::frame_for(const ObjectState& st) const {
   return r;
 }
 
-std::vector<data::SpriteRef> AnimSpriteProvider::sound_frames(const ObjectState& st) const {
+std::vector<data::SpriteRef> AnimSpriteProvider::sound_frames(const ObjectState& st, bool include_decorations) const {
   auto body = frame_for(st);
   // Construction seeks an HP frame rather than entering a timed sequence.
   if (st.progress < 1000) body.sound_entry = false;
   std::vector<data::SpriteRef> frames{body};
   const int kind = kind_of(st);
-  if (kind < 0 || state_of(st) == data::AnimState::Die || st.progress < 1000) return frames;
-  const int second = db_.anim_id(st.type_id, 1);
+  if (kind < 0) return frames;
+  const int second = state_of(st) == data::AnimState::Die || st.progress < 1000
+      ? 0 : db_.anim_id(st.type_id, 1);
   if (second) {
     const bool firing = state_of(st) == data::AnimState::Attack || (st.attack_tick >= 0 &&
         (state_of(st) == data::AnimState::Idle || state_of(st) == data::AnimState::Move));
@@ -107,6 +108,8 @@ std::vector<data::SpriteRef> AnimSpriteProvider::sound_frames(const ObjectState&
     frames.push_back(data::SpriteDb::sprite_for_sequence(db_.anim(second), seq,
         firing && st.attack_tick >= 0 ? st.attack_tick : st.anim_tick));
   }
+  if (include_decorations)
+    for (const auto& decoration : decorations(st)) frames.push_back(decoration.frame);
   return frames;
 }
 
@@ -176,23 +179,12 @@ std::vector<SpriteDraw> AnimSpriteProvider::parts(const ObjectState& st) const {
   return result;
 }
 
-std::vector<SpriteItem> AnimSpriteProvider::items(const ObjectState& st) const {
-  std::vector<SpriteItem> result{{0, 0, height(st), parts(st), light_mask(st)}};
+std::vector<AnimSpriteProvider::Decoration> AnimSpriteProvider::decorations(const ObjectState& st) const {
+  std::vector<Decoration> result;
   auto decoration = [&](int anim, int slot, int h, int dy, bool loop) {
     const auto frame = db_.anim(anim).at_tick(slot, int64_t(st.anim_tick), loop);
-    if (!frame.valid()) return;
-    SpriteItem item;
-    item.height = h; item.dy = dy; item.light = frame.light;
-    for (bool shadow : {true, false}) {
-      SpriteDraw d;
-      d.key.group = shadow ? data::kShadowGroup : data::kBodyGroup;
-      d.key.index = uint32_t(frame.sprite); d.key.team = uint8_t(st.side_color & 7);
-      d.key.shadow = shadow;
-      if (shadow) d.key.shade = data::kShadowShade;
-      d.dy = shadow ? 0 : -h;
-      item.parts.push_back(d);
-    }
-    result.push_back(item);
+    // Preserve audio channel positions when an earlier decoration finishes.
+    result.push_back({frame, h, dy});
   };
   const int kind = kind_of(st);
   if (state_of(st) == data::AnimState::Die) {
@@ -204,6 +196,27 @@ std::vector<SpriteItem> AnimSpriteProvider::items(const ObjectState& st) const {
   } else if ((kind == 2 || kind == 7) && st.progress >= 1000) {
     const int fire = data::damage_fire_anim(st.hp, st.max_hp);
     if (fire) decoration(fire, 0, 0, 1, true);
+  }
+  return result;
+}
+
+std::vector<SpriteItem> AnimSpriteProvider::items(const ObjectState& st) const {
+  std::vector<SpriteItem> result{{0, 0, height(st), parts(st), light_mask(st)}};
+  for (const auto& decoration : decorations(st)) {
+    const auto& frame = decoration.frame;
+    if (!frame.valid()) continue;
+    SpriteItem item;
+    item.height = decoration.height; item.dy = decoration.dy; item.light = frame.light;
+    for (bool shadow : {true, false}) {
+      SpriteDraw d;
+      d.key.group = shadow ? data::kShadowGroup : data::kBodyGroup;
+      d.key.index = uint32_t(frame.sprite); d.key.team = uint8_t(st.side_color & 7);
+      d.key.shadow = shadow;
+      if (shadow) d.key.shade = data::kShadowShade;
+      d.dy = shadow ? 0 : -decoration.height;
+      item.parts.push_back(d);
+    }
+    result.push_back(item);
   }
   return result;
 }

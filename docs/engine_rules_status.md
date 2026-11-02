@@ -762,8 +762,8 @@ actual archives before smoke testing. `tools/package_release.py` stages only the
 engine, tracked public rules metadata and package documentation/license. Linux
 bundling collects transitive shared dependencies, Debian copyright notices,
 common license texts, exact source versions and their source archives/patches;
-the host supplies glibc and drivers. Windows uses static SDL2/MSVC runtime linkage
-and carries SDL2 source and license. Publication also includes the exact public
+the host supplies glibc and drivers. Windows now bundles SDL2 and MSVC runtime
+DLLs and carries SDL2 source and dependency notices (see the readiness update below). Publication also includes the exact public
 engine source archive and checksums. No game files, oracle or lifted code are
 inputs. See [PACKAGES.md](PACKAGES.md) for external installation setup and the
 optional separately installed ffmpeg dependency.
@@ -784,7 +784,7 @@ missing rules. No private installation or reference process was used.
 
 **Pending dependency / release evidence:** local staging on Fedora uses host
 libraries and is explicitly marked non-distributable. Debian dependency/source
-collection, clean-runner Linux package execution, static Windows linkage and
+collection, clean-runner Linux package execution, Windows DLL loading and
 native Windows smoke execution require the release CI jobs; none was run here.
 V17's code/build matrix exists, but green remote gates and branch protection
 remain unverified. GitHub PR refresh failed at the API connection, so no unmerged
@@ -1265,8 +1265,9 @@ these synthetic checks or by the independent clone smoke run.
 submitted during the UI update. Scripted cursor animation now uses virtual
 frame time. Synthetic controls exercise hover, held press, release, Move target
 submission, Attack hotkey/cursor, attack-move and cancellation, with matching
-traces across repeated runs. The six command buttons currently retain sprite
-frame zero on press; the trace reports their actual hover/highlight/enabled state.
+traces across repeated runs. The six command buttons retain sprite frame zero
+on press; selected modes rotate through presentation frames. Drawing and tracing
+share frame/highlight/enabled state, with hover reported separately.
 Production/queue state normalization and reference input semantics remain open.
 
 The private-output-only comparator checks six independently supplied structural
@@ -1282,12 +1283,40 @@ runner are absent in this checkout. Matching scene comparison remains blocked;
 UI fidelity remains **P**, with no new M/V reference evidence. Only code,
 invented specifications and the aggregate
 [results table](parity_visual_ui_results.md) belong in the public repository.
+
+### L4/L5 iteration (2026-11-01, partial task 52)
+
+**Synthetic implementation evidence only:** new regressions reproduced edge dots
+overwriting all four minimap borders and UI traces reporting hover as highlight
+and selected buttons as frame zero. Minimap contents now respect the map bounds
+and the caller's clip, including disjoint clips, without changing the surrounding
+frame. Command drawing and tracing share presentation state, including town
+service/marked-building selection. Scripted tests check idle hover, Move rotation
+and target completion; raster checks cover minimap edge containment and clip
+restoration at four window/scale configurations with both font paths. These
+presentation changes do not add simulation state or alter replay hashes.
+
+The isolated private probe again captured a clone frame/trace, while reference
+network setup failed before launch. No matching scene, per-region mismatch rate
+or reference UI sequence was obtained. Task 42's shared runner, fixed-tick
+reference camera/UI observer and normalization remain missing dependencies.
+HUD, selection/resource panels, tooltips, fonts, cursor shapes, placement colors,
+construction, health bars and selection circles still require aligned reference
+measurements; no L4/L5 reference status is promoted. Captures and failure logs
+remain under ignored `work/parity/`.
+
+Validation: baseline and final Release builds passed with `AZTEC_GEN_DIR=`.
+The default CTest run passed 34 entries and skipped five private-data entries
+plus restricted UDP process creation. The separate private engine check and
+final clone frame/trace capture passed under dummy SDL inside `unshare -rn`
+using the private installation copy. Pre-commit and whitespace checks passed.
 ## L1 rule experiment preparation (2026-10-29, partial task 43)
 
 **Construction / synthetic evidence:** 19 P scenario specifications cover siege
 speed, damage/category controls, reload, range and projectile flight, mine build
 time/price/income, sight, regeneration and serial/two-town production. They use
-`docs/PARITY_TEST_PLAN.md` because task 42's harness is absent. Tasks 36/37/40
+`docs/PARITY_TEST_PLAN.md`; task 42's harness was absent during that attempt.
+The L0 harness now exists, but audited L1 adapters remain absent. Tasks 36/37/40
 are not present in this checkout either. `tools/parity_rules.py` generates
 private placement candidates and attempts isolated launch controls. Its separate
 comparison command reuses the strict normalized comparator, requires two equal
@@ -1569,6 +1598,36 @@ The [L6 method](parity.md#l6-audio-event-comparison-2026-10-29) records commands
 formats, exit codes and evidence limits. No original audio, IDs or trace values
 are public fixtures.
 
+### L6 iteration (2026-11-01, partial)
+
+Three synthetic regressions were reproduced before correction: missing provider
+fallback decoration requests, loop cleanup targeting the surviving decoration
+after an earlier one ends, and duplicate fire requests when a simulation effect
+owns the fire. Rendering and audio now share decoration selection, preserve
+channel positions, and apply the renderer's existing fire ownership suppression.
+No simulation state, RNG, commands or timing rules were changed.
+
+The application dispatcher exports an invented log that task 45's comparator
+matches across 37 requests, with exact ticks additionally required by the test.
+Tests cover construction silence, built/damaged objects, healing, visibility,
+distance, removal, held frames and independently ending death decorations.
+Loop source checks supplement the comparator's sound/kind/trigger contract.
+The 1,200-tick audio-independence test now includes damaged/dying objects and
+retains complete hash equality at every tick plus replay equality.
+
+The isolated reference capture failed before launch at namespace loopback setup;
+all seven live trigger-class comparisons remain unmeasured. Two isolated clone
+smokes completed using separate private game copies; audio enabled/disabled
+runs reached the same final simulation hash. The enabled run logged requests.
+These results establish engine integration only. Selection/order speech, UI cues,
+production/completion announcements, generic effect provenance and original music
+transition timing remain open. Task 45 tooling is available; audited reference
+identity/trigger/music observers and synchronized paired scenarios are still
+required. Private logs and before/after diffs remain in `work/parity/`.
+The final Release build, all 34 runnable CTest checks and cached pre-commit
+hooks passed; six private-input/network checks skipped. The task 45 normalize
+and compare CLI commands also passed the final invented capture.
+
 ## Task 47: placement, footprint grid and construction (2026-10-30)
 
 **Reproduce before fixing:** the unchanged Release build and pre-commit passed.
@@ -1753,3 +1812,114 @@ resume, cancellation and refunds; cash stalls and payment speed; queue hash
 sensitivity; save metadata and per-tick continuation/replay equality in both modes;
 logged mode changes; preference parsing/persistence and UI toggles; initial
 lockstep mismatch rejection. Existing default AI economy smoke coverage remains.
+
+## Windows package and laptop readiness (2026-11-01)
+
+**Construction evidence, no simulation parity claim:** Windows release build and
+fresh-runner zip smoke jobs target `windows-latest`. The package stages the
+independent executable, allowlisted SDL2/MSVC runtime DLLs, public rules, GPL
+license, dependency notices, SDL2 source and installation README. The smoke job
+removes compiler/vcpkg directories from PATH. Windows DLL execution and release
+publication still require an actual successful workflow run; this Linux worktree
+cannot establish those results.
+
+Both application modes accept literal `game=DIR` settings, including CRLF,
+backslashes, drive letters and spaces. Precedence is CLI, nonempty `AZTEC_GAME`,
+settings, then `./game`. Normal slot saves, campaign progress and modification
+preferences use SDL's per-user application directory; `AZTEC_USER_DIR` selects an
+absolute isolated profile. No automatic migration from installation-local saves
+occurs. Explicit headless output paths and `--modifications-file` remain overrides.
+Fullscreen requests check SDL's result before changing the tracked display mode.
+The mission frame limit now also works without requesting a screenshot.
+
+**Local synthetic evidence:** Release build and full CTest pass (34 passed;
+five private-data checks and the restricted network-process check skipped).
+Pre-commit passes. A relocated local package passes under `unshare -rn` with dummy
+SDL video/audio: repeated victory at tick 10, mixed-case resource/mission names,
+spaces in paths, settings/environment/CLI selection and precedence, per-user
+slot save/load, bounded exclusive/borderless startup, and malformed/missing input
+errors. Synthetic Windows staging preserves the required files and rejects an
+unallowlisted runtime path before creating a package. No Windows DLL was executed
+in that staging check. The portability test checks SDL's native preference path,
+literal invented Windows settings and successful dummy audio-device startup,
+plus graceful failure with an unavailable audio driver. Cursor/focus/Alt/F9 and
+fullscreen state/flag checks run through SDL's dummy driver, which can promote
+exclusive requests to desktop fullscreen when no matching display mode exists.
+
+**Remaining acceptance:** native Windows path and DLL loading need CI results.
+Physical cursor confinement, Alt+Tab, DPI scaling, fullscreen driver transitions,
+sleep/resume and speakers/headphones need Windows laptop testing. Dummy drivers
+and synthetic replay do not establish hardware behavior or reference-game parity.
+No task dependency is needed for these setup changes; full campaign acceptance
+and reference comparisons remain separate outstanding work.
+## Campaign driver fixes (2026-11-01, partial task 50)
+
+**Engine construction / synthetic evidence:** headless scripted move and
+attack-move selection/validation now accept flying units as well as ground
+mobiles, matching the ordinary command handler. Previously flying IDs were
+rejected or omitted. Automatic exercising now filters hostile destinations using
+the existing weapon result's known getters and positive known damage, so an
+ineligible nearby target cannot divert a unit from an eligible one. No combat,
+AI or script rule was changed. Both regressions failed before their fixes;
+synthetic checks cover flight orders, exact save continuation and automatic
+versus explicit eligible-target orders including rolling tick digests.
+
+**Private evidence:** all 15 missions were run twice with computer AI and private
+regroup orders under `unshare -rn` with both SDL dummy drivers and private game
+copies. Final 24-tick pairs matched throughout; fourteen fresh-process tick-12
+save continuations matched. Mission 11 lost at tick 1 before saving. No crashes,
+wall timeouts or static unreachable findings occurred in this short sweep; no
+mission won. Mission 4 also reproduced flying-ID refusal with the baseline and
+movement with the fixed executable. Mission 7/9 orders address computer troops
+because the current loader places no player mobile units; transport/cargo
+behavior remains unexercised. See the [current campaign matrix](playthrough.md#campaign-fix-iteration-2026-11-01-partial)
+for per-mission action execution counts and longer bounded runs. Raw plans,
+hashes, saves, executable/rules snapshots and diagnostics remain under ignored
+`work/parity/`.
+
+The final 1,200-tick sweep with tick-600 saves and a 20-second process limit
+produced paired defeats in missions 1, 3, 4, 10 and 11; paired tick limits in
+2, 5, 6, 7 and 9; and paired wall timeouts in 8, 12, 13, 14 and 15. All ten
+completed pairs matched throughout; six save continuations matched. No crashes
+or victories occurred. Completed reports had no static unreachable findings or
+stalled movement IDs; the five wall-limited pairs have unverified hash/save
+evidence. These are coverage-driver observations, not validated player routes
+or proof of hangs. The full per-mission table is in playthrough.md.
+
+**Dependencies / limits:** the initial mission-11 protected-group check refers to
+town scenario membership, which the current team-tactic lookup does not resolve.
+The complete town/tactic, ownership/capture and transport models remain missing;
+no speculative alias or action no-op was introduced. Required transport action
+sites and mission-6 missing-trigger warnings remain as previously inventoried.
+Winning routes, general objective reachability and interactive progression remain
+unverified. A reference recording control again failed at namespace loopback
+setup before launch; no reference parity labels or V19 acceptance were promoted.
+
+**Validation:** Release build and full CTest passed, with 34 passed and six skipped
+(five default private-data checks and restricted UDP processes). Separate
+private-copy dummy-SDL namespace checks passed formats, engine integration and
+campaign script inventory. The new regressions are synthetic and require no game
+data. All pre-commit hooks and `git diff --check` passed.
+## L1/L2 rule iteration (2026-11-01, no new reference evidence)
+
+The initial run attempted all 19 existing L1 candidates and nine recorded L2
+missions; the final run attempted 26 L1 candidates and the same nine recordings.
+Every reference attempt failed before runtime launch at namespace loopback
+configuration with a denied netlink socket. No HP, armor, regeneration,
+production, income or repair rule can be inferred from these failures. Simulation
+code and M/V/P labels are unchanged.
+
+Seven new P specifications add barracks construction, single-unit training,
+organic/building regeneration, building/defence repair and farm income controls.
+The optional L1 clone runner uses a separate game snapshot made before reference
+execution. All 26 final clone candidate controls completed their full engine-local
+observation horizons; these are setup blockers, not L1 parity passes. Commands,
+damaged HP, town membership and other controls still require audited adapters.
+L2 clone replay remains dependent on missing packet/identity/observer adapters;
+no substitute replay or reference repeatability was claimed.
+
+Per-case L1/L2 diffs now feed the aggregate matrix and private triage directly.
+The final selected run contains 35 experiment failures and zero measured rules
+or semantic divergences. See [the iteration record](parity.md#l1l2-iteration-2026-11-01-blocked-measurements)
+for commands, evidence boundaries and remaining work. Asset-free controls cover
+clone horizon validation, failure aggregation and independent mutable game copies.

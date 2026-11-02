@@ -8,6 +8,9 @@ namespace aztec::engine {
 // Installed packages keep rules beside the executable, independent of the working directory.
 std::string default_rules_dir();
 
+// SDL chooses the per-user application directory; never fall back to the installation.
+std::string user_file(const std::string& name);
+bool configured_game_dir(int argc, char** argv, std::string& game, std::string& error);
 std::string default_modifications_file();
 bool load_modifications(const std::string& path, Modifications& out);
 bool save_modifications(const std::string& path, Modifications options);
