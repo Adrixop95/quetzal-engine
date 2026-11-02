@@ -237,7 +237,8 @@ aztec_warnings(test_audio_trace)
 add_test(NAME audio_trace COMMAND test_audio_trace)
 set_tests_properties(audio_trace PROPERTIES LABELS "unit;audio")
 if(Python3_Interpreter_FOUND)
-  add_test(NAME audio_parity COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_audio_parity.py)
+  add_test(NAME audio_parity COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_audio_parity.py
+    --engine-test $<TARGET_FILE:test_audio>)
   set_tests_properties(audio_parity PROPERTIES LABELS "unit;audio" TIMEOUT 20)
 endif()
 
@@ -295,6 +296,9 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME parity_visual_ui COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_visual.py $<TARGET_FILE:aztec_engine>)
   set_tests_properties(parity_visual_ui PROPERTIES LABELS "unit" TIMEOUT 40)
+  add_test(NAME ui_capture COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ui_capture.py $<TARGET_FILE:aztec_engine>)
+  set_tests_properties(ui_capture PROPERTIES LABELS "unit;parity" TIMEOUT 30)
   add_test(NAME frontend_capture_controls COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ui_capture.py)
   set_tests_properties(frontend_capture_controls PROPERTIES LABELS "unit;parity" TIMEOUT 20)

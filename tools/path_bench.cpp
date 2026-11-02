@@ -47,14 +47,14 @@ static Result run(const std::string& name, int n, int max_ticks) {
   int overlaps = 0;
   auto t0 = std::chrono::steady_clock::now();
   int ticks = 0, last_order = 0; for (auto& gd : c.groups) last_order = std::max(last_order, gd.order_tick);
-  for (int t = 0; t < max_ticks; ++t, ++ticks) {
+  for (int t = 0; t < last_order + max_ticks; ++t, ++ticks) {
     for (int gi = 0; gi < ng; ++gi) if (c.groups[gi].order_tick == t && !ids[gi].empty()) ms.order_move(ids[gi].data(), (int)ids[gi].size(), gpx(gi));
     ms.tick();
     int done = 0;
     for (size_t i = 0; i < c.units.size(); ++i) {
       const Agent& a = ms.agents()[i];
       int gi = c.units[i].group; Vec2 gp = gpx(gi);
-      if (arrival[i] < 0 && t >= c.groups[gi].order_tick) {
+      if (arrival[i] < 0 && t >= c.groups[gi].order_tick && t - c.groups[gi].order_tick < max_ticks) {
         double d = length(a.pos - last[i]) / 256.0; path[i] += d;
         if (d < 0.5) { if (++idle[i] > maxidle[i]) maxidle[i] = idle[i]; } else idle[i] = 0;
         int tx = a.pos.x / kTileFix, ty = a.pos.y / kTileFix;

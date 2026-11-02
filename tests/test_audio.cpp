@@ -58,13 +58,13 @@ static Bytes animation() {
   put(b, 8 + 9 * 4, 1); put(b, 8 + 17 * 4, 1); put(b, 8 + 2 * 4, 1);
   return b;
 }
-int main() {
+int main(int argc, char** argv) {
   TempDir directory;
   const auto& root = directory.path();
   std::filesystem::create_directory(root / "Res");
   std::filesystem::create_directory(root / "Music");
   Bytes set(4); put(set, 0, 1);
-  write(root / "Res/Snd.xbe", archive({{0x460, {wav()}}, {0x3e8, {set, set}},
+  write(root / "Res/Snd.xbe", archive({{0x460, {wav()}}, {0x3e8, {set, set, set}},
       {0x6, {Bytes{'R', 'e', 'a', 'd', 'y', 0}, Bytes{'N', 'o', ' ', 'W', 'A', 'V', 0}}}}));
   write(root / "Music/music.xbe", archive({{0x460, {wav(), wav()}}}));
   std::vector<Bytes> animations(200);
@@ -73,6 +73,19 @@ int main() {
   animations[50] = animation();  // Headtruck turret anim 51
   animations[115] = animation(); // destruction anim 116
   animations[199] = animation(); // building anim 200
+  // Decorations use a distinct invented set so omitted cues cannot hide behind body cues.
+  auto decoration = animation();
+  put(decoration, 0x208 + 8, 3);
+  for (int i = 1; i <= 3; ++i) put(decoration, 0x208 + i * 32 + 8, 3);
+  for (int anim : {113, 152, 154, 155, 156}) animations[anim - 1] = decoration;
+  // Variant 1 of the first death decoration ends before the second one holds.
+  put(animations[151], 12, 5);
+  put(animations[151], 0x208 + 4 * 32 + 8, 3);
+  for (int i : {5, 6}) {
+    put(animations[151], 0x208 + i * 32, 10);
+    put(animations[151], 0x208 + i * 32 + 8, 3);
+    put(animations[151], 0x208 + i * 32 + 28, 2);
+  }
   write(root / "Res/Units.xbe", archive({{0x515, animations}}));
   auto timed_bytes = animation();
   put(timed_bytes, 0x208 + 3 * 32, 0); // timed sequence terminator
@@ -145,6 +158,61 @@ int main() {
   w.effects.clear(); tick(3); CHECK(events.back().kind == AudioEvent::Kind::LoopStop);
   CHECK(events.back().trigger == AudioEvent::Trigger::Unknown);
   audio.stop_effects();
+  // Damage fire and vehicle death decorations must enter the same event stream
+  // as their visible frames. Export only this invented scenario for the L6 comparator.
+  events.clear(); w = World{}; o = Object{};
+  o.id = 1; o.type = 10; o.hp = 50; o.hp_max = 100; o.progress = 500;
+  o.anim_state = int(data::AnimState::Construct); w.objects.push_back(o);
+  w.tick = 299; visible = true;
+  tick(0); CHECK(events.empty());
+  w.objects[0].progress = 1000; w.objects[0].anim_state = int(data::AnimState::Idle);
+  tick(0); CHECK(events.size() == 4);
+  tick(1); CHECK(events.size() == 4);
+  tick(2); CHECK(events.size() == 6);
+  tick(4); CHECK(events.size() == 8);
+  tick(5); CHECK(events.size() == 8);
+  w.objects[0].hp = 100; tick(6); CHECK(events.size() == 9); // healed: stop only the fire loop
+  w.objects[0].hp = 50; visible = false; tick(7); CHECK(events.size() == 10);
+  visible = true; tick(7); CHECK(events.size() == 12); // restart loops, no historical frame cues
+  w.objects[0].cur_x = to_fixed(900); tick(7); CHECK(events.size() == 14);
+  w.objects[0].cur_x = 0; tick(7); CHECK(events.size() == 16);
+  w.objects[0].removed = true; tick(7); CHECK(events.size() == 18);
+  w.objects[0].removed = false; w.objects[0].type = 3;
+  w.objects[0].anim_state = int(data::AnimState::Die);
+  tick(0); CHECK(events.size() == 22); // two independently audible death decorations
+  tick(1); CHECK(events.size() == 22);
+  tick(2); CHECK(events.size() == 24);
+  tick(4); CHECK(events.size() == 26);
+  tick(5); CHECK(events.size() == 26);
+  w.objects[0].removed = true; tick(6); CHECK(events.size() == 28);
+  w.objects[0].removed = false; w.objects[0].anim_variant = 1;
+  tick(0); CHECK(events.size() == 32);
+  tick(1); CHECK(events.size() == 32);
+  tick(2); CHECK(events.size() == 34);
+  tick(4); CHECK(events.size() == 36);
+  CHECK(events.back().kind == AudioEvent::Kind::LoopStop && events.back().source == (uint64_t(1) << 16 | 1));
+  tick(5); CHECK(events.size() == 36); // the surviving loop must keep its own channel
+  w.objects[0].removed = true; tick(6); CHECK(events.size() == 37);
+  CHECK(events.back().kind == AudioEvent::Kind::LoopStop && events.back().source == (uint64_t(1) << 16 | 2));
+  if (argc == 3 && std::string(argv[1]) == "--event-log") {
+    FILE* log = std::fopen(argv[2], "w");
+    CHECK(log != nullptr);
+    if (log) {
+      for (size_t i = 0; i < events.size(); ++i) write_audio_event(log, events[i], i);
+      std::fclose(log);
+    }
+  }
+  // A simulation-owned fire effect replaces the provider's fallback decoration.
+  // The body still plays, but the fire must be requested exactly once.
+  events.clear(); w.objects[0].removed = false; w.objects[0].type = 10;
+  w.objects[0].anim_state = int(data::AnimState::Idle);
+  Effect fire; fire.source = 1; fire.anim = data::damage_fire_anim(50, 100); fire.loop = true;
+  w.effects.push_back(fire);
+  tick(0); CHECK(events.size() == 4);
+  CHECK(events.back().kind == AudioEvent::Kind::LoopStart && (events.back().source >> 63) == 1);
+  w.effects[0].age = 1; tick(1); CHECK(events.size() == 4);
+  w.effects.clear(); w.objects[0].removed = true; tick(2);
+  CHECK(events.size() == 6 && events.back().kind == AudioEvent::Kind::LoopStop);
   events.clear(); audio.event_tick = 101; audio.start_music(0, 3, 99);
   CHECK(audio.current_track() == 1); CHECK(events.size() == 1);
   CHECK(events[0].tick == 101 && events[0].trigger == AudioEvent::Trigger::Music);
@@ -236,6 +304,11 @@ int main() {
   Object unit; unit.id = 1; unit.type = 0; unit.hp = unit.hp_max = 100;
   unit.cur_x = unit.prev_x = to_fixed(100); unit.cur_y = unit.prev_y = to_fixed(100);
   initial.objects.push_back(unit);
+  Object damaged = unit; damaged.id = 2; damaged.type = 10; damaged.hp = 50;
+  initial.objects.push_back(damaged);
+  Object dying = unit; dying.id = 3; dying.type = 3; dying.hp = 0; dying.alive = false;
+  dying.anim_state = int(data::AnimState::Die);
+  initial.objects.push_back(dying);
   World silent = initial, presented = initial;
   GameSim silent_sim(rules), presented_sim(rules); silent_sim.init(silent); presented_sim.init(presented);
   audio.event_sink = {}; audio.start_music(0, 3, 0);

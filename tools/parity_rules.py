@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""L1 candidate maps and private numeric expectations, pending the task-42 adapters."""
+"""L1 candidate launch controls and private comparisons, pending audited adapters."""
 import argparse
 import importlib.util
 import json
@@ -88,10 +88,38 @@ def prepare(case, game, directory):
     return private
 
 
-def probe(cases, game, runtime, output, timeout):
+def clone_probe(case, engine, directory, timeout):
+    """Exercise the candidate independently; engine-local fields are not L1 evidence."""
+    if not (directory / 'game').is_dir():
+        raise ValueError('clone candidate was not prepared')
+    observations = directory / 'observations.jsonl'
+    report.execute([engine, '--headless', '--game', directory / 'game',
+                    '--rules-dir', ROOT / 'docs/data', '--no-auto-orders',
+                    '--mod', 'parallel_construction=off', '--max-ticks', case['observe']['last_tick'],
+                    '--report', directory / 'report.json', '--observations', observations, case['id']],
+                   directory, timeout, dict(AZTEC_GAME=str(directory / 'game')), setup_network=False)
+    summary = report.json_object((directory / 'report.json').read_text())
+    if (summary['ticks'] != case['observe']['last_tick'] or summary['script_errors']
+            or summary['unsupported_executions']):
+        raise ValueError('clone candidate did not complete the supported observation horizon')
+    with observations.open() as stream:
+        meta = report.header(stream)
+    expected = dict(schema=1, mission=0, phase='before_commands', contract='engine-index-v1',
+                    fields=['hp', 'side', 'type', 'x', 'y'], first_tick=1,
+                    last_tick=case['observe']['last_tick'])
+    if meta != expected:
+        raise ValueError('unexpected clone candidate observation contract')
+    report.compare(observations, observations)
+    return report.result('blocked_setup_contract',
+                         detail='Clone candidate completed; L1 setup, commands and normalized fields remain unaudited.')
+
+
+def probe(cases, game, runtime, output, timeout, engine=None):
     output = report.private_output(output)
     required = [runtime, game / 'Aztec.exe', game / 'Res', *[
         game / f'Maps/mission_1.{ext}' for ext in ('mp', 'map', 'dat', 'rm', 'vis', 'spr', 'mit')]]
+    if engine is not None:
+        required.append(engine)
     missing = [str(p) for p in required if not p.exists()]
     if missing:
         print('SKIP: missing private inputs: ' + ', '.join(missing))
@@ -99,7 +127,7 @@ def probe(cases, game, runtime, output, timeout):
     output.mkdir(parents=True, exist_ok=False)
     rows = []
     for case in cases:
-        row = dict(id=case['id'], tick=None, object_id=None, field=None)
+        row = dict(id=case['id'], layer='L1', tick=None, object_id=None, field=None)
         directory = output / case['id']
         directory.mkdir()
         try:
@@ -112,6 +140,10 @@ def probe(cases, game, runtime, output, timeout):
             # Only the requested candidate may appear in the custom-map list.
             for path in (private / 'Maps').glob('mission_1.*'):
                 path.unlink()
+            if engine is not None:
+                # Snapshot before the reference can change settings, saves or maps.
+                (directory / 'clone').mkdir()
+                report.private_game(private, directory / 'clone/game')
             report.execute([runtime, private / 'Aztec.exe'], directory, timeout, dict(
                 RT_SCRIPT=str(directory / 'start.txt'), RT_NO_GRAB='1', RT_NO_VIDEO='1',
                 RT_RESOLUTION='800x600', RT_STATE_LOG=str(directory / 'state.txt'),
@@ -120,6 +152,17 @@ def probe(cases, game, runtime, output, timeout):
             row.update(category='blocked_setup_contract', detail='Launch returned; scenario commands and observations remain unaudited.')
         except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
             row.update(category='experiment_failed', detail=str(exc))
+        outcomes = {'reference': report.result(row['category'], detail=row['detail'])}
+        if engine is not None:
+            try:
+                # A failed reference launch must not suppress independent clone diagnostics.
+                outcomes['clone'] = clone_probe(case, engine, directory / 'clone', timeout)
+            except (OSError, ValueError, RuntimeError, StopIteration) as exc:
+                outcomes['clone'] = report.result('experiment_failed', detail=str(exc))
+            if outcomes['clone']['category'] == 'experiment_failed' and row['category'] != 'experiment_failed':
+                row.update(outcomes['clone'])
+        report.write_json(directory / 'runners.json', outcomes)
+        report.write_json(directory / 'diff.json', row)
         rows.append(row)
         print(f"{case['id']}: {row['category']}")
     report.write_json(output / 'report.json', rows)
@@ -158,7 +201,7 @@ def evaluate(case, reference, repeat, clone, output):
         report.write_json(output / 'expectation_keys.json', dict(
             scenario=case['id'], header=meta, objects=identities, fields=fields,
             columns=['tick', 'object_index', 'field_index', 'value']))
-    report.write_json(output / 'diff.json', verdict)
+    report.write_json(output / 'diff.json', dict(verdict, layer='L1'))
     return 0 if verdict['category'] == 'equal_observed_fields' else 1
 
 
@@ -169,6 +212,7 @@ def main():
     run = sub.add_parser('probe', help='generate candidates and attempt isolated launch controls')
     run.add_argument('--game', type=lambda p: Path(p).resolve(), required=True)
     run.add_argument('--runtime', type=lambda p: Path(p).resolve(), required=True)
+    run.add_argument('--engine', type=lambda p: Path(p).resolve(), help='also run an independent clone candidate control')
     run.add_argument('--output', type=Path, required=True)
     run.add_argument('--id')
     run.add_argument('--timeout', type=int, default=45)
@@ -191,7 +235,7 @@ def main():
             return evaluate(cases[0], args.reference, args.repeat, args.clone, args.output)
         if args.timeout <= 0:
             raise ValueError('timeout must be positive')
-        return probe(cases, args.game, args.runtime, args.output, args.timeout)
+        return probe(cases, args.game, args.runtime, args.output, args.timeout, args.engine)
     except (OSError, ValueError, RuntimeError, StopIteration) as exc:
         parser.exit(2, f'parity_rules: {exc}\n')
 

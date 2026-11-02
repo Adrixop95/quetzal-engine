@@ -1,0 +1,49 @@
+{
+  "id": "l1_regeneration_building",
+  "layer": "L1",
+  "map": {
+    "template": "mission_1",
+    "generator": "make_zstat",
+    "passability": "clear_interior",
+    "resources": "empty_control"
+  },
+  "setup": {
+    "sides": [
+      0,
+      1
+    ],
+    "money": 10000,
+    "preplaced_objects": [
+      {
+        "id": "source",
+        "type": 14,
+        "x": 16,
+        "y": 16,
+        "side": 0,
+        "initial_hp_percent": 50
+      }
+    ],
+    "tech": "record_and_hold_constant",
+    "controls": [
+      "Audit the initial damaged HP, maximum HP and service countdown; candidate generation does not apply damaged HP.",
+      "Disable combat, facility service, town repair, income and scripts; retain a full-HP no-change control.",
+      "Sweep damaged HP around the observed natural threshold; repeat with audited service activation and expiry.",
+      "Record pre-add threshold, possible overshoot and countdown update order; no change alone does not establish immunity."
+    ]
+  },
+  "input": [],
+  "observe": {
+    "first_tick": 1,
+    "last_tick": 720,
+    "fields": [
+      "hp",
+      "active",
+      "day_clock",
+      "max_hp",
+      "service_remaining"
+    ]
+  },
+  "tolerance": 0,
+  "evidence": "P",
+  "mechanic": "regeneration"
+}

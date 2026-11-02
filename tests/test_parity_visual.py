@@ -200,11 +200,17 @@ class VisualTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         rows = [json.loads(line) for line in trace.read_text().splitlines()]
         self.assertTrue(rows[0]['buttons'][0]['hover'])
+        self.assertFalse(rows[0]['buttons'][0]['highlight'])  # Hover does not alter the resource face.
+        self.assertEqual(rows[0]['buttons'][0]['frame'], 0)
         self.assertEqual(rows[1]['target_mode'], 0)  # Press captures Move; release activates it.
         self.assertTrue(rows[1]['left_down'])
         self.assertFalse(rows[2]['left_down'])
         self.assertEqual(rows[2]['target_mode'], 1)
+        self.assertTrue(rows[2]['buttons'][0]['highlight'])
+        self.assertEqual(rows[2]['buttons'][0]['frame'], 3)  # Three UI updates, independent of simulation ticks.
+        self.assertEqual(rows[3]['buttons'][0]['frame'], 4)
         self.assertEqual(rows[4]['target_mode'], 0)
+        self.assertEqual(rows[4]['buttons'][0]['frame'], 0)
         self.assertEqual(rows[4]['commands'][0]['type'], 0x17)
         self.assertEqual(rows[4]['commands'][0]['ids'], rows[0]['selection'])
         self.assertEqual(rows[6]['cursor']['shape'], 'attack')

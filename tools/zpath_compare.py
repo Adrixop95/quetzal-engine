@@ -39,9 +39,14 @@ def fmt(row):
         return 'unmeasured'
     if row.get('status', 'ok') != 'ok':
         return row['status']
-    return f"{row['arrived']}/{row['n']} / {row['makespan']} / {row['mean_path_ratio']:.3f}"
+    ratio = row['mean_path_ratio']
+    ratio_text = 'unmeasured' if ratio is None or not row['arrived'] else f'{ratio:.3f}'
+    tick = row['makespan']
+    tick_text = 'unmeasured' if tick is None or tick < 0 else str(tick)
+    return (f"{row['arrived']}/{row['n']} / {tick_text} / {ratio_text} / "
+            f"{row['stuck']} / {row['max_idle_ticks']}")
 
-lines = ['| Course | Units | Original fog: arrived / ticks / distance ratio | Original explored | New |',
+lines = ['| Course | Units | Original fog: arrived / ticks / distance ratio / stuck / max idle | Original explored | New |',
          '|---|---:|---|---|---|']
 for row in new:
     name, count = row['course'], row['n']

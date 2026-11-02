@@ -47,6 +47,35 @@ void MoveSystem::order_move(const u32* ids, int n, Vec2 goal) {
   if (relocated) { goal = tile_center(gx, gy); o.goal = goal; }   // slots must surround the real destination, not the blocked / outside point
   o.goal_cell = {gx, gy};
   ensure_field(o, strict);
+  // A selection can span disconnected regions. A fallback based only on its
+  // first member assigns unreachable slots to members in the other regions.
+  // Keep connected selections on the shared-field path; split only when a
+  // member cannot reach the destination under the group's terrain class.
+  if (n > 1) {
+    bool unreachable = false;
+    for (int i = 0; i < n; ++i) {
+      const Agent& a = agents_[ids[i]];
+      if (!o.ff[(int)strict].reachable(floor_div(a.pos.x, kTileFix), floor_div(a.pos.y, kTileFix))) unreachable = true;
+    }
+    if (unreachable) {
+      const Agent& first = agents_[ids[0]];
+      Cell start{floor_div(first.pos.x, kTileFix), floor_div(first.pos.y, kTileFix)};
+      FlowField component;
+      component.build(grid_, strict, &start, 1, cfg_.wall_penalty); ++stats.fields_built;
+      std::vector<u32> together, separate;
+      for (int i = 0; i < n; ++i) {
+        const Agent& a = agents_[ids[i]];
+        (component.reachable(floor_div(a.pos.x, kTileFix), floor_div(a.pos.y, kTileFix)) ? together : separate).push_back(a.id);
+      }
+      if (!together.empty() && !separate.empty()) {
+        const Vec2 requested = o.goal;
+        o.refs = 0;
+        order_move(together.data(), (int)together.size(), requested);
+        order_move(separate.data(), (int)separate.size(), requested);
+        return;
+      }
+    }
+  }
   // Unreachable goal: flood from the first agent, aim at the reachable tile nearest to the goal ("closest approach", like the
   // original's FUN_0046ce80 fallback, but chosen before the search instead of after a failed wave).
   {

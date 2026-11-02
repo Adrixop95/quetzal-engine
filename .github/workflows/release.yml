@@ -26,7 +26,7 @@ jobs:
         include:
           - os: ubuntu-24.04
             name: linux-x86_64
-          - os: windows-2022
+          - os: windows-latest
             name: windows-x86_64
     runs-on: ${{ matrix.os }}
     steps:
@@ -39,13 +39,13 @@ jobs:
           # Keep installed binary/source versions available in the current apt indexes.
           sudo apt-get upgrade -y
           sudo apt-get install -y cmake ninja-build g++ libsdl2-dev
-      - name: Install static SDL2 for Windows
+      - name: Install SDL2 for Windows
         if: runner.os == 'Windows'
         shell: pwsh
         env:
           # Build from source so the exact SDL source tree is available to redistribute.
           VCPKG_BINARY_SOURCES: clear
-        run: '& "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install sdl2:x64-windows-static'
+        run: '& "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install sdl2:x64-windows'
       - name: Configure Linux without private inputs
         if: runner.os == 'Linux'
         run: cmake -S . -B build_release -G Ninja -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR= -DGAME_DIR=
@@ -55,8 +55,8 @@ jobs:
         run: >-
           cmake -S . -B build_release -A x64
           "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
-          -DVCPKG_TARGET_TRIPLET=x64-windows-static
-          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DAZTEC_GEN_DIR= -DGAME_DIR=
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DAZTEC_GEN_DIR= -DGAME_DIR=
       - name: Build
         run: cmake --build build_release --config Release --parallel 2
       - name: Synthetic tests
@@ -67,13 +67,19 @@ jobs:
       - name: Stage Linux package with runtime libraries, notices and corresponding sources
         if: runner.os == 'Linux'
         run: python3 tools/package_release.py --binary build_release/aztec_engine --dest build_release/package --runtime debian
-      - name: Stage Windows package with static SDL2 and its source/license
+      - name: Stage Windows package with SDL2, compiler runtime DLLs and licenses
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $sdlSource = Get-ChildItem "$env:VCPKG_INSTALLATION_ROOT/buildtrees/sdl2/src" -Directory | Where-Object { Test-Path "$($_.FullName)/CMakeLists.txt" } | Select-Object -First 1
           if (!$sdlSource) { throw 'SDL2 source tree not found' }
-          python tools/package_release.py --binary build_release/Release/aztec_engine.exe --dest build_release/package --runtime windows-static --sdl-source "$($sdlSource.FullName)" --sdl-license "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows-static/share/sdl2/copyright"
+          $vs = & "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $crt = Get-ChildItem "$vs/VC/Redist/MSVC/*/x64/Microsoft.VC*.CRT" -Directory | Sort-Object FullName -Descending | Select-Object -First 1
+          if (!$crt) { throw 'MSVC redistributable directory not found' }
+          $dllArgs = @('--runtime-dll', "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin/SDL2.dll")
+          Get-ChildItem "$($crt.FullName)/*.dll" | Where-Object { $_.Name -match '^(msvcp140.*|vcruntime140.*|concrt140)\.dll$' } | ForEach-Object { $dllArgs += @('--runtime-dll', $_.FullName) }
+          python tools/package_release.py --binary build_release/Release/aztec_engine.exe --dest build_release/package --runtime windows --sdl-source "$($sdlSource.FullName)" --sdl-license "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/share/sdl2/copyright" @dllArgs
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Archive Linux package
         if: runner.os == 'Linux'
         run: tar -czf build_release/quetzal-engine-${{ matrix.name }}.tar.gz -C build_release/package .
@@ -97,7 +103,7 @@ jobs:
         include:
           - os: ubuntu-24.04
             name: linux-x86_64
-          - os: windows-2022
+          - os: windows-latest
             name: windows-x86_64
     runs-on: ${{ matrix.os }}
     steps:

@@ -1,0 +1,78 @@
+{
+  "id": "l1_repair_building",
+  "layer": "L1",
+  "map": {
+    "template": "mission_1",
+    "generator": "make_zstat",
+    "passability": "clear_interior",
+    "resources": "empty_control"
+  },
+  "setup": {
+    "sides": [
+      0,
+      1
+    ],
+    "money": 10000,
+    "preplaced_objects": [
+      {
+        "id": "hall",
+        "type": 10,
+        "x": 16,
+        "y": 16,
+        "side": 0
+      },
+      {
+        "id": "warehouse",
+        "type": 18,
+        "x": 20,
+        "y": 20,
+        "side": 0
+      },
+      {
+        "id": "target",
+        "type": 14,
+        "x": 26,
+        "y": 16,
+        "side": 0,
+        "initial_hp_percent": 50
+      }
+    ],
+    "tech": "record_and_hold_constant",
+    "controls": [
+      "Audit damaged initial HP, same-town membership, completed state and harvested repair supply before issuing commands.",
+      "Disable combat, regeneration, construction and training; verify the repair mark was accepted.",
+      "Pair automatic and marked service with disabled-service, zero-supply, full-HP and foreign-town controls.",
+      "Repeat ordinary-building priority groups and defence ordering with multiple targets; track unused supply and HP caps.",
+      "No observed repair with an empty resource map does not establish the repair rate; use a separately audited positive-supply repeat."
+    ]
+  },
+  "input": [
+    {
+      "tick": 12,
+      "command": "repair_mode",
+      "town": "hall",
+      "mode": 1
+    },
+    {
+      "tick": 12,
+      "command": "repair_mark",
+      "town": "hall",
+      "target": "target"
+    }
+  ],
+  "observe": {
+    "first_tick": 1,
+    "last_tick": 720,
+    "fields": [
+      "hp",
+      "max_hp",
+      "repair_mode",
+      "repair_marked",
+      "repair_supply",
+      "money"
+    ]
+  },
+  "tolerance": 0,
+  "evidence": "P",
+  "mechanic": "repair"
+}

@@ -106,27 +106,18 @@ salt changes the starting track.
 {"seq":0,"tick":7,"kind":"sound","source":0,"set":1,"sound":1,"trigger":"combat"}
 ```
 
-Kinds: 0 sound, 1 loop start, 2 loop stop, 3 music start, 4 music stop,
-5 speech request, 6 subtitle request. Speech/subtitle `sound` is the WAV/caption
-ID; neither record contains caption text. A missing WAV can produce kind 6 alone.
-For music, `sound` is the track number. Direct WAV calls have set 0.
-Object loop sources encode object ID and channel; effect sources have bit 63
-set and encode source ID, animation and slot. One-shot sources are currently 0.
-Music start uses tick 0; subsequent scene events use the world tick. Explicit
-speech calls use the current presentation event tick. These logs
-record requests, not samples actually delivered by the device. They contain no
-audio bytes. Keep logs from private banks under ignored `work/`.
-`--no-audio` disables playback and therefore produces no playback events.
-The values above are invented. Kinds are `sound`, `loop_start`, `loop_stop`,
-`music`, `music_stop`. For music, `sound` is the track number. Direct WAV calls
-have set 0. Object loop sources encode object ID and channel; effect sources
-have bit 63 set and encode source ID, animation and slot. One-shot sources are
-currently 0. Music starts and transitions use the caller's current world tick;
-scene events use the dispatch tick. Each stream uses consecutive sequence indices.
-Triggers describe engine dispatch contexts, and unknown provenance remains
-`unknown`; loop stops retain the start context. These logs record requests,
-not samples delivered by the device. Keep private-bank logs under ignored
-`work/parity/`. `--no-audio` disables playback and produces no playback events.
+Kinds are `sound`, `loop_start`, `loop_stop`, `music`, `music_stop`,
+`speech` and `subtitle`. Speech/subtitle `sound` is the WAV/caption ID;
+neither record contains caption text. For music, `sound` is the track number.
+Direct WAV calls have set 0. Object loop sources encode object ID and channel;
+effect sources have bit 63 set and encode source ID, animation and slot.
+One-shot sources are currently 0. Music starts and transitions use the caller's
+current world tick; scene events use the dispatch tick. Each stream uses
+consecutive sequence indices. Triggers describe engine dispatch contexts, and
+unknown provenance remains `unknown`; loop stops retain the start context.
+These logs record requests, not samples delivered by the device. Keep private-bank
+logs under ignored `work/parity/`. `--no-audio` disables playback and produces
+no playback events. The JSON example above uses invented values.
 
 The reference shim's `RT_AUDIO_LOG` and the L6 normalizer/comparator are described
 in [parity.md](parity.md#l6-audio-event-comparison-2026-10-29). Reference buffers
@@ -187,3 +178,32 @@ configuration, command and state log destinations are under ignored
 obtained. Selection/order speech routing, building announcements and warning
 policies, exact fog attenuation, original voice interruption and the required
 per-mission event matrix remain unresolved. V15 is incomplete.
+
+## L6 iteration (2026-11-01, synthetic evidence)
+
+The provider now shares decoration-frame selection between rendering and audio.
+This covers damage-fire and vehicle-death fallback decorations; simulation-owned
+fire already uses the effect dispatcher and suppresses the fallback, following
+the renderer's existing ownership rule. Body and turret requests remain available.
+Decoration channels keep their positions after an earlier decoration finishes,
+so cleanup stops the finished loop rather than the surviving one. This change
+reuses existing engine animation selection; it adds no reference-derived mapping.
+
+Three regression cases first failed and then passed: omitted fallback requests,
+incorrect loop-source cleanup, and duplicate fire when a simulation effect owns
+it. The invented event-log scenario compares 37 requests through task 45's
+normalizer/comparator and also requires exact ticks and loop source lifetimes.
+It covers construction silence, damaged/completed buildings, healing, visibility,
+distance, removal, held frames and two death decorations with different lifetimes.
+The simulation-independence scenario now includes damaged and dying objects,
+retaining per-tick hash equality for 1,200 ticks and command-log replay equality.
+
+The isolated reference probe under `work/parity/l6-iterate-reference/` failed
+at namespace loopback setup before launch. The clone completed a bounded
+mission smoke with a nonempty request log, and a separate private-copy run with
+audio disabled reached the same final simulation hash. These are integration
+checks, not reference sound observations or audible comparison. Selection/order
+speech, UI cues, production/completion announcements, generic effect provenance,
+original music transitions and all seven live trigger-class comparisons remain
+unverified. The task 45 comparator is present; audited reference identity/trigger
+and music observers plus synchronized paired captures remain dependencies.
