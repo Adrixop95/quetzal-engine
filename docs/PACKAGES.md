@@ -11,8 +11,8 @@ Linux x86_64 packages target Ubuntu 24.04 or newer compatible systems (glibc
 in the same directory. Shared dependencies are bundled except the host ELF
 loader and glibc. Display/audio drivers, a desktop session and graphics driver
 integration come from the operating system. Windows x86_64 packages target
-Windows 10/11 and statically link SDL2 and the MSVC runtime; no separate SDL2.dll
-or Visual C++ runtime installation is required. Keep rules beside the executable.
+Windows 10/11 and bundle SDL2.dll and the matching MSVC runtime DLLs. Keep all
+DLLs and rules beside the executable; no separate runtime installation is required.
 
 ## Supply your own game installation
 
@@ -40,8 +40,13 @@ On Windows PowerShell:
 
 Omit `1` to open the front end. Alternatively set `AZTEC_GAME` to the installation
 path. `--rules-dir DIR` overrides the bundled rules. Paths may contain spaces.
-Use a private writable game copy for saves/settings; do not share writable state
-between engine/reference processes. See docs/EXPERIMENTS.md in the source archive
+Normal engine saves/settings use the per-user application directory, normally
+`%APPDATA%\Quetzal\Engine` on Windows. For persistent game selection put
+`game=D:\Games\Aztec Empire` in its `settings.ini` (literal path, no quotes).
+`--game` overrides `AZTEC_GAME`, which overrides that file; `--settings FILE`
+selects a different file. `AZTEC_USER_DIR` selects an absolute private profile
+directory when needed. See docs/SETUP.md in the source archive for migration
+and laptop controls. Do not share writable state between reference processes. See docs/EXPERIMENTS.md in the source archive
 for private read-only asset symlinks and isolated reference experiments.
 
 Intro video playback optionally invokes an external `ffmpeg` on PATH. ffmpeg is
@@ -55,7 +60,7 @@ license. Original game assets retain their owners' rights and are not covered by
 that license. `licenses/` contains bundled dependency notices. Linux includes
 `dependencies.json` with exact Debian source versions and `dependency-sources/`
 with original source archives and distribution patches. Windows includes SDL2's
-zlib license and `SDL2-source.tar.gz`; the MSVC runtime is linked under Microsoft's
+zlib license and `SDL2-source.tar.gz`; the MSVC runtime DLLs are supplied under Microsoft's
 Visual Studio redistribution terms. ffmpeg remains a separate optional program.
 
 Each published release also includes `quetzal-engine-source.tar.gz`, containing

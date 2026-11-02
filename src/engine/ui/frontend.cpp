@@ -148,7 +148,7 @@ class Screen {
 };
 
 void Screen::load_lists() {
-  progress_.load(data_.root() + "/Saves/engine_campaign.txt");
+  progress_.load(user_file("Saves/engine_campaign.txt"));
   campaign_.clear();
   custom_.clear();
   std::error_code ec;

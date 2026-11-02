@@ -177,11 +177,12 @@ void audit(const Script& script, const World& w, Report& report) {
 int run_headless(int argc, char** argv) {
   Report report;
   std::string game = "game", rules_dir = default_rules_dir(), orders_path, output, observations_path, hashes_path, save_path, resume_path;
-  if (const char* value = std::getenv("AZTEC_GAME")) game = value;
   int max_ticks = 43200, interval = 120, save_tick = 0;
   bool auto_orders = true;
   Modifications modifications;
   try {
+    std::string settings_error;
+    if (!configured_game_dir(argc, argv, game, settings_error)) throw std::runtime_error(settings_error);
     bool mission_given = false;
     for (int i = 1; i < argc; ++i) {
       std::string a = argv[i];
@@ -190,6 +191,7 @@ int run_headless(int argc, char** argv) {
         return argv[i];
       };
       if (a == "--game") game = value();
+      else if (a == "--settings") { value(); }
       else if (a == "--mod") { if (!modifications.set(value())) throw std::runtime_error("invalid modification"); }
       else if (a == "--rules-dir") rules_dir = value();
       else if (a == "--max-ticks") max_ticks = number(value(), 1);
@@ -203,7 +205,7 @@ int run_headless(int argc, char** argv) {
       else if (a == "--resume") resume_path = value();
       else if (a == "--no-auto-orders") auto_orders = false;
       else if (a == "--help") {
-        std::puts("usage: aztec_engine --headless --game DIR --rules-dir DIR [--mod parallel_construction=on|off] [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE] [--tick-hashes FILE] [--save-at N --save FILE] [--resume FILE] MISSION");
+        std::puts("usage: aztec_engine --headless [--settings FILE] --game DIR --rules-dir DIR [--mod parallel_construction=on|off] [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE] [--tick-hashes FILE] [--save-at N --save FILE] [--resume FILE] MISSION");
         return 0;
       } else if (a.empty() || a[0] == '-' || mission_given) throw std::runtime_error("unexpected argument: " + a);
       else { report.mission = a; mission_given = true; }

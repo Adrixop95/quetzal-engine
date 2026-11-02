@@ -19,9 +19,61 @@ unshare -rn env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy python3 tests/test_p
 Use a fresh staging destination each time. Local mode uses host libraries and is
 not a redistributable release. Linux release bundling requires Ubuntu/Debian,
 enabled deb-src indexes and network access for exact dependency sources; Windows
-release staging requires the static SDL2 source/license paths from vcpkg. Neither
+release staging requires the SDL2 source/license and runtime DLL paths from vcpkg,
+plus the matching MSVC redistributable DLLs. Neither
 release mode reads private game data. Package rules resolve beside the executable;
 source builds fall back to `docs/data`. Both modes accept `--rules-dir` overrides.
+
+## Windows package quick start
+
+Extract the Windows x86_64 zip into, for example, `C:\Quetzal Engine`. Keep
+`aztec_engine.exe`, `SDL2.dll`, the MSVC runtime DLLs, `rules/` and `licenses/`
+together. Supply your own existing game installation; no original assets are
+included. In PowerShell:
+
+```powershell
+& 'C:\Quetzal Engine\aztec_engine.exe' --game 'D:\Games\Aztec Empire'
+# Or select a campaign mission directly:
+& 'C:\Quetzal Engine\aztec_engine.exe' --game 'D:\Games\Aztec Empire' 1
+# Environment selection for this PowerShell session:
+$env:AZTEC_GAME = 'D:\Games\Aztec Empire'
+& 'C:\Quetzal Engine\aztec_engine.exe'
+```
+
+For persistent selection, create `%APPDATA%\Quetzal\Engine\settings.ini`
+with this plain text (no quotes or doubled backslashes):
+
+```ini
+game=D:\Games\Aztec Empire
+```
+
+Precedence is `--game`, then nonempty `AZTEC_GAME`, then `settings.ini`, then
+`./game`. `--settings 'C:\My Settings\settings.ini'` selects another settings
+file in both graphical and `--headless` modes. Blank lines and lines starting
+with `#` or `;` are allowed; other entries must be `game=DIR`. Paths are literal:
+spaces, drive letters and backslashes are preserved. Resource and mission names
+are resolved ignoring case. No shell/environment expansion occurs in the file.
+An explicitly named missing settings file or a malformed entry reports an error.
+
+Normal engine saves (`Saves/engine_slot1.azs`), campaign progress and
+`modifications.ini` use SDL's per-user application directory, normally
+`%APPDATA%\Quetzal\Engine` on Windows. They do not write into the installation
+or package. Existing engine saves/progress in the installation's `Saves/` are
+not migrated automatically; copy the `engine_slot1.azs` and `engine_campaign.txt`
+files to the per-user `Saves/` directory if needed. Original game saves remain
+separate. `AZTEC_USER_DIR` overrides the user directory with an absolute path for
+isolated profiles/tests; `--modifications-file` and headless `--save FILE` are
+explicit output overrides. A relative `AZTEC_USER_DIR` is rejected for storage.
+
+F9 toggles cursor confinement; Alt or focus loss releases it. F11 toggles desktop
+borderless mode; Alt+Enter toggles exclusive fullscreen. `--borderless` is useful
+on laptops with multiple displays. Audio starts through SDL and continues silently
+if no device is available; `--no-audio` disables it. Optional intro playback needs
+ffmpeg on PATH. The Windows release CI extracts the zip on `windows-latest`,
+clears compiler/vcpkg directories from PATH, and runs only invented resources with
+dummy SDL video/audio. Actual display scaling, Alt+Tab confinement, fullscreen
+switches, sleep/resume and speakers/headphones still require a Windows laptop
+check; synthetic success does not establish these hardware behaviors or game parity.
 
 ## Dependencies and independent build
 

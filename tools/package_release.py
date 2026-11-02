@@ -60,7 +60,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', required=True, type=Path)
     parser.add_argument('--dest', required=True, type=Path)
-    parser.add_argument('--runtime', required=True, choices=['debian', 'windows-static', 'local'])
+    parser.add_argument('--runtime', required=True, choices=['debian', 'windows', 'local'])
+    parser.add_argument('--runtime-dll', type=Path, action='append', default=[])
     parser.add_argument('--sdl-source', type=Path)
     parser.add_argument('--sdl-license', type=Path)
     args = parser.parse_args()
@@ -68,8 +69,15 @@ def main():
     dest = args.dest.resolve()
     if dest.exists():
         parser.error('destination must not exist; use a fresh staging directory')
-    if args.runtime == 'windows-static' and not (args.sdl_source and args.sdl_license):
+    if args.runtime == 'windows' and not (args.sdl_source and args.sdl_license):
         parser.error('Windows releases require SDL source and license paths')
+    if args.runtime == 'windows':
+        names = {p.name.lower() for p in args.runtime_dll}
+        if not {'sdl2.dll', 'msvcp140.dll', 'vcruntime140.dll'} <= names:
+            parser.error('Windows releases require SDL2.dll, msvcp140.dll and vcruntime140.dll via --runtime-dll')
+        for dll in args.runtime_dll:
+            if not dll.is_file() or not re.fullmatch(r'(sdl2|msvcp140[a-z0-9_]*|vcruntime140[a-z0-9_]*|concrt140)\.dll', dll.name, re.IGNORECASE):
+                parser.error(f'unsupported or missing runtime DLL: {dll}')
     dest.mkdir(parents=True)
     (dest / 'licenses').mkdir()
     windows = binary.suffix.lower() == '.exe'
@@ -91,7 +99,12 @@ def main():
         shutil.copy2(ROOT / filename, dest / 'rules' / Path(filename).name)
     if args.runtime == 'debian':
         linux_runtime(binary, dest)
-    elif args.runtime == 'windows-static':
+    elif args.runtime == 'windows':
+        for dll in args.runtime_dll:
+            shutil.copy2(dll, dest / dll.name)
+        (dest / 'licenses/MSVC-runtime.txt').write_text(
+            'Microsoft Visual C++ runtime DLLs are redistributed under the Visual Studio license.\n'
+            'https://visualstudio.microsoft.com/license-terms/\n', encoding='utf-8')
         shutil.copy2(args.sdl_license, dest / 'licenses/SDL2.txt')
         shutil.make_archive(str(dest / 'SDL2-source'), 'gztar', args.sdl_source)
     else:

@@ -23,6 +23,19 @@ passes do not establish original-game parity. Unreported scenarios are excluded.
 | equal_observed_fields | 1 |
 | skipped_missing_private_inputs | 1 |
 
+## Windows readiness evidence (2026-11-01)
+
+The Windows packaging/setup work adds synthetic checks, not reference scenario
+results; the counts above are unchanged. Local Linux Release build and CTest
+pass (34 passes, six skips), and relocated local package smoke passes inside
+`unshare -rn` with dummy SDL. Coverage includes literal Windows settings paths,
+case-insensitive resources, precedence, per-user save/load, dummy audio startup
+and unavailable-device fallback, cursor policy and fullscreen transitions.
+Synthetic staging also checks runtime allowlisting. No native Windows run,
+real laptop devices or engine/reference comparison was performed. The release
+workflow now requires extracted zip smoke on `windows-latest`; its result is
+pending execution. See [engine_rules_status.md](engine_rules_status.md#windows-package-and-laptop-readiness-2026-11-01)
+and [SETUP.md](SETUP.md#windows-package-quick-start) for boundaries and instructions.
 ## Campaign engine consistency (2026-11-01)
 
 These observations are separate from the reference comparison counts above.

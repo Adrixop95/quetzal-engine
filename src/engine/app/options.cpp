@@ -10,12 +10,48 @@
 
 namespace aztec::engine {
 
-std::string default_modifications_file() {
+std::string user_file(const std::string& name) {
+  if (const char* override_dir = std::getenv("AZTEC_USER_DIR"); override_dir && *override_dir) {
+    std::error_code ec;
+    const std::filesystem::path root(override_dir);
+    if (!root.is_absolute()) return {};
+    std::filesystem::create_directories(root, ec);
+    if (ec) return {};
+    return (root / name).string();
+  }
   char* path = SDL_GetPrefPath("Quetzal", "Engine");
   if (!path) return {};
-  std::string result = std::string(path) + "modifications.ini";
+  const auto result = std::filesystem::path(path) / name;
   SDL_free(path);
-  return result;
+  return result.string();
+}
+
+std::string default_modifications_file() { return user_file("modifications.ini"); }
+
+bool configured_game_dir(int argc, char** argv, std::string& game, std::string& error) {
+  std::string settings = user_file("settings.ini");
+  bool explicit_file = false;
+  for (int i = 1; i < argc; ++i) {
+    if (std::string(argv[i]) != "--settings") continue;
+    if (++i == argc) { error = "missing value for --settings"; return false; }
+    settings = argv[i];
+    explicit_file = true;
+  }
+  std::ifstream in(settings);
+  if (!in && explicit_file) { error = "cannot open settings: " + settings; return false; }
+  // Paths are literal, including spaces, drive letters and backslashes. No shell expansion.
+  std::string line;
+  while (std::getline(in, line)) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    if (line.empty() || line.front() == '#' || line.front() == ';') continue;
+    if (line.rfind("game=", 0) != 0 || line.size() == 5) {
+      error = "invalid settings entry in " + settings; return false;
+    }
+    game = line.substr(5);
+  }
+  if (in.bad()) { error = "cannot read settings: " + settings; return false; }
+  if (const char* value = std::getenv("AZTEC_GAME"); value && *value) game = value;
+  return true;
 }
 bool load_modifications(const std::string& path, Modifications& out) {
   std::ifstream in(path);
@@ -56,7 +92,8 @@ const char* usage_text() {
          "  MISSION            number (campaign mission_N), map name from game/Maps, or path to .mp (default 1)\n"
          "  --mod NAME=on|off  clone-only option (parallel_construction; default off)\n"
          "  --modifications-file FILE  override persisted modification settings\n"
-         "  --game DIR         game directory (default ./game, or $AZTEC_GAME)\n"
+         "  --game DIR         game directory (overrides AZTEC_GAME, settings, ./game)\n"
+         "  --settings FILE    game=DIR file (default per-user settings.ini)\n"
          "  --load-original FILE  import an original .sav (partial resume; see docs/savegame.md)\n"
          "  --size WxH         window size (default 1280x720)\n"
          "  --fullscreen       exclusive fullscreen;  --borderless  desktop-size borderless window\n"
@@ -83,6 +120,7 @@ const char* usage_text() {
          "  --no-mouse-grab    start with cursor confinement disabled (F9 toggles it)\n"
          "  --palette N --shade N   terrain palette/shade override\n"
          "  --screenshot FILE.png  render --frames N frames (default 5), save PNG and exit\n"
+         "  --frames N         exit after N rendered mission frames\n"
          "  --ticks N          run N simulation ticks before the first frame\n"
          "  --sprite-sheet ARCH:FIRST-LAST OUT.png   dump sprites (units|tiles0|tiles1|common) into a contact sheet\n"
          "  --list             list available missions\n";
@@ -97,7 +135,7 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     if (std::string(argv[i]) == "--modifications-file") o.modifications_file = argv[++i];
   o.modifications = {};
   load_modifications(o.modifications_file, o.modifications);
-  if (const char* g = std::getenv("AZTEC_GAME")) o.game_dir = g;
+  if (!configured_game_dir(argc, argv, o.game_dir, err)) return false;
   for (int i = 1; i < argc; i++) {
     std::string a = argv[i];
     auto next = [&](const char*& v) {
@@ -112,6 +150,7 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
       if (!next(v)) return false;
       if (!o.modifications.set(v)) { err = "invalid modification: " + std::string(v); return false; }
     }
+    else if (a == "--settings") { if (!next(v)) return false; }
     else if (a == "--game") { if (!next(v)) return false; o.game_dir = v; }
     else if (a == "--load-original") { if (!next(v)) return false; o.original_save = v; }
     else if (a == "--size") {
