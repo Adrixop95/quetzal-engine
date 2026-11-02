@@ -1253,8 +1253,9 @@ these synthetic checks or by the independent clone smoke run.
 submitted during the UI update. Scripted cursor animation now uses virtual
 frame time. Synthetic controls exercise hover, held press, release, Move target
 submission, Attack hotkey/cursor, attack-move and cancellation, with matching
-traces across repeated runs. The six command buttons currently retain sprite
-frame zero on press; the trace reports their actual hover/highlight/enabled state.
+traces across repeated runs. The six command buttons retain sprite frame zero
+on press; selected modes rotate through presentation frames. Drawing and tracing
+share frame/highlight/enabled state, with hover reported separately.
 Production/queue state normalization and reference input semantics remain open.
 
 The private-output-only comparator checks six independently supplied structural
@@ -1270,6 +1271,33 @@ runner are absent in this checkout. Matching scene comparison remains blocked;
 UI fidelity remains **P**, with no new M/V reference evidence. Only code,
 invented specifications and the aggregate
 [results table](parity_visual_ui_results.md) belong in the public repository.
+
+### L4/L5 iteration (2026-11-01, partial task 52)
+
+**Synthetic implementation evidence only:** new regressions reproduced edge dots
+overwriting all four minimap borders and UI traces reporting hover as highlight
+and selected buttons as frame zero. Minimap contents now respect the map bounds
+and the caller's clip, including disjoint clips, without changing the surrounding
+frame. Command drawing and tracing share presentation state, including town
+service/marked-building selection. Scripted tests check idle hover, Move rotation
+and target completion; raster checks cover minimap edge containment and clip
+restoration at four window/scale configurations with both font paths. These
+presentation changes do not add simulation state or alter replay hashes.
+
+The isolated private probe again captured a clone frame/trace, while reference
+network setup failed before launch. No matching scene, per-region mismatch rate
+or reference UI sequence was obtained. Task 42's shared runner, fixed-tick
+reference camera/UI observer and normalization remain missing dependencies.
+HUD, selection/resource panels, tooltips, fonts, cursor shapes, placement colors,
+construction, health bars and selection circles still require aligned reference
+measurements; no L4/L5 reference status is promoted. Captures and failure logs
+remain under ignored `work/parity/`.
+
+Validation: baseline and final Release builds passed with `AZTEC_GEN_DIR=`.
+The default CTest run passed 34 entries and skipped five private-data entries
+plus restricted UDP process creation. The separate private engine check and
+final clone frame/trace capture passed under dummy SDL inside `unshare -rn`
+using the private installation copy. Pre-commit and whitespace checks passed.
 ## L1 rule experiment preparation (2026-10-29, partial task 43)
 
 **Construction / synthetic evidence:** 19 P scenario specifications cover siege

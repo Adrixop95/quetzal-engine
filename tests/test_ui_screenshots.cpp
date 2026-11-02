@@ -159,6 +159,43 @@ static void run(const std::filesystem::path& output, bool original, int sc, int 
     CHECK(minimap.rect().x == width - 162 * sc && minimap.rect().y == 70 * sc);
     CHECK(minimap.rect().w == 120 * sc && minimap.rect().h == 90 * sc);
     Camera camera; camera.set_world(5760, 4320); camera.set_view(float(width - 204 * sc), float(height));
+    // Edge markers must not overwrite the surrounding minimap frame. Compare
+    // the frame before/after adding dots, independently of terrain or dot color.
+    {
+      auto saved_objects = world.objects;
+      world.objects.clear();
+      minimap.draw(r, camera, 0);
+      const auto empty_map = capture(r, width, height);
+      for (int y : {0, world.height_px()}) for (int x : {0, world.width_px()}) {
+        Object edge; edge.teleport(x * 256, y * 256); world.objects.push_back(edge);
+      }
+      minimap.draw(r, camera, 0);
+      const auto edge_map = capture(r, width, height);
+      const auto m = minimap.rect();
+      CHECK(matches(edge_map, empty_map, width, {m.x - 2, m.y - 2, m.w + 4, 2}, 0, 0));
+      CHECK(matches(edge_map, empty_map, width, {m.x - 2, m.y + m.h, m.w + 4, 2}, 0, 0));
+      CHECK(matches(edge_map, empty_map, width, {m.x - 2, m.y, 2, m.h}, 0, 0));
+      CHECK(matches(edge_map, empty_map, width, {m.x + m.w, m.y, 2, m.h}, 0, 0));
+      // Nested rendering must retain the caller's clip, including disjoint clips.
+      for (SDL_Rect clip : {SDL_Rect{m.x, m.y, m.w / 2, m.h / 2}, SDL_Rect{0, 0, 10, 10}}) {
+        SDL_SetRenderDrawColor(r, 0, 0, 0, 255); SDL_RenderClear(r);
+        SDL_RenderSetClipRect(r, &clip);
+        minimap.draw(r, camera, 0);
+        SDL_Rect restored{}; SDL_RenderGetClipRect(r, &restored);
+        CHECK(SDL_RenderIsClipEnabled(r));
+        CHECK(restored.x == clip.x && restored.y == clip.y && restored.w == clip.w && restored.h == clip.h);
+        const auto clipped = capture(r, width, height);
+        size_t outside = 0;
+        for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x)
+          if (x < clip.x || x >= clip.x + clip.w || y < clip.y || y >= clip.y + clip.h)
+            outside += clipped[size_t(y) * width + x] != 0xff000000;
+        if (outside) std::printf("Clip %d,%d %dx%d: %zu outside pixels\n", clip.x, clip.y, clip.w, clip.h, outside);
+        CHECK(outside == 0);
+        SDL_RenderSetClipRect(r, nullptr);
+      }
+      world.objects = std::move(saved_objects);
+      panel.draw(r, store, font, 123);
+    }
     // A selected command must use the recovered rotation, while hover alone
     // must leave the resource face intact (no generic rectangle overlay).
     auto draw_commands = [&](int mx, int my) {
