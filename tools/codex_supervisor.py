@@ -325,7 +325,7 @@ def main():
                         continue  # Local state prevents rerunning a tracked prompt.
                     deps = [d.strip() for d in (open(q).read().split("\n", 3)[0].replace("Depends:", "").split(",")) if d.strip()] \
                         if open(q).read().startswith("Depends:") else []
-                    if any(st.get(d) != "harvested" or d in pending_merge() for d in deps):
+                    if any((st.get(d) != "harvested" and not os.path.exists(os.path.join(ROOT, "tasks", "done", d + ".md"))) or d in pending_merge() for d in deps):
                         continue
                     result = subprocess.run([sys.executable, ORCH, "start", name, q],
                                             cwd=ROOT, text=True, capture_output=True)
