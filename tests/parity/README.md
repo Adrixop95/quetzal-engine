@@ -100,3 +100,73 @@ and a reference runtime in the build directory are present. Use the explicit
 private command above for the external read-only installation. Remove/archive
 its ignored `work/parity/ctest-l1` output before rerunning a successful-input
 CTest probe; this preserves the no-overwrite rule.
+
+## L8 AI event windows (observer pending)
+
+`tools/parity_ai.py` compares **private, numeric-only event captures**. It is a
+comparison utility, not a reference/clone observer or a scenario launcher. No L8
+measurements or timing expectations are supplied by this checkout. Audited town,
+tactic and production identities, passive-player setup and synchronized event
+observers remain prerequisites. Do not infer attack waves from movement alone,
+retreat from target loss, or expansion from a hall upgrade.
+
+A capture is a JSON array `[1, scenario, horizon, required_mask, events]`. All
+leaves are integers. `scenario` is a private nonnegative setup identifier;
+`horizon` is the last fully observed simulation tick, starting from tick zero.
+Every producer must observe the entire horizon, including intervals without
+events, at the same documented simulation phase. A declared horizon does not
+prove that observation occurred: audit the producer and retain raw logs privately.
+Scenario identity must cover map, seed, sides, starting cash/technology, visibility
+and scripted inputs; matching an arbitrary identifier alone cannot audit them.
+
+Each event is `[tick, side, kind, occurrence, [[type, count], ...]]`. Events are
+ordered by tick. Occurrences start at zero independently for each side/kind and
+must be consecutive. Type IDs are 0..89, sides 0..7, and counts are positive.
+Duplicate types/events are rejected. An event groups the complete composition
+at one observed decision, rather than emitting one event per member.
+
+| Kind | Event | Composition |
+| ---: | --- | --- |
+| 0 | Production starts after payment | Type being constructed/trained, count 1 |
+| 1 | Expansion creates another town | New town's hall type, count 1 |
+| 2 | Offensive force is released | All members released by that decision |
+| 3 | Defence response is issued | All members redirected by that decision |
+| 4 | Retreat is issued | All members withdrawn by that decision |
+
+`required_mask` contains bit `1 << kind` for every required class (31 requires
+all five). Each capture must contain every required class. A passive scenario
+can focus on production/expansion/waves; defence and retreat need controlled
+provocations at identical scenario ticks. Describe those inputs and observer
+definitions in private setup metadata. Response latency is comparable only when
+the provoking event is aligned. Absence of expansion/retreat observations does
+not establish parity for those classes; investigate setup or report them open.
+
+After collecting at least two independent reference repeats and a clone run:
+
+```sh
+python3 -I tools/parity_ai.py \
+  --reference work/parity/l8-run/reference.json work/parity/l8-run/repeat.json \
+  --clone work/parity/l8-run/clone.json --output work/parity/l8-comparison
+```
+
+The command returns 77 for missing captures, 2 for invalid input or an existing
+output, 1 for a difference, and 0 for events within the observed windows. It
+requires a new output directory inside this worktree's `work/parity/`. The entire
+capture is validated before comparison. Different headers, incomplete required
+classes, malformed compositions and unordered events are errors. Reference
+repeats with different event identities/counts return
+`reference_event_coverage_differs` and produce no windows; resolve the variation
+before using this occurrence-based comparison. It is not a distribution test for
+variable numbers of waves.
+
+For stable event coverage, `windows.json` contains only integer rows
+`[side, kind, occurrence, first_tick, last_tick, type, minimum, maximum]`.
+Timing and per-type counts use the inclusive envelope of reference repeats;
+type -1 additionally bounds total force size. No extra timing margin is added.
+Missing/extra clone events and unseen types fail. `diff.json` identifies the
+earliest event difference by tick, then side/kind/occurrence. Per-type envelopes
+do not capture correlations or composition probabilities, and a finite set of
+repeats does not establish every possible reference outcome. A comparison pass
+only covers this event contract; it is not full AI/game parity. Keep captures,
+windows, setup metadata and raw outputs private even when they contain numbers
+only. The CTest `parity_ai` exercises this comparator with invented values.

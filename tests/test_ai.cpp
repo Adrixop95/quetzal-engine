@@ -259,6 +259,8 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
   bool construction = false, movement = false, casualties = false;
   std::array<int, 4> waves{}, shots{}, losses{}, births{};
   std::array<int, 2> side_waves{};
+  std::array<std::array<int, 2>, 4> side_shots{}, side_recruits{}, side_purchases{};
+  std::array<std::array<int, 90>, 2> wave_composition{};
   std::vector<uint64_t> hashes{sa.state_hash(a)};
   const int ticks = 20 * 60 * 12;
   for (int t = 0; t < ticks; ++t) {
@@ -272,6 +274,8 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
     a.begin_tick(); b.begin_tick(); sa.tick(a); sb.tick(b);
     const auto net_income = a.ai_towns[0].harvested - previous[0].harvested -
                             (a.ai_towns[0].spent - previous[0].spent);
+    for (size_t side = 0; side < 2; ++side)
+      side_purchases[size_t(t / 3600)][side] += a.ai_towns[side].spent > previous[side].spent;
     if (t == 999) CHECK(a.side_state[0].money == net_income);
     if (t == 1199) CHECK(a.side_state[0].money == cash + 2000 + net_income);
     for (size_t ti = 0; ti < previous.size(); ++ti) {
@@ -283,16 +287,31 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
       bool released = false;
       for (size_t i = 0; i < objects.size(); ++i) {
         const auto& o = a.objects[i];
-        released |= objects[i].order == uint8_t(Order::Idle) && o.alive && o.side == int(ti) &&
+        const bool member = objects[i].order == uint8_t(Order::Idle) && o.alive && o.side == int(ti) &&
                     o.dest_x == target.x * kTilePx + kTilePx / 2 &&
                     o.dest_y == target.y * kTilePx + kTilePx / 2 &&
                     (o.order == uint8_t(Order::AttackMove) || o.resume == 1);
+        if (member) {
+          CHECK(o.tactic < 0 && rules->type(o.type).armed);
+          CHECK(o.type >= 0 && o.type < 90);
+          if (o.type >= 0 && o.type < 90) ++wave_composition[ti][size_t(o.type)];
+        }
+        released |= member;
       }
       if (released) { ++waves[size_t(t / 3600)]; ++side_waves[ti]; }
     }
     for (size_t i = 0; i < a.objects.size(); ++i) {
-      if (i >= objects.size()) { ++births[size_t(t / 3600)]; continue; }
+      const auto& o = a.objects[i];
+      if (i >= objects.size()) {
+        ++births[size_t(t / 3600)];
+        if (o.side >= 0 && o.side < 2 && rules->type(o.type).armed &&
+            (rules->type(o.type).mobile || rules->type(o.type).flier))
+          ++side_recruits[size_t(t / 3600)][size_t(o.side)];
+        continue;
+      }
       shots[size_t(t / 3600)] += a.objects[i].cooldown > objects[i].cooldown;
+      if (o.side >= 0 && o.side < 2)
+        side_shots[size_t(t / 3600)][size_t(o.side)] += o.cooldown > objects[i].cooldown;
       losses[size_t(t / 3600)] += objects[i].alive && !a.objects[i].alive;
     }
     if ((t + 1) % 3600 == 0) std::fprintf(stderr, "Skirmish tick %d: %zu objects\n", t + 1, a.objects.size());
@@ -311,10 +330,19 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
   for (size_t i = 0; i < waves.size(); ++i) {
     std::printf("Interval %zu: %d shots, %d losses, %d births\n", i, shots[i], losses[i], births[i]);
     CHECK(waves[i] > 0 && shots[i] > 0 && losses[i] > 0 && births[i] > 0);
+    for (size_t side = 0; side < 2; ++side) {
+      std::printf("  Side %zu: %d shots, %d recruits, %d purchases\n", side,
+                  side_shots[i][side], side_recruits[i][side], side_purchases[i][side]);
+      CHECK(side_shots[i][side] > 0 && side_recruits[i][side] > 0 && side_purchases[i][side] > 0);
+    }
   }
   for (int side = 0; side < 2; ++side) {
     CHECK(a.objects[size_t(side)].alive && side_waves[size_t(side)] > 0);
     CHECK(a.ai_towns[size_t(side)].spent > 0 && a.ai_towns[size_t(side)].harvested > 0);
+    // Only footmen are enabled in this synthetic scenario. Count actual released
+    // members, so phase transitions alone cannot masquerade as an attack wave.
+    CHECK(wave_composition[size_t(side)][0] > 0);
+    for (size_t type = 1; type < 90; ++type) CHECK(wave_composition[size_t(side)][type] == 0);
   }
   CHECK(sa.script().unsupported() == 0);
   CHECK(a.objects.size() > 2); CHECK(sa.log().size() == 2);
