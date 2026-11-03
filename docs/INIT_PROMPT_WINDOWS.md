@@ -61,6 +61,7 @@ files), stop and tell me exactly what to do, then continue when I confirm.
 7. Finish with a short report: what works (commands and results), what is missing, and
    the exact commands I use daily (build, run a mission, run tests, check Codex status
    `python3 tools/codex_orch.py status`, check PRs `gh pr list`).
+After the setup, whenever I write just "continue", read `docs/NEXT_STEPS.md` and follow it.
 Respond to me in Polish; code, docs, commits and PR text stay in English.
 ```
 
