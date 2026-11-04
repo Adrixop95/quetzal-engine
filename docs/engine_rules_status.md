@@ -71,17 +71,14 @@ and `engine` checks pass with the complete private map copy under dummy SDL in
 | Movement class small / large (`.dat` 1 = small only) | V code facts / synthetic integration | Marine d11 low byte selects small when nonzero; Spider/Truck/Headtruck use large. Bear is small; Knight/Bizon/Snowman/Elefant large. Missing Marine descriptors retain an explicitly provisional small fallback |
 | Air orders and ground collisions | engine / P reference integration | Aircraft use straight fixed-point movement without terrain/contact blocking, including engine attack-move orders. Ground agents retain continuous disc avoidance/pushing and flow fields. Reference tile reservations, vehicle turning, formation/path decisions and exact arrival timing remain unimplemented or unmeasured; see [V05 progress](rules_movement.md#8-v05-partial-integration-2026-10-28) |
 | Price and build time | V formula / synthetic checks | `types.csv` with outpost/developed hall, runtime speed, hostile-to-everyone and computer branches. Float32 factors evaluated before truncation after +0.5; developed fast computer 100 -> 160 gold / 53 time units. No lifted 161 rounding |
-| Production countdown | engine / O parity | Computed time units drive tick countdowns; one payment at acceptance, none at spawn. Exact original start/completion tick ordering is unverified |
+| Production countdown | engine / O parity | Computed time units drive tick countdowns; one payment at production start, none at spawn. Exact original start/completion tick ordering is unverified |
 | Build tree (who can build what, prerequisites) | V | `buildtree.csv`; ordinary prerequisites require completed objects in the producing town, A entries use side-wide counts. Only map-construction entries reject completed/in-progress/queued copies in that town; flag-0 resource structures and defences are repeatable. Hall upgrades retain their separate reservation guard; DisabledID and adjusted affordability are checked |
 | Town upgrades and non-map structure production | engine / V tables, P placement | Flag-0 structures use adjusted costs/timers and the production queue. Hall completion preserves identity and installs its race/level tree; farms/mines/defences can be queued repeatedly, are automatically placed on free tiles and activate descriptor effects. Exact reference placement, HP transition and completion ticks remain unverified; see validation below |
 | Side `DisabledID` blocks menu entries | V | `docs/formats.md` |
-| Weapon damage | V documented arithmetic / engine synthetic checks | Marine d7 and Defence d59 select weapon IDs. Classes 1/2/13 apply each matching 8.8 multiplier in sequence, then armor term; arrow zero-air suppresses armor. Classes 4/5/6/10 constants implemented; 8 delegates and 12 sums known child damage. Historical duel entries are diagnostics only. Other descriptor weapon mappings/armor retain placeholders |
+| Weapon damage | V documented arithmetic / engine synthetic checks | Marine d7 and Defence d59 select weapon IDs. Classes 1/2/13 apply each matching 8.8 multiplier in sequence, then armor term; arrow zero-air suppresses armor. Classes 4/5/6/10 constants implemented; 8 delegates and 12 sums known child damage. Historical duel entries are diagnostics only. Unsupported weapon behavior retains explicit gaps; see V04 and the siege investigation |
 | Weapon reload getters and cooldown | V getters / partial scheduling | Ball/Axe use d2/d3 for reload/range; class 12 uses its first child. Siege launch cooldown uses reload, following Truck/Headtruck decrement-before-check; other weapons retain reload+1. Animation-marker launch delays and exact hit intervals remain unverified |
 | Projectile and unresolved weapon behavior | partial | Ball/Axe and paired siege launchers now fire descriptor payloads; class 9 supplies chained category damage. Ball impacts evaluate a spatial blast per victim. Standalone FireThrow and burn scheduling remain disabled. See the siege investigation below for evidence and remaining approximations |
 | Weapon range | V getters / P geometry and fallback | Established weapon getters replace generic ranges; Euclidean centre distance plus mobile source radius and placeholder target radius/footprint remains. Types without loaded weapon descriptors retain 56/288/336 px placeholders |
-| Sight range (target acquisition, fog) | P | Rewrite: 288 px (6 tiles), buildings 8 tiles. Reference: per-type interpolated light-mask IDs, daylight and brightness >32; separate tactic scan and weapon checks |
-| Auto-attack of enemies in sight (idle and attack-moving units) | P | nearest enemy, ties = lower id; hostility from the relation matrix |
-| Weapon range | V getters / P geometry and fallback | Established weapon getters replace generic ranges; Euclidean centre distance plus placeholder target radius/footprint remains. Types without loaded weapon descriptors retain 56/288/336 px placeholders |
 | Sight data and visibility predicate | V facts / synthetic checks | Descriptor mask IDs replace the scalar radius. Per-side interpolated brightness must exceed 32; daylight and frame glow contribute. User lighting resources enable these rules; asset-free acquisition retains a P six-tile fallback. See the [sight and fog notes](sight_fog.md) |
 | Auto-attack of visible enemies (idle and attack-moving units) | V visibility gate / P tactic integration | Side brightness >32, hostility and known weapon eligibility gate candidates. Nearest enemy, lower-id ties and four-tick per-object scanning remain placeholders; original tactic bounds, 100-entry arrays and 15..23-tick scans are not implemented |
 | Death and corpses | P / V effect metadata | Marine corpses remain 480 ticks; vehicles spawn 152 and ground debris 113, known-radius structures select rubble 116/115/114 for 250 ticks; unknown radii retain provisional rubble 116. Airborne altitude remains open |
@@ -420,8 +417,8 @@ reference payment/refund semantics remain incomplete. V02's audited object
 identities and aligned normalized AI observers are absent, although packet
 validation and comparison tooling exist. Town-command and hall-upgrade support is
 present; autonomous hall-upgrade selection, exact economic queue semantics, tactic
-assignment and reference timing parity remain open. Existing unsupported boat/johnka/submarine, build/move script
-actions and camera semantics remain listed in the mission-script section.
+assignment and reference timing parity remain open. Unsupported transport sites
+and unresolved build/move/camera semantics remain listed in the mission-script section.
 
 V05-V10 remain incomplete dependencies for campaign acceptance. The work above
 exercises the existing deterministic planner independently of their missing
@@ -460,16 +457,13 @@ Private reports/logs are in `work/ai-probe/engine-m{1,4}-{1,2}.*`.
 | Music: `Music=N` -> track N, otherwise `MusicMask`; next track when one ends | V (format and ascending cyclic order), V construction / synthetic checks | `music_allowed_mask` in `core/audio`; no simulation RNG or mission-name salt |
 | Animation state loops, building/projectile/effect sounds | V construction / synthetic checks; simulation timing remains P where unresolved | Header loops and frame entries use a read-only scene snapshot; visibility/distance/load/exit cleanup checked in `audio_events` |
 | Independent effects/music/speech gain, acknowledgement suppression and speech WAV/caption API | V construction / synthetic checks, P replacement/duration policy | Separate speech gain, UTF-8 captions, missing-WAV/muted/no-device fallback; six presentation seconds, outside World/hash/replay. Selection/order/announcement producers still need evidenced IDs; see [audio evidence](audio.md) |
-| Pan = (x - view centre x) clamped to +-4000 hundredths of dB; attenuation: none up to 500 px, linear to -4000 at 800 px, silent beyond | V (`docs/formats.md`), P (100 units = 1 dB) | the "fog cell >= 0x21" condition is not applied |
-| Music: `Music=N` -> track N, otherwise `MusicMask`; next track when one ends | V format / synthetic engine coverage; O live parity | Ascending available-track cycle; `music_allowed_mask` in `core/audio`; no mission-name seed |
-| State loops, animation building/effect sounds, volumes | synthetic engine coverage / O reference timing | See [audio dispatch inventory](audio.md); selection/order speech, subtitles, announcements and UI dispatch remain incomplete |
 | L6 audio request traces and ordered comparison | V construction / O reference identity and parity | JSONL clone events with dispatch triggers; reference buffer requests require audited private sound/trigger mapping. Global order and one-tick tolerance; absent classes stay unobserved. [L6 evidence and blockers](parity.md#l6-audio-event-comparison-2026-10-29) |
 
 ## Saves
 | Rule | Status | Notes |
 |---|---|---|
 | Engine saves: versioned AZS3, bounded transactional parsing, explicit little-endian encoding, content/script identity, atomic slot replacement and refusal of replay hash mismatch before replacing the active world | V construction / synthetic tests | `engine_save` and `engine_save_processes`: malformed inputs, repaired-checksum fuzzing, write-failure preservation, fresh-process 14,400-tick save plus 300 matching continuation ticks, camera metadata and script victory. Ctrl+S / Ctrl+L remain mission-local. [Format, limits and remaining V16 acceptance](engine_saves.md); AZS2 is refused. V03 full-state audit and native Windows/campaign continuation remain unverified |
-| Original `*.sav` format | not done | waiting for the savegame documentation |
+| Original `*.sav` format and engine import | V reader/import construction / O continuation parity | Core decoding and CLI snapshot import exist; `savegame`, `save_import` and optional `save_import_private` cover supported fields. Saved production, orders, script execution and other simulation state remain incomplete; see [import limits](savegame.md#independent-engine-import) |
 
 ## Resource and production validation (2026-10-26)
 
@@ -480,7 +474,7 @@ asymmetric mine mask (16 gold/100 active ticks), a channel-A-only Rus farm
 rounding (367), repair credits without cash, StartTime 1200 partial cycles,
 periodic wraparound, Chinese-style date-zero cursor reset, local versus side-wide
 prerequisites, duplicate structures, insufficient funds, speed-dependent costs,
-single payment at spawn, cancellation and serialized command replay over a day.
+single payment at production start, cancellation and serialized command replay over a day.
 These are engine/formula checks, not measured reference equivalence.
 
 **Engine conventions / O:** each unpaused tick advances the clock before building
@@ -688,7 +682,7 @@ required for any claim that its outcomes match the original game.
 
 **Independent implementation / existing V tables:** the menu retains flag-0
 structure entries from `buildtree.csv`. The existing price/time formula applies
-at acceptance, with one payment and a frozen countdown. Queue reservations block
+at production start, with one payment and a frozen countdown (task 36). Queue reservations block
 competing hall upgrades in the same town. Only map-construction entries reject
 duplicate structures; queued farms, mines and defences allow multiple copies. DisabledID,
 affordability and local/side-wide prerequisites still apply. Completion replaces
@@ -698,8 +692,9 @@ and installs the race/level build tree. No generic troop-stat bonus is applied.
 Other flag-0 structures complete in their producing town and use the existing
 resource-map income, warehouse, repair-supply and prerequisite rules. Town-member
 command selection resolves mission section numbers independently of vector slots;
-repair supply uses the corresponding town slot. The AI purchase skeleton continues
-to select mobile units; autonomous development remains a separate task.
+repair supply uses the corresponding town slot. The deterministic town planner
+selects economic, development and combat offers; autonomous hall-upgrade selection
+remains open. See the computer-player inventory above.
 
 **P engine policies / O reference parity:** automatic placement searches free
 footprints in increasing square rings around the live hall, with row/column tie
@@ -1958,6 +1953,18 @@ or semantic divergences. See [the iteration record](parity.md#l1l2-iteration-202
 for commands, evidence boundaries and remaining work. Asset-free controls cover
 clone horizon validation, failure aggregation and independent mutable game copies.
 
+## Conflict-resolution audit (2026-11-04)
+
+The [task-by-task review](AUDIT_2026-11.md) maps tasks 01–48 to current code,
+registered checks and remaining acceptance gaps. Duplicate range/audio rows and
+superseded scalar-sight, acquisition, original-save and AI-skeleton claims were
+removed or reconciled with the current implementation. This is a documentation
+correction; no reference rule or simulation parameter was promoted.
+
+A synthetic integration regression now feeds the actual L6 audio comparator into
+triage/matrix generation. Equal nonempty event streams count as observed passes;
+missing, extra, reordered or late events remain failures, and empty streams do
+not establish a pass. These checks exercise tooling, not reference audio parity.
 ## Campaign input and outcome iteration (2026-11-04, partial)
 
 This iteration addresses V06/V12/V16/V19 engine consistency; the full roadmap

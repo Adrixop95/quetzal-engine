@@ -5,8 +5,10 @@ files follow the top-level contract in `docs/PARITY_TEST_PLAN.md`; nested keys
 remain provisional until audited L1 setup, command and observer adapters exist.
 Use `tools/parity_rules.py` for these specifications; `parity_run.py --layer L1`
 does not execute them. These are P specifications,
-with no measured expectations or original data. The task prompts 36, 37 and 40
-referenced by task 43 are also absent; no dependency implementation is assumed.
+with no measured expectations or original data. Tasks 36, 37 and 40 now have
+archived prompts under `tasks/done/` and integrated production, repeatable-mine
+and siege implementations with synthetic coverage. They do not supply the
+missing reference setup, command or observer adapters described below.
 
 There are 26 base cases: three siege movement cases, six target-category damage
 controls, reload, range, projectile flight, mine construction, price, income,
