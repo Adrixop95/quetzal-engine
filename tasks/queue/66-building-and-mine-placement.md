@@ -1,0 +1,7 @@
+Depends: 64-shared-runner-observer
+Task: building placement grid and mine placement, a known playtest gap (the clone differs from the original when the player places buildings and mines).
+Scope: placement grid alignment and snapping, footprint and clearance rules, terrain and occupancy validity, valid/invalid colouring and feedback, distance rules between town centres, mine placement on resource tiles, cancel and rotate behaviour, and the cursor and ghost sprite shown while placing.
+Method: use the test map ztest_all (task 63, tools/make_testmaps.py) with a scripted-input scenario in tests/parity/ that places the same building at the same screen positions in both programs, and compare per tick: the validity decision, the snapped cell, the footprint cells and the placement-overlay frame. Measure the original; do not guess rules from code.
+Requirements: fix src/engine placement code until decisions and snapped cells match for every building class (outpost, village, town, fortress, economy, military, defence, mine), add synthetic regression tests that need no game data, and update docs/ROADMAP.md rows touching construction placement with evidence labels.
+Sandbox note: live reference runs are denied inside the Codex sandbox. Implement the scenarios and comparator hooks, write the live run commands into docs/EXPERIMENTS.md, and finish with status "needs live run" if no reference data is available.
+Public repo, English only, no game data or captures committed.

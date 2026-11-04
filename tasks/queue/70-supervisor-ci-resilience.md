@@ -1,0 +1,8 @@
+Task: make tools/codex_supervisor.py resilient to infrastructure failures, found during the 2026-11-04 run on WSL.
+Observed problems:
+1. A cancelled hosted job ("AppleClang ... job was not acquired by Runner") is counted as a CI failure, so fix_ci() ran three times on a PR with nothing to fix, and the PR was marked STUCK after "commit failed ... (no files to check)". Cancelled or "not acquired" jobs must trigger gh run rerun --failed (bounded retries with delay) and must not consume the code-fix attempt budget.
+2. ATTEMPTS and STUCK live only in memory, so a supervisor restart resets them and re-runs half-finished conflict resolutions. Persist them in work/codex/state (not in git) and keep a log line per attempt with its outcome.
+3. A resumed conflict resolution that is killed (service restart, WSL shutdown) leaves LAND in a dirty merge state; make ensure_land() recover cleanly and log it.
+4. Add a status subcommand to tools/codex_orch.py or the supervisor that prints per task and per PR: running, harvested, CI state, attempts, STUCK reason. codex_orch.py status currently shows stale "stopped" states copied from another machine; detect a session id that has no process on this host and report it as "unknown".
+5. Pre-existing codespell failures: codespell v2.3.0 flags a unittest assertion method name as a typo in tests (the one starting with "assertI"); add that word to the codespell ignore list in .pre-commit-config.yaml (ignore-words-list) so Codex does not rename valid test code.
+Requirements: unit tests for the retry and persistence logic with a fake gh/codex runner (no network), English only, follow CLAUDE.md. Do not change the merge policy: squash merge only, never --admin, never push to main, master or develop.

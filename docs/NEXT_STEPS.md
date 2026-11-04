@@ -34,3 +34,30 @@ UI click animation and highlighting. Check `docs/ROADMAP.md` for current status.
 3. Without a Codex limit, tasks start from `tasks/queue/` in dependency order. Merge
    conflicts and CI failures on `feature/codex-*` PRs are handled by the supervisor.
 4. Report to the user in Polish, briefly.
+
+## Plan for 2026-11-05
+
+Done on 2026-11-04: tasks 56, 57, 62, 63 merged (#99, #100, #102, #103); task 59 (#101)
+was waiting for CI. The reference runtime builds and runs headless in `unshare -rn`
+outside the Codex sandbox; inside the Codex sandbox namespace creation is denied, so
+live reference runs are executed by the orchestrator and prompts end with "needs live run".
+
+Queue (merge this PR first so the supervisor can start them), in dependency order:
+
+1. `64-shared-runner-observer` and `70-supervisor-ci-resilience` (no dependencies, start first).
+2. `65-l1-rule-measurements`, `66-building-and-mine-placement`, `68-pathing-quality`,
+   `69-ui-click-feedback` (all need 64).
+3. `67-construction-flow` (needs 66).
+
+Orchestrator duties: run the live reference commands from the run sheets in
+`docs/EXPERIMENTS.md` outside the sandbox, feed the data back, review diffs before merge,
+rerun cancelled hosted jobs, keep `CODEX_MAX_PARALLEL=5`.
+
+Second batch (feature and acceptance work, start after the first batch frees slots):
+
+- `71-campaign-transport-and-objectives`, `73-sight-and-fog-consumers`,
+  `74-projectile-collision-and-splash`, `72-original-save-resume`,
+  `78-release-packaging-acceptance`, `79-sanitizers-and-soak` (no dependencies).
+- `75-ai-composition-and-launch-scoring`, `76-audio-live-controls`,
+  `77-campaign-ui-and-progression` (need 64).
+- `80-playthrough-matrix` (needs 71).
