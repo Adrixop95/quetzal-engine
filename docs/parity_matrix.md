@@ -138,6 +138,206 @@ failures. It is outside the historical scenario totals above. See
 [AUDIT_2026-11.md](AUDIT_2026-11.md) for findings and remaining evidence gaps.
 | experiment_failed | 35 |
 
+## UI region diff investigation (2026-11-04)
+
+These are capture attempts, outside the paired L4/L5 scenario totals above.
+Every executable route was attempted twice per phase on a separate private
+installation inside `unshare -rn`, with dummy SDL video and audio. The rebuilt
+reference runtime could not launch because namespace loopback configuration
+failed with a netlink permission error. No reference frame exists. Task 58
+region partitions, aligned timing and semantic observers remain unverified.
+No static UI parity fix or dynamic tolerance measurement is claimed.
+
+`F2` = two failed isolated launch attempts; `B` = explicit route blocker;
+`R2/0` = two repeatable clone captures with zero differing pixels between
+repeats. `N/A` is an unavailable paired pixel count, never zero. Each row
+reports both phases independently; static mismatch rectangle counts are also
+unavailable for every row. Private captures and diff reports remain under
+`work/parity/ui/task59/`. See [the tool contract](ui_screens.md#region-diff-diagnostics-2026-11-04-partial-task-59).
+
+| Screen/state ID | Reference before | Clone before | Reference after | Clone after | Paired pixels before | Paired pixels after |
+| --- | --- | --- | --- | --- | ---: | ---: |
+| `splash` | B | B | B | B | N/A | N/A |
+| `intro` | B | B | B | B | N/A | N/A |
+| `profile` | F2 | B | F2 | B | N/A | N/A |
+| `main-menu` | F2 | R2/0 | F2 | R2/0 | N/A | N/A |
+| `main-campaign-normal` | B | R2/0 | B | R2/0 | N/A | N/A |
+| `main-campaign-hover` | B | R2/0 | B | R2/0 | N/A | N/A |
+| `main-campaign-pressed` | B | B | B | B | N/A | N/A |
+| `main-custom-map-normal` | B | R2/0 | B | R2/0 | N/A | N/A |
+| `main-custom-map-hover` | B | R2/0 | B | R2/0 | N/A | N/A |
+| `main-custom-map-pressed` | B | B | B | B | N/A | N/A |
+| `main-options-normal` | B | R2/0 | B | R2/0 | N/A | N/A |
+| `main-options-hover` | B | R2/0 | B | R2/0 | N/A | N/A |
+| `main-options-pressed` | B | B | B | B | N/A | N/A |
+| `main-quit-normal` | B | R2/0 | B | R2/0 | N/A | N/A |
+| `main-quit-hover` | B | R2/0 | B | R2/0 | N/A | N/A |
+| `main-quit-pressed` | B | B | B | B | N/A | N/A |
+| `main-new-game-normal` | B | B | B | B | N/A | N/A |
+| `main-new-game-hover` | B | B | B | B | N/A | N/A |
+| `main-new-game-pressed` | B | B | B | B | N/A | N/A |
+| `main-load-normal` | B | B | B | B | N/A | N/A |
+| `main-load-hover` | B | B | B | B | N/A | N/A |
+| `main-load-pressed` | B | B | B | B | N/A | N/A |
+| `main-multiplayer-normal` | B | B | B | B | N/A | N/A |
+| `main-multiplayer-hover` | B | B | B | B | N/A | N/A |
+| `main-multiplayer-pressed` | B | B | B | B | N/A | N/A |
+| `main-credits-normal` | B | B | B | B | N/A | N/A |
+| `main-credits-hover` | B | B | B | B | N/A | N/A |
+| `main-credits-pressed` | B | B | B | B | N/A | N/A |
+| `new-game` | B | B | B | B | N/A | N/A |
+| `difficulty-easy` | B | B | B | B | N/A | N/A |
+| `difficulty-normal` | B | B | B | B | N/A | N/A |
+| `difficulty-hard` | B | B | B | B | N/A | N/A |
+| `campaign-selection` | F2 | R2/0 | F2 | R2/0 | N/A | N/A |
+| `mission-selection-1` | F2 | R2/0 | F2 | R2/0 | N/A | N/A |
+| `briefing-1` | F2 | R2/0 | F2 | R2/0 | N/A | N/A |
+| `hud-mission-1` | F2 | R2/0 | F2 | R2/0 | N/A | N/A |
+| `mission-selection-2` | F2 | R2/0 | F2 | R2/0 | N/A | N/A |
+| `briefing-2` | F2 | R2/0 | F2 | R2/0 | N/A | N/A |
+| `hud-mission-2` | F2 | R2/0 | F2 | R2/0 | N/A | N/A |
+| `mission-selection-3` | F2 | R2/0 | F2 | R2/0 | N/A | N/A |
+| `briefing-3` | F2 | R2/0 | F2 | R2/0 | N/A | N/A |
+| `hud-mission-3` | F2 | R2/0 | F2 | R2/0 | N/A | N/A |
+| `mission-selection-4` | F2 | R2/0 | F2 | R2/0 | N/A | N/A |
+| `briefing-4` | F2 | R2/0 | F2 | R2/0 | N/A | N/A |
+| `hud-mission-4` | F2 | R2/0 | F2 | R2/0 | N/A | N/A |
+| `mission-selection-5` | F2 | R2/0 | F2 | R2/0 | N/A | N/A |
+| `briefing-5` | F2 | R2/0 | F2 | R2/0 | N/A | N/A |
+| `hud-mission-5` | F2 | R2/0 | F2 | R2/0 | N/A | N/A |
+| `custom-selection` | B | R2/0 | B | R2/0 | N/A | N/A |
+| `load-empty` | B | B | B | B | N/A | N/A |
+| `load-selected` | B | B | B | B | N/A | N/A |
+| `load-confirmation` | B | B | B | B | N/A | N/A |
+| `save-empty` | B | B | B | B | N/A | N/A |
+| `save-selected` | B | B | B | B | N/A | N/A |
+| `save-confirmation` | B | B | B | B | N/A | N/A |
+| `options` | B | R2/0 | B | R2/0 | N/A | N/A |
+| `options-video` | B | R2/0 | B | R2/0 | N/A | N/A |
+| `options-audio` | B | R2/0 | B | R2/0 | N/A | N/A |
+| `options-controls` | B | B | B | B | N/A | N/A |
+| `options-game` | B | R2/0 | B | R2/0 | N/A | N/A |
+| `credits` | B | B | B | B | N/A | N/A |
+| `multiplayer-connection` | B | B | B | B | N/A | N/A |
+| `multiplayer-host` | B | B | B | B | N/A | N/A |
+| `multiplayer-join` | B | B | B | B | N/A | N/A |
+| `multiplayer-players` | B | B | B | B | N/A | N/A |
+| `multiplayer-ready` | B | B | B | B | N/A | N/A |
+| `loading-mission-1` | B | B | B | B | N/A | N/A |
+| `loading-mission-2` | B | B | B | B | N/A | N/A |
+| `loading-mission-3` | B | B | B | B | N/A | N/A |
+| `loading-mission-4` | B | B | B | B | N/A | N/A |
+| `loading-mission-5` | B | B | B | B | N/A | N/A |
+| `command-card-footman` | B | B | B | B | N/A | N/A |
+| `command-card-rifleman` | B | B | B | B | N/A | N/A |
+| `command-card-demolisher` | B | B | B | B | N/A | N/A |
+| `command-card-truck-axethrower` | B | B | B | B | N/A | N/A |
+| `command-card-cannon` | B | B | B | B | N/A | N/A |
+| `command-card-bear` | B | B | B | B | N/A | N/A |
+| `command-card-knight` | B | B | B | B | N/A | N/A |
+| `command-card-zeppelin` | B | B | B | B | N/A | N/A |
+| `command-card-truck-flamethrower` | B | B | B | B | N/A | N/A |
+| `command-card-truck-katusha` | B | B | B | B | N/A | N/A |
+| `command-card-rus-forpost` | B | B | B | B | N/A | N/A |
+| `command-card-rus-village` | B | B | B | B | N/A | N/A |
+| `command-card-rus-farm` | B | B | B | B | N/A | N/A |
+| `command-card-rus-mine` | B | B | B | B | N/A | N/A |
+| `command-card-rus-barracks` | B | B | B | B | N/A | N/A |
+| `command-card-rus-stable` | B | B | B | B | N/A | N/A |
+| `command-card-rus-bearlair` | B | B | B | B | N/A | N/A |
+| `command-card-rus-watch-tower` | B | B | B | B | N/A | N/A |
+| `command-card-rus-warehouse` | B | B | B | B | N/A | N/A |
+| `command-card-rus-town` | B | B | B | B | N/A | N/A |
+| `command-card-rus-workshop` | B | B | B | B | N/A | N/A |
+| `command-card-rus-armory` | B | B | B | B | N/A | N/A |
+| `command-card-rus-labs` | B | B | B | B | N/A | N/A |
+| `command-card-rus-fortress-tower` | B | B | B | B | N/A | N/A |
+| `command-card-rus-fortress` | B | B | B | B | N/A | N/A |
+| `command-card-rus-air-facility` | B | B | B | B | N/A | N/A |
+| `command-card-rus-cannon-tower` | B | B | B | B | N/A | N/A |
+| `command-card-archer` | B | B | B | B | N/A | N/A |
+| `command-card-mage` | B | B | B | B | N/A | N/A |
+| `command-card-tuzem` | B | B | B | B | N/A | N/A |
+| `command-card-spider-crossbow` | B | B | B | B | N/A | N/A |
+| `command-card-jaguar` | B | B | B | B | N/A | N/A |
+| `command-card-bizon` | B | B | B | B | N/A | N/A |
+| `command-card-eagle` | B | B | B | B | N/A | N/A |
+| `command-card-deltaplan` | B | B | B | B | N/A | N/A |
+| `command-card-spider-flamethrower` | B | B | B | B | N/A | N/A |
+| `command-card-spider-axethrower` | B | B | B | B | N/A | N/A |
+| `command-card-azt-forpost` | B | B | B | B | N/A | N/A |
+| `command-card-azt-village` | B | B | B | B | N/A | N/A |
+| `command-card-azt-farm` | B | B | B | B | N/A | N/A |
+| `command-card-azt-warehouse` | B | B | B | B | N/A | N/A |
+| `command-card-azt-barracks` | B | B | B | B | N/A | N/A |
+| `command-card-azt-archer-tower` | B | B | B | B | N/A | N/A |
+| `command-card-azt-hut` | B | B | B | B | N/A | N/A |
+| `command-card-azt-stable` | B | B | B | B | N/A | N/A |
+| `command-card-azt-jaguarlair` | B | B | B | B | N/A | N/A |
+| `command-card-azt-nest` | B | B | B | B | N/A | N/A |
+| `command-card-azt-town` | B | B | B | B | N/A | N/A |
+| `command-card-azt-mine` | B | B | B | B | N/A | N/A |
+| `command-card-azt-crossbow-tower` | B | B | B | B | N/A | N/A |
+| `command-card-azt-temple` | B | B | B | B | N/A | N/A |
+| `command-card-azt-workshop` | B | B | B | B | N/A | N/A |
+| `command-card-azt-air-facility` | B | B | B | B | N/A | N/A |
+| `command-card-ninja` | B | B | B | B | N/A | N/A |
+| `command-card-hypno` | B | B | B | B | N/A | N/A |
+| `command-card-chief` | B | B | B | B | N/A | N/A |
+| `command-card-snowman` | B | B | B | B | N/A | N/A |
+| `command-card-elefant` | B | B | B | B | N/A | N/A |
+| `command-card-wheel-katusha` | B | B | B | B | N/A | N/A |
+| `command-card-wheel-firethrower` | B | B | B | B | N/A | N/A |
+| `command-card-paraplan` | B | B | B | B | N/A | N/A |
+| `command-card-wheel-axethrower` | B | B | B | B | N/A | N/A |
+| `command-card-wheel-crossbow` | B | B | B | B | N/A | N/A |
+| `command-card-chi-forpost` | B | B | B | B | N/A | N/A |
+| `command-card-chi-village` | B | B | B | B | N/A | N/A |
+| `command-card-chi-farm` | B | B | B | B | N/A | N/A |
+| `command-card-chi-mine` | B | B | B | B | N/A | N/A |
+| `command-card-chi-barracks` | B | B | B | B | N/A | N/A |
+| `command-card-chi-firethrow-tower` | B | B | B | B | N/A | N/A |
+| `command-card-chi-hypno-tower` | B | B | B | B | N/A | N/A |
+| `command-card-chi-warehouse` | B | B | B | B | N/A | N/A |
+| `command-card-chi-town` | B | B | B | B | N/A | N/A |
+| `command-card-chi-hypno-school` | B | B | B | B | N/A | N/A |
+| `command-card-chi-prison` | B | B | B | B | N/A | N/A |
+| `command-card-chi-workshop` | B | B | B | B | N/A | N/A |
+| `command-card-chi-armory` | B | B | B | B | N/A | N/A |
+| `command-card-chi-fortress` | B | B | B | B | N/A | N/A |
+| `command-card-chi-stable` | B | B | B | B | N/A | N/A |
+| `command-card-chi-cave` | B | B | B | B | N/A | N/A |
+| `command-card-chi-air-facility` | B | B | B | B | N/A | N/A |
+| `command-card-chi-watchtower` | B | B | B | B | N/A | N/A |
+| `command-card-chi-airtower` | B | B | B | B | N/A | N/A |
+| `command-card-abdula` | B | B | B | B | N/A | N/A |
+| `command-card-catapult` | B | B | B | B | N/A | N/A |
+| `command-card-boat` | B | B | B | B | N/A | N/A |
+| `command-card-zeppelin2` | B | B | B | B | N/A | N/A |
+| `command-card-shipyard` | B | B | B | B | N/A | N/A |
+| `command-card-hopcannon` | B | B | B | B | N/A | N/A |
+| `command-card-johnka` | B | B | B | B | N/A | N/A |
+| `command-card-camera` | B | B | B | B | N/A | N/A |
+| `build-menu` | B | B | B | B | N/A | N/A |
+| `placement-mode` | B | B | B | B | N/A | N/A |
+| `selection-panel` | B | B | B | B | N/A | N/A |
+| `minimap` | F2 | R2/0 | F2 | R2/0 | N/A | N/A |
+| `resource-bar` | F2 | R2/0 | F2 | R2/0 | N/A | N/A |
+| `messages` | B | B | B | B | N/A | N/A |
+| `pause-menu` | F2 | R2/0 | F2 | R2/0 | N/A | N/A |
+| `objectives` | B | R2/0 | B | R2/0 | N/A | N/A |
+| `mission-result-victory` | B | B | B | B | N/A | N/A |
+| `mission-result-defeat` | B | B | B | B | N/A | N/A |
+| `victory` | B | B | B | B | N/A | N/A |
+| `defeat` | B | B | B | B | N/A | N/A |
+
+Totals per phase: 173 screens; 21 reference launch failures and 152 reference
+route blockers; 34 repeatable clone routes and 139 clone route blockers;
+zero measurable pairs, zero verified pixel passes. The nine synthetic diff
+tests validate the comparator only. Release build and 44 CTest entries pass
+(six skips). Pre-commit remains blocked: its default cache is read-only and
+a writable worktree cache cannot fetch hooks because GitHub DNS resolution
+fails. Repository asset/English hooks and local text/JSON checks run separately.
 ## Gameplay capture counts
 
 | Screen | Reference captures | Clone captures | Paired comparisons | Ten-minute clone recordings |
