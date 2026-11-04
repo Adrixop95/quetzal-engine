@@ -3,6 +3,7 @@
 //
 // Script lines (case-insensitive, '#' starts a comment):
 //   wait N                 N frames (each advances the simulation by one tick)
+//   until N                wait for logical tick N, or a terminal mission outcome
 //   run N                  N simulation ticks without rendering
 //   move X Y               mouse to window pixel (X, Y)
 //   click X Y | rclick X Y | mclick X Y      move + press + release (left / right / middle)
@@ -46,6 +47,7 @@ class PlaytestScript {
   std::vector<Line> lines_;
   size_t pc_ = 0;
   int wait_ = 0;
+  uint64_t until_tick_ = 0;
   // pending releases for the frame after a click / key
   bool release_left_ = false, release_right_ = false, release_middle_ = false;
   std::vector<SDL_Scancode> release_keys_;

@@ -20,7 +20,7 @@ static std::string lower(std::string s) {
 }
 
 bool PlaytestScript::load(const std::string& path, std::string& err) {
-  lines_.clear(); pc_ = 0;
+  lines_.clear(); pc_ = 0; until_tick_ = 0;
   std::vector<uint8_t> bytes;
   if (!read_file(path, bytes) || bytes.size() > detail::kTextBytes) { err = "cannot read bounded playtest script " + path; return false; }
   std::istringstream f(std::string(bytes.begin(), bytes.end()));
@@ -108,6 +108,8 @@ bool PlaytestScript::step(Input& in, const World& w, const GameSim* sim, Playtes
   for (SDL_Scancode key : release_keys_) in.key_down[key] = false;
   release_keys_.clear();
   update_modifiers(in);
+  if (until_tick_ && w.tick < until_tick_ && w.outcome == kRunning) return true;
+  until_tick_ = 0;
   if (drag_phase_ > 0) {
     // 1: move to start, 2: press, 3: move to end (buttons held), 4: release
     switch (drag_phase_) {
@@ -122,6 +124,16 @@ bool PlaytestScript::step(Input& in, const World& w, const GameSim* sim, Playtes
     const Line& l = lines_[pc_++];
     auto num = [&](size_t i) { return i < l.args.size() ? std::atoi(l.args[i].c_str()) : 0; };
     if (l.cmd == "wait") { wait_ = std::max(0, num(0) - 1); return true; }
+    if (l.cmd == "until") {
+      char* end = nullptr;
+      const long target = l.args.size() == 1 ? std::strtol(l.args[0].c_str(), &end, 10) : 0;
+      if (!end || end == l.args[0].c_str() || *end || target < 1 || target > 7200) {
+        std::fprintf(stderr, "playtest line %d: until requires 1..7200 ticks\n", l.src_line);
+        failures_++; continue;
+      }
+      if (w.tick < uint64_t(target) && w.outcome == kRunning) { until_tick_ = uint64_t(target); return true; }
+      continue;
+    }
     if (l.cmd == "run") { req.run_ticks = num(0); return true; }
     if (l.cmd == "move") { in.mx = num(0); in.my = num(1); return true; }
     if (l.cmd == "click" || l.cmd == "rclick" || l.cmd == "mclick") {
