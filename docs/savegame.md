@@ -353,7 +353,9 @@ are treated as town hall references to restore town positions (an inference
 supported by all nine linked hall types in the locally checked save);
 recognised hall types restore race and level where unambiguous (type 47 shares
 two levels and retains matching mission metadata). Objects restore current and
-maximum HP, pixel positions and Marine fractional positions. Zero/nonpositive HP
+secondary HP separately, pixel positions and Marine fractional positions.
+Simulation initialization obtains maximum HP from the type descriptors, not
+the saved secondary field. Zero/nonpositive HP
 remains dead through simulation initialization. Side treasury, team colour and
 nonzero disabled-type bytes for the 90 UGI types populate engine economy and
 build-menu restrictions. Saved fog replaces each side's mission `.vis` layer. A grid matching the map
@@ -369,7 +371,7 @@ Side per-type arrays and Town BuildTree research/production blocks. **Research
 and tech progression are not interpreted or executed**: only the decoded type
 restrictions affect build menus. Current research levels, production queues,
 construction progress, harvest state, spending statistics, diplomacy, outcomes,
-orders/targets, pathfinding state, facing/playback, secondary HP, RNG, transports,
+orders/targets, pathfinding state, facing/playback, RNG, transports,
 projectiles, effects, decorations, selection and active triggers/timers are not
 restored to their engine systems. Ungrouped objects have side -1 because their
 ownership is unresolved. Tactic scenario identity is not inferred from an

@@ -18,8 +18,8 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 cd "$ROOT"
-GAME=$(realpath "$GAME")
 command -v python3 >/dev/null
+GAME=$(python3 -I -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve())' "$GAME")
 mkdir -p work/gen work/decomp
 if [ -n "$GHIDRA" ]; then
   GHIDRA=$(realpath "$GHIDRA")

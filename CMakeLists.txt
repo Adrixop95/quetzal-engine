@@ -185,6 +185,8 @@ add_test(NAME animation_headless COMMAND test_render_contracts --headless)
 set_tests_properties(animation_headless PROPERTIES LABELS "unit"
   ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
 if(Python3_Interpreter_FOUND)
+  add_test(NAME testmaps_tools COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tests/test_testmaps.py $<TARGET_FILE:aztec_map_viewer>)
+  set_tests_properties(testmaps_tools PROPERTIES LABELS "unit" TIMEOUT 180)
   add_test(NAME zspr_tools COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_zspr_tools.py)
   set_tests_properties(zspr_tools PROPERTIES LABELS "unit")
 endif()
@@ -287,6 +289,11 @@ if(Python3_Interpreter_FOUND)
   set_tests_properties(determinism_processes PROPERTIES LABELS "unit" TIMEOUT 150)
   add_test(NAME parity_controls COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tools/parity_report.py self-test)
   set_tests_properties(parity_controls PROPERTIES LABELS "unit" TIMEOUT 20)
+  if(UNIX)
+    add_test(NAME handoff_tools COMMAND ${Python3_EXECUTABLE} -I
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_handoff_tools.py)
+    set_tests_properties(handoff_tools PROPERTIES LABELS "unit" TIMEOUT 30)
+  endif()
   add_test(NAME parity_triage_matrix COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_triage.py)
   set_tests_properties(parity_triage_matrix PROPERTIES LABELS "unit;parity" TIMEOUT 30)
@@ -302,6 +309,9 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME ui_diff COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ui_diff.py)
   set_tests_properties(ui_diff PROPERTIES LABELS "unit;parity" TIMEOUT 30)
+  add_test(NAME gameplay_compare COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gameplay_compare.py $<TARGET_FILE:aztec_engine>)
+  set_tests_properties(gameplay_compare PROPERTIES LABELS "unit;parity" TIMEOUT 30)
   add_test(NAME frontend_capture_controls COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ui_capture.py)
   set_tests_properties(frontend_capture_controls PROPERTIES LABELS "unit;parity" TIMEOUT 20)

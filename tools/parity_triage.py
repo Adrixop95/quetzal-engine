@@ -11,7 +11,7 @@ import re
 ROOT = Path(__file__).resolve().parents[1]
 PRIVATE = ROOT / "work/parity"
 LAYERS = tuple(f"L{i}" for i in range(9))
-PASSES = {"equal_observed_fields", "equal_observed_visual_ui"}
+PASSES = {"equal_observed_fields", "equal_observed_visual_ui", "equal_observed_events"}
 SKIPS = {"skipped_missing_private_inputs", "skipped"}
 # Public output uses a closed vocabulary: arbitrary private strings never escape.
 PUBLIC_CATEGORIES = PASSES | SKIPS | {
@@ -19,6 +19,7 @@ PUBLIC_CATEGORIES = PASSES | SKIPS | {
     "experiment_failed", "reference_nondeterminism", "reference_semantic_nondeterminism",
     "blocked_setup_contract", "blocked_alignment_contract", "invalid_observation",
     "visual_structure", "visual_pixels", "ui_sequence",
+    "extra_event", "missing_event", "identity_or_order", "timing", "no_events",
 }
 
 

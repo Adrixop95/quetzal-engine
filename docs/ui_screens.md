@@ -313,3 +313,16 @@ before/after differences is unavailable. No clone rendering fix can be justified
 from these failed reference observations. Task 58's unverified timing, region and
 semantic-state dependencies remain open. Per-screen counts are in
 [parity_matrix.md](parity_matrix.md#ui-region-diff-investigation-2026-11-04).
+## Generated custom missions
+
+Catalogue entries `ztest-all` and `ztest-battle` cover the generated custom-map
+showcase and combat setup. Generate them in a private game copy with
+`tools/make_testmaps.py`; see [EXPERIMENTS.md](EXPERIMENTS.md#generated-showcase-and-battle-maps)
+for direct captures and cleanup. Race/category labels are mission notes and
+private layout coordinates; terrain remains a runtime copy of campaign terrain.
+The catalogue runner currently only accepts numbered campaign missions, so both
+custom entries retain explicit blockers. Direct clone captures exercise loading,
+not catalogue repeatability or reference pixel parity. The reference launch is
+blocked by namespace loopback permissions. Construction, selection, queues and
+burning/death input recipes and remaining adapter dependencies are recorded in
+[the provisional scenario](../tests/parity/testmaps.json).

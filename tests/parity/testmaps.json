@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "id": "generated-testmaps",
+  "layer": "L4",
+  "evidence": "P",
+  "maps": [
+    {
+      "kind": "campaign-derived",
+      "mission": "ztest_all",
+      "template": "mission_14",
+      "generator": "tools/make_testmaps.py",
+      "states": ["health-100", "health-66", "health-33", "health-10", "town-levels", "idle", "move", "path", "inverted-path", "cycle", "inverted-cycle", "locked"]
+    },
+    {
+      "kind": "campaign-derived",
+      "mission": "ztest_battle",
+      "template": "mission_14",
+      "generator": "tools/make_testmaps.py",
+      "variants": ["pvc", "cvc", "stress"],
+      "states": ["combat", "defence", "reserve-wave-300", "reserve-wave-600", "victory", "defeat"]
+    }
+  ],
+  "setup": {
+    "resolution": [800, 600],
+    "terrain": "Copy campaign terrain unchanged at generation time.",
+    "positions": "Use generated layout.json; terrain obstacles relocate target grid cells deterministically.",
+    "reference_navigation": ["wait 6000", "click 140 239", "wait 800", "click 160 543", "wait 5000", "click 650 58", "wait 2500", "click 150 258", "wait 800", "click 160 543", "wait 7000"],
+    "reference_preconditions": ["Put only the requested generated mission in a separate private Maps directory.", "Use dummy SDL inside unshare -rn after successful loopback setup."]
+  },
+  "input": [
+    {"state": "selection", "command": "select", "target": "first side-0 mobile in layout.json"},
+    {"state": "order-in-progress", "command": "move", "target": "selected mobile", "destination": "nearest clear unoccupied tile"},
+    {"state": "construction", "command": "build", "type": 14, "town": "side-0 town of level 2 or 3", "speed": "normal"},
+    {"state": "production-queue", "command": "train", "type": 0, "count": 3, "factory": "side-0 barracks"},
+    {"state": "burning-and-destroyed", "command": "attack", "target": "10-percent-health hostile building on battle map"}
+  ],
+  "reference_cheats": ["cheat unlock", "cheat gold"],
+  "clone_controls": "Generated sides have empty DisabledID and 1000000 starting money; clone PlaytestScript has no cheat command.",
+  "observe": ["selection identity", "accepted movement destination", "construction remaining and activation", "queue count and remaining time", "building health and animation frame"],
+  "blockers": [
+    "This is a provisional semantic scenario, not an executable L0 parity_run.py scenario. Screen coordinates for object selection and production cards require separate validated runner adapters.",
+    "Shared input and observation adapters for construction, queues and exact UI states are not implemented in the current checkout. The clone also rejects .scn buildCommand and vessel activation; do not substitute these for UI input.",
+    "RT_SCRIPT waits are milliseconds and clone waits are frames. They do not establish a synchronized simulation boundary or deterministic reference rendering.",
+    "Both local reference launch attempts failed at mandatory namespace loopback setup; no reference state was observed."
+  ]
+}

@@ -4168,6 +4168,32 @@
           "blocked": "Screen or deterministic setup route is not implemented."
         }
       }
+    },
+    {
+      "id": "ztest-all",
+      "reach": "Generate ztest_all with tools/make_testmaps.py and load it from the custom-map list; see tests/parity/testmaps.json.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Generated custom-map navigation needs isolated validation; local loopback setup is denied."
+        },
+        "clone": {
+          "blocked": "The catalogue runner accepts only numbered campaign missions; load ztest_all directly using the documented capture command."
+        }
+      }
+    },
+    {
+      "id": "ztest-battle",
+      "reach": "Generate ztest_battle with tools/make_testmaps.py and load it from the custom-map list; see tests/parity/testmaps.json.",
+      "evidence": "P",
+      "runners": {
+        "reference": {
+          "blocked": "Generated custom-map navigation needs isolated validation; local loopback setup is denied."
+        },
+        "clone": {
+          "blocked": "The catalogue runner accepts only numbered campaign missions; load ztest_battle directly using the documented capture command."
+        }
+      }
     }
   ]
 }
