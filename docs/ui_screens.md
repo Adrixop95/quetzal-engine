@@ -248,6 +248,71 @@ also pending. This work does not implement those game screens.
 | `victory` | Finish the campaign; show final victory. | B | B | N/A | N/A |
 | `defeat` | Lose the campaign mission; show defeat. | B | B | N/A | N/A |
 
+## Region diff diagnostics (2026-11-04, partial task 59)
+
+`tools/ui_diff.py` consumes a phase from `ui_capture.py`. It requires successful,
+repeatable captures from both runners and a `comparison` object on the screen's
+catalogue entry. The existing 173 entries do not yet have measured region
+partitions; missing partitions remain unavailable, even if images exist. No
+screen is promoted to parity on the basis of this tool alone.
+
+```sh
+python3 tools/ui_diff.py --phase before --captures work/parity/ui/task59 \
+  --output work/parity/ui/task59/diff-before
+python3 tools/ui_diff.py --phase after --captures work/parity/ui/task59 \
+  --output work/parity/ui/task59/diff-after
+```
+
+The output directory must be fresh and under this worktree's ignored
+`work/parity/ui/`. Optional repeated `--screen ID` arguments select entries;
+otherwise every catalogue entry is reported. Exit status is nonzero for a pixel
+failure, unavailable captures, missing partitions or invalid specifications.
+`report.json` holds private counts, coordinates and diagnostic candidates;
+`<screen>-diff.png` marks changed static/text pixels in magenta and changed
+world/animation pixels in orange. Neither output belongs in the public repository.
+
+A screen's `comparison` object follows the invented, asset-independent example
+in [diff-synthetic.json](../tests/parity/ui/diff-synthetic.json):
+
+- `resolution` must match the two RGB captures.
+- `alignment` declares `max_shift` (0 through 16 pixels) and `anchors`, a list of
+  `[x, y, width, height]` rectangles wholly inside static or text regions.
+  Exactly one integer translation must match every anchor pixel exactly.
+  Ambiguous or missing matches fail alignment. Translation is diagnostic: any
+  nonzero shift still fails the screen, and pixels shifted outside the clone
+  frame count as mismatches. Scaling and interpolation are never applied.
+- `regions` partitions the entire frame into named, nonoverlapping rectangles.
+  Each has `name`, `kind` and `rect`. Kinds are `static_art`, `text`,
+  `dynamic_world` and `animated`. Static art and text forbid tolerance overrides.
+  World and animation require explicit `tolerance` values for `channel`,
+  `max_bad_fraction` and `max_mae`. A pixel is bad when any channel exceeds the
+  channel threshold. Both fraction and MAE bounds must pass; clipping fails.
+
+Mismatch rectangles bound four-connected components within each region. After
+255 components, remaining components merge into one enclosing rectangle, keeping
+reports bounded without dropping mismatch counts. Cause classes are **candidate
+explanations**, not verified diagnoses: pixels cannot generally distinguish a
+wrong glyph from wrong text, or a missing element from an incorrect sprite.
+Text regions suggest font/glyph and text causes; art suggests sprite/frame.
+A consistent bijective RGB remapping also suggests palette error. Offset,
+layout/scale and missing/extra element remain candidates. A detected translation
+suggests offset/layout. The tool does not perform OCR, read executable-derived
+code or claim semantic knowledge from pixels. L5 command/state sequence parity
+continues to require the shared observers described above.
+
+The 2026-11-04 baseline Release build and 43 CTest entries passed (six skips).
+The supplied reference binary path was absent. A reference runtime was rebuilt
+inside `build_ui_reference/` using the external private generated inputs. Both
+phases attempted all 21 runnable reference routes twice with mandatory namespace
+network setup, dummy SDL and separate private installations. Every attempt
+failed at `ip link set lo up` with a netlink permission error, before the runtime
+launched. The 152 other reference routes remain explicitly blocked. Both phases
+captured all 34 runnable clone routes twice; every clone repeat had zero differing
+pixels. The other 139 clone routes remain blocked. Every one of the 173 paired
+before/after differences is unavailable. No clone rendering fix can be justified
+from these failed reference observations. Task 58's unverified timing, region and
+semantic-state dependencies remain open. Per-screen counts are in
+[parity_matrix.md](parity_matrix.md#ui-region-diff-investigation-2026-11-04).
 ## Generated custom missions
 
 Catalogue entries `ztest-all` and `ztest-battle` cover the generated custom-map
