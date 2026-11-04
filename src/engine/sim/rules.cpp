@@ -193,7 +193,6 @@ bool RulesData::load_dir(const std::string& dir) {
           if (mask >= 64 && mask <= 71) { types_[id].vision_mask = mask; types_[id].sight_src = Src::Verified; }
         }
   }
-  if (const char* game = std::getenv("AZTEC_GAME")) load_sight(game);
   // Established getters only (rules_summary.md). Bird speed remains unresolved.
   for (auto [kind, family, field] : {std::tuple{1, "spider", 7}, {3, "zeppelin", 5},
                                    {4, "truck", 5}, {6, "headtruck", 7}}) {

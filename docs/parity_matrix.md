@@ -124,3 +124,24 @@ before runtime launch, leaving reference record/replay and campaign parity
 unverified. All raw reports, orders and hashes remain in ignored `work/parity/`;
 no L0-L8 result or completion route is inferred from engine self-agreement.
 | experiment_failed | 35 |
+
+## Campaign input and outcome controls (2026-11-04)
+
+These are independent engine consistency checks, outside the paired reference
+scenario totals above; no L0-L8 counts change.
+
+| Control | Observed result | Boundary |
+| --- | --- | --- |
+| Unselected environment resource and mid-mission resume regression | Failed before selection fix; passes afterward | Invented installation and fresh processes |
+| Changed selected resource | Save refused | Synthetic compatibility check |
+| Headless save loaded through mission UI | Continues to synthetic victory | No original mission completion |
+| First local outcome provenance and replay | Trigger/action/tick retained; foreign/later outcomes excluded | Diagnostic, not reference timing evidence |
+| Condition/action source lines | Blank lines and CRLF identify the first token after correction | Parser metadata only |
+| Private 24-tick campaign sweep | 15 matching paired transcripts, 14 matching save continuations, zero wins | Mission 11 defeats before its save; other missions hit the tick limit |
+| Private mission-1 tick-20 save, tick-60 continuation | All suffix tick hashes match with conflicting environment selection | Bounded tick-limit outcome |
+| Isolated reference control | Failed at namespace loopback setup before launch | No reference observation |
+
+The [engine inventory](engine_rules_status.md#campaign-input-and-outcome-iteration-2026-11-04-partial)
+records dependencies and validation limits. Town-scenario tactic/ownership,
+transport actions, winning routes and campaign/platform release evidence remain
+open. Private outputs are under ignored `work/parity/roadmap-*` directories.

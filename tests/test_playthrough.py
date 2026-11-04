@@ -58,6 +58,22 @@ class PlaythroughTests(unittest.TestCase):
         self.script.write_text('trigger(0) conditions localTime == 10 actions side(local).defeat end\n')
         self.assertEqual(self.run_engine()['status'], 'defeat')
 
+    def test_outcome_origin_tracks_first_local_result_and_replay(self):
+        self.script.write_text(
+            'trigger(4) conditions localTime == 2 actions side(1).victory end\n'
+            'trigger(9) conditions localTime == 10 actions\n'
+            'side(local).defeat side(local).victory end\n'
+            'trigger(9) conditions localTime == 10 actions side(local).victory end\n')
+        save = Path(self.temp.name) / 'outcome.azs'
+        first = self.run_engine('--save-at', '5', '--save', str(save))
+        self.assertEqual(first['status'], 'defeat')
+        expected = dict(trigger=9, action_line=3, tick=10)
+        self.assertEqual(first['outcome_origin'], expected)
+        resumed = self.run_engine('--resume', str(save))
+        self.assertEqual(resumed['outcome_origin'], expected)
+        self.script.write_text('trigger(2) conditions localTime > 100 actions side(local).victory end\n')
+        self.assertIsNone(self.run_engine()['outcome_origin'])
+
     def test_impossible_and_merely_unmet_objectives(self):
         self.script.write_text('trigger(0) conditions side(local).unitsInRect(10,10,11,11) > 0 actions side(local).victory end\n')
         report = self.run_engine()
@@ -110,6 +126,42 @@ class PlaythroughTests(unittest.TestCase):
                         for r, p in ((baseline, first), (resumed, second))]
                 self.assertTrue(harness.paired_hashes(*runs, start=5)['equal'])
                 self.assertNotEqual(baseline['state_hash'], self.run_engine('--no-auto-orders')['state_hash'])
+
+    def test_explicit_game_save_ignores_unselected_environment(self):
+        alternate = Path(self.temp.name) / 'unselected'
+        (alternate / 'Res').mkdir(parents=True)
+        (alternate / 'Res' / 'Light.xbe').write_bytes(b'unselected input')
+        save = Path(self.temp.name) / 'selected.azs'
+        baseline = self.run_engine('--no-auto-orders', '--save-at', '5', '--save', str(save))
+        with patch.dict(os.environ, AZTEC_GAME=str(alternate)):
+            resumed = self.run_engine('--no-auto-orders', '--resume', str(save))
+            self.assertEqual(resumed['state_hash'], baseline['state_hash'])
+            self.assertEqual(resumed['status'], 'victory')
+        # The selected installation is still fingerprinted, even without usable sight data.
+        (self.game / 'Res' / 'light.xbe').write_bytes(struct.pack('<I', 0) + b'changed')
+        refused = self.run_engine('--no-auto-orders', '--resume', str(save), code=1)
+        self.assertTrue('content is incompatible' in refused['error'])
+
+    def test_headless_save_loads_in_mission_ui(self):
+        profile = Path(self.temp.name) / 'profile'
+        slot = profile / 'Saves' / 'engine_slot1.azs'
+        slot.parent.mkdir(parents=True)
+        self.run_engine('--no-auto-orders', '--save-at', '5', '--save', str(slot))
+        unused = Path(self.temp.name) / 'unused'
+        (unused / 'Res').mkdir(parents=True)
+        (unused / 'Res' / 'Light.xbe').write_bytes(b'unselected input')
+        playtest = Path(self.temp.name) / 'resume.txt'
+        playtest.write_text('key ctrl+L\nexpect tick == 6\nwait 8\n'
+                            'expect outcome == 1\nexpect tick == 10\nquit\n')
+        result = subprocess.run([str(ENGINE), '--game', str(self.game),
+                                 '--rules-dir', str(ROOT / 'docs/data'), '--software',
+                                 '--no-audio', '--script', str(playtest), '1'],
+                                env=dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy',
+                                         AZTEC_USER_DIR=str(profile), AZTEC_GAME=str(Path(self.temp.name) / 'unused')),
+                                capture_output=True, text=True, timeout=8)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue('loaded game (tick 5)' in result.stdout)
+        self.assertTrue(slot.is_file())
 
     def test_automatic_orders_skip_ineligible_targets(self):
         mission = self.maps / 'Mission_1.mp'
