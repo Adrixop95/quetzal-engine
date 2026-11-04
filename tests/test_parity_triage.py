@@ -84,6 +84,36 @@ class TriageControls(unittest.TestCase):
         self.assertTrue("| Total | 6 | 1 | 4 | 1 |" in text)
         self.assertTrue("| field_difference | 2 |" in text)
 
+    def test_audio_comparator_results_reach_matrix_and_triage(self):
+        audio = load("audio_parity")
+        event = dict(seq=0, tick=2, sound=1, kind="sound", trigger="orders")
+        header = dict(schema=1, scenario="invented-audio", contract="synthetic-clock-v1",
+                      first_tick=0, last_tick=10, complete=True)
+
+        def capture(events):
+            return dict(header=header, events=events, event_count=len(events))
+
+        expected = capture([event])
+        equal = audio.compare(expected, expected)
+        self.diff("equal", equal.pop("category"), "L6", **equal)
+        for name, events in (("wrong", [dict(event, sound=2)]),
+                             ("late", [dict(event, tick=5)]), ("missing", [])):
+            result = audio.compare(expected, capture(events))
+            self.diff(name, result.pop("category"), "L6", **result)
+        extra = audio.compare(capture([]), expected)
+        self.diff("extra", extra.pop("category"), "L6", **extra)
+        empty = audio.compare(capture([]), capture([]))
+        self.diff("empty", empty.pop("category"), "L6", **empty)
+        records = triage.collect(self.input)
+        text = matrix.render(records)
+        self.assertTrue("| L6 | 6 | 1 | 5 | 0 |" in text)
+        for category in ("equal_observed_events", "identity_or_order", "timing",
+                         "missing_event", "extra_event", "no_events"):
+            self.assertTrue(f"| {category} | 1 |" in text)
+        triage.write_drafts(records, self.drafts)
+        self.assertFalse((self.drafts / "equal_observed_events.md").exists())
+        self.assertTrue((self.drafts / "no_events.md").exists())
+
     def test_public_counts_never_export_private_values(self):
         self.diff("private_scenario_canary", "field_difference", "L1", tick=987654321,
                   object_id="private_object_canary", field="private_field_canary",

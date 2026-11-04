@@ -120,7 +120,7 @@ class HandoffToolsTest(unittest.TestCase):
             self.assertTrue(save.call_args.args[0]["harvested"])
 
     def test_harvest_stops_on_git_failure(self):
-        for failure in ("git add -A -- . ':!.build*' ':!build*' ':!work'",
+        for failure in ("git add -A",
                         "git diff --cached --binary", "git reset -q", "git fetch -q origin",
                         "git merge-base --is-ancestor feature/sight origin/develop",
                         "git checkout -q -f -B feature/sight origin/develop",

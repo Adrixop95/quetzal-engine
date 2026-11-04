@@ -20,8 +20,7 @@ passes do not establish original-game parity. Unreported scenarios are excluded.
 
 | Category | Results |
 | --- | ---: |
-| equal_observed_fields | 1 |
-| skipped_missing_private_inputs | 1 |
+| experiment_failed | 35 |
 
 L8 remains unmeasured. On 2026-11-01 a reference mission-launch preflight using
 the supplied external installation/runtime, a private game copy, dummy SDL and
@@ -123,4 +122,17 @@ The isolated reference recording control failed at namespace loopback setup
 before runtime launch, leaving reference record/replay and campaign parity
 unverified. All raw reports, orders and hashes remain in ignored `work/parity/`;
 no L0-L8 result or completion route is inferred from engine self-agreement.
-| experiment_failed | 35 |
+
+## Audit of aggregate evidence (2026-11-04)
+
+The category table now matches the retained 35 L1/L2 setup failures. Two stale
+pass/skip category rows from an older selection were removed and the displaced
+failure row was restored to its table. No new paired reference result is added.
+The selected private reports are not present in this worktree, so these retained
+historical counts were reconciled with the documented L1/L2 iteration rather
+than regenerated from new observations.
+
+The synthetic L6 comparator-to-triage regression verifies correct pass/fail
+classification and public category counts, including empty captures remaining
+failures. It is outside the historical scenario totals above. See
+[AUDIT_2026-11.md](AUDIT_2026-11.md) for findings and remaining evidence gaps.
