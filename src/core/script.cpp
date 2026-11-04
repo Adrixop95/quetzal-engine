@@ -219,6 +219,7 @@ int ugi_ident(Reader& r) {
 
 Condition parse_condition(Reader& r) {
   Condition c;
+  r.ws();
   c.line = r.line();
   std::string kw = lc(r.ident());
   if (kw == "always") { c.kind = CondKind::Always; return c; }
@@ -297,6 +298,7 @@ Action parse_tactic_action(Reader& r, Action a) {
 
 Action parse_action(Reader& r) {
   Action a;
+  r.ws();
   a.line = r.line();
   std::string kw = lc(r.ident());
   if (kw == "trigger") {

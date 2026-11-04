@@ -25,7 +25,8 @@ inline void trace_ui(std::ostream& out, int frame, const World& world, const Cam
   static const char* cursors[] = {"arrow", "attack", "move", "pan", "north", "northeast", "east",
                                  "southeast", "south", "southwest", "west", "northwest"};
   out << std::setprecision(9) << "{\"schema\":1,\"contract\":\"engine-ui-raw-v1\",\"frame\":" << frame
-      << ",\"tick\":" << world.tick << ",\"phase\":\"after_input_before_present\",\"camera\":["
+      << ",\"tick\":" << world.tick << ",\"outcome\":" << int(world.outcome)
+      << ",\"phase\":\"after_input_before_present\",\"camera\":["
       << cam.x << ',' << cam.y << ',' << cam.zoom << "],\"alpha\":" << alpha
       << ",\"mouse\":[" << input.mx << ',' << input.my << "],\"left_down\":" << (input.buttons[SDL_BUTTON_LEFT] ? "true" : "false")
       << ",\"modifiers\":[" << int(input.ctrl) << ',' << int(input.shift) << ',' << int(input.alt) << ']'

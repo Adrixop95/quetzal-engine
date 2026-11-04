@@ -61,11 +61,9 @@ static bool current_save_content(const GameData& data, const World& world, const
     if (ec) return false;
     std::sort(csv.begin(), csv.end());
     files.insert(files.end(), csv.begin(), csv.end());
-    // RulesData currently loads simulation sight only through AZTEC_GAME.
-    const char* sight_root = std::getenv("AZTEC_GAME");
-    for (const char* name : {"Res/Light.xbe", "Res/Units.xbe", "Aztec.exe"})
-      files.emplace_back(name, sight_root ? find_file_ci(sight_root, name) : "");
   }
+  for (const char* name : {"Res/Light.xbe", "Res/Units.xbe", "Aztec.exe"})
+    files.emplace_back(name, find_file_ci(data.root(), name));
   return save_content_hash(files, hash);
 }
 
@@ -133,6 +131,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
     for (const std::string& rp : {o.rules_dir, o.game_dir + "/../docs/data", std::string("docs/data")})
       if (!rp.empty() && (rules_ok = rules->load_dir(rp))) { loaded_rules_dir = rp; break; }
     if (!rules_ok) { rules->init_defaults(); std::fprintf(stderr, "note: docs/data not found, using placeholder rules\n"); }
+    rules->load_sight(data.root());
     for (Object& object : world.objects)
       if (object.type >= 0) object.initialize_health(rules->type(object.type), bool(world.original_save));
     GameSim* game = nullptr;
@@ -204,6 +203,10 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
     uint64_t freq = SDL_GetPerformanceFrequency(), last = SDL_GetPerformanceCounter();
     double fps_acc = 0; int fps_n = 0;
     int frame = 0, shot_no = 0;
+    uint64_t last_capture_tick = 0;
+    if (!o.capture_dir.empty() && !fs::is_directory(o.capture_dir)) {
+      std::fprintf(stderr, "Capture directory must already exist\n"); rc = 1; return PlayExit::Quit;
+    }
 
     if (o.select_x0 >= 0) {  // --select: select own units inside a screen rectangle before the first frame
       for (const Object& ob : world.objects) {
@@ -585,10 +588,19 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       const uint32_t cursor_ms = pt ? uint32_t(uint64_t(frame) * 1000 / 12) : SDL_GetTicks();
       const bool cursor_drawn = visible && (o.screenshot.empty() || forced);
       if (cursor_drawn) cursor.draw(win.renderer(), scene.store(), cx, cy, ck, cur_scale, cursor_ms);
+      // Observe the composed frame without inserting script frames or advancing time.
+      std::string periodic_shot;
+      if (o.capture_every > 0 && world.tick > last_capture_tick && world.tick % uint64_t(o.capture_every) == 0) {
+        periodic_shot = (fs::path(o.capture_dir) / ("tick-" + std::to_string(world.tick) + ".png")).string();
+        last_capture_tick = world.tick;
+        if (!save_screenshot(win.renderer(), periodic_shot)) {
+          std::fprintf(stderr, "Periodic screenshot failed\n"); rc = 1; break;
+        }
+      }
       if (ui_trace.is_open()) {
         trace_ui(ui_trace, frame, world, cam, alpha, in, cmdui, game, ui_command_start,
                  panel.rect(), pscale, show_panel, pause.open, ck, cursor_drawn, cursor_ms,
-                 rendered_tooltip, pending_shot);
+                 rendered_tooltip, periodic_shot.empty() ? pending_shot : periodic_shot);
         ui_trace.flush();
         if (!ui_trace) { std::fprintf(stderr, "UI trace write failed\n"); rc = 1; break; }
       }
@@ -597,6 +609,8 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         std::printf(save_screenshot(win.renderer(), pending_shot) ? "saved %s\n" : "screenshot failed %s\n", pending_shot.c_str());
         pending_shot.clear();
       }
+      // A recording ends at the first result; later route clicks must not restart it.
+      if (pt && o.capture_every > 0 && world.outcome != kRunning) in.quit = true;
       frame++;
       if (o.frames > 0 && frame >= o.frames) {
         if (!o.screenshot.empty()) {
