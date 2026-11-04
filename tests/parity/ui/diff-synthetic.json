@@ -1,0 +1,12 @@
+{
+  "resolution": [8, 4],
+  "alignment": {"max_shift": 1, "anchors": [[1, 0, 1, 1]]},
+  "regions": [
+    {"name": "art", "kind": "static_art", "rect": [0, 0, 4, 2]},
+    {"name": "label", "kind": "text", "rect": [4, 0, 4, 2]},
+    {"name": "world", "kind": "dynamic_world", "rect": [0, 2, 4, 2],
+     "tolerance": {"channel": 2, "max_bad_fraction": 0.125, "max_mae": 1}},
+    {"name": "animation", "kind": "animated", "rect": [4, 2, 4, 2],
+     "tolerance": {"channel": 0, "max_bad_fraction": 0, "max_mae": 0}}
+  ]
+}
