@@ -350,3 +350,25 @@ five private-data entries and restricted UDP processes). Separate private-copy,
 dummy-SDL checks under `unshare -rn` passed formats, engine integration and the
 campaign script inventory. Synthetic regressions require no game installation.
 All pre-commit hooks and `git diff --check` also passed.
+
+## Outcome provenance and selected inputs (2026-11-04)
+
+Headless JSON reports now include `outcome_origin`: the trigger ID, action source
+line and simulation tick that first changes the human mission outcome. It is
+`null` if no script action ended that mission. Foreign-side results and later
+conflicting results do not replace it. The record is bounded to one event,
+resets on initialization and is reconstructed by command replay; it is diagnostic
+state, excluded from gameplay hashes. Condition/action lines now skip leading
+whitespace before recording their source position, including CRLF and blank
+lines. The record identifies the executed action, not a
+proof that the underlying condition matches the reference.
+
+Simulation sight and save fingerprints now use the same selected installation
+as mission loading. A synthetic regression reproduced save refusal when an
+unselected `AZTEC_GAME` directory changed; it passes after the fix. Further
+controls reject changed selected resources, load a headless mid-mission save in
+the actual mission UI and continue to synthetic victory, and reconstruct outcome
+provenance after a fresh-process resume. All fixtures use invented data.
+
+The isolated private campaign observations for this iteration and unresolved
+acceptance steps are recorded in [the engine inventory](engine_rules_status.md#campaign-input-and-outcome-iteration-2026-11-04-partial).

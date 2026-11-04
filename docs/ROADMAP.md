@@ -325,6 +325,29 @@ V19 partial evidence (2026-10-28; the full row remains open):
   simulation/control/save dependencies remain incomplete; no skipped or bounded
   probe closes those requirements. See [status](engine_rules_status.md#v19-campaign-coverage-update-2026-10-28-partial).
 
+Campaign follow-up steps (2026-11-04; V06/V12/V16/V19 remain open):
+
+- [x] Reproduce and fix selection of simulation sight/save resources from an
+  unselected environment installation. Test explicit game-directory precedence,
+  refusal after selected resource changes, and headless-save loading through
+  the mission UI followed by synthetic victory.
+- [x] Report the first human mission outcome's trigger, action line and simulation
+  tick; correct condition/action source lines after leading whitespace and test
+  CRLF, foreign-side/conflicting results, initialization reset and replay.
+- [ ] Establish the town-scenario tactic/ownership contract that blocks mission 11
+  on its first tick; then implement town-aware conditions and gifts, including
+  production/service ownership, with save-to-outcome controls. Current team-only
+  lookup is insufficient; a speculative alias does not close this dependency.
+- [ ] Measure and implement the required Boat, Johnka and submarine action phases
+  after V05/V10 movement and command contracts, then validate objective chains.
+- [ ] Obtain winning routes, ordinary retry/progression and mid-mission saves
+  through completion for every campaign mission, then native/platform/package
+  and hosted sanitizer evidence for V17-V20. Short paired runs do not close rows.
+
+See [the iteration evidence](engine_rules_status.md#campaign-input-and-outcome-iteration-2026-11-04-partial)
+for observed results and the failed isolated reference control. The work above
+can precede the incomplete V02/V05/V10 town/transport dependencies.
+
 V20 partial evidence (2026-10-28; the full row remains open):
 
 - [x] Extend synthetic malformed-input checks across every core loader and

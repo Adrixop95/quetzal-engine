@@ -100,6 +100,7 @@ class RulesData {
  public:
   // Loads from a directory containing types.csv, desc_*.csv, speed_measured.csv, duel_damage.csv, buildtree.csv.
   // Missing files are tolerated (placeholders are used). Returns true if at least types.csv was read.
+  // Resource inputs are explicit: call load_sight with the selected installation after loading tables.
   bool load_dir(const std::string& dir);
   // Load the user's light masks, animation light sources and daylight keys.
   bool load_sight(const std::string& game_dir);
