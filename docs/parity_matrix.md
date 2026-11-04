@@ -325,3 +325,23 @@ tests validate the comparator only. Release build and 44 CTest entries pass
 (six skips). Pre-commit remains blocked: its default cache is read-only and
 a writable worktree cache cannot fetch hooks because GitHub DNS resolution
 fails. Repository asset/English hooks and local text/JSON checks run separately.
+## Campaign input and outcome controls (2026-11-04)
+
+These are independent engine consistency checks, outside the paired reference
+scenario totals above; no L0-L8 counts change.
+
+| Control | Observed result | Boundary |
+| --- | --- | --- |
+| Unselected environment resource and mid-mission resume regression | Failed before selection fix; passes afterward | Invented installation and fresh processes |
+| Changed selected resource | Save refused | Synthetic compatibility check |
+| Headless save loaded through mission UI | Continues to synthetic victory | No original mission completion |
+| First local outcome provenance and replay | Trigger/action/tick retained; foreign/later outcomes excluded | Diagnostic, not reference timing evidence |
+| Condition/action source lines | Blank lines and CRLF identify the first token after correction | Parser metadata only |
+| Private 24-tick campaign sweep | 15 matching paired transcripts, 14 matching save continuations, zero wins | Mission 11 defeats before its save; other missions hit the tick limit |
+| Private mission-1 tick-20 save, tick-60 continuation | All suffix tick hashes match with conflicting environment selection | Bounded tick-limit outcome |
+| Isolated reference control | Failed at namespace loopback setup before launch | No reference observation |
+
+The [engine inventory](engine_rules_status.md#campaign-input-and-outcome-iteration-2026-11-04-partial)
+records dependencies and validation limits. Town-scenario tactic/ownership,
+transport actions, winning routes and campaign/platform release evidence remain
+open. Private outputs are under ignored `work/parity/roadmap-*` directories.

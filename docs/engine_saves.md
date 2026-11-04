@@ -43,14 +43,18 @@ The integrity checksum and content fingerprints use the project's existing
 hostile files. Tests also repair checksums on malformed inputs to exercise the
 parser independently of this integrity gate.
 
-The UI fingerprints the resolved mission definition, selected terrain map,
+Both mission runners fingerprint the resolved mission definition, selected terrain map,
 optional passability/resource/visibility/script files, all CSV files in the
-selected rules directory, and the optional sight inputs selected through
-`AZTEC_GAME` (`Light.xbe`, `Units.xbe`, `Aztec.exe`). File tags, absence markers
+selected rules directory, and optional sight inputs from the selected game
+installation (`Light.xbe`, `Units.xbe`, `Aztec.exe`). Explicit `--game` selection
+applies to simulation sight and fingerprints as well as mission loading; an
+unselected `AZTEC_GAME` directory cannot alter either. File tags, absence markers
 and file digests participate; absolute installation paths do not. CSV entries
 are sorted by filename. This deliberately conservative policy can refuse a save
 when an unused CSV changes. These inputs must remain stable while a session is
-loading/initializing. Before saving or loading, the UI rechecks them against the
+loading/initializing. Saves made before this selection correction can be refused
+when their resource fingerprints or reconstructed state differ. Before saving
+or loading, the UI rechecks inputs against the
 session fingerprint and refuses changes; it does not hot-reload rules.
 
 ## Bounded, transactional loading
