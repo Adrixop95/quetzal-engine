@@ -1,0 +1,4 @@
+Depends: 64-shared-runner-observer
+Task: campaign UI and progression (roadmap V14): briefing and objective review, outcome and return screens, campaign map progression, save and load screens, options.
+Implement the remaining front-end flows from docs/ui_screens.md in the clone so every transition of the original menu graph exists (see task 60 menu flow), including mission unlock progression and persistent profile state. Add scripted-input scenarios that walk the menu graph in both programs and compare the screen id sequence.
+Public repo, English only, follow CLAUDE.md, never commit game assets, captures, audio or executable-derived data. Live reference runs are denied inside the Codex sandbox (no network namespaces): implement and test the tooling and synthetic regressions, write the exact live run commands as a run sheet in docs/EXPERIMENTS.md, and finish with status "needs live run" when reference data is missing. Update docs/ROADMAP.md rows with evidence labels.

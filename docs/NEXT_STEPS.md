@@ -34,3 +34,33 @@ UI click animation and highlighting. Check `docs/ROADMAP.md` for current status.
 3. Without a Codex limit, tasks start from `tasks/queue/` in dependency order. Merge
    conflicts and CI failures on `feature/codex-*` PRs are handled by the supervisor.
 4. Report to the user in Polish, briefly.
+
+## Plan for 2026-11-05
+
+Priority: finish the game (every mission completable, campaign and saves complete,
+combat, economy, construction, movement and AI matching the original). Quality-of-life,
+infrastructure and release work lives in `tasks/backlog/` and is not started.
+
+Done on 2026-11-04: tasks 56, 57, 62, 63 merged (#99, #100, #102, #103); task 59 (#101)
+was waiting for CI. The reference runtime builds and runs headless in `unshare -rn`
+outside the Codex sandbox; inside the Codex sandbox namespace creation is denied, so
+live reference runs are executed by the orchestrator and prompts end with "needs live run".
+
+Critical path to a finished game, in start order (merge the queue PR first):
+
+1. No dependencies, start immediately: `64-shared-runner-observer` (enabler for
+   measurement), `71-campaign-transport-and-objectives` (blocks missions),
+   `72-original-save-resume`, `73-sight-and-fog-consumers`,
+   `74-projectile-collision-and-splash`.
+2. After 64: `65-l1-rule-measurements`, `66-building-and-mine-placement`,
+   `68-pathing-quality`, `75-ai-composition-and-launch-scoring`,
+   `76-audio-live-controls`, `77-campaign-ui-and-progression`.
+3. After 66: `67-construction-flow`. After 71: `80-playthrough-matrix`
+   (the acceptance test: all 15 missions reach their outcome).
+
+Orchestrator duties: run the live reference commands from the run sheets in
+`docs/EXPERIMENTS.md` outside the sandbox, feed the data back, review diffs before merge,
+rerun cancelled hosted jobs, keep `CODEX_MAX_PARALLEL=5`.
+
+Deferred to `tasks/backlog/`: 69 UI click feedback, 70 supervisor CI resilience,
+78 release packaging acceptance, 79 sanitizer and soak workflows.
