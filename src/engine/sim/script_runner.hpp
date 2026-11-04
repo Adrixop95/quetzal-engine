@@ -5,6 +5,7 @@
 //   * localTime = simulation ticks since mission start; timers count up from 0 (running) unless set / stopped / killed
 #pragma once
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 #include "core/script.hpp"
@@ -20,6 +21,12 @@ struct TacticState {
   bool cycled = false, inverted = false;
 };
 
+// Diagnostic provenance only; reconstructed by replay and excluded from gameplay hashes.
+struct ScriptOutcomeOrigin {
+  int trigger = 0, action_line = 0;
+  uint64_t tick = 0;
+};
+
 class ScriptRunner {
  public:
   bool load(const std::string& path);
@@ -32,6 +39,7 @@ class ScriptRunner {
   uint64_t state_hash() const;
   static bool supports(script::ActKind kind);
   size_t unsupported() const { return unsupported_; }
+  const std::optional<ScriptOutcomeOrigin>& outcome_origin() const { return outcome_origin_; }
   // AI hook: advances units of tactics that follow a path.
   void follow_paths(GameSim& sim, World& w);
 
@@ -49,6 +57,7 @@ class ScriptRunner {
   std::map<std::pair<int, int>, TacticState> tactics_;
   uint64_t local_time_ = 0;
   size_t unsupported_ = 0;
+  std::optional<ScriptOutcomeOrigin> outcome_origin_;
 };
 
 bool is_town_building(int type);

@@ -1957,3 +1957,64 @@ The final selected run contains 35 experiment failures and zero measured rules
 or semantic divergences. See [the iteration record](parity.md#l1l2-iteration-2026-11-01-blocked-measurements)
 for commands, evidence boundaries and remaining work. Asset-free controls cover
 clone horizon validation, failure aggregation and independent mutable game copies.
+
+## Campaign input and outcome iteration (2026-11-04, partial)
+
+This iteration addresses V06/V12/V16/V19 engine consistency; the full roadmap
+rows remain open. It does not establish reference parity.
+
+**Selected inputs:** both headless and graphical mission runners explicitly load
+simulation sight from the selected `GameData` installation. `RulesData::load_dir`
+loads tables without consulting `AZTEC_GAME`. Save fingerprints use the same
+selected resource root, including when graphical rules fall back to defaults.
+Previously an unselected environment installation could change sight inputs or
+refuse an otherwise compatible mid-mission save. An invented-data regression
+failed before the correction and passes afterward; a changed selected resource
+still refuses loading. Another regression loads a headless tick-5 save through
+the real mission UI and continues to synthetic victory. This establishes the
+exercised continuation, not ordinary campaign completion or original-save resume.
+Older saves may be refused if their resource fingerprints or replay state differ.
+
+**Outcome diagnosis:** the script runner retains the first human mission outcome's
+trigger ID, action source line and simulation tick. Headless JSON exposes it as
+`outcome_origin`, or null if no local script outcome occurred. Foreign-side and
+later conflicting results do not overwrite it; initialization clears it and
+command replay reconstructs it. This bounded diagnostic does not affect gameplay
+hashes or script order. Synthetic controls cover these cases and fresh-process
+resume. The new multiline regression also exposed source locations recorded
+before leading whitespace was skipped. Conditions/actions now report their own
+first-token line, with blank-line and CRLF coverage. Line metadata is excluded
+from simulation hashes.
+
+**Private observations:** isolated dummy-SDL campaign sweeps used private resource
+symlinks under `work/parity/`, both SDL dummy drivers and `unshare -rn`. Each of
+15 missions was run twice for up to 24 ticks with a tick-12 save. The runs report
+fourteen tick limits and mission 11 defeat on tick 1; no winning route is claimed.
+Mission 11's first terminating action is now identified directly by provenance.
+It tests a protected tactic represented by town scenario membership, absent from
+the engine's team-only lookup. The town/tactic, gifting and ownership/capture
+contract remains unresolved; no guessed alias has been added. All 15 paired
+transcripts match; 14 save continuations match, while mission 11 ends before its
+save. These bounded observations do not prove objective reachability or balance.
+
+A separate mission-1 probe saved at tick 20 and resumed in a new process with a
+conflicting environment installation through tick 60. Every suffix tick hash
+matched; both runs reached the tick limit. Separate private-copy format, engine
+and campaign-inventory checks passed. The reference control failed before game
+launch at namespace loopback setup (`Cannot open netlink socket: Operation not
+permitted`). Record/replay, measured town identity and original campaign outcomes
+remain unavailable. Raw reports, saves, scripts and captures stay private.
+
+**Remaining steps:** establish the town/tactic identity and gifting contract,
+including production and service ownership; complete water/transport movement
+and command adapters; measure required transport actions; then obtain winning
+routes with fresh-process saves through outcomes, retry and progression for all
+15 missions. V02/V05/V10 dependencies remain incomplete in this checkout. V17-V20
+native CI, package, hosted sanitizer and campaign acceptance evidence is pending.
+
+**Validation:** Release build and full CTest, plus the isolated private checks
+above, are recorded for this iteration. The default suite passes 37 tests and
+skips six (five private-data checks and restricted UDP processes). The repository
+asset/English hooks and `git diff --check` pass. Full pre-commit cannot initialize:
+the default cache is read-only and a worktree-local cache cannot fetch hooks
+because GitHub DNS is unavailable. This is an uncompleted gate, not a hook pass.

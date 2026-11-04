@@ -61,11 +61,9 @@ static bool current_save_content(const GameData& data, const World& world, const
     if (ec) return false;
     std::sort(csv.begin(), csv.end());
     files.insert(files.end(), csv.begin(), csv.end());
-    // RulesData currently loads simulation sight only through AZTEC_GAME.
-    const char* sight_root = std::getenv("AZTEC_GAME");
-    for (const char* name : {"Res/Light.xbe", "Res/Units.xbe", "Aztec.exe"})
-      files.emplace_back(name, sight_root ? find_file_ci(sight_root, name) : "");
   }
+  for (const char* name : {"Res/Light.xbe", "Res/Units.xbe", "Aztec.exe"})
+    files.emplace_back(name, find_file_ci(data.root(), name));
   return save_content_hash(files, hash);
 }
 
@@ -133,6 +131,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
     for (const std::string& rp : {o.rules_dir, o.game_dir + "/../docs/data", std::string("docs/data")})
       if (!rp.empty() && (rules_ok = rules->load_dir(rp))) { loaded_rules_dir = rp; break; }
     if (!rules_ok) { rules->init_defaults(); std::fprintf(stderr, "note: docs/data not found, using placeholder rules\n"); }
+    rules->load_sight(data.root());
     for (Object& object : world.objects)
       if (object.type >= 0) object.initialize_health(rules->type(object.type), bool(world.original_save));
     GameSim* game = nullptr;

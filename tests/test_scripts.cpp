@@ -42,6 +42,12 @@ static ScriptRunner runner(World& w, const std::string& text) {
   ScriptRunner r; r.set(parse(text)); r.init(w); return r;
 }
 
+static void source_locations() {
+  const auto s = parse("\r\ntrigger(5)\r\n  conditions\r\n\r\n    always\r\n  actions\r\n\r\n    side(local).victory\r\nend\r\n");
+  CHECK(s.triggers[0].conditions[0].line == 5);
+  CHECK(s.triggers[0].actions[0].line == 8);
+}
+
 static void order_and_enablement() {
   World w = world(); GameSim sim(rules()); sim.init(w);
   auto r = runner(w,
@@ -177,6 +183,9 @@ static void actions_and_outcomes() {
   CHECK(w.center_x == 7 * kTilePx + kTilePx / 2 && w.center_y == 8 * kTilePx + kTilePx / 2);
   CHECK(w.messages.size() == 1 && w.messages[0].text == "Synthetic message");
   CHECK(w.outcome == kDefeat && w.side_outcome[2] == kDefeat && w.side_outcome[1] == kVictory);
+  CHECK(r.outcome_origin() && r.outcome_origin()->trigger == 0 && r.outcome_origin()->tick == w.tick);
+  r.tick(sim, w); CHECK(r.outcome_origin()->tick == w.tick);
+  r.init(w); CHECK(!r.outcome_origin());
   auto h = sim.state_hash(w); w.side_outcome[1] = kDefeat; CHECK(sim.state_hash(w) != h);
   h = sim.state_hash(w); w.objects[0].defence = true; CHECK(sim.state_hash(w) != h);
   auto next = runner(w,
@@ -263,6 +272,6 @@ static void replay() {
 }
 
 int main() {
-  order_and_enablement(); timers(); conditions_and_identity(); paths_and_gifts(); actions_and_outcomes(); defence_loading(); replay();
+  source_locations(); order_and_enablement(); timers(); conditions_and_identity(); paths_and_gifts(); actions_and_outcomes(); defence_loading(); replay();
   std::puts("Synthetic script contracts passed.");
 }
