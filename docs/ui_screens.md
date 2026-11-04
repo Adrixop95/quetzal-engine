@@ -247,3 +247,17 @@ also pending. This work does not implement those game screens.
 | `mission-result-defeat` | Lose a mission with a deterministic losing command replay. | B | B | N/A | N/A |
 | `victory` | Finish the campaign; show final victory. | B | B | N/A | N/A |
 | `defeat` | Lose the campaign mission; show defeat. | B | B | N/A | N/A |
+
+## Generated custom missions
+
+Catalogue entries `ztest-all` and `ztest-battle` cover the generated custom-map
+showcase and combat setup. Generate them in a private game copy with
+`tools/make_testmaps.py`; see [EXPERIMENTS.md](EXPERIMENTS.md#generated-showcase-and-battle-maps)
+for direct captures and cleanup. Race/category labels are mission notes and
+private layout coordinates; terrain remains a runtime copy of campaign terrain.
+The catalogue runner currently only accepts numbered campaign missions, so both
+custom entries retain explicit blockers. Direct clone captures exercise loading,
+not catalogue repeatability or reference pixel parity. The reference launch is
+blocked by namespace loopback permissions. Construction, selection, queues and
+burning/death input recipes and remaining adapter dependencies are recorded in
+[the provisional scenario](../tests/parity/testmaps.json).
