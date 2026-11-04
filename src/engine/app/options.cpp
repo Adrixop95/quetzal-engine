@@ -107,6 +107,7 @@ const char* usage_text() {
          "  --no-light         no time-of-day tint;  --time T  fixed day clock (0..7199)\n"
          "  --rules-dir DIR    override packaged rules (source builds use docs/data);  --no-sim  no game logic\n"
          "  --ui-trace FILE    write raw UI state and submitted commands per rendered frame\n"
+         "  --capture-dir DIR --capture-every N  capture every N ticks (requires --script and --ui-trace)\n"
          "  --script FILE      playtest script: synthetic clicks/keys, screenshots, expectations (virtual time)\n"
          "  --menu-script FILE frame-scheduled menu input; exit when a mission is chosen\n"
          "  --menu-trace FILE  raw per-frame front-end observations\n"
@@ -191,6 +192,16 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     else if (a == "--no-menu") o.no_menu = true;
     else if (a == "--menu-session") o.menu_session = true;
     else if (a == "--ui-trace") { if (!next(v)) return false; o.ui_trace = v; }
+    else if (a == "--capture-dir") { if (!next(v)) return false; o.capture_dir = v; }
+    else if (a == "--capture-every") {
+      if (!next(v)) return false;
+      char* end = nullptr;
+      long interval = std::strtol(v, &end, 10);
+      if (end == v || *end || interval < 1 || interval > 7200) {
+        err = "--capture-every requires 1..7200 ticks"; return false;
+      }
+      o.capture_every = int(interval);
+    }
     else if (a == "--script") { if (!next(v)) return false; o.script = v; }
     else if (a == "--menu-script") { if (!next(v)) return false; o.menu_script = v; }
     else if (a == "--menu-trace") { if (!next(v)) return false; o.menu_trace = v; }
@@ -214,6 +225,10 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
   }
   if (!o.original_save.empty() && (o.mission_given || o.wander)) {
     err = "--load-original cannot be combined with a mission or --wander"; return false;
+  }
+  if ((!o.capture_dir.empty() || o.capture_every) &&
+      (o.capture_dir.empty() || !o.capture_every || o.script.empty() || o.ui_trace.empty())) {
+    err = "Periodic capture requires --capture-dir, --capture-every, --script and --ui-trace"; return false;
   }
   if (!o.screenshot.empty() && o.frames <= 0) o.frames = 5;
   o.menu = o.original_save.empty() && !o.mission_given && o.screenshot.empty() && o.script.empty() && !o.no_menu;

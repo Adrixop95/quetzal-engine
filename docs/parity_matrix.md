@@ -125,6 +125,19 @@ unverified. All raw reports, orders and hashes remain in ignored `work/parity/`;
 no L0-L8 result or completion route is inferred from engine self-agreement.
 | experiment_failed | 35 |
 
+## Gameplay capture counts
+
+| Screen | Reference captures | Clone captures | Paired comparisons | Ten-minute clone recordings |
+| --- | ---: | ---: | ---: | ---: |
+| hud-mission-1 | 0 | 2 | 0 | 0 |
+| hud-mission-2 | 0 | 60 | 0 | 1 |
+| hud-mission-3 | 0 | 8 | 0 | 0 |
+
+| Screen | Clone repeat captures compared | Different files | Different bytes |
+| --- | ---: | ---: | ---: |
+| hud-mission-1 | 2 | 0 | 0 |
+| hud-mission-2 | 60 | 0 | 0 |
+| hud-mission-3 | 8 | 0 | 0 |
 ## Campaign input and outcome controls (2026-11-04)
 
 These are independent engine consistency checks, outside the paired reference
