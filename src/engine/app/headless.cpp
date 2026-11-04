@@ -120,6 +120,7 @@ struct Report {
   std::string mission, status = "error", error;
   uint64_t ticks = 0, hash = 0, trace = 1469598103934665603ull;
   size_t unsupported_executions = 0, commands = 0;
+  std::optional<ScriptOutcomeOrigin> outcome_origin;
   std::vector<std::string> script_errors, unsupported_actions, unreachable, unmet;
   std::vector<uint32_t> stalled;
   void write(std::ostream& out) const {
@@ -127,6 +128,11 @@ struct Report {
         << ",\"error\":" << quoted(error) << ",\"ticks\":" << ticks
         << ",\"state_hash\":\"" << std::hex << hash << "\",\"trace_hash\":\"" << trace << std::dec
         << "\",\"commands\":" << commands << ",\"unsupported_executions\":" << unsupported_executions;
+    out << ",\"outcome_origin\":";
+    if (outcome_origin)
+      out << "{\"trigger\":" << outcome_origin->trigger << ",\"action_line\":" << outcome_origin->action_line
+          << ",\"tick\":" << outcome_origin->tick << '}';
+    else out << "null";
     auto strings = [&](const char* key, const auto& values) {
       out << ",\"" << key << "\":[";
       bool first = true;
@@ -218,6 +224,7 @@ int run_headless(int argc, char** argv) {
     if (!load_world(data, report.mission, world, error)) throw std::runtime_error(error);
     auto rules = std::make_shared<RulesData>();
     if (!rules->load_dir(rules_dir)) throw std::runtime_error("cannot load rules from " + rules_dir);
+    rules->load_sight(data.root());
     auto session = std::make_unique<GameSim>(rules, modifications);
     Script script;
     const std::string scn = data.map_file(world.mission.file_name, "scn");
@@ -244,9 +251,8 @@ int run_headless(int argc, char** argv) {
         tables.emplace_back(entry.path().filename().string(), entry.path().string());
     std::sort(tables.begin(), tables.end());
     inputs.insert(inputs.end(), tables.begin(), tables.end());
-    const char* sight = std::getenv("AZTEC_GAME");
     for (const char* name : {"Res/Light.xbe", "Res/Units.xbe", "Aztec.exe"})
-      inputs.emplace_back(name, sight ? find_file_ci(sight, name) : "");
+      inputs.emplace_back(name, find_file_ci(data.root(), name));
     uint64_t content = 0;
     if (!save_content_hash(inputs, content)) throw std::runtime_error("cannot fingerprint simulation inputs");
     if (resume_path.empty()) session->init(world);
@@ -352,6 +358,7 @@ int run_headless(int argc, char** argv) {
     report.ticks = sim.tick_count();
     report.commands = sim.log().size();
     report.unsupported_executions = sim.script().unsupported();
+    report.outcome_origin = sim.script().outcome_origin();
     report.status = world.outcome == kVictory ? "victory" : world.outcome == kDefeat ? "defeat" : "timeout";
     for (const auto& o : world.objects) {
       if (o.alive && !o.removed && (o.order == uint8_t(Order::Move) || o.order == uint8_t(Order::AttackMove)) &&

@@ -221,3 +221,142 @@ advance a world. Reference and clone frame counts are not equivalent simulation
 observations. L4 structural masks/alignment and L5 shared semantic UI/command
 observers remain prerequisites for parity claims; existing `parity_visual.py`
 can compare aligned bundles once those observations exist.
+
+## Generated showcase and battle maps
+
+`tools/make_testmaps.py` writes `ztest_all` and `ztest_battle` into an explicitly
+supplied **private** game copy. It reads public type/HP metadata and the selected
+campaign mission at run time; it never reads an executable. It copies `.map`,
+`.dat`, `.rm`, `.vis` and `.spr` unchanged, generates English `.mp`/CRLF `.scn`
+files, and writes a private `.layout.json` coordinate/health manifest. No generated
+file belongs in the public repository. Existing outputs require `--force`;
+symlink outputs are rejected even with that option.
+
+Prepare ordinary Maps/Saves directories and symlink only immutable resources:
+
+```sh
+mkdir -p work/testmaps-game/Maps work/testmaps-game/Saves
+reference_game=/absolute/path/to/read-only/game
+for item in Aztec.exe Res Video Music Campaign; do
+  ln -s "$reference_game/$item" "work/testmaps-game/$item"
+done
+# Copy configuration/profile files when present; never symlink writable profiles.
+cp "$reference_game"/*.plr "$reference_game"/*.ini work/testmaps-game/
+# Include all case variants of the selected campaign basename.
+find "$reference_game/Maps" -maxdepth 1 -iname 'mission_14.*' \
+  -exec cp '{}' work/testmaps-game/Maps/ \;
+python3 tools/make_testmaps.py --game work/testmaps-game
+python3 tools/make_testmaps.py --game work/testmaps-game --force --variant cvc
+python3 tools/make_testmaps.py --game work/testmaps-game --force --variant stress --races 2,0
+```
+
+The default template is mission 14 (180x180); `--source-mission mission_11`
+selects another existing campaign. Filenames are resolved ignoring case. A
+minimum 180x180 template is required. The generator preserves terrain rather
+than inventing a fully open map. Mission 14 is mostly clear, but obstacles move
+placements to the nearest clear, reserved footprint with stable distance/y/x
+ordering. The layout therefore describes a **target grid**, not an exact labelled
+floor texture. English mission notes label race rows and category columns;
+`.layout.json` supplies actual coordinates. Units reserve 3x3 tiles, buildings
+and automatic halls reserve 5x5 tiles, with an additional one-tile gap. Enough terrain must
+exist or generation fails before outputs are written. Terrain spacing is a test
+layout policy, not a measured sprite/weapon footprint guarantee.
+
+`ztest_all` has three race rows, native buildings and units plus shared special
+types, and explicit HP at 100/66/33/10 percent of the public descriptor HP. All
+four town levels are present for every race; Aztec fortress falls back to its
+town, as the format specifies. Each Town also creates an implicit healthy hall;
+separate explicitly placed hall types exercise damaged hall sprites. Buildings,
+including shipyard type 86, occur only in Town sections; mobile types occur in
+Team sections. Neutral mines use side 3 and the copied resource map. Separate
+copies of the mobile set exercise idle, move, path/inverted path, cyclic/inverted
+cyclic path and locked tactics through deterministic `.scn` actions. The ordinary
+`.mp` Team record has no order field. Friendly diplomacy keeps race showcases
+from fighting; scenario order movement can eventually leave the initial cells.
+
+Types 84/88 use Boat/Johnka sections at the off-map entry positions supported by
+campaign files. They remain inactive: copied land terrain is not evidence of a
+navigable water route. Type 89 uses Side Camera records, rather than an unsafe
+Team insertion. These special records do **not** establish visible vessel/camera
+object coverage or nautical combat parity. Shipyard placement on land also tests
+loading only. No independent construction/burning/death-state field is known;
+zero HP is deliberately not treated as a verified destroyed-state encoding.
+
+`ztest_battle` uses two distinct races (`--races 0,1` by default), corresponding
+armies facing across the map, native factories/defences and a fortress per side,
+a neutral third group, empty DisabledID and one million starting money. Each army
+contains its native mobile combat types plus Abdula, catapult, second zeppelin
+and hopping cannon. The layout mirrors target positions, with deterministic
+terrain relocation; it does not promise exact mirrored final coordinates.
+Reserve groups are preplaced and locked, then released with attack-town orders
+at localTime 300 and 600. These are **reserve waves**, not newly spawned units.
+Loss of all enemy towns wins; loss of all player towns loses. Timings are scenario
+clock values, not a measured wall-clock duration. `pvc` keeps side 0 human; `cvc`
+marks both sides OnlyComp; `stress` multiplies each army group sixfold and keeps
+side 0 human. OnlyComp is effective in the clone; original computer control and
+full technology/prerequisite behavior still require live reference validation.
+Empty DisabledID enables IDs but does not bypass factory/town prerequisites.
+
+Inspect and launch using a private profile and bounded, isolated processes:
+
+```sh
+build/aztec_map_viewer --maps work/testmaps-game/Maps --dump ztest_all
+build/aztec_map_viewer --maps work/testmaps-game/Maps --dump ztest_battle
+for map in ztest_all ztest_battle; do
+  timeout -s KILL 30 unshare -rn env \
+    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+    AZTEC_USER_DIR="$PWD/work/testmaps-profile" \
+    build/aztec_engine --game "$PWD/work/testmaps-game" \
+    --size 800x600 --software --no-audio --no-sim \
+    --screenshot "$PWD/work/$map.png" "$map"
+done
+# Each reference run gets another private copy containing only the selected map.
+ZSTAT_GAME_DIR="$PWD/work/testmaps-game" \
+ZSTAT_RUNTIME=/absolute/path/to/reference/aztec_recomp \
+  sh tools/zstat_run.sh ztest_all work/testmaps-reference-all 1200
+# Use a fresh output directory and ztest_battle for the combat probe.
+```
+
+`tests/parity/testmaps.json` records map kind `campaign-derived`, semantic input
+recipes and explicit missing adapters for selection, construction, queues and
+burning/destruction. It is a provisional L4 specification, not an executable
+`parity_run.py` L0 scenario. The current clone rejects `.scn buildCommand` and
+vessel activation, and its playtest grammar has no cheat command. Reference
+`cheat unlock`/`cheat gold` can prepare its UI route; the generated clone already
+has money and enabled IDs. Existing shared UI/command observers and production
+coordinate adapters are incomplete. Thus deterministic cross-program scripted
+state reachability is still outstanding; these recipes must not be counted as
+executed parity tests. See also the new UI inventory entries in `ui_screens.md`.
+
+Synthetic CTest `testmaps_tools` runs the CLI on invented terrain, checks section
+counts, IDs, coordinates, all ordinary object types, all HP fractions, automatic
+hall separation, building/mobile separation, town levels, CRLF scripts, variants,
+repeatability, unchanged source/copy bytes and overwrite/symlink rejection. It
+also dumps both maps through the actual map viewer. It needs no original data.
+
+Cleanup is explicit: remove only generator-owned files from the **private** Maps
+directory after experiments (the layout manifests are private outputs too):
+
+```sh
+python3 - <<'PY'
+from pathlib import Path
+maps = Path('work/testmaps-game/Maps')
+for name in ('ztest_all', 'ztest_battle'):
+    for ext in ('map', 'dat', 'rm', 'vis', 'spr', 'mp', 'scn', 'layout.json'):
+        (maps / f'{name}.{ext}').unlink(missing_ok=True)
+PY
+```
+
+Local verification on 2026-11-04: Release build and all 38 runnable CTest checks
+passed; six checks skipped for private inputs/restricted networking. Both private
+maps dumped successfully and produced 800x600 clone captures. The final showcase
+(685 explicit objects plus automatic halls and special records) ran 24 ticks;
+player/computer combat ran 720 ticks, computer/computer ran 720 ticks and stress
+(1047 explicit objects) ran 24 ticks. These bounded probes reported no script
+errors or unsupported actions; reaching the requested horizon is not a victory
+or a soak/parity result. Both reference probes failed at `ip link set lo up`
+with `Cannot open netlink socket: Operation not permitted`, before the binary
+launched. Original loading, vessel entry routes, original computer control and
+cross-program UI state reachability remain unverified. Full pre-commit could not
+initialize its remote hook environment because github.com DNS resolution failed;
+local asset/English hooks, JSON parsing and whitespace checks passed separately.

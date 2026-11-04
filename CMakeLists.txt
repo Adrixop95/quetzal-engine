@@ -185,6 +185,8 @@ add_test(NAME animation_headless COMMAND test_render_contracts --headless)
 set_tests_properties(animation_headless PROPERTIES LABELS "unit"
   ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
 if(Python3_Interpreter_FOUND)
+  add_test(NAME testmaps_tools COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tests/test_testmaps.py $<TARGET_FILE:aztec_map_viewer>)
+  set_tests_properties(testmaps_tools PROPERTIES LABELS "unit" TIMEOUT 180)
   add_test(NAME zspr_tools COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_zspr_tools.py)
   set_tests_properties(zspr_tools PROPERTIES LABELS "unit")
 endif()
@@ -304,6 +306,9 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME ui_capture COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ui_capture.py $<TARGET_FILE:aztec_engine>)
   set_tests_properties(ui_capture PROPERTIES LABELS "unit;parity" TIMEOUT 30)
+  add_test(NAME gameplay_compare COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gameplay_compare.py $<TARGET_FILE:aztec_engine>)
+  set_tests_properties(gameplay_compare PROPERTIES LABELS "unit;parity" TIMEOUT 30)
   add_test(NAME frontend_capture_controls COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ui_capture.py)
   set_tests_properties(frontend_capture_controls PROPERTIES LABELS "unit;parity" TIMEOUT 20)

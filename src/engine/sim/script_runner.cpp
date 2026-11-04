@@ -75,6 +75,7 @@ void ScriptRunner::init(const World&) {
   tactics_.clear();
   local_time_ = 0;
   unsupported_ = 0;
+  outcome_origin_.reset();
   // Triggers that another trigger enables start disabled (initial state is not documented; see header).
   for (const Trigger& t : script_.triggers) enabled_[t.id] = true;
   for (const Trigger& t : script_.triggers)
@@ -354,7 +355,12 @@ void ScriptRunner::tick(GameSim& sim, World& w) {
     bool ok = true;
     for (const Condition& c : t.conditions) if (!eval(w, c)) { ok = false; break; }
     if (!ok) continue;
-    for (const Action& a : t.actions) run(sim, w, a);
+    for (const Action& a : t.actions) {
+      const auto before = w.outcome;
+      run(sim, w, a);
+      if (before == kRunning && w.outcome != kRunning)
+        outcome_origin_ = ScriptOutcomeOrigin{t.id, a.line, w.tick};
+    }
   }
   follow_paths(sim, w);
   for (Message& m : w.messages) m.ticks_left--;

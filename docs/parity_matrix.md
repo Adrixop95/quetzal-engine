@@ -136,3 +136,38 @@ The synthetic L6 comparator-to-triage regression verifies correct pass/fail
 classification and public category counts, including empty captures remaining
 failures. It is outside the historical scenario totals above. See
 [AUDIT_2026-11.md](AUDIT_2026-11.md) for findings and remaining evidence gaps.
+| experiment_failed | 35 |
+
+## Gameplay capture counts
+
+| Screen | Reference captures | Clone captures | Paired comparisons | Ten-minute clone recordings |
+| --- | ---: | ---: | ---: | ---: |
+| hud-mission-1 | 0 | 2 | 0 | 0 |
+| hud-mission-2 | 0 | 60 | 0 | 1 |
+| hud-mission-3 | 0 | 8 | 0 | 0 |
+
+| Screen | Clone repeat captures compared | Different files | Different bytes |
+| --- | ---: | ---: | ---: |
+| hud-mission-1 | 2 | 0 | 0 |
+| hud-mission-2 | 60 | 0 | 0 |
+| hud-mission-3 | 8 | 0 | 0 |
+## Campaign input and outcome controls (2026-11-04)
+
+These are independent engine consistency checks, outside the paired reference
+scenario totals above; no L0-L8 counts change.
+
+| Control | Observed result | Boundary |
+| --- | --- | --- |
+| Unselected environment resource and mid-mission resume regression | Failed before selection fix; passes afterward | Invented installation and fresh processes |
+| Changed selected resource | Save refused | Synthetic compatibility check |
+| Headless save loaded through mission UI | Continues to synthetic victory | No original mission completion |
+| First local outcome provenance and replay | Trigger/action/tick retained; foreign/later outcomes excluded | Diagnostic, not reference timing evidence |
+| Condition/action source lines | Blank lines and CRLF identify the first token after correction | Parser metadata only |
+| Private 24-tick campaign sweep | 15 matching paired transcripts, 14 matching save continuations, zero wins | Mission 11 defeats before its save; other missions hit the tick limit |
+| Private mission-1 tick-20 save, tick-60 continuation | All suffix tick hashes match with conflicting environment selection | Bounded tick-limit outcome |
+| Isolated reference control | Failed at namespace loopback setup before launch | No reference observation |
+
+The [engine inventory](engine_rules_status.md#campaign-input-and-outcome-iteration-2026-11-04-partial)
+records dependencies and validation limits. Town-scenario tactic/ownership,
+transport actions, winning routes and campaign/platform release evidence remain
+open. Private outputs are under ignored `work/parity/roadmap-*` directories.

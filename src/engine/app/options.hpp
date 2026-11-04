@@ -39,6 +39,8 @@ struct Options {
   float sfx_volume = 0.8f, music_volume = 0.6f, speech_volume = 0.8f;
   bool acknowledgement = true, subtitles = true;
   std::string ui_trace;            // --ui-trace FILE: raw per-frame UI observations
+  std::string capture_dir;         // periodic playtest captures; directory must already exist
+  int capture_every = 0;           // completed logical ticks, excluding repeated paused frames
   std::string script;              // --script FILE: headless playtest (see app/playtest.hpp)
   std::string menu_script;         // --menu-script FILE: frame-scheduled front-end input
   std::string menu_trace;          // --menu-trace FILE: raw front-end observations
