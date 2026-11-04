@@ -170,3 +170,10 @@ repeats does not establish every possible reference outcome. A comparison pass
 only covers this event contract; it is not full AI/game parity. Keep captures,
 windows, setup metadata and raw outputs private even when they contain numbers
 only. The CTest `parity_ai` exercises this comparator with invented values.
+
+`testmaps.json` is a separate provisional L4 specification for private generated
+`ztest_all` and `ztest_battle` maps of kind `campaign-derived`. It records semantic
+state recipes and explicit missing input/observer adapters. It is not accepted by
+the strict L0 harness or executed by `parity_rules.py`. Generate maps with
+`tools/make_testmaps.py`; see EXPERIMENTS.md for isolated direct launch probes.
+No successful clone probe or structural test establishes original-game loading.
