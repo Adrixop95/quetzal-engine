@@ -857,3 +857,149 @@ two reference observations before comparing the clone. Keep private reports and
 inputs local; publish only evidence labels and a factual result summary. A
 matching supported-field snapshot or retained opaque block is not complete
 resume, and tick-zero equality alone is not continuation parity.
+
+## L6 live audio run sheet (task 76, needs live run)
+
+**Evidence: synthetic only; status: needs live run.** Do not execute this sheet
+inside the restricted Codex sandbox. Use a host that permits `unshare -rn` and
+namespace interface/socket setup. No live attempt was made for this follow-up.
+Task 64's shared fixed-tick observer/input translator is missing here; the smoke
+steps below are available independently, while paired capture acceptance remains
+blocked on it. All outputs belong under ignored `work/parity/`. Record event
+metadata only: never enable `RT_AUDIO_DUMP`, screenshots or sample capture.
+
+First verify the independent build and synthetic regressions:
+
+```sh
+sh tools/bootstrap.sh --no-hooks
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR=
+cmake --build build --parallel 2
+ctest --test-dir build --output-on-failure
+pre-commit run --all-files
+```
+
+For a startup reference hook/isolation smoke, use a fresh destination:
+
+```sh
+python3 -I tools/audio_parity.py probe \
+  --game /home/adrox/aztec-re/game \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --output "$PWD/work/parity/l6-startup-01" --timeout 60
+cat work/parity/l6-startup-01/report.json
+```
+
+The probe copies writable Maps/Saves/profiles/configuration, symlinks immutable
+resources, clears inherited `RT_*` variables, and runs with both dummy SDL
+drivers through `timeout -s KILL 60 unshare -rn sh -ec`, configuring loopback and
+192.168.1.125 inside the namespace. Failure stops before launch. It requests
+`RT_AUDIO_LOG`, `RT_CMD_LOG` and `RT_STATE_LOG`; the default script waits 3000 ms
+and quits. Exit 1 is expected even after raw capture (`captured_unmapped`); exit
+77 means missing private inputs. Missing/empty audio logs are blocked, never a
+pass. Check `invocation.json` and `process.log`. An old runtime without the audio
+hook requires a private rebuild from hand-written runtime sources plus the
+user's local lift; never modify the supplied binary or publish derived outputs.
+A startup run is not a mission, event-matrix or record/replay acceptance run.
+
+A clone-only dispatcher smoke uses its own private copy and a tick-driven script.
+Run from the worktree root on the same namespace-capable host:
+
+```sh
+python3 - <<'PY'
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path('tools').resolve()))
+from parity_report import execute, private_game
+root = Path('work/parity/l6-clone-smoke-01').resolve()
+root.mkdir(parents=True, exist_ok=False)
+private_game(Path('/home/adrox/aztec-re/game'), root / 'game')
+script = root / 'input.txt'
+script.write_text('run 120\nquit\n')
+execute([Path('build/aztec_engine').resolve(), '--game', root / 'game', '1',
+         '--software', '--no-mouse-grab', '--no-edge-scroll',
+         '--script', script, '--audio-log', root / 'clone.jsonl'],
+        root, 60, setup_network=False)
+PY
+```
+
+This uses dummy SDL inside its own namespace; `execute` also clears inherited
+`RT_*` variables, including sample-dump settings. It runs the graphical
+application with a dummy video driver: `--headless` currently omits the audio
+dispatcher. Do not pass `--no-audio`, which disables captions and event requests.
+This smoke is not aligned to the reference startup run.
+
+After task 64 is available, have its driver/auditor prepare private scripts at
+`work/parity/l6-input/reference-record.txt`, `reference-replay.txt` and
+`clone.txt` for one common scenario/horizon/camera/UI state. The replay script
+must navigate into the same mission without reissuing the recorded in-mission
+orders. Reference scripts use milliseconds/DIK keys; clone scripts use
+frames/ticks/SDL keys. Reusing one script verbatim is not a shared clock contract.
+The scenario must exercise selection, orders, combat, construction (`building`),
+production announcements (`production`), UI, ambient loops and music. Then run:
+
+```sh
+python3 -I tools/audio_parity.py probe \
+  --game /home/adrox/aztec-re/game \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --script "$PWD/work/parity/l6-input/reference-record.txt" \
+  --output "$PWD/work/parity/l6-record-01" --timeout 120
+python3 -I tools/audio_parity.py probe \
+  --game /home/adrox/aztec-re/game \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --script "$PWD/work/parity/l6-input/reference-replay.txt" \
+  --replay "$PWD/work/parity/l6-record-01/commands.txt" \
+  --output "$PWD/work/parity/l6-replay-01" --timeout 120
+```
+
+Inspect both reports even though both commands return 1 for unmapped captures.
+Require complete nonempty mission state logs over the declared horizon and
+audit injected packet readback against the recording, excluding NOTHING packets.
+Use the existing `parity_report.verify_packet_readback`, `state_rows` and
+`pool_differences` helpers after task 64 establishes the exact horizon. Preserve
+transient reference state differences as failures; matching clone hashes cannot
+replace this audit. Each probe creates a separate private installation copy.
+
+For the paired clone capture, rerun the clone Python block above with a fresh
+`root` of `work/parity/l6-clone-01` and replace the two script lines with:
+
+```python
+script = Path('work/parity/l6-input/clone.txt').resolve()
+```
+
+Keep mission number, viewport/camera, profile/options, action sequence and tick
+horizon consistent with the shared scenario. The startup/smoke scripts are not
+substitutes for these audited inputs. For each raw capture, prepare a private
+SHA-256-bound manifest as specified in [parity.md](parity.md#private-capture-and-normalization).
+Use the same scenario/clock/identity header on both sides and an explicitly
+audited tick offset. Reference annotations must resolve every buffer request to
+an evidenced sound ID, kind and trigger. Never take IDs or ordering from clone
+expectations. Streamed music transitions, speech/caption timing and events absent
+from the DirectSound shim need an audited reference observer; do not fabricate
+extra events or assert completeness while those observations are missing.
+
+After those audits, normalize and compare:
+
+```sh
+python3 -I tools/audio_parity.py normalize reference \
+  work/parity/l6-record-01/reference.jsonl \
+  work/parity/l6-record-01/reference-manifest.json \
+  --output work/parity/l6-record-01/reference-normalized.json
+python3 -I tools/audio_parity.py normalize clone \
+  work/parity/l6-clone-01/clone.jsonl \
+  work/parity/l6-clone-01/clone-manifest.json \
+  --output work/parity/l6-clone-01/clone-normalized.json
+python3 -I tools/audio_parity.py compare \
+  work/parity/l6-record-01/reference-normalized.json \
+  work/parity/l6-clone-01/clone-normalized.json \
+  --require-all-classes --output work/parity/l6-record-01/diff.json
+```
+
+Normalize replay with its own digest/annotations and compare it to the recording
+before accepting clone differences. Compare preserves the global sequence and
+reports the first differing event; timing tolerance is one tick. The strict
+coverage gate requires events in all eight classes on both sides. It cannot
+establish per-mission or settings coverage by itself. Repeat in fresh directories
+for each mission and independently varied effects/music/speech gains, mute,
+acknowledgements and captions; test positional loops entering/leaving visibility,
+range and object lifetime, plus music transitions through the allowed playlist.
+Retain event logs and failure reports privately. Publish only evidence labels
+and factual counts, with unresolved mappings still marked **needs live run**.

@@ -115,6 +115,9 @@ One-shot sources are currently 0. Music starts and transitions use the caller's
 current world tick; scene events use the dispatch tick. Each stream uses
 consecutive sequence indices. Triggers describe engine dispatch contexts, and
 unknown provenance remains `unknown`; loop stops retain the start context.
+`building` covers construction/structure animation requests; `production` is
+reserved for explicit production announcements. The new label does not supply
+an announcement dispatcher or an evidenced WAV mapping.
 These logs record requests, not samples delivered by the device. Keep private-bank
 logs under ignored `work/parity/`. `--no-audio` disables playback and produces
 no playback events. The JSON example above uses invented values.
@@ -207,3 +210,21 @@ speech, UI cues, production/completion announcements, generic effect provenance,
 original music transitions and all seven live trigger-class comparisons remain
 unverified. The task 45 comparator is present; audited reference identity/trigger
 and music observers plus synchronized paired captures remain dependencies.
+
+## Task 76 follow-up (2026-11-05, synthetic evidence)
+
+**Status: needs live run.** Task 64's shared fixed-tick observer/input contract
+is absent from this checkout. Independent work adds a distinct `production`
+trigger, all-class coverage enforcement, stricter reference row validation,
+and command/state recording plus replay controls to the private capture probe.
+The synthetic mixer regression changes gains on already playing effect, speech
+and music voices, mutes/unmutes them independently, and checks exact invented
+sample sums without restarting voices or emitting additional playback requests.
+No synthetic samples or private event captures are saved in the repository.
+
+The existing speech/caption API, acknowledgement settings, live controls, music
+order and positional loop policies remain engine behavior with synthetic
+coverage. Original settings semantics, application speech/announcement routing,
+reference music observation and missing/misordered original events cannot be
+resolved without the dependency and audited live evidence. Use the exact commands
+and evidence gates in [EXPERIMENTS.md](EXPERIMENTS.md#l6-live-audio-run-sheet-task-76-needs-live-run).
