@@ -1,0 +1,272 @@
+{
+  "schema": 1,
+  "status": "needs live run",
+  "dependency": "64-shared-runner-observer",
+  "order": "Filename order within the L1 matrix row; no per-scenario order was previously published.",
+  "phase": "before_commands",
+  "fields": {
+    "x": "Ground x in pixels times 256; do not reuse tile coordinates.",
+    "y": "Ground y in pixels times 256; do not reuse tile coordinates.",
+    "hp": "Primary current HP in native integer HP units; preserve negative pre-death values when available.",
+    "max_hp": "Primary maximum HP in the same units as hp.",
+    "armor": "Physical armor in native 8.8 integer units; audit the getter independently of HP.",
+    "damage_class": "Audited category bit mask, including every applicable category; no type-name inference.",
+    "shot_count": "Cumulative confirmed launch events since the initial observation, never impact or HP-change count.",
+    "money": "Native integer money units scoped to the owning side; repeat the side value on its named town rows.",
+    "paid": "Cumulative accepted debit for this production item in money units; zero before payment.",
+    "queue_length": "Number of accepted outstanding items in this town queue, including its active item.",
+    "remaining": "Remaining production timer in native simulation ticks, zero while idle.",
+    "construction_remaining": "Remaining construction timer in native simulation ticks, zero after activation.",
+    "spawn_count": "Cumulative completed production spawns attributed to this town since initial observation.",
+    "active": "Boolean 0/1 for completed and enabled simulation state; audit class-specific semantics.",
+    "day_clock": "Native integer clock phase; retain initial phase, period and wrap convention in private audit.",
+    "town_income": "Cumulative credited town income since initial observation in money units, separate from balance.",
+    "repair_supply": "Available town repair credits in native integer work units, separate from gold.",
+    "service_remaining": "Native integer delay until the next service update; audit unavailable/idle representation.",
+    "repair_mode": "Audited town service mode integer, preserving off/repair/destroy distinctions.",
+    "repair_marked": "Boolean 0/1 membership in the audited town service list.",
+    "visible": "Boolean 0/1 current visibility to the fixed viewing side at the named sample position.",
+    "explored": "Boolean 0/1 explored state for the same viewing side/sample as visible.",
+    "projectile_x": "Projectile ground x in pixels times 256, keyed by stable projectile identity.",
+    "projectile_y": "Projectile ground y in pixels times 256, keyed by stable projectile identity.",
+    "projectile_height": "Projectile altitude in pixels times 256, distinct from ground y and render height.",
+    "launch_tick": "Actual simulation launch tick, zero before launch on a reserved projectile row.",
+    "impact_tick": "Actual simulation impact tick, zero before impact; zero at horizon is unmeasured flight duration."
+  },
+  "cases": [
+    {
+      "order": 1,
+      "id": "l1_build_barracks",
+      "metric": "completion_delay",
+      "unit": "ticks",
+      "definition": "Activation tick minus accepted-command tick; record payment, first progress and queue start separately for each object/town.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 2,
+      "id": "l1_build_mine",
+      "metric": "completion_delay",
+      "unit": "ticks",
+      "definition": "Activation tick minus accepted-command tick; record payment, first progress and queue start separately for each object/town.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 3,
+      "id": "l1_damage_armored",
+      "metric": "hit_damage",
+      "unit": "HP units",
+      "definition": "HP immediately before minus HP immediately after one confirmed impact; record armor and all category flags.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 4,
+      "id": "l1_damage_bird",
+      "metric": "hit_damage",
+      "unit": "HP units",
+      "definition": "HP immediately before minus HP immediately after one confirmed impact; record armor and all category flags.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 5,
+      "id": "l1_damage_building",
+      "metric": "hit_damage",
+      "unit": "HP units",
+      "definition": "HP immediately before minus HP immediately after one confirmed impact; record armor and all category flags.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 6,
+      "id": "l1_damage_defence",
+      "metric": "hit_damage",
+      "unit": "HP units",
+      "definition": "HP immediately before minus HP immediately after one confirmed impact; record armor and all category flags.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 7,
+      "id": "l1_damage_ground",
+      "metric": "hit_damage",
+      "unit": "HP units",
+      "definition": "HP immediately before minus HP immediately after one confirmed impact; record armor and all category flags.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 8,
+      "id": "l1_damage_zeppelin",
+      "metric": "hit_damage",
+      "unit": "HP units",
+      "definition": "HP immediately before minus HP immediately after one confirmed impact; record armor and all category flags.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 9,
+      "id": "l1_flight_catapult",
+      "metric": "flight_duration",
+      "unit": "ticks",
+      "definition": "Impact tick minus launch tick for the same projectile identity; retain per-tick ground coordinates and altitude.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 10,
+      "id": "l1_income_farm",
+      "metric": "harvest_credit",
+      "unit": "money units per event",
+      "definition": "Credit at each audited harvest/day-clock event minus matched no-producer control; record event ticks and resource footprint.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 11,
+      "id": "l1_income_mine",
+      "metric": "harvest_credit",
+      "unit": "money units per event",
+      "definition": "Credit at each audited harvest/day-clock event minus matched no-producer control; record event ticks and resource footprint.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 12,
+      "id": "l1_price_mine",
+      "metric": "accepted_debit",
+      "unit": "money units",
+      "definition": "Money immediately before minus money immediately after accepted payment, with income, maintenance and other spending disabled.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 13,
+      "id": "l1_queue_serial",
+      "metric": "completion_delay",
+      "unit": "ticks",
+      "definition": "Activation tick minus accepted-command tick; record payment, first progress and queue start separately for each object/town.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 14,
+      "id": "l1_queue_two_towns",
+      "metric": "completion_delay",
+      "unit": "ticks",
+      "definition": "Activation tick minus accepted-command tick; record payment, first progress and queue start separately for each object/town.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 15,
+      "id": "l1_range_hopcannon",
+      "metric": "range_boundary",
+      "unit": "pixel*256",
+      "definition": "Bracket accepted and rejected stationary shots by actual positions and footprint distance; separate acquisition and approach movement.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 16,
+      "id": "l1_regeneration",
+      "metric": "regeneration_delta",
+      "unit": "HP units per event",
+      "definition": "Each HP increment and its tick with repair/combat disabled; include damaged/full-HP controls and maximum HP.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 17,
+      "id": "l1_regeneration_building",
+      "metric": "regeneration_delta",
+      "unit": "HP units per event",
+      "definition": "Each HP increment and its tick with repair/combat disabled; include damaged/full-HP controls and maximum HP.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 18,
+      "id": "l1_regeneration_organic",
+      "metric": "regeneration_delta",
+      "unit": "HP units per event",
+      "definition": "Each HP increment and its tick with repair/combat disabled; include damaged/full-HP controls and maximum HP.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 19,
+      "id": "l1_reload_cannon",
+      "metric": "launch_interval",
+      "unit": "ticks",
+      "definition": "Differences between successive confirmed launch ticks, at least three launches; retain the first-command delay separately.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 20,
+      "id": "l1_repair_building",
+      "metric": "repair_delta",
+      "unit": "HP units per service event",
+      "definition": "Each HP increment and its tick paired with consumed supply and money; subtract regeneration-only control.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 21,
+      "id": "l1_repair_defence",
+      "metric": "repair_delta",
+      "unit": "HP units per service event",
+      "definition": "Each HP increment and its tick paired with consumed supply and money; subtract regeneration-only control.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 22,
+      "id": "l1_sight_cannon",
+      "metric": "visibility_boundary",
+      "unit": "pixel*256",
+      "definition": "Bracket visible/invisible target positions with frozen light and fixed viewing side; retain explored and targetable separately.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 23,
+      "id": "l1_speed_cannon",
+      "metric": "position_delta",
+      "unit": "pixel*256 per tick",
+      "definition": "Retain x/y deltas for each unobstructed steady-motion tick; report acceleration and arrival separately.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 24,
+      "id": "l1_speed_catapult",
+      "metric": "position_delta",
+      "unit": "pixel*256 per tick",
+      "definition": "Retain x/y deltas for each unobstructed steady-motion tick; report acceleration and arrival separately.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 25,
+      "id": "l1_speed_hopcannon",
+      "metric": "position_delta",
+      "unit": "pixel*256 per tick",
+      "definition": "Retain x/y deltas for each unobstructed steady-motion tick; report acceleration and arrival separately.",
+      "expected": null,
+      "evidence_label": null
+    },
+    {
+      "order": 26,
+      "id": "l1_train_cannon",
+      "metric": "spawn_delay",
+      "unit": "ticks",
+      "definition": "Spawn tick minus accepted-command tick; record queue start, first progress and debit separately.",
+      "expected": null,
+      "evidence_label": null
+    }
+  ]
+}

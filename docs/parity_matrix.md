@@ -22,6 +22,18 @@ passes do not establish original-game parity. Unreported scenarios are excluded.
 | --- | ---: |
 | experiment_failed | 35 |
 
+Task 65 preparation (2026-11-05): **needs live run**. No new attempt or
+measurement is included in these historical totals. Task 64's audited shared
+runner/semantic observers are absent in this checkout, and live reference runs
+are prohibited in Codex. All 26 L1 cases remain P; reference and clone
+before/after values are unavailable. The [ordered run sheet](EXPERIMENTS.md#l1-task-65-run-sheet-needs-live-run)
+reports each case separately. The asset-free `parity_rules.py plan` command
+exports null measurement forms and proposed normalization, with synthetic
+checks for complete ordered coverage and rejection of invented expectations.
+No new engine rule fix or P-to-M/V promotion is claimed. Population still needs
+the specified additional control, and positive income/service measurements need
+audited resource maps and longer clock coverage.
+
 L8 remains unmeasured. On 2026-11-01 a reference mission-launch preflight using
 the supplied external installation/runtime, a private game copy, dummy SDL and
 `unshare -rn` failed during loopback setup with a netlink permission error before

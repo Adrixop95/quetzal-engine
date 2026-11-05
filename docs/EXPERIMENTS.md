@@ -857,3 +857,125 @@ two reference observations before comparing the clone. Keep private reports and
 inputs local; publish only evidence labels and a factual result summary. A
 matching supported-field snapshot or retained opaque block is not complete
 resume, and tick-zero equality alone is not continuation parity.
+
+## L1 task 65 run sheet (needs live run)
+
+Task 64 (`64-shared-runner-observer`) is still in the queue in this checkout.
+The shared setup/command adapters and audited semantic reference observer are
+absent. This task prepares the independent portion only. No reference process
+was launched in Codex: namespace creation is denied. No engine rule change is
+justified by new measurements, and all 26 rules retain P. Baseline Release build
+and CTest passed (43 passes, six skips); all pre-commit hooks passed.
+
+Generate an asset-free handoff, without invoking either executable:
+
+```sh
+python3 -I tools/parity_rules.py plan --output work/parity/l1-task65-plan
+```
+
+This creates ordered `measurements.json`, a normalization proposal, and each
+case's scenario and blank measurement form. It requires no private installation
+and applies no inputs. Null reference/clone-before/clone-after values mean
+**unmeasured**, never zero or equality. `tests/parity/rules_protocol.json` defines
+one primary metric per case and proposed integer units for every observed field.
+The existing matrix has only a layer row, no individual case ordering; this run
+sheet makes the existing filename/list order explicit. Collect cases in that
+order. Triage measured fixes by impact: damage/armor, reload, build time, income,
+then the other mechanics. Keep the original clone measurement before each fix.
+
+After task 64 supplies audited adapters, on a namespace-capable host:
+
+1. Make independent private reference-record, reference-repeat and clone copies
+   per case/control. Symlink immutable resources/executable from
+   `/home/adrox/aztec-re/game`; copy Maps/Saves/settings. Use the runtime
+   `/home/adrox/aztec-re/build/aztec_recomp`. Keep all outputs under ignored
+   `work/parity/`. Do not reuse mutated profiles between runs.
+2. Resolve the scenario's controls and candidate `pending.json`: verify actual
+   placements, generated halls, town membership, money, tech/speed, initial HP,
+   resource footprints, day phase, visibility, AI and legal command acceptance.
+   Task 64 must supply the invocation for its runner; the existing `probe`
+   command is only a launch control and cannot execute the abstract inputs.
+3. Run dummy SDL video/audio inside `timeout -s KILL N unshare -rn sh -ec`.
+   Reference setup must bring loopback up and add `192.168.1.125/24` before exec.
+   A denied namespace/network setup is a failed experiment. Never bypass it.
+   Record exact executable/configuration identities and command readback privately.
+4. Record and replay twice; validate packet readback, complete horizons and
+   semantic reference repeatability before clone comparison. Preserve actual
+   event ticks, not wall-clock script waits. Use canonical scenario identities,
+   stable spawn/projectile identities, and the same before-command boundary.
+   Events during tick T first appear in the tick T+1 snapshot; retain native
+   launch/impact/service events to distinguish multiple changes within a tick.
+   Generic HP deltas cannot establish flight time, launch count or immunity.
+5. Resolve every proposed field definition against both audited observers.
+   Inapplicable fields need a documented representation on each row kind;
+   unsupported fields must block the case, never silently become zero. Positions
+   are pixel*256, inputs are tiles. Scope balances/supply to the correct side/town.
+   Preserve combined category flags and native armor precision. The proposal
+   does not certify the current engine-index or historical raw unit logs.
+6. Compare complete normalized streams with the existing command below. It
+   exports private numeric observations, not a scalar rule measurement. Derive
+   the primary metric using the protocol definition and retain all secondary
+   events/controls. Missing events require a longer horizon or a blocker, never
+   an assumed timing/rate. For income, regeneration and repair, extend the common
+   scenario/stream horizon through at least two relevant clock/service events.
+   The base 720 ticks and empty resource map alone cannot measure positive yield.
+7. Fill each private measurement form with reference, clone-before, clone-after,
+   unit, control variant, uncertainty and evidence label linking the private
+   repeatable capture/audit. Add a synthetic regression for every justified
+   engine fix. Rerun the same controlled clone after the fix. Publish only the
+   reviewed small integer expectation with its specification/evidence label;
+   keep raw numeric streams, extracted metadata and captures private. Change P
+   to M/V only after the reference measurement and adapter audit exist.
+
+```sh
+# Substitute the selected ID and the audited adapter output paths for each case.
+python3 -I tools/parity_rules.py compare --id l1_build_barracks \
+  --reference work/parity/l1-live/l1_build_barracks/reference.jsonl \
+  --repeat work/parity/l1-live/l1_build_barracks/reference-repeat.jsonl \
+  --clone work/parity/l1-live/l1_build_barracks/clone-before.jsonl \
+  --output work/parity/l1-live/l1_build_barracks/comparison-before
+```
+
+Population is not covered by the existing 26 base inputs. Before closing L1,
+add a separate population control variant to `l1_queue_two_towns`: record living
+side population and per-town accepted queues/spawns before and after crossing
+80, 100 and 110 units, with matched single-town, human/AI, sufficient-cash,
+prerequisite and free-spawn-space controls. These thresholds are experimental
+choices from existing synthetic cap regressions, not reference limits. Distinguish
+queue/tactic capacity from a side population restriction. Task 64 needs a
+population/command-acceptance observer and controlled repeated queue inputs for
+this variant; the base two commands cannot establish any cap or its absence.
+
+The per-case table below is also the handoff status report. N/A means no audited
+live value for either implementation. No before/after rule comparison is claimed.
+
+| Order | Scenario | Metric | Reference | Clone before | Clone after | Evidence |
+| ---: | --- | --- | --- | --- | --- | --- |
+| 1 | `l1_build_barracks` | completion_delay | N/A | N/A | N/A | P |
+| 2 | `l1_build_mine` | completion_delay | N/A | N/A | N/A | P |
+| 3 | `l1_damage_armored` | hit_damage | N/A | N/A | N/A | P |
+| 4 | `l1_damage_bird` | hit_damage | N/A | N/A | N/A | P |
+| 5 | `l1_damage_building` | hit_damage | N/A | N/A | N/A | P |
+| 6 | `l1_damage_defence` | hit_damage | N/A | N/A | N/A | P |
+| 7 | `l1_damage_ground` | hit_damage | N/A | N/A | N/A | P |
+| 8 | `l1_damage_zeppelin` | hit_damage | N/A | N/A | N/A | P |
+| 9 | `l1_flight_catapult` | flight_duration | N/A | N/A | N/A | P |
+| 10 | `l1_income_farm` | harvest_credit | N/A | N/A | N/A | P |
+| 11 | `l1_income_mine` | harvest_credit | N/A | N/A | N/A | P |
+| 12 | `l1_price_mine` | accepted_debit | N/A | N/A | N/A | P |
+| 13 | `l1_queue_serial` | completion_delay | N/A | N/A | N/A | P |
+| 14 | `l1_queue_two_towns` | completion_delay | N/A | N/A | N/A | P |
+| 15 | `l1_range_hopcannon` | range_boundary | N/A | N/A | N/A | P |
+| 16 | `l1_regeneration` | regeneration_delta | N/A | N/A | N/A | P |
+| 17 | `l1_regeneration_building` | regeneration_delta | N/A | N/A | N/A | P |
+| 18 | `l1_regeneration_organic` | regeneration_delta | N/A | N/A | N/A | P |
+| 19 | `l1_reload_cannon` | launch_interval | N/A | N/A | N/A | P |
+| 20 | `l1_repair_building` | repair_delta | N/A | N/A | N/A | P |
+| 21 | `l1_repair_defence` | repair_delta | N/A | N/A | N/A | P |
+| 22 | `l1_sight_cannon` | visibility_boundary | N/A | N/A | N/A | P |
+| 23 | `l1_speed_cannon` | position_delta | N/A | N/A | N/A | P |
+| 24 | `l1_speed_catapult` | position_delta | N/A | N/A | N/A | P |
+| 25 | `l1_speed_hopcannon` | position_delta | N/A | N/A | N/A | P |
+| 26 | `l1_train_cannon` | spawn_delay | N/A | N/A | N/A | P |
+
+Status: **needs live run**.
