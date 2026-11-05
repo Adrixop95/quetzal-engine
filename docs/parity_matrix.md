@@ -53,6 +53,13 @@ loopback setup. These diagnostics are not selected paired scenario diff reports,
 so the L3 counts above remain zero. Numeric arrival/path acceptance tolerances,
 boat/flight and formation parity, and V02/V04/V05 dependencies remain unresolved.
 Private evidence stays in ignored `work/parity/l3/`.
+
+L3 follow-up (2026-11-05): **0 paired scenarios, 0 pass, 0 fail, 0 skip**;
+14 new synthetic trace controls, 0 live comparisons. Task 64 remains absent.
+The offline trace comparator and provisional numeric gates are documented in
+[movement rules](rules_movement.md#11-l3-trace-comparison-preparation-2026-11-05-needs-live-run);
+the [run sheet](EXPERIMENTS.md#l3-path-tracing-run-sheet-task-68-needs-live-run)
+lists the required paired coverage. Status: **needs live run**.
 ## L6 focused controls (2026-11-01; outside paired-scenario totals)
 
 | Synthetic regression | Failing assertions before | Failing assertions after |
