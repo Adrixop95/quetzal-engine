@@ -47,6 +47,48 @@ def scenarios():
     return cases
 
 
+def measurement_protocol(cases):
+    """Validate the pending measurement recipe without manufacturing observations."""
+    protocol = report.json_object((ROOT / 'tests/parity/rules_protocol.json').read_text())
+    rows = protocol['cases']
+    if (protocol['schema'] != 1 or protocol['status'] != 'needs live run'
+            or protocol['phase'] != 'before_commands'
+            or [row['id'] for row in rows] != [case['id'] for case in cases]
+            or [row['order'] for row in rows] != list(range(1, len(cases) + 1))
+            or set(protocol['fields']) != {field for case in cases for field in case['observe']['fields']}):
+        raise ValueError('measurement protocol must cover all scenarios and fields in order')
+    for row in rows:
+        if (row['expected'] is not None or row['evidence_label'] is not None
+                or any(not isinstance(row[key], str) or not row[key]
+                       for key in ('metric', 'unit', 'definition'))):
+            raise ValueError('pending protocol cannot claim measured expectations or evidence')
+    return protocol
+
+
+def plan(cases, output):
+    """Write an asset-free handoff; never launch processes or apply scenario inputs."""
+    protocol = measurement_protocol(scenarios())
+    selected = {case['id'] for case in cases}
+    output = report.private_output(output)
+    output.mkdir(parents=True, exist_ok=False)
+    rows = []
+    for recipe in protocol['cases']:
+        if recipe['id'] not in selected:
+            continue
+        case = next(case for case in cases if case['id'] == recipe['id'])
+        directory = output / case['id']
+        directory.mkdir()
+        report.write_json(directory / 'scenario.json', case)
+        row = dict(recipe, reference=None, clone_before=None, clone_after=None,
+                   status='needs live run', evidence='P',
+                   controls=case['setup']['controls'])
+        report.write_json(directory / 'measurement.json', row)
+        rows.append(row)
+    report.write_json(output / 'normalization.json', protocol)
+    report.write_json(output / 'measurements.json', rows)
+    return 0
+
+
 def seed_game(source, destination):
     """Copy only the map template and writable settings; immutable assets are links."""
     destination.mkdir()
@@ -83,7 +125,7 @@ def prepare(case, game, directory):
     report.write_json(directory / 'scenario.json', case)
     report.write_json(directory / 'pending.json', dict(
         category='blocked_setup_contract',
-        detail='Candidate placements only: command translation, AI/fog/HP/tech controls, town membership and observers require task 42.',
+        detail='Candidate placements only: command translation, AI/fog/HP/tech controls, town membership and observers require task 64.',
         unimplemented_input=case['input'], controls=case['setup']['controls']))
     return private
 
@@ -209,6 +251,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='mode', required=True)
     sub.add_parser('list')
+    planning = sub.add_parser('plan', help='write pending measurement recipes without assets or live execution')
+    planning.add_argument('--output', type=Path, required=True)
+    planning.add_argument('--id')
     run = sub.add_parser('probe', help='generate candidates and attempt isolated launch controls')
     run.add_argument('--game', type=lambda p: Path(p).resolve(), required=True)
     run.add_argument('--runtime', type=lambda p: Path(p).resolve(), required=True)
@@ -233,6 +278,8 @@ def main():
                 raise ValueError('unknown L1 scenario')
         if args.mode == 'compare':
             return evaluate(cases[0], args.reference, args.repeat, args.clone, args.output)
+        if args.mode == 'plan':
+            return plan(cases, args.output)
         if args.timeout <= 0:
             raise ValueError('timeout must be positive')
         return probe(cases, args.game, args.runtime, args.output, args.timeout, args.engine)

@@ -19,6 +19,21 @@ in each file describe required repeats and boundary cases; those repeats are
 pending work, not additional executed scenarios. Target type names are test
 selection labels, not measured armor classes. Population remains uncovered.
 
+Task 65's asset-free measurement handoff is available with:
+
+```sh
+python3 -I tools/parity_rules.py plan --output work/parity/l1-task65-plan
+```
+
+`rules_protocol.json` supplies ordered metric definitions and proposed field
+normalization. It contains no measured expectations. The command writes copied
+specifications and null reference/clone-before/clone-after forms; it does not
+prepare maps, launch processes or normalize captures. `--id` selects one case.
+The [live run sheet](../../docs/EXPERIMENTS.md#l1-task-65-run-sheet-needs-live-run)
+lists all 26 pending cases, clock-horizon requirements and the additional
+population control variant. Task 64's audited runner/observers are still missing
+in this checkout. Their integration and live measurements remain required.
+
 `setup.preplaced_objects` names canonical scenario identities and type IDs;
 positions and command destinations are tiles. `input` contains abstract commands
 at simulation ticks. Both commands at the same tick retain list order.
