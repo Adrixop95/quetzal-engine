@@ -74,3 +74,104 @@ objects, tech), `input` (list of timed events: commands or raw mouse/keyboard ev
 
 Bit-exact reproduction of the original rendering, exact AI trajectories, and original
 network wire compatibility.
+
+## Shared L0 schema 2 implementation
+
+Status: **needs live run; partial reference normalization**. Schema 1 synthetic
+controls and their JSONL readers remain supported. `private_l0.json` now uses
+schema 2. One JSON specification generates the same native schedule for the
+hand-written runtime and `aztec_engine --headless`. With `--flat-output`, one
+selected scenario writes directly into `work/parity/<id>/`:
+
+```sh
+python3 -I tools/parity_run.py private_l0 --flat-output \
+  --output work/parity/private_l0 --game /absolute/private/installation \
+  --runtime /absolute/rebuilt/aztec_recomp --engine "$PWD/build/aztec_engine"
+```
+
+Outputs are `scenario.json`, `{reference,clone}.json`, `diff.json`, `runners.json`
+and `report.json`. Each runner has a private game copy, invocation/process log,
+`schedule.txt`, native `observations.jsonl` and `tick_<n>.ppm` captures. Existing
+output directories are refused. `--output` without `--flat-output` retains the
+older multi-scenario run-directory layout. Nothing from these directories is
+public evidence until reviewed; captures always remain ignored.
+
+Schema 2 currently accepts campaign missions 1..15, empty `setup` and `input`,
+provisional evidence P and exact tolerance. Unsupported setup/commands are
+rejected rather than silently ignored. `observe` contains
+`{"contract":"shared-l0-v2","ticks":[1,6,12]}`. Ticks must start at 1 and be
+strictly increasing positive 32-bit integers. The fixed `view` contains:
+
+```json
+{
+  "camera": [0, 0, 1],
+  "resolution": [800, 600],
+  "side": 0,
+  "selection": [],
+  "panel": true,
+  "cursor": [400, 300]
+}
+```
+
+Camera coordinates are top-left world pixels; zoom and UI scale are 1. Other
+supported viewing sides are 1..3. The native transport starts with
+`L0 2 <camera-x> <camera-y> <side>` followed by one tick per line; both C and C++
+read the same checked parser in `src/parity/schedule.h`.
+
+Both observers use the `before_commands` boundary: tick n describes the state
+before commands and simulation work for tick n. Clone rendering uses alpha 1
+and the current simulation day clock, with an explicitly positioned camera,
+empty selection, panel and cursor. Its headless loop supplies state and pixels
+synchronously, without a second simulation process or wall-clock screenshot
+schedule. Automatic human orders and resume are disabled for this contract.
+
+Each canonical bundle records schema, contract, mission, phase, position unit,
+requested view, ticks, runner provenance and samples. Each sample has `tick`,
+`objects`, `money`, `queues`, observed `view`, relative `frame` and `unavailable`.
+Objects contain `type`, `owner`, `x`, `y`, `hp`, `orders`; positions use
+`pixel/256`. Orders contain `kind`, canonical `target` or null, and destination
+`x`,`y` in pixels. Queues are ordered lists per side, with type, town, remaining,
+total, paid, started and paused fields. Money is an integer map by side.
+
+Native addresses/engine IDs are private tracking handles. Initial identities
+use the exact `(owner,type,x,y)` anchor at tick 1, then retain that identity across
+movement and owner changes. Duplicate anchors, unknown spawns, reused handles
+and unresolved targets are refused. This is deliberately insufficient for
+production/spawn scenarios: those require an audited creation-generation and
+mission-placement identity observer. No nearest-position matching is performed.
+
+The reference observer runs on the logic thread at the existing oracle command
+fetch. It blocks that thread, freezes `GetTickCount`/`timeGetTime`, requests the
+camera position, and waits up to five seconds for a renderer callback. Paused
+wall time is subtracted when the clock resumes. It writes normalized integer
+HP, type, whole-pixel position scaled by 256, owner through the owning tactic,
+and four reference cash slots. The existing legacy unit log is unchanged.
+The reference currently declares **orders, queues, fractional position, observed
+UI state and complete-frame phase unavailable**. A renderer callback can be a
+partial DirectDraw blit; its capture is diagnostic. A timeout declares the frame
+unavailable too. A requested camera is not certified as a rendered camera.
+This code therefore does not yet unblock L1/L4/L5 acceptance. The missing audited
+normalization and complete-render boundary still need implementation and live
+verification; removing `unavailable` labels without that work is invalid.
+
+The comparator validates entire bundles and frames before finding the first
+known object/field, money/queue or exact-pixel difference. Missing capability
+labels produce `blocked_observation_contract`, never equality, including when
+both programs lack a field. `first_known_difference` retains a diagnostic
+first difference in supported fields even while the overall result is blocked.
+Exact pixel comparison is a harness control; it is
+not the L4 tolerant/structural acceptance metric. Misaligned contracts, truncated
+samples/images, duplicate JSON keys and escaped frame paths are errors. Run a
+comparison independently with:
+
+```sh
+python3 -I tools/parity_l0.py work/parity/private_l0/reference.json \
+  work/parity/private_l0/clone.json --output work/parity/private_l0/recheck.json
+```
+
+`shared_l0` CTest uses invented guest memory, an invented framebuffer and an
+invented installation. It checks sparse native ticks, ownership indirection,
+state/frame repeatability, full runner output, explicit missing capabilities,
+validation failures and an HP negative control at tick 3. Its synthetic
+subprocess shim replaces namespace launch only for these invented inputs.
+No reference game process is executed by this test.

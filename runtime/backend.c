@@ -1,5 +1,6 @@
 // SDL2 backend: window, presentation, keyboard/mouse state, event pump.
 #include "backend.h"
+#include "l0_observer.h"
 
 #include <SDL2/SDL.h>
 #include <pthread.h>
@@ -425,6 +426,7 @@ static GReq greq;
 static volatile int greq_dirty;
 static pthread_mutex_t greq_lock = PTHREAD_MUTEX_INITIALIZER;
 void backend_present_guest(const void* pixels, int pitch, int w, int h, int bpp, const uint32_t* palette) {
+  rt_l0_present(pixels, pitch, w, h, bpp, palette);
   guest_presents++;
   if (getenv("RT_UI_SCRIPT")) {
     backend_present_copy_impl(pixels, pitch, w, h, bpp, palette);

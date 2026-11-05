@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "oracle_packets.h"
+#include "l0_observer.h"
 
 void f_0043d120_orig(CPU* c);
 void pathlog_tick(uint32_t frame);
@@ -127,7 +128,7 @@ void f_0043d120(CPU* c) {   // uint __cdecl FUN_0043d120(int side, uint32_t* out
   if (!mode_init) init_mode();
   uint32_t side = GU32(GREG(c, 0x10) + 4), out = GU32(GREG(c, 0x10) + 8);
   uint32_t frame = rt_oracle_tick();
-  if (frame != 0 && GU8(0x4cc394)) { log_state(frame); pathlog_tick(frame); }
+  if (frame != 0 && GU8(0x4cc394)) { rt_l0_observe(frame); log_state(frame); pathlog_tick(frame); }
   if (replay) {
     uint32_t ret = GU32(GREG(c, 0x10));
     const Rec* r = find_rec(frame, side);
