@@ -857,3 +857,125 @@ two reference observations before comparing the clone. Keep private reports and
 inputs local; publish only evidence labels and a factual result summary. A
 matching supported-field snapshot or retained opaque block is not complete
 resume, and tick-zero equality alone is not continuation parity.
+
+## Building and mine placement run sheet (needs live run)
+
+Task 66 depends on **64-shared-runner-observer**, which is still queued and is
+absent from this checkout. No live reference placement observations were supplied
+or collected for this follow-up. Do not promote the task 47 provisional rules
+from deterministic engine tests or code inspection. Live reference launches are
+denied in this sandbox; run the following probes on a host with the required
+namespace support. Preserve any isolation/launch failure as a failed experiment.
+
+`tests/parity/placement.json` is a candidate screen-input catalogue for ztest_all,
+covering every public Building/Defence type once in eight classes and ten variant
+families. It is **not** an executable `parity_run.py` scenario. The declared
+screen coordinates must be used identically in both programs after measuring the
+camera and setup route. They are candidates, not assertions of a clear site or
+of the original's snap boundary. Hall/outpost placement routes and rotation may
+be unavailable; record that fact rather than inventing input or a rotate key.
+Expand the catalogue privately:
+
+```sh
+python3 tools/placement_compare.py list
+python3 tools/placement_compare.py prepare --output work/parity/placement-plan
+```
+
+Prepare two fresh, separate private installations; this command copies only the
+campaign template needed by the generator and writable configuration files. It
+never changes the read-only installation. Run from this worktree root, once:
+
+```sh
+python3 - <<'PY'
+from pathlib import Path
+import shutil
+source = Path('/home/adrox/aztec-re/game')
+for label in ('reference', 'clone'):
+    target = Path('work/parity/placement-live') / label / 'game'
+    target.mkdir(parents=True, exist_ok=False)
+    (target / 'Maps').mkdir()
+    (target / 'Saves').mkdir()
+    for name in ('Aztec.exe', 'Res', 'Video', 'Music', 'Campaign'):
+        if (source / name).exists():
+            (target / name).symlink_to((source / name).resolve())
+    for item in source.iterdir():
+        if item.is_file() and item.suffix.lower() in ('.ini', '.plr', '.cfg'):
+            shutil.copy2(item, target / item.name)
+    for item in (source / 'Maps').iterdir():
+        if item.name.lower().startswith('mission_14.'):
+            shutil.copy2(item, target / 'Maps' / item.name)
+PY
+python3 tools/make_testmaps.py --game work/parity/placement-live/reference/game
+python3 tools/make_testmaps.py --game work/parity/placement-live/clone/game
+```
+
+Keep only the generated ztest_all files in each private Maps directory before
+reference custom-map navigation (first row at 258). Retain `.layout.json` for
+actual shifted positions. On the live host, prepare and audit separate input
+routes at `work/parity/placement-live/reference/input.txt` (RT_SCRIPT grammar,
+including player/custom-map navigation) and `clone/input.txt` (PlaytestScript
+screen input, starting directly in ztest_all). Select the producer and building
+card through the UI; confirm its type and prerequisites, money, owning town,
+fog, diplomacy, passive AI and camera before the common screen sweep. Copy fresh
+private profiles/maps per repetition and variant. Never reuse modified placement
+state for a new distance/deposit boundary control.
+
+These are **unaligned diagnostic probes**, executable once those input files
+exist; they cannot emit normalized per-tick reference decisions by themselves:
+
+```sh
+test -s work/parity/placement-live/reference/input.txt
+timeout -s KILL 90 unshare -rn sh -eu -c '
+  ip link set lo up
+  ip addr add 192.168.1.125/24 dev lo
+  exec env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+    RT_NO_GRAB=1 RT_NO_VIDEO=1 RT_RESOLUTION=800x600 \
+    RT_SCRIPT="$PWD/work/parity/placement-live/reference/input.txt" \
+    RT_DUMP_DIR="$PWD/work/parity/placement-live/reference" \
+    RT_CMD_LOG="$PWD/work/parity/placement-live/reference/commands.txt" \
+    RT_STATE_LOG="$PWD/work/parity/placement-live/reference/state.txt" \
+    /home/adrox/aztec-re/build/aztec_recomp \
+    "$PWD/work/parity/placement-live/reference/game/Aztec.exe"
+'
+test -s work/parity/placement-live/clone/input.txt
+timeout -s KILL 90 unshare -rn env \
+  SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+  AZTEC_USER_DIR="$PWD/work/parity/placement-live/clone/profile" \
+  build/aztec_engine --game "$PWD/work/parity/placement-live/clone/game" \
+  --size 800x600 --software --no-audio \
+  --script "$PWD/work/parity/placement-live/clone/input.txt" \
+  --ui-trace "$PWD/work/parity/placement-live/clone/ui.jsonl" \
+  --capture-dir "$PWD/work/parity/placement-live/clone/frames" \
+  --capture-every 1 ztest_all
+```
+
+`--ui-trace` now includes `placement`: snapped `cell`, aggregate `valid`,
+`cells` with individual blocking reasons, actual `overlay_drawn`, and
+`ghost_sprite: null` because the engine currently draws only the coloured grid.
+The existing cursor, tooltip, command and screenshot fields complete the raw
+engine diagnostic. Click validation, overlay and trace share the preview query.
+This trace is after input/before presentation; a successful click can close the
+mode, so inspect the previous preview and submitted command together. Raw frames
+and raw tick numbers must **not** be relabelled as aligned reference observations.
+
+After task 64 supplies audited setup/input/clock and observation adapters, emit
+`placement-v1` bundles as described in [tests/parity/README.md](../tests/parity/README.md#placement-comparison-contract).
+Compare complete per-tick captures using:
+
+```sh
+python3 tools/placement_compare.py compare \
+  --reference work/parity/placement-live/reference/placement.json \
+  --clone work/parity/placement-live/clone/placement.json \
+  --output work/parity/placement-live/comparison.json
+```
+
+Exit 0 means equality of the declared observations, 1 a measured difference, and
+2 invalid/missing/unaligned observations. Missing captures are never zero error.
+Measure radius/metric, clearance mask values, deposit channel/threshold and
+terrain exceptions before changing engine rules. Sweep own/allied/enemy town
+centre distances along axes and diagonals; test blocked cells, reservations,
+ground/air occupants and mineral values independently. Capture cancel, invalid
+click, repeated placement and any measured rotation input, including feedback,
+cursor and ghost. Keep exact overlay pixel differences separate from tolerant
+visual diagnostics and from semantic validity. All maps, logs, bundles and
+captures remain private under ignored `work/`; commit none of them.
