@@ -25,6 +25,13 @@ struct CommandButtonState {
   bool enabled = false, highlight = false;
 };
 
+// Read-only placement diagnostics, shared with click validation and the overlay.
+struct PlacementPreview {
+  int x = 0, y = 0;
+  bool valid = false;
+  std::vector<PlacementCell> cells;
+};
+
 // Shared by drawing, hit testing, and pure tests. All rectangles include the panel origin.
 struct CommandPanelLayout {
   SDL_Rect portrait{}, summary{}, previous{}, next{}, pause{};
@@ -52,6 +59,7 @@ class CommandsUi {
   TargetMode target_mode() const { return mode_; }
   void cancel_mode() { mode_ = TargetMode::None; placing_ = -1; pressed_control_ = 0; }
   int placing() const { return placing_; }
+  PlacementPreview placement_preview(const World& w, const Camera& cam, int mx, int my) const;
   std::string draw_menu(SDL_Renderer* r, SpriteStore& store, const Font& font, const StrBase& strings, const World& w,
                         const SDL_Rect& panel, int scale, int mx, int my) const;
   void draw_ghost(SDL_Renderer* r, const World& w, const Camera& cam, int mx, int my) const;

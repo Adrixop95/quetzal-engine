@@ -332,9 +332,9 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
     return true;
   }
   if (in.pressed[SDL_BUTTON_LEFT] && in_world && placing_ >= 0) {
-    int tx = int(std::floor(cam.to_world_x(float(in.mx)) / kTilePx)), ty = int(std::floor(cam.to_world_y(float(in.my)) / kTilePx));
-    if (sim_->can_place(w, w.local_side, placing_, tx, ty, nullptr, nullptr, placing_town_)) {
-      Command c; c.type = placing_command_; c.side = uint8_t(w.local_side); c.a = placing_; c.b = tx; c.c = ty;
+    const auto preview = placement_preview(w, cam, in.mx, in.my);
+    if (preview.valid) {
+      Command c; c.type = placing_command_; c.side = uint8_t(w.local_side); c.a = placing_; c.b = preview.x; c.c = preview.y;
       if (placing_member_) c.ids = {placing_member_};
       sim_->submit(c);
       if (!in.shift && !action_down(in, "Add")) cancel_mode();
@@ -557,12 +557,23 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
   if (wants_left_click() && tip.empty()) tip = placing_ >= 0 ? "Place building: click terrain\nRight-click or Escape cancels" : mode_ == TargetMode::Move ? "Move: click a destination\nRight-click or Escape cancels" : "Attack: click enemy or terrain\nRight-click or Escape cancels";
   return tip;
 }
+PlacementPreview CommandsUi::placement_preview(const World& w, const Camera& cam, int mx, int my) const {
+  PlacementPreview result;
+  if (!sim_ || placing_ < 0) return result;
+  result.x = int(std::floor(cam.to_world_x(float(mx)) / kTilePx));
+  result.y = int(std::floor(cam.to_world_y(float(my)) / kTilePx));
+  result.cells = sim_->placement_cells(w, w.local_side, placing_, result.x, result.y, placing_town_);
+  result.valid = !result.cells.empty() && std::all_of(result.cells.begin(), result.cells.end(),
+      [](const PlacementCell& cell) { return !cell.blocked; });
+  return result;
+}
+
 void CommandsUi::draw_ghost(SDL_Renderer* r, const World& w, const Camera& cam, int mx, int my) const {
   if (!sim_ || placing_ < 0) return;
-  int tx = int(std::floor(cam.to_world_x(float(mx)) / kTilePx)), ty = int(std::floor(cam.to_world_y(float(my)) / kTilePx));
+  const auto preview = placement_preview(w, cam, mx, my);
   SDL_BlendMode old_blend; SDL_GetRenderDrawBlendMode(r, &old_blend);
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-  for (const auto& cell : sim_->placement_cells(w, w.local_side, placing_, tx, ty, placing_town_)) {
+  for (const auto& cell : preview.cells) {
     SDL_FRect f{cam.to_screen_x(float(cell.x * kTilePx)), cam.to_screen_y(float(cell.y * kTilePx)),
                 kTilePx * cam.zoom, kTilePx * cam.zoom};
     const bool ok = !cell.blocked;
