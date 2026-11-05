@@ -219,10 +219,18 @@ set_tests_properties(ai_skirmish PROPERTIES LABELS "smoke" TIMEOUT 180
   ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
 
 # Original-save adapter checks: synthetic stream plus optional private installation.
+add_executable(aztec_save_probe tools/savegame/probe.cpp)
+target_link_libraries(aztec_save_probe PRIVATE aztec_engine_lib)
+aztec_warnings(aztec_save_probe)
 add_executable(test_save_import tests/test_save_import.cpp)
 target_link_libraries(test_save_import aztec_engine_lib)
 add_test(NAME save_import COMMAND test_save_import)
 set_tests_properties(save_import PROPERTIES LABELS "unit")
+if(Python3_Interpreter_FOUND)
+  add_test(NAME save_resume_controls COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_SOURCE_DIR}/tests/test_save_resume.py $<TARGET_FILE:test_save_import> $<TARGET_FILE:aztec_save_probe>)
+  set_tests_properties(save_resume_controls PROPERTIES LABELS "unit;parity" TIMEOUT 20)
+endif()
 add_test(NAME save_import_private COMMAND test_save_import --private ${CMAKE_SOURCE_DIR}/game)
 set_tests_properties(save_import_private PROPERTIES SKIP_RETURN_CODE 77 LABELS "game-data")
 if(GAME_DIR)
@@ -338,6 +346,9 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME parity_ai COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_ai.py)
   set_tests_properties(parity_ai PROPERTIES LABELS "unit;parity" TIMEOUT 20)
+  add_test(NAME projectile_measure COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_projectile_measure.py $<TARGET_FILE:aztec_engine>)
+  set_tests_properties(projectile_measure PROPERTIES LABELS "unit;parity" TIMEOUT 30)
   add_test(NAME parity_rules COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_rules.py)
   set_tests_properties(parity_rules PROPERTIES LABELS "unit;parity" TIMEOUT 20)

@@ -1,6 +1,4 @@
-// Fog of war from Maps/<name>.vis: one darkness byte per tile for the local side
-// (0 lit, 152 unexplored, in between = explored/remembered). Rendered as a one-texel-per-tile
-// texture stretched with linear filtering, so shading is smooth across tile borders.
+// Local fog accepts loaded darkness and simulation brightness with border vertices.
 #pragma once
 #include <SDL.h>
 #include <cstdint>
@@ -15,6 +13,7 @@ class Fog {
   ~Fog();
   void set_enabled(bool e) { enabled_ = e; }
   bool enabled() const { return enabled_ && has_data_; }
+  bool requested() const { return enabled_; }
   // Rebuilds the texture when world.fog_version changed.
   void update(SDL_Renderer* r, const World& w);
   // Darkness (0..152+) at a tile for the local side; 0 when unknown.
@@ -25,6 +24,10 @@ class Fog {
  private:
   SDL_Texture* tex_ = nullptr;
   uint32_t version_ = 0;
+  const World* world_ = nullptr;
+  int side_ = -1, width_ = 0, height_ = 0;
+  bool brightness_ = false;
+  SDL_FRect uv_{0, 0, 1, 1};
   bool enabled_ = true, has_data_ = false;
 };
 

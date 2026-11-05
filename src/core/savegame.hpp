@@ -43,6 +43,9 @@ struct SaveError { size_t offset = 0; std::string message; };
 // No executable, assets, or host pointers are needed. Trailing bytes are rejected.
 bool parse_savegame(const std::vector<uint8_t>& data, SaveGame& out, SaveError* error = nullptr);
 bool load_savegame(const std::string& path, SaveGame& out, SaveError* error = nullptr);
+// Separate from structural parsing: check sparse pool identities and every typed
+// reference, including forward links in orders, routes, harvest and script state.
+bool validate_savegame_references(const SaveGame& game, SaveError* error = nullptr);
 int save_unit_kind(uint32_t type);   // -1 outside the 90 UGI types
 int save_weapon_kind(uint32_t type); // -1 outside the 40 weapon types
 } // namespace aztec

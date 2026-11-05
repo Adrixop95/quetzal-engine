@@ -14,6 +14,9 @@
 #include "engine/sim/game_sim.hpp"
 #include "engine/sim/sight.hpp"
 #include "engine/world/object_state.hpp"
+#include "engine/world/visibility.hpp"
+#include "engine/ui/hud.hpp"
+#include "engine/ai/planner.hpp"
 
 using namespace aztec;
 using namespace aztec::engine;
@@ -88,7 +91,7 @@ static void provider_controls() {
   auto rules = std::make_shared<RulesData>(); rules->init_defaults(); rules->set_sight(inputs);
   for (int orientation : {0, 1}) {
     for (int phase : {1, 3, 4}) {
-      World world; world.terrain.w = world.terrain.h = 2; world.terrain.cells.resize(4);
+      World world; world.terrain.w = world.terrain.h = 2; world.terrain.cells.resize(4); world.terrain.cells.resize(4);
       Object boat; boat.id = 1; boat.source = ObjectSource::Boat;
       boat.orientation = orientation; boat.transport_phase = phase;
       world.objects.push_back(boat);
@@ -208,26 +211,58 @@ static void grid_controls() {
   LightGrid grid; grid.reset(30, 30, 0);
   CHECK(grid.width() == 31 && grid.height() == 32);
   grid.stamp(light, 12 * 48, 12 * 48, false); grid.combine(false);
-  CHECK(grid.sample(12 * 48, 12 * 48) == 27);
-  CHECK(grid.sample(12 * 48 + 24, 12 * 48) == 27.5f);
+  CHECK(grid.sample(12 * 48, 12 * 48) == 30);
+  CHECK(grid.sample(12 * 48 + 24, 12 * 48) == 30.5f);
   grid.reset(30, 30, 0); grid.stamp(light, 12 * 48 + 24, 12 * 48, false); grid.combine(false);
-  CHECK(grid.sample(12 * 48, 12 * 48) == 26);
+  CHECK(grid.sample(12 * 48, 12 * 48) == 29);
   grid.reset(30, 30, 150); grid.stamp(light, 12 * 48, 12 * 48, false); grid.combine(false);
   CHECK(grid.sample(12 * 48, 12 * 48) == 152);
   grid = LightGrid{}; grid.reset(30, 30, 100); grid.stamp(light, 12 * 48, 12 * 48, true); grid.combine(true);
-  CHECK(grid.sample(12 * 48, 12 * 48) == 73);
+  CHECK(grid.sample(12 * 48, 12 * 48) == 70);
   grid.reset(30, 30, 0); grid.combine(true); CHECK(grid.sample(12 * 48, 12 * 48) == 32);
   grid = LightGrid{}; grid.reset(30, 30, 152); grid.combine(false);
   grid.reset(30, 30, 0); grid.combine(true);
   CHECK(grid.sample(12 * 48, 12 * 48) == 0);  // disabling fog must not explore the map
   // Off-map sources, including negative positions, clip instead of shifting inward.
   grid = LightGrid{}; grid.reset(2, 2, 0); grid.stamp(light, -24, -24, false); grid.combine(false);
-  CHECK(grid.sample(0, 0) == 28);
+  CHECK(grid.sample(0, 0) == 31);
+  // Compare every border vertex against the simulation on a fractional stamp.
+  std::vector<uint8_t> expected(3 * 4, 0);
+  stamp_sight(expected, 3, 4, light, -24, -24, false);
+  for (int y = 0; y < 4; ++y) for (int x = 0; x < 3; ++x)
+    CHECK(grid.sample(float(x * 48), float(y * 48)) == expected[size_t(y) * 3 + x]);
   grid.stamp(light, 1e30f, 1e30f, false);
   grid.stamp(data::LightMask(), 0, 0, true);
   CHECK(data::damage_fire_anim(0, 100) == 0);
   CHECK(data::damage_fire_anim(26, 100) == 155 && data::damage_fire_anim(51, 100) == 154);
 }
+static void visibility_controls() {
+  World w; w.terrain.w = w.terrain.h = 2; w.visibility_brightness = true;
+  w.visibility.sides = {{3, 4, {32, 33, 152, 32, 33, 152, 0, 0, 0, 0, 0, 0}}};
+  CHECK(!position_visible(w, 0, 0, 0));
+  CHECK(position_visible(w, 0, 24, 0)); // retain fractional brightness above 32
+  CHECK(position_visible(w, 0, 95, 0)); // use the right border vertex
+  CHECK(!position_visible(w, 0, 96, 0)); // border cells are not playable tiles
+  CHECK(!position_visible(w, 0, -1, 0));
+  CHECK(!position_visible(w, 1, 24, 0));
+  w.visibility.sides[0].v[0] = 152;
+  CHECK(!position_visible(w, 0, 0, 95)); // bottom tile remains unexplored
+  Object enemy; enemy.id = 1; enemy.side = 1; enemy.type = 0; enemy.tactic = 7;
+  enemy.teleport(to_fixed(0), to_fixed(0)); w.objects.push_back(enemy);
+  CHECK(ai::visible(w, 0, 1));
+  w.objects[0].cur_x = -1; CHECK(!object_visible(w, 0, w.objects[0]));
+  w.objects[0].cur_x = 0;
+  w.visibility.sides[0].v[0] = 32;
+  CHECK(!ai::visible(w, 0, 1));
+  CHECK(object_visible(w, 1, w.objects[0]));
+  // Owning a tactic never grants another side visibility of its hidden members.
+  CHECK(pick_object(w, 0, 0, 0, 8) == nullptr);
+  w.visibility.sides[0].v.pop_back();
+  CHECK(!position_visible(w, 0, 24, 0)); // malformed raw layer fails closed
+  w.visibility_brightness = false; w.visibility.sides.clear();
+  CHECK(position_visible(w, 0, 24, 0)); // resource-free UI fallback
+}
+
 static void ordering_controls() {
   struct Key { float x, y; int height, id; };
   std::vector<Key> keys{{10, 20, 80, 1}, {20, 20, 0, 2}, {0, 21, -1, 3}, {0, 19, 0, 4}, {10, 20, 0, 5}};
@@ -302,11 +337,72 @@ static void headless_controls() {
     CHECK(world.objects[0].attack_tick == 9 && world.objects[0].body_tick == 0);
     world.objects[0].attack_tick = 12;
     CHECK(pixels(0) == first); // resource duration completes, returning to idle
+    world.terrain.w = world.terrain.h = 2; world.terrain.cells.resize(4);
+    world.visibility_brightness = true;
+    world.visibility.sides = {{3, 4, std::vector<uint8_t>(12, 32)}};
+    world.objects[0].side = 1;
+    scene.fog().set_enabled(true);
+    // First update must work at version zero, before any simulation tick.
+    scene.fog().update(win.renderer(), world); CHECK(scene.fog().enabled());
+    for (int brightness : {0, 32, 33, 152}) {
+      std::fill(world.visibility.sides[0].v.begin(), world.visibility.sides[0].v.end(), uint8_t(brightness));
+      ++world.fog_version;
+      scene.draw(camera, 0);
+      CHECK(scene.stats.sprites == (brightness > 32 ? 1 : 0));
+      CHECK(scene.fog().darkness(world, 0, 0) == 152 - brightness);
+      for (int type : {0, 14}) {
+        world.objects[0].type = type;
+        CHECK(scene.visible_in_fog(world.objects[0], {32, 32}) == (brightness > 32));
+        CHECK((pick_object(world, 32, 32, 0, 8) != nullptr) == (brightness > 32));
+        CHECK(ai::visible(world, 0, 1) == (brightness > 32));
+      }
+      world.objects[0].type = 0;
+      // Fog and minimap use identical raw-brightness conversion.
+      SDL_SetRenderDrawColor(win.renderer(), 255, 255, 255, 255);
+      SDL_RenderClear(win.renderer());
+      scene.fog().draw_minimap(win.renderer(), {0, 0, 64, 64});
+      std::vector<uint32_t> result(64 * 64);
+      SDL_RenderReadPixels(win.renderer(), nullptr, SDL_PIXELFORMAT_ARGB8888, result.data(), 64 * 4);
+      const int channel = int(result[32 * 64 + 32] & 255);
+      CHECK(std::abs(channel - (255 - int(std::lround((152 - brightness) * 245.0 / 152)))) <= 1);
+    }
+    // Interpolation cannot reveal an enemy whose simulation position is dark.
+    auto& layer = world.visibility.sides[0];
+    layer.v.assign(12, 0); layer.v[0] = layer.v[3] = 152;
+    ++world.fog_version;
+    world.objects[0].teleport(to_fixed(48), to_fixed(32));
+    world.objects[0].prev_x = 0;
+    scene.draw(camera, 0); CHECK(scene.stats.sprites == 0);
+    CHECK(pick_object(world, 0, 32, 0, 8) == nullptr);
+    scene.draw(camera, 1); CHECK(scene.stats.sprites == 0);
+    scene.fog().set_enabled(false);
+    scene.draw(camera, 1); CHECK(scene.stats.sprites == 1);
+    scene.fog().set_enabled(true);
+    // A bright right border influences the last playable tile, without the
+    // unused final bottom row being stretched into the map.
+    layer.v.assign(12, 0); layer.v[2] = layer.v[5] = layer.v[8] = 152;
+    std::fill(layer.v.begin() + 9, layer.v.end(), 152);
+    ++world.fog_version; scene.fog().update(win.renderer(), world);
+    SDL_SetRenderDrawColor(win.renderer(), 255, 255, 255, 255);
+    SDL_RenderClear(win.renderer());
+    scene.fog().draw_minimap(win.renderer(), {0, 0, 64, 64});
+    std::vector<uint32_t> border_pixels(64 * 64);
+    SDL_RenderReadPixels(win.renderer(), nullptr, SDL_PIXELFORMAT_ARGB8888, border_pixels.data(), 64 * 4);
+    CHECK((border_pixels[16 * 64 + 63] & 255) > (border_pixels[16 * 64 + 16] & 255));
+    CHECK((border_pixels[63 * 64] & 255) < 40);
+    // Side switches and dimensions invalidate the texture even at the same version.
+    world.visibility.sides.push_back({3, 4, std::vector<uint8_t>(12, 0)});
+    world.local_side = 1; scene.fog().update(win.renderer(), world);
+    CHECK(scene.fog().darkness(world, 0, 0) == 152);
+    world.terrain.w = 3; world.visibility.sides[1] = {4, 4, std::vector<uint8_t>(16, 152)};
+    scene.fog().update(win.renderer(), world); CHECK(scene.fog().enabled());
+    CHECK(scene.fog().darkness(world, 2, 1) == 0);
+
   }
   SDL_Quit();
 }
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--headless") headless_controls();
-  else { provider_controls(); grid_controls(); ordering_controls(); }
+  else { provider_controls(); grid_controls(); visibility_controls(); ordering_controls(); }
   return failures ? 1 : 0;
 }

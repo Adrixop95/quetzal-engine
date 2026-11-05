@@ -66,6 +66,7 @@ static void synthetic() {
     zeros(f.sections[8],k==0 ? 8 : k==1 ? 20 : k==2 ? 24 : k==3 ? 12 : 8);
   }
   Bytes all=f.finish(); CHECK(parse_savegame(all,g,&error)); CHECK(g.bytes==all);
+  CHECK(validate_savegame_references(g, &error));
   CHECK(g.section("units")->records.size()==90 && g.section("weapons")->records.size()==40);
   for(const auto& r:g.section("units")->records) {
     CHECK(r.field(0x38)->value==6000 && r.field(0x3c)->value==7000);
@@ -120,6 +121,13 @@ static void synthetic() {
   bad=matrix.finish(); put(bad,g.section("tactics")->records[0].offset+8+108,UINT32_MAX); reject(bad);
   Fixture fog; fog.counts[2]=1; zeros(fog.sections[2],1657);
   bad=fog.finish(); put(bad,372+8+4+1645,UINT32_MAX); put(bad,372+8+4+1649,UINT32_MAX); reject(bad);
+  // The original queue has 0x800 bytes for eight-byte entries.
+  Fixture queue; queue.counts[9] = 1;
+  for (uint32_t v : {1u, 0u, 0u, 256u, 0u}) word(queue.sections[9], v);
+  zeros(queue.sections[9], 256 * 8);
+  CHECK(parse_savegame(queue.finish(), g, &error));
+  CHECK(validate_savegame_references(g, &error));
+  put(queue.sections[9], 12, 257); zeros(queue.sections[9], 8); reject(queue.finish());
   std::puts("Synthetic save-game layouts and malformed inputs passed");
 }
 int main(int argc, char** argv) {

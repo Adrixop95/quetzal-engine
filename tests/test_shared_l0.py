@@ -164,13 +164,18 @@ class SharedControls(unittest.TestCase):
             schedule, native = run / "schedule", run / "native.jsonl"
             l0.write_schedule(self.s, schedule)
             env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
+            trace_args = ["--combat-trace", str(run / "combat.jsonl")] if repetition == 2 else []
             result = subprocess.run([str(ENGINE), "--headless", "--game", str(game), "--rules-dir", str(ROOT / "docs/data"),
                                      "--no-auto-orders", "--max-ticks", "3", "--l0-schedule", str(schedule),
-                                     "--l0-output", str(native), "--l0-frames", str(run), "1"],
+                                     "--l0-output", str(native), "--l0-frames", str(run), *trace_args, "1"],
                                     env=env, capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             outputs.append(l0.bundle(self.s, native, "clone", base / "clone.json"))
         self.assertEqual(outputs[0], outputs[1])
+        combat = [json.loads(row) for row in (self.root / "2/clone/combat.jsonl").read_text().splitlines()]
+        self.assertEqual(combat[0]["contract"], "engine-combat-v1")
+        self.assertEqual([row["tick"] for row in combat[1:] if row["event"] == "tick"], [1, 2, 3])
+        self.assertEqual(combat[-1], {"event": "end", "tick": 3})
         for tick in (1, 3):
             self.assertEqual((self.root / f"1/clone/tick_{tick}.ppm").read_bytes(),
                              (self.root / f"2/clone/tick_{tick}.ppm").read_bytes())

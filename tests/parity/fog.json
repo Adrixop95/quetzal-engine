@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "id": "sight-fog-consumers",
+  "layer": "L4",
+  "evidence": "P",
+  "status": "needs live run",
+  "map": {
+    "kind": "campaign-derived",
+    "mission": "zfog",
+    "template": "mission_1",
+    "generator": "tools/make_zstat.py",
+    "arguments": ["0:0:1:20:20:move=28,20@120", "1:0:1:24:20", "1:14:1:28:24"],
+    "notes": "Private preparation scaffold. Verify terrain, implicit halls, diplomacy and AI before measuring. No capture or map bytes belong in the repository."
+  },
+  "setup": {
+    "resolution": [800, 600],
+    "viewer": 0,
+    "camera": "Align world origin, zoom and viewport in both programs; record actual values.",
+    "lighting": "Record actual daylight key, raw ambient and glow producers. Repeat at measured day/night keys.",
+    "isolation": "Separate private symlinked game copies; dummy SDL video/audio inside unshare -rn."
+  },
+  "states": [
+    "Unexplored terrain before the scout arrives.",
+    "Friendly unit and building with different descriptor sight masks.",
+    "Enemy unit and building at raw brightness 32, 33 and a fractional sample above 32.",
+    "Aligned and half-cell scout positions at each edge of the sight mask.",
+    "Rightmost and bottommost playable tiles, including adjacent border samples.",
+    "Explored brightness at most 32 after scout departure or death.",
+    "Glow and daylight transitions, repeated with the other viewing side."
+  ],
+  "observe": [
+    "Simulation tick, object identities and positions, descriptor mask ID and daylight key.",
+    "Four neighbouring brightness samples, interpolation weights and strict eligibility result.",
+    "Unit/building drawing, minimap terrain fog and object markers.",
+    "Mouse hover/picking, explicit target eligibility, autonomous acquisition and AI town/tactic choices.",
+    "Owned tactic selection excludes enemy members even when tactic numbers coincide.",
+    "Exact differing-pixel counts and tolerant metrics separately for terrain, objects and minimap."
+  ],
+  "blockers": [
+    "Live reference execution is denied in the Codex sandbox; no reference samples or captures were collected.",
+    "V02/V10 shared observers and input adapters must establish tick, camera and state alignment before visual comparison.",
+    "The generator supplies initial placements only. Mask-edge, fractional, day/night and death states require a validated aligned input route; they are not claimed reachable by this scaffold.",
+    "Nearest/lower-ID/four-tick acquisition remains provisional; visual agreement alone cannot verify tactic scan or assignment parity."
+  ]
+}
