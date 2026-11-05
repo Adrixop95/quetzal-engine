@@ -136,7 +136,9 @@ class Measurements(unittest.TestCase):
 
     @unittest.skipUnless(ENGINE, 'engine binary not supplied')
     def test_headless_trace_and_hash_neutrality(self):
-        with tempfile.TemporaryDirectory(dir=ROOT / 'build') as directory:
+        build = ROOT / 'build'
+        build.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build) as directory:
             folder = Path(directory)
             game = folder / 'game'
             maps, resources = game / 'Maps', game / 'Res'
