@@ -1,3 +1,4 @@
+#include "l0_observer.h"
 // Win32 API shims (KERNEL32, USER32, GDI32, ADVAPI32, WINMM) for the recompiled game.
 #define _GNU_SOURCE
 #include <ctype.h>
@@ -196,7 +197,7 @@ static uint32_t tick_ms(void) {
   clock_gettime(CLOCK_MONOTONIC, &ts);
   int64_t ms = (int64_t)(ts.tv_sec - t_start.tv_sec) * 1000 + (int64_t)(ts.tv_nsec - t_start.tv_nsec) / 1000000;   // signed: the nanosecond delta can be negative
   if (ms < 0) ms = 0;
-  return (uint32_t)((uint64_t)ms * (uint64_t)rt_time_scale) + 100000;
+  return rt_l0_clock((uint32_t)((uint64_t)ms * (uint64_t)rt_time_scale) + 100000);
 }
 uint32_t rt_game_ms(void) { return tick_ms(); }
 SH(GetTickCount) { UNUSED; return tick_ms(); }

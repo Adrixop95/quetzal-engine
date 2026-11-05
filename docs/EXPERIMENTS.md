@@ -361,6 +361,81 @@ cross-program UI state reachability remain unverified. Full pre-commit could not
 initialize its remote hook environment because github.com DNS resolution failed;
 local asset/English hooks, JSON parsing and whitespace checks passed separately.
 
+## Shared L0 observer run sheet (needs live run)
+
+Run this outside the restricted Codex sandbox, from this worktree. No live
+reference result was obtained here. Do not remove `unshare -rn` or run against
+shared writable Maps/Saves to bypass a launch failure. The supplied prebuilt
+`/home/adrox/aztec-re/build/aztec_recomp` predates this observer: rebuild the
+hand-written runtime in this worktree, reading the existing private generated
+sources without editing them:
+
+```sh
+cmake -S . -B build_l0_reference -DCMAKE_BUILD_TYPE=Release \
+  -DAZTEC_GEN_DIR=/home/adrox/aztec-re/work/gen
+cmake --build build_l0_reference --target aztec_recomp --parallel 2
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR=
+cmake --build build --parallel 2
+ctest --test-dir build -R 'shared_l0|parity_scenarios' --output-on-failure
+```
+
+If the cached generated sources do not match this installation, stop and
+regenerate them privately following the normal reference build instructions.
+Neither generated sources nor binaries belong in a PR. Launch the one shared
+specification twice into fresh directories:
+
+```sh
+python3 -I tools/parity_run.py private_l0 --flat-output \
+  --game /home/adrox/aztec-re/game \
+  --runtime "$PWD/build_l0_reference/aztec_recomp" \
+  --engine "$PWD/build/aztec_engine" --timeout 120 \
+  --output "$PWD/work/parity/private_l0"
+python3 -I tools/parity_run.py private_l0 --flat-output \
+  --game /home/adrox/aztec-re/game \
+  --runtime "$PWD/build_l0_reference/aztec_recomp" \
+  --engine "$PWD/build/aztec_engine" --timeout 120 \
+  --output "$PWD/work/parity/private_l0_repeat"
+```
+
+These commands intentionally return nonzero for blocked/failed observations;
+they do not require a pass to retain diagnostics. Keep existing runs and choose
+fresh output paths for further attempts. Each runner creates its own game copy
+with immutable asset/executable symlinks, copied Maps/configuration/profile
+files and ordinary private Saves. Both subprocesses use dummy SDL video/audio,
+a hard timeout and `unshare -rn`; the reference also sets up namespace loopback.
+`reference/invocation.json` and `clone/invocation.json` retain exact argv and
+RT/SDL controls. The clone user profile is isolated under its run directory.
+
+The shared schedule uses new controls `RT_L0_SCHEDULE=<schedule.txt>` and
+`RT_L0_OUTPUT=<observations.jsonl>`, plus `RT_DUMP_DIR=<reference-directory>`.
+`RT_CMD_REPLAY` is an empty private file, so navigation cannot inject live
+lockstep commands. Existing RT_SCRIPT menu navigation starts the mission; it
+does not schedule observations. An optional `--script /absolute/private/start.txt`
+replaces only this navigation when a local profile requires different clicks.
+The observer itself captures at the declared simulation ticks, not script waits.
+
+Return both private run directories to the orchestrator, especially:
+
+- `scenario.json`, `diff.json`, `runners.json`, `report.json`;
+- both canonical JSON bundles and native JSONL streams;
+- each runner's schedule, invocation/process logs and tick captures;
+- the rebuilt runtime identity and any build/namespace errors.
+
+Expected current verdict after successful launch is
+`blocked_observation_contract`: reference orders/queues, fractional coordinates,
+actual UI state and complete-render alignment remain unaudited. Captures are
+probes held at a simulation boundary, not certified paired L4/L5 frames. The
+five-second per-sample rendering wait may fail if the guest renderer needs a
+mutex held by the stopped logic thread; retain this result so the complete-frame
+hook can be placed at a verified boundary. Reference owner decoding and pool
+coverage also need live checks against mission placements. Initial anchor
+ambiguity or a spawned object is an explicit experiment failure, not something
+to resolve by matching the nearest unit. See the schema and outstanding work in
+[PARITY_TEST_PLAN.md](PARITY_TEST_PLAN.md#shared-l0-schema-2-implementation).
+
+Do not update public parity passes from these probes. Update
+`docs/parity_matrix.md` with counts only after selecting and reviewing the
+returned reports. Never commit the captures, private JSON or game-derived data.
 ## Campaign transport and objective run sheet: needs live run
 
 The task-71 sandbox explicitly denies live reference runs. Do not execute this

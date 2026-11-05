@@ -393,3 +393,6 @@ continuation explicit. Missing reference files have an unknown divergence, not
 an equal verdict. Task 71 remains incomplete; transport/objective fixes, actual
 player routes and an audited reference milestone observer are still required.
 See [the live run sheet](EXPERIMENTS.md#v19-scripted-route-run-sheet-needs-live-run).
+| Shared L0 control | Cases | Passed | Failed | Live game runs |
+| --- | ---: | ---: | ---: | ---: |
+| Synthetic schema, alignment, comparator and native runner regressions | 6 | 6 | 0 | 0 |
