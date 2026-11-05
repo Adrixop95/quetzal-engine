@@ -26,6 +26,7 @@
 #include "engine/app/playtest.hpp"
 #include "engine/sim/game_sim.hpp"
 #include "engine/sim/sight.hpp"
+#include "engine/world/visibility.hpp"
 #include "engine/sim/savegame.hpp"
 #include "core/endian.hpp"
 #include "engine/sim/simulation.hpp"
@@ -192,6 +193,18 @@ static void test_sight() {
   initial.terrain.w = initial.terrain.h = 40; initial.terrain.cells.resize(1600);
   Object scout; scout.id = 1; scout.type = 0; scout.hp = 6000;
   scout.teleport(to_fixed(20 * 48), to_fixed(20 * 48)); initial.objects.push_back(scout);
+  // Loaded tile darkness must be converted before exploration is retained.
+  World legacy = initial;
+  legacy.visibility.sides.resize(8);
+  legacy.visibility.sides[0] = {40, 40, std::vector<uint8_t>(1600, 152)};
+  legacy.visibility.sides[0].v[0] = 0;
+  GameSim converted(rules); converted.init(legacy); legacy.begin_tick(); converted.tick(legacy);
+  CHECK(legacy.visibility_brightness);
+  CHECK(legacy.visibility.sides[0].v[0] == 32 && legacy.visibility.sides[0].v[1] == 0);
+  const auto raw_hash = converted.state_hash(legacy);
+  legacy.visibility_brightness = false;
+  CHECK(converted.state_hash(legacy) != raw_hash);
+
   World world = initial;
   GameSim sim(rules); sim.init(world);
   world.begin_tick(); sim.tick(world);
@@ -236,6 +249,16 @@ static void test_sight() {
     GameSim combat(rules); combat.init(duel);
     for (int t = 0; t < 3; ++t) { duel.begin_tick(); combat.tick(duel); }
     CHECK(duel.objects[0].target == (ambient == 33 ? 2u : 0u));
+    CHECK(object_visible(duel, 0, duel.objects[1]) == (ambient == 33));
+    // Direct packets must obey the same eligibility gate as mouse picking.
+    Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
+    combat.submit(attack); duel.begin_tick(); combat.tick(duel);
+    CHECK(duel.objects[0].target == (ambient == 33 ? 2u : 0u));
+    duel.objects[0].tactic = duel.objects[1].tactic = 7;
+    Command select; select.type = Pct::SelectByNo; select.a = 7;
+    combat.submit(select); duel.begin_tick(); combat.tick(duel);
+    CHECK(duel.side_state[0].selected_ids == std::vector<uint32_t>{1});
+    CHECK(duel.side_state[0].selected_tactic == 7);
   }
   // Clean checkouts have no private masks. Their combat remains functional,
   // using the bounded placeholder instead of silently disabling acquisition.

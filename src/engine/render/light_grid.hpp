@@ -4,6 +4,7 @@
 #include <cmath>
 #include <vector>
 #include "engine/data/light_masks.hpp"
+#include "engine/sim/sight.hpp"
 
 namespace aztec::engine {
 
@@ -20,25 +21,14 @@ class LightGrid {
   }
   void stamp(data::LightMask mask, float x, float y, bool vision) {
     if (!mask.ok() || !std::isfinite(x) || !std::isfinite(y)) return;
-    const float left = x / data::kTilePixels - 9, top = y / data::kTilePixels - 9;
-    if (left > w_ - 1 || top > h_ - 1 || left + 19 < 0 || top + 19 < 0) return;
-    for (int gy = std::max(0, int(std::ceil(top))); gy < h_ && gy <= top + 19; ++gy)
-      for (int gx = std::max(0, int(std::ceil(left))); gx < w_ && gx <= left + 19; ++gx) {
-        const float mx = gx - left, my = gy - top;
-        const int ix = int(mx), iy = int(my), jx = std::min(ix + 1, 19), jy = std::min(iy + 1, 19);
-        const int a = mask.sample(ix, iy), b = mask.sample(jx, iy), c = mask.sample(ix, jy), d = mask.sample(jx, jy);
-        if (std::min({a, b, c, d}) < 0) continue;
-        const float fx = mx - ix, fy = my - iy;
-        const int value = int((a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy);
-        const size_t index = size_t(gy) * w_ + gx;
-        if (vision) vision_[index] = std::min(vision_[index], value);
-        else glow_[index] = std::min(data::kMaxLightValue, glow_[index] + value);
-      }
+    // Share the simulation's next-vertex origin and per-axis truncation.
+    if (x < -1000000 || y < -1000000 || x > 1000000 || y > 1000000) return;
+    stamp_sight(vision ? vision_ : glow_, w_, h_, mask, int(std::floor(x)), int(std::floor(y)), vision);
   }
   void combine(bool use_vision) {
     for (size_t i = 0; i < glow_.size(); ++i) {
       if (use_vision) {
-        explored_[i] = std::max(std::min(explored_[i], 32), std::max(0, glow_[i] - vision_[i]));
+        explored_[i] = std::max(std::min(explored_[i], 32), std::max(0, int(glow_[i]) - vision_[i]));
         combined_[i] = explored_[i];
       } else combined_[i] = glow_[i];
     }
@@ -57,7 +47,8 @@ class LightGrid {
   int height() const { return h_; }
  private:
   int w_ = 0, h_ = 0;
-  std::vector<int> glow_, vision_, combined_, explored_;
+  std::vector<uint8_t> glow_, vision_;
+  std::vector<int> combined_, explored_;
 };
 
 // Equal keys retain insertion order; underlay mutual order is unspecified.
