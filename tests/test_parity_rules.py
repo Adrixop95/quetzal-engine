@@ -44,6 +44,47 @@ class RuleControls(unittest.TestCase):
         self.assertEqual(len({c['id'] for c in cases}), len(cases))
         self.assertTrue(all(c['evidence'] == 'P' and 'expectations' not in c for c in cases))
 
+    def test_asset_free_plan_preserves_order_and_unknown_values(self):
+        cases = rules.scenarios()
+        output = self.root / 'plan'
+        with patch.object(rules.report, 'execute') as execute, patch.object(rules, 'prepare') as prepare:
+            self.assertEqual(rules.plan(cases, output), 0)
+            execute.assert_not_called()
+            prepare.assert_not_called()
+        rows = json.loads((output / 'measurements.json').read_text())
+        self.assertEqual([r['id'] for r in rows], [c['id'] for c in cases])
+        self.assertEqual(len(rows), 26)
+        for row, case in zip(rows, cases, strict=True):
+            self.assertEqual(row['status'], 'needs live run')
+            self.assertEqual(row['evidence'], 'P')
+            for key in ('reference', 'clone_before', 'clone_after', 'expected', 'evidence_label'):
+                self.assertIsNone(row[key])
+            self.assertEqual(json.loads((output / case['id'] / 'scenario.json').read_text()), case)
+            self.assertFalse((output / case['id'] / 'game').exists())
+        with self.assertRaises(FileExistsError):
+            rules.plan(cases, output)
+        rules.plan([self.case], self.root / 'selected')
+        self.assertEqual(len(json.loads((self.root / 'selected/measurements.json').read_text())), 1)
+
+    def test_protocol_rejects_missing_order_fields_and_invented_measurements(self):
+        cases = rules.scenarios()
+        protocol = rules.measurement_protocol(cases)
+        invalid = []
+        for key, value in (('expected', 0), ('evidence_label', 'M:invented')):
+            changed = copy.deepcopy(protocol)
+            changed['cases'][0][key] = value
+            invalid.append(changed)
+        changed = copy.deepcopy(protocol)
+        changed['cases'].reverse()
+        invalid.append(changed)
+        changed = copy.deepcopy(protocol)
+        del changed['fields']['hp']
+        invalid.append(changed)
+        for changed in invalid:
+            with self.subTest(changed=changed), patch.object(rules.report, 'json_object', return_value=changed):
+                with self.assertRaises(ValueError):
+                    rules.measurement_protocol(cases)
+
     def test_clone_control_checks_complete_engine_local_observations(self):
         for name in ('clone', 'truncated'):
             (self.root / name / 'game').mkdir(parents=True)
