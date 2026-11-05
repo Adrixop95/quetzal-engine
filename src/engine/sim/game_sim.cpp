@@ -8,6 +8,7 @@
 #include "engine/world/type_info.hpp"
 #include "engine/world/object_state.hpp"
 #include "engine/sim/sight.hpp"
+#include "engine/world/visibility.hpp"
 
 namespace aztec::engine {
 
@@ -91,7 +92,7 @@ void GameSim::init(World& w) {
   if (!w.original_save) {
     for (const auto& side : w.mission.sides)
       if (side.only_comp && !side.neutral && side.index >= 0 && side.index < int(w.visibility.sides.size()))
-        std::fill(w.visibility.sides[side.index].v.begin(), w.visibility.sides[side.index].v.end(), uint8_t(24));
+        std::fill(w.visibility.sides[side.index].v.begin(), w.visibility.sides[side.index].v.end(), uint8_t(w.visibility_brightness ? 128 : 24));
   }
   w.town_state.clear();
   for (const TownDef& t : w.mission.towns) {
@@ -298,7 +299,7 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o) const {
   int64_t bd = mask_sight ? std::numeric_limits<int64_t>::max() : fallback_radius * fallback_radius;
   for (const Object& t : w.objects) {
     if (t.removed || !t.alive || t.type < 0 || !w.hostile(o.side, t.side) || t.progress < 1000) continue;
-    if (mask_sight && sight_brightness(w.visibility.sides[o.side], px(t.cur_x), px(t.cur_y)) <= 32 * 256) continue;
+    if (mask_sight && !position_visible(w, o.side, px(t.cur_x), px(t.cur_y))) continue;
     const auto shot = rules_->attack(o.type, t.type, !w.hostile(o.side, t.side));
     if (!shot.damage_known || !shot.getters_known || shot.damage <= 0) continue;
     int64_t d = d2(o, t);
@@ -358,7 +359,8 @@ void GameSim::apply(World& w, const Command& c) {
     }
     case Pct::Attack: {
       const Object* t = w.find(uint32_t(c.a));
-      if (!t || t->removed || !t->alive) break;
+      if (!t || t->removed || !t->alive ||
+          (w.visibility_brightness && !object_visible(w, c.side, *t))) break;
       for (Object* o : own_ids(true)) {
         if (o->id == t->id || !rules_->type(o->type).armed) continue;
         o->order = uint8_t(Order::Attack); o->target = t->id; o->resume = 0;
@@ -1309,7 +1311,9 @@ void GameSim::update_fog(World& w) {
       expanded.w = mw; expanded.h = mh; expanded.v.assign(size_t(mw) * mh, 0);
       if (l.w == w.terrain.w && l.h == w.terrain.h && l.v.size() == size_t(l.w) * l.h)
         for (int y = 0; y < l.h; ++y)
-          std::copy_n(l.v.begin() + size_t(y) * l.w, l.w, expanded.v.begin() + size_t(y) * mw);
+          for (int x = 0; x < l.w; ++x)
+            expanded.v[size_t(y) * mw + x] = w.visibility_brightness ? l.v[size_t(y) * l.w + x] :
+                uint8_t(152 - std::min(152, int(l.v[size_t(y) * l.w + x])));
       l = std::move(expanded); changed = true;
     }
     std::vector<uint8_t> vision(glow.size(), 152);
@@ -1324,6 +1328,8 @@ void GameSim::update_fog(World& w) {
       if (nv != l.v[i]) { l.v[i] = nv; changed = true; }
     }
   }
+  if (!w.visibility_brightness) changed = true;
+  w.visibility_brightness = true;
   if (changed) w.fog_version++;
 }
 
@@ -1486,6 +1492,7 @@ uint64_t GameSim::state_hash(const World& w) const {
       mix(q.started); mix(q.paused); mix(uint32_t(q.tile_x)); mix(uint32_t(q.tile_y)); mix(q.object); }
     for (const auto& g : s.groups) { mix(g.size()); for (uint32_t id : g) mix(id); }
   }
+  mix(w.visibility_brightness);
   mix(w.visibility.sides.size());
   for (const VisFile::Layer& l : w.visibility.sides) {
     mix(l.w); mix(l.h); mix(l.v.size()); for (uint8_t value : l.v) mix(value);

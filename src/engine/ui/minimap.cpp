@@ -1,4 +1,5 @@
 #include "engine/ui/minimap.hpp"
+#include "engine/world/visibility.hpp"
 
 #include <algorithm>
 #include <unordered_map>
@@ -101,7 +102,7 @@ void Minimap::draw(SDL_Renderer* r, const Camera& cam, float alpha, const Fog* f
   for (const Object& o : world_->objects) {
     if (!o.alive || o.removed) continue;
     Vec2f p = o.interpolated(alpha);
-    if (fog && fog->enabled() && o.side != world_->local_side && fog->darkness(*world_, int(p.x / kTilePx), int(p.y / kTilePx)) >= 120) continue;
+    if (fog && fog->requested() && !object_visible(*world_, world_->local_side, o)) continue;
     SDL_Color c = side_color_rgb(world_->side_color(o.side));
     SDL_SetRenderDrawColor(r, c.r, c.g, c.b, 255);
     SDL_Rect d{rect_.x + int(p.x * sx) - 1, rect_.y + int(p.y * sy) - 1, 2, 2};

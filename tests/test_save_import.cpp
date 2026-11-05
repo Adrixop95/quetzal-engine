@@ -7,6 +7,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <sstream>
+#include <fstream>
 
 using namespace aztec;
 using namespace aztec::engine;
@@ -63,6 +65,106 @@ static World base_world() {
   World w; w.terrain.w = w.terrain.h = 2; w.mission.file_name = "synthetic";
   w.resources.w = w.resources.h = 2; w.resources.v = {1, 2, 3, 4};
   w.objects.resize(8); w.side_state.resize(8); return w;
+}
+static SaveGame continuation_fixture() {
+  Fixture f;
+  // Sparse, forward-linked order queues: tag zero is a unit link; other tags
+  // retain scalars, even when a scalar resembles a missing pool identity.
+  f.counts[9] = 2;
+  for (uint32_t v : {55u, 17u, 0x80000007u, 2u, 1u, 0u, 4u, 7u, 0xffffffffu,
+                     901u, 0u, 17u, 0u, 0u}) word(f.sections[9], v);
+  f.counts[8] = 4;
+  auto& script = f.sections[8];
+  for (uint32_t v : {99u, 2u, 8u, 123u, 1u, 1u, 3u, 11u, 100u, 200u, 300u,
+                     100u, 2u, 9u, 124u, 0u, 0u, 0xfffffff0u, 7u,
+                     101u, 1u, 10u, 125u, 1u, 1u}) word(script, v);
+  script.resize(script.size() + 0x408, 0xa5); // Opaque condition packet.
+  word(script, 1); script.resize(script.size() + 0x408, 0x5a); // Action packet.
+  for (uint32_t v : {102u, 4u, 11u, 2u, 10u, 20u, 30u, 40u}) word(script, v);
+  // The first building owns a harvest subobject linked forward to the timer.
+  put(f.sections[4], 8 + 37 * 4, 1);
+  Bytes harvest; for (uint32_t v : {99u, 2u, 3u}) word(harvest, v);
+  f.sections[4].insert(f.sections[4].begin() + 8 + 38 * 4, harvest.begin(), harvest.end());
+  auto save = f.decode();
+  auto patch = [&](const char* section, size_t record, int offset, uint32_t value) {
+    put(save.bytes, save.section(section)->records[record].field(offset)->offset, value);
+  };
+  patch("towns", 0, 0x188, 55); patch("sides", 1, 0x694, 901);
+  // Build-tree/per-type bytes deliberately differ from mission defaults. Their
+  // retention is structural evidence, not an assertion about research opcodes.
+  for (const auto& field : save.section("towns")->records[0].fields)
+    if (field.scope == "town.build_tree" && field.name == "state2e8") save.bytes[field.offset + 17] = 23;
+  for (const auto& field : save.section("sides")->records[1].fields)
+    if (field.name == "type_state") save.bytes[field.offset + 17] = 42;
+  SaveGame decoded; SaveError error;
+  CHECK(parse_savegame(save.bytes, decoded, &error));
+  return decoded;
+}
+static void continuation() {
+  auto save = continuation_fixture(); SaveError decoded_error;
+  CHECK(validate_savegame_references(save, &decoded_error));
+  const auto& queues = save.section("orders")->records;
+  CHECK(queues[0].id == 55 && queues[0].field(0x804)->value == 2);
+  CHECK(queues[0].fields.back().kind == SaveValue::word && queues[0].fields.back().value == 0xffffffffu);
+  const auto& scripts = save.section("scripts")->records;
+  CHECK(scripts[0].field(0x14)->value == 1 && scripts[0].fields.back().size == 12);
+  CHECK(scripts[1].field(0x18)->value == 0xfffffff0u && scripts[1].field(0xc)->value == 0);
+  CHECK(scripts[2].fields.back().name == "actions" && scripts[2].fields.back().size == 0x408);
+  CHECK(scripts[3].fields.back().name == "path_points" && scripts[3].fields.back().size == 16);
+  CHECK(save.section("units")->records[0].field(4, "object.harvest112")->value == 99);
+  const auto* research = save.section("towns")->records[0].field(0x2e8, "town.build_tree");
+  const auto* types = save.section("sides")->records[1].field(0x5e0);
+  CHECK(research && research->name == "state2e8" && save.bytes[research->offset + 17] == 23);
+  CHECK(types && types->name == "type_state" && save.bytes[types->offset + 17] == 42);
+  auto w = base_world(); std::string error;
+  CHECK(import_original_save(save, w, error)); CHECK(w.find(1)->town_hall);
+  CHECK(w.original_save->bytes == save.bytes);
+  auto rules = std::make_shared<RulesData>(); rules->init_defaults(); GameSim sim(rules); sim.init(w);
+  CHECK(w.original_save->bytes == save.bytes && w.tick == 123);
+  std::ostringstream snapshot;
+  CHECK(write_original_save_snapshot(w, snapshot, error));
+  CHECK(snapshot.str().find("\"elapsed_ticks\":0") != std::string::npos);
+  CHECK(snapshot.str().find("\"unsupported\":[\"orders\"") != std::string::npos);
+  // Every reference family is checked before replacing the active world.
+  auto reject = [&](SaveGame bad) {
+    auto retained = w.original_save;
+    CHECK(!import_original_save(bad, w, error) && !error.empty());
+    CHECK(w.original_save == retained && w.tick == 123);
+  };
+  auto bad = save; bad.sections[9].records[1].id = 55; reject(bad);
+  bad = save; bad.sections[8].records[1].id = 99; reject(bad);
+  bad = save;
+  for (auto& field : bad.sections[9].records[0].fields)
+    if (field.kind == SaveValue::unit_ref) field.value = 9000;
+  reject(bad);
+  bad = save;
+  for (auto& field : bad.sections[2].records[1].fields)
+    if (field.memory_offset == 0x694) field.value = 9000;
+  reject(bad);
+  bad = save;
+  for (auto& field : bad.sections[9].records[0].fields)
+    if (field.kind == SaveValue::object_ref) field.value = 9000;
+  reject(bad);
+  for (auto kind : {SaveValue::unit_ref, SaveValue::object_ref, SaveValue::side_ref,
+                    SaveValue::decoration_ref, SaveValue::effect_ref, SaveValue::script_ref,
+                    SaveValue::transport_ref, SaveValue::order_ref}) {
+    bad = save; bool changed = false; size_t offset = 0;
+    for (auto& section : bad.sections) for (auto& record : section.records)
+      for (auto& field : record.fields) if (!changed && field.kind == kind) {
+        field.value = 9000; offset = field.offset; changed = true;
+      }
+    CHECK(changed && !validate_savegame_references(bad, &decoded_error));
+    CHECK(decoded_error.offset == offset);
+    reject(bad);
+  }
+  for (size_t length : {save.section("scripts")->offset + 9, save.section("orders")->offset + 7, save.bytes.size() - 1}) {
+    SaveGame truncated;
+    CHECK(!parse_savegame(Bytes(save.bytes.begin(), save.bytes.begin() + length), truncated, &decoded_error));
+    CHECK(truncated.bytes.empty());
+  }
+  w.begin_tick(); sim.tick(w);
+  std::ostringstream advanced;
+  CHECK(!write_original_save_snapshot(w, advanced, error) && advanced.str().empty());
 }
 static void synthetic() {
   Fixture f; auto save = f.decode(); auto w = base_world(); std::string error;
@@ -204,5 +306,15 @@ static int private_saves(int argc, char** argv) {
 }
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--private") return private_saves(argc - 1, argv + 1);
-  synthetic();
+  if (argc == 4 && std::string(argv[1]) == "--generate") {
+    auto save = continuation_fixture(); auto w = base_world(); std::string error;
+    CHECK(import_original_save(save, w, error));
+    auto rules = std::make_shared<RulesData>(); rules->init_defaults(); GameSim sim(rules); sim.init(w);
+    std::ofstream bytes(argv[2], std::ios::binary);
+    bytes.write(reinterpret_cast<const char*>(save.bytes.data()), std::streamsize(save.bytes.size()));
+    bytes.close(); CHECK(!bytes.fail());
+    std::ofstream state(argv[3]); CHECK(write_original_save_snapshot(w, state, error));
+    state.close(); CHECK(!state.fail()); return 0;
+  }
+  synthetic(); continuation();
 }

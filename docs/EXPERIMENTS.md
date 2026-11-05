@@ -497,3 +497,150 @@ Synthetic verification: `ctest --test-dir build -R 'engine_unit|projectile_measu
 launch identity, trace/hash independence, pause, unresolved weapons, deterministic
 repeated captures, actual hit coordinates, per-victim samples, private placement
 copies and rejection of incomplete/invalid captures. Status: **needs live run**.
+## V06 sight/fog consumer run sheet (needs live run)
+
+The synthetic `render_contracts`, `animation_headless` and `engine_unit` checks
+exercise invented masks and raw brightness, including the strict 32/33 boundary.
+`tests/parity/fog.json` specifies the later aligned visual experiment. It is an
+L4 preparation recipe, not an executable parity scenario. V02/V10 tick/identity
+observers and validated camera/input routes are still dependencies. No reference
+run is authorized inside the Codex sandbox; use these commands on an unrestricted
+host. Failed namespace setup remains a failed run, never retry without isolation.
+
+Run from the worktree root, using fresh private destinations:
+
+```sh
+mkdir -p work/v06-game/Maps work/v06-game/Saves work/v06-clone
+reference_game=/home/adrox/aztec-re/game
+for item in Aztec.exe Res Video Music Campaign; do
+  if [ -e "$reference_game/$item" ]; then
+    ln -s "$reference_game/$item" "work/v06-game/$item"
+  fi
+done
+for item in "$reference_game"/*.plr "$reference_game"/*.ini; do
+  if [ -f "$item" ]; then cp "$item" work/v06-game/; fi
+done
+find "$reference_game/Maps" -maxdepth 1 -iname 'mission_1.*' \
+  -exec cp '{}' work/v06-game/Maps/ \;
+ZSTAT_GAME_DIR="$PWD/work/v06-game" python3 -I tools/make_zstat.py zfog \
+  0:0:1:20:20:move=28,20@120 1:0:1:24:20 1:14:1:28:24
+build/aztec_map_viewer --maps work/v06-game/Maps --dump zfog \
+  > work/v06-clone/map.txt
+# Engine preparation capture only: this does not align a reference tick.
+timeout -s KILL 30 unshare -rn env \
+  SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+  AZTEC_GAME="$PWD/work/v06-game" AZTEC_USER_DIR="$PWD/work/v06-profile" \
+  build/aztec_engine --game "$PWD/work/v06-game" --rules-dir "$PWD/docs/data" \
+  --size 800x600 --software --no-audio --no-sim \
+  --screenshot "$PWD/work/v06-clone/preparation.png" zfog
+# The runner creates a further private game copy and configures namespace loopback.
+ZSTAT_GAME_DIR="$PWD/work/v06-game" \
+ZSTAT_RUNTIME=/home/adrox/aztec-re/build/aztec_recomp RT_UNIT_EVERY=1 \
+  sh tools/zstat_run.sh zfog work/v06-reference-preparation 16000
+```
+
+Inspect the private map dump before launch: the generator inherits terrain and a
+remote hall, and adds an enemy hall for the structure. Their sight, glow and AI
+can contaminate the intended control. Lock/move or separate them through validated
+inputs before measurement; do not infer a mask radius from the initial spacing.
+The scout move at scenario time 120 is a preparation route, not proof of a
+reference/engine aligned observation. Record actual positions and clocks.
+
+Repeat each measured day/night, mask-edge, scout-departure/death and viewing-side
+case in a fresh private process/profile. Keep simulation frozen at the agreed
+observation boundary; align camera, zoom, viewport, selection and cursor. Save the
+four raw neighbouring samples, mask ID, object IDs and positions beside captures.
+Compare terrain, unit/building and minimap regions separately. Report exact pixel
+counts separately from tolerant metrics; absent reference images are unavailable
+measurements. Keep every generated map, log and capture under ignored `work/`.
+## Original-save tick-zero run sheet
+
+Task 07 follow-up / V16 status: **needs live run**. Live execution is prohibited
+in the Codex sandbox; do not remove `unshare -rn` or use the shared installation
+as writable state. The commands below are for a namespace-capable external host.
+All outputs remain in this worktree's ignored directories.
+
+First build and exercise the synthetic generator and actual clone observer:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR=
+cmake --build build --parallel 2
+ctest --test-dir build -R 'savegame|save_import|save_resume_controls' --output-on-failure
+build/test_save_import --generate build/resume-synthetic.sav build/resume-synthetic.json
+```
+
+The generated file is invented test data; do not install or load it in the
+original game. `save_resume_controls` supplies invented mission files and empty
+resource archives to exercise the standalone clone probe without private data.
+
+The reference prerequisite is still missing: an audited save-load observer at
+**load completion before the first resumed simulation update**. Existing
+`RT_UNIT_LOG`/`RT_STATE_LOG` command-fetch logs do not establish that boundary,
+and their raw pool hashes cannot substitute for normalized fields. The hook
+accepts a private executable adapter with this interface:
+
+```text
+reference-observer --game PRIVATE_DIR --save ABSOLUTE_SAV --output SNAPSHOT_JSON --runtime ABSOLUTE_RUNTIME
+```
+
+The adapter must stage the supplied save in its private profile, load it in the
+supplied runtime using `PRIVATE_DIR/Aztec.exe`, synchronize at the audited load
+barrier, and emit the schema documented in [savegame.md](savegame.md#resume-follow-up-evidence-and-policy).
+Return nonzero if loading or observation fails. It must report actual loaded
+state and unsupported domains, preserve original pool IDs (or use an audited
+identity map), convert positions to pixel*256, and sample bordered fog using the
+same tile convention. It must not advance a tick, use a sleep as the observation
+barrier, copy values from the `.sav` decoder instead of observing the runtime,
+or claim mappings for unresolved research/script/diplomacy fields. The runner
+supplies `save_sha256`; the adapter must omit it. No such audited adapter is
+claimed to exist in this checkout. Completing this V02 prerequisite and the
+semantic mappings remains work; merely supplying a script path is insufficient.
+
+Select one real save locally. This exact command records the missing observer
+status without launching either process (exit 1 is expected):
+
+```sh
+python3 tools/savegame/compare_resume.py run \
+  --game /home/adrox/aztec-re/game \
+  --save /home/adrox/aztec-re/game/Saves/single1.sav \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --clone "$PWD/build/aztec_save_probe" --rules "$PWD/docs/data" \
+  --output "$PWD/work/save-resume/missing-observer-01"
+```
+
+Adjust only the save filename if it lives under `Saves/<profile>/`. After the
+reference observer is implemented and audited, install it privately at
+`work/save-resume/reference-observer` and run:
+
+```sh
+python3 tools/savegame/compare_resume.py run \
+  --game /home/adrox/aztec-re/game \
+  --save /home/adrox/aztec-re/game/Saves/single1.sav \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --reference-adapter "$PWD/work/save-resume/reference-observer" \
+  --clone "$PWD/build/aztec_save_probe" --rules "$PWD/docs/data" \
+  --output "$PWD/work/save-resume/live-01" --timeout 60
+python3 tools/savegame/compare_resume.py compare \
+  work/save-resume/live-01/reference/snapshot.json \
+  work/save-resume/live-01/clone/snapshot.json
+```
+
+The runner makes independent reference/clone game copies, symlinks immutable
+resources, copies Maps/Saves/profiles/configuration, and copies the input save.
+Each process runs with dummy SDL video/audio inside `timeout -s KILL 60 unshare
+-rn`; reference loopback/address setup uses shell `-e` and stops on failure.
+Inherited `RT_*` settings are removed. Reference video/grab are disabled. Clone
+execution needs no interface setup but still uses its own namespace. Input
+mutation, stale output directories, wrong ticks/phases/digests, missing
+observations and malformed JSON never count as successful comparison. Failure
+logs and exact invocations remain beside `result.json`. The current clone will
+produce `incomplete` even when supported fields match, because seven requested
+domains remain unsupported.
+
+Repeat with a fresh output directory and a save exercising each of movement,
+attack targets, queued production, research/upgrade progress, active/disabled
+triggers, scalar/sample timers, asymmetric diplomacy and explored fog. Obtain
+two reference observations before comparing the clone. Keep private reports and
+inputs local; publish only evidence labels and a factual result summary. A
+matching supported-field snapshot or retained opaque block is not complete
+resume, and tick-zero equality alone is not continuation parity.
