@@ -169,6 +169,10 @@ add_executable(test_fuzz tests/test_fuzz.cpp)
 target_link_libraries(test_fuzz aztec_engine_lib)
 add_test(NAME fuzz COMMAND test_fuzz)
 set_tests_properties(fuzz PROPERTIES TIMEOUT 55 LABELS "unit")
+if(AZTEC_SANITIZERS)
+  # Exhaustive malformed-input mutations need more time with sanitizer instrumentation.
+  set_tests_properties(fuzz PROPERTIES TIMEOUT 180)
+endif()
 
 add_executable(test_savegame tests/test_savegame.cpp)
 target_link_libraries(test_savegame aztec_core)

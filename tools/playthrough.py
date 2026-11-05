@@ -210,7 +210,7 @@ def scenarios(path, missions, max_ticks):
         raise ValueError('scenarios must be a nonempty JSON list')
     ids = set()
     for row in rows:
-        if not isinstance(row, dict) or set(row) - {'id', 'mission', 'route', 'expected_outcome', 'save_tick', 'orders'}:
+        if not isinstance(row, dict) or set(row) - {'id', 'mission', 'route', 'expected_outcome', 'save_tick', 'orders', 'steps', 'checkpoints'}:
             raise ValueError('invalid scenario fields')
         if (not isinstance(row.get('id'), str) or not re.fullmatch(r'[a-zA-Z0-9_-]+', row['id']) or
                 row['id'] in ids or type(row.get('mission')) is not int or row['mission'] not in CAMPAIGN or
@@ -219,6 +219,7 @@ def scenarios(path, missions, max_ticks):
                 type(row.get('save_tick')) is not int or not 0 < row['save_tick'] < max_ticks):
             raise ValueError('invalid scenario identity, route, outcome or save tick')
         ids.add(row['id'])
+        validate_route(row, max_ticks)
         if 'orders' in row:
             if not isinstance(row['orders'], str):
                 raise ValueError('scenario orders must be a path')
@@ -232,6 +233,134 @@ def scenarios(path, missions, max_ticks):
     return selected
 
 
+def validate_route(row, max_ticks):
+    """Only ordinary movement orders are currently supported by the engine driver."""
+    if 'steps' in row and 'orders' in row:
+        raise ValueError('use route steps or an orders file, not both')
+    previous = 0
+    if not isinstance(row.get('steps', []), list):
+        raise ValueError('route steps must be a list')
+    for step in row.get('steps', []):
+        if (not isinstance(step, dict) or set(step) != {'tick', 'action', 'side', 'x', 'y', 'ids'} or
+                any(type(step[k]) is not int for k in ('tick', 'side', 'x', 'y')) or
+                not max(1, previous) <= step['tick'] <= max_ticks or
+                not 0 <= step['side'] < 8 or not all(0 <= step[k] <= 2147483647 for k in ('x', 'y')) or
+                step['action'] not in ('move', 'attack-move') or
+                not isinstance(step['ids'], list) or
+                any(type(i) is not int or not 1 <= i <= 2147483647 for i in step['ids']) or
+                len(set(step['ids'])) != len(step['ids'])):
+            raise ValueError('invalid or unsupported route step')
+        previous = step['tick']
+    checkpoints = row.get('checkpoints', [])
+    if not isinstance(checkpoints, list):
+        raise ValueError('route checkpoints must be a list')
+    names, sites = set(), set()
+    for checkpoint in checkpoints:
+        if (not isinstance(checkpoint, dict) or
+                set(checkpoint) != {'id', 'trigger_index', 'action_index', 'kind'} or
+                not isinstance(checkpoint['id'], str) or not re.fullmatch(r'[a-z0-9_-]+', checkpoint['id']) or
+                checkpoint['id'] in names or
+                any(type(checkpoint[k]) is not int or checkpoint[k] < 0 for k in ('trigger_index', 'action_index')) or
+                not isinstance(checkpoint['kind'], str) or not re.fullmatch(r'[A-Za-z]+', checkpoint['kind'])):
+            raise ValueError('invalid route checkpoint')
+        site = (checkpoint['trigger_index'], checkpoint['action_index'])
+        if site in sites:
+            raise ValueError('duplicate route checkpoint source site')
+        names.add(checkpoint['id'])
+        sites.add(site)
+
+
+def route_orders(row):
+    return ''.join(' '.join(map(str, [s['tick'], s['action'], s['side'], s['x'], s['y'], *s['ids']])) + '\n'
+                   for s in row['steps'])
+
+
+def route_identity(row, args):
+    """Bind imported evidence to the plan, orders, policy and simulation budget."""
+    plan = {k: v for k, v in row.items() if k != 'orders'}
+    plan.update(max_ticks=args.max_ticks, no_auto_orders=args.no_auto_orders,
+                order_interval=args.order_interval)
+    if 'orders' in row:
+        plan['orders_text'] = Path(row['orders']).read_text()
+    return hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def checkpoint_timeline(row, run):
+    if run.get('returncode') != 0 or 'engine' not in run:
+        return dict(passed=False, events=[], error='no completed engine report')
+    observations = run['engine']['action_observations']
+    events, missing = [], []
+    for checkpoint in row.get('checkpoints', []):
+        site = next((a for a in observations if all(a[k] == checkpoint[k]
+                    for k in ('trigger_index', 'action_index', 'kind'))), None)
+        if site is None or not site['supported'] or not site['executions']:
+            missing.append(checkpoint['id'])
+            continue
+        events.append(dict(id=checkpoint['id'], tick=site['first_tick']))
+    # Aggregated first-dispatch histories cannot establish intra-tick ordering.
+    ordered = all(a['tick'] < b['tick'] for a, b in zip(events, events[1:]))
+    error = (f'unreached or unsupported checkpoints: {missing}' if missing else
+             None if ordered else 'checkpoint order is reversed or ambiguous within one tick')
+    return dict(passed=not missing and ordered, events=sorted(events, key=lambda e: e['tick']), error=error)
+
+
+def reference_comparison(row, directory):
+    """Compare two audited reference timelines with the clone, never raw state hashes."""
+    pending = dict(equal=None, status='needs live run', first_divergence=None)
+    if directory is None:
+        return dict(pending, error='no reference timeline directory supplied')
+    references = []
+    try:
+        for repetition in (1, 2):
+            path = directory / f"{row['id']}-{repetition}.json"
+            value = json.loads(path.read_text())
+            if (not isinstance(value, dict) or set(value) !=
+                    {'schema', 'contract', 'mission', 'route_sha256', 'status', 'ticks', 'events'} or
+                    type(value['schema']) is not int or value['schema'] != 1 or
+                    value['contract'] != 'campaign-checkpoints-v1' or
+                    type(value['mission']) is not int or value['mission'] != row['mission'] or
+                    value['route_sha256'] != row['route_sha256'] or
+                    value['status'] not in ('victory', 'defeat', 'timeout') or
+                    type(value['ticks']) is not int or not 0 < value['ticks'] <= row['max_ticks'] or
+                    not isinstance(value['events'], list)):
+                raise ValueError('invalid reference timeline identity or outcome')
+            names, previous = set(), 0
+            allowed = {c['id'] for c in row.get('checkpoints', [])}
+            for event in value['events']:
+                if (not isinstance(event, dict) or set(event) != {'id', 'tick'} or
+                        not isinstance(event['id'], str) or event['id'] not in allowed or event['id'] in names or
+                        type(event['tick']) is not int or not previous < event['tick'] <= value['ticks']):
+                    raise ValueError('invalid reference checkpoint sequence')
+                names.add(event['id'])
+                previous = event['tick']
+            references.append(value)
+    except (OSError, ValueError) as error:
+        return dict(pending, error=str(error))
+    if references[0] != references[1]:
+        return dict(pending, error='reference timelines disagree between repetitions')
+    if (len(row.get('runs', [])) != 2 or not row.get('checkpoint_checks') or
+            not all(r.get('returncode') == 0 and r.get('engine', {}).get('status') in
+                    ('victory', 'defeat', 'timeout') for r in row['runs'])):
+        return dict(pending, error='clone completed outcome is unavailable')
+    reference = references[0]
+    differences = []
+    for run, check in zip(row['runs'], row['checkpoint_checks'], strict=True):
+        clone = run['engine']
+        for index in range(max(len(reference['events']), len(check['events']))):
+            a = reference['events'][index] if index < len(reference['events']) else None
+            b = check['events'][index] if index < len(check['events']) else None
+            if a != b:
+                differences.append(dict(tick=min(e['tick'] for e in (a, b) if e),
+                                        field='checkpoint', reference=a, engine=b))
+        if (reference['status'], reference['ticks']) != (clone['status'], clone['ticks']):
+            differences.append(dict(tick=min(reference['ticks'], clone['ticks']), field='outcome',
+                                    reference=dict(status=reference['status'], tick=reference['ticks']),
+                                    engine=dict(status=clone['status'], tick=clone['ticks'])))
+    first = min(differences, key=lambda d: d['tick']) if differences else None
+    return dict(equal=not differences, status='different' if differences else 'equal observed checkpoints and outcome',
+                first_divergence=first, scope='first checkpoint dispatch ticks and terminal outcome only')
+
+
 def mission_matrix(available, selected, rows):
     return [dict(mission=m, availability='present' if m in available else 'missing',
                  selected=m in selected, scenarios=[r for r in rows if r['mission'] == m],
@@ -240,9 +369,9 @@ def mission_matrix(available, selected, rows):
 
 def write_matrix(output, matrix):
     lines = ['# Campaign coverage matrix', '',
-             'Engine consistency evidence only. Interactive controls, defeat/retry and final progression remain pending.', '',
-             '| Mission | Data | Scenario / route | Expected / observed | Paired ticks | Mid-mission save | Diagnostics |',
-             '| --- | --- | --- | --- | --- | --- | --- |']
+             'Engine consistency and optional reference checkpoint evidence. Interactive controls, defeat/retry and final progression remain pending.', '',
+             '| Mission | Data | Scenario / route | Expected / observed | Paired ticks | Mid-mission save | Objective sequence | Reference / first divergence | Diagnostics |',
+             '| --- | --- | --- | --- | --- | --- | --- | --- | --- |']
     def cell(value):
         return str(value).replace('|', '/').replace('\n', ' ')
     for mission in matrix:
@@ -253,6 +382,8 @@ def write_matrix(output, matrix):
             values = [mission['mission'], mission['availability'], row.get('route', 'No completion route validated'),
                       row.get('expected_outcome', 'victory') + ' / ' + observed,
                       row.get('paired_ticks', {}).get('equal'), row.get('save_continuation', {}).get('equal'),
+                      [c['passed'] for c in row.get('checkpoint_checks', [])],
+                      json.dumps(row.get('reference', {'status': 'needs live run', 'first_divergence': None})),
                       json.dumps([d for d in diagnostics if d])]
             lines.append('| ' + ' | '.join(map(cell, values)) + ' |')
     (output / 'matrix.md').write_text('\n'.join(lines) + '\n')
@@ -296,12 +427,16 @@ def main(argv=None):
     parser.add_argument('--timeout', type=positive, default=180, help='wall seconds per process')
     parser.add_argument('--order-interval', type=positive, default=120)
     parser.add_argument('--orders-dir', type=Path, help='private mission_N.orders files')
-    parser.add_argument('--scenarios', type=Path, help='private JSON scenario list with routes, outcomes and save ticks')
+    parser.add_argument('--scenarios', '--routes', type=Path, help='JSON route list with steps, checkpoints, outcomes and save ticks')
+    parser.add_argument('--reference-dir', type=Path, help='private audited ID-1.json and ID-2.json reference timelines')
+    parser.add_argument('--require-reference', action='store_true', help='fail unless repeated reference timelines agree with clone')
     parser.add_argument('--no-auto-orders', action='store_true')
     args = parser.parse_args(argv)
     args.game = args.game.resolve()
     args.engine = args.engine.resolve()
     args.rules_dir = args.rules_dir.resolve()
+    if args.reference_dir:
+        args.reference_dir = args.reference_dir.resolve()
     if args.orders_dir:
         args.orders_dir = args.orders_dir.resolve()
     try:
@@ -310,6 +445,14 @@ def main(argv=None):
         if set(missions) - set(CAMPAIGN) or args.max_ticks < 2:
             raise ValueError('campaign missions must be 1 through 15; max-ticks must be at least 2')
         planned = scenarios(args.scenarios.resolve() if args.scenarios else None, missions, args.max_ticks)
+        if any('steps' in s for s in planned) and (not args.no_auto_orders or args.orders_dir):
+            raise ValueError('inline route steps require --no-auto-orders and cannot use --orders-dir')
+        for row in planned:
+            if args.orders_dir and 'orders' not in row:
+                fallback = args.orders_dir / f"mission_{row['mission']}.orders"
+                if fallback.is_file():
+                    row['orders'] = str(fallback)
+            row['route_sha256'] = route_identity(row, args)
         if not args.engine.is_file():
             raise ValueError(f'engine does not exist: {args.engine}')
         stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
@@ -319,7 +462,10 @@ def main(argv=None):
             raise ValueError('--out must be a new directory under this worktree work/')
         if output.is_relative_to(args.game) or args.game.is_relative_to(output):
             raise ValueError('output and source game must not overlap')
-        for source in (args.rules_dir, args.orders_dir):
+        sources = [args.rules_dir, args.orders_dir, args.reference_dir, args.scenarios]
+        sources.extend(Path(s['orders']) for s in planned if 'orders' in s)
+        for source in sources:
+            source = source.resolve() if source else None
             if source and (output.is_relative_to(source) or source.is_relative_to(output)):
                 raise ValueError('output and rule/order sources must not overlap')
         output.mkdir(parents=True, exist_ok=False)
@@ -332,9 +478,22 @@ def main(argv=None):
         if args.orders_dir:
             shutil.copytree(args.orders_dir, output / 'orders')
             args.orders_dir = output / 'orders'
+        if args.reference_dir:
+            reference_source = args.reference_dir
+            args.reference_dir = output / 'reference'
+            args.reference_dir.mkdir()
+            for row in planned:
+                for repetition in (1, 2):
+                    name = f"{row['id']}-{repetition}.json"
+                    if (reference_source / name).is_file():
+                        shutil.copyfile(reference_source / name, args.reference_dir / name)
         # Snapshot scenario orders alongside the plan; source files remain private.
         for row in planned:
-            if 'orders' in row:
+            if 'steps' in row:
+                target = output / (row['id'] + '.orders')
+                target.write_text(route_orders(row))
+                row['orders'] = str(target)
+            elif 'orders' in row:
                 target = output / (row['id'] + '.orders')
                 shutil.copyfile(row['orders'], target)
                 row['orders'] = str(target)
@@ -343,7 +502,7 @@ def main(argv=None):
         games = [output / f'game-{i}' for i in (1, 2)]
         for game in games:
             private_game(args.game, maps, game)
-        summary = {'schema': 2, 'method': 'independent engine; no reference parity claim',
+        summary = {'schema': 2, 'method': 'engine consistency with optional audited reference checkpoints; no full-state parity claim',
                    'engine_sha256': hashlib.sha256(args.engine.read_bytes()).hexdigest(),
                    'max_ticks': args.max_ticks, 'wall_timeout': args.timeout, 'missions': [],
                    'acceptance': 'pending interactive controls, defeat/retry and final progression'}
@@ -351,7 +510,8 @@ def main(argv=None):
         failed |= any(not any(s['mission'] == m for s in planned) for m in missions)
         for scenario in planned:
             mission = scenario['mission']
-            row = dict(scenario, runs=[])
+            row = dict(scenario, runs=[], max_ticks=args.max_ticks)
+            row['reference'] = dict(equal=None, status='needs live run', first_divergence=None)
             summary['missions'].append(row)
             if mission in available:
                 orders = Path(scenario['orders']) if 'orders' in scenario else None
@@ -359,6 +519,7 @@ def main(argv=None):
                                  orders=orders, save_tick=scenario['save_tick'])
                         for i, game in enumerate(games, 1)]
                 row['runs'] = runs
+                row['checkpoint_checks'] = [checkpoint_timeline(scenario, r) for r in runs]
                 row['paired_ticks'] = paired_hashes(*runs)
                 terminal_match, tick_match = compare(runs), row['paired_ticks']['equal']
                 row['deterministic'] = (None if terminal_match is None or tick_match is None
@@ -368,6 +529,7 @@ def main(argv=None):
                     resumed = run_once(args, mission, games[1], output / f"{scenario['id']}-resume",
                                        orders=orders, resume=saved)
                     row['resumed_run'] = resumed
+                    row['resume_checkpoints'] = checkpoint_timeline(scenario, resumed)
                     row['save_continuation'] = paired_hashes(runs[0], resumed, scenario['save_tick'])
                     if row['save_continuation']['equal'] is True:
                         row['save_continuation']['equal'] = all(
@@ -375,13 +537,33 @@ def main(argv=None):
                 else:
                     row['save_continuation'] = {'equal': None, 'error': 'no completed baseline with a mid-mission save'}
                 row['passed'] = (row['deterministic'] is True and row['save_continuation']['equal'] is True and
+                                 row.get('resume_checkpoints', {}).get('passed') is True and
+                                 all(c['passed'] for c in row['checkpoint_checks']) and
                                  all(r['status'] == scenario['expected_outcome'] and
                                      not any(r.get('engine', {}).get(k) for k in
                                              ('script_errors', 'unreachable_objectives', 'unsupported_executions'))
                                      for r in runs))
-                print(f"{scenario['id']}: {' / '.join(r['status'] for r in runs)}; passed={row['passed']}", flush=True)
             else:
                 row.update(passed=False, error='missing mission data')
+            row['reference'] = reference_comparison(row, args.reference_dir)
+            row['verified'] = row['passed'] and row['reference']['equal'] is True
+            if args.reference_dir or args.require_reference:
+                row['passed'] &= row['reference']['equal'] is True
+            print(f"{scenario['id']}: {' / '.join(r['status'] for r in row['runs']) or 'not run'}; "
+                  f"passed={row['passed']}; reference={row['reference']['status']}", flush=True)
+            # Only complete paired observations qualify for aggregate parity counts.
+            if row['reference']['equal'] is not None:
+                diff_dir = output / (row['id'] + '-reference')
+                diff_dir.mkdir()
+                category = 'equal_observed_events' if row['reference']['equal'] else 'timing'
+                first = row['reference']['first_divergence']
+                if first and first['field'] == 'outcome':
+                    category = 'field_difference'
+                elif first and (first['reference'] is None or first['engine'] is None or
+                                first['reference']['id'] != first['engine']['id']):
+                    category = 'identity_or_order'
+                (diff_dir / 'diff.json').write_text(json.dumps(dict(
+                    layer='L7', category=category, **row['reference']), indent=2) + '\n')
             failed |= not row['passed']
             summary['matrix'] = mission_matrix(available, missions, summary['missions'])
             (output / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
