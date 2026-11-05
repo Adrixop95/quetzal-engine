@@ -25,6 +25,8 @@
 #include "engine/platform/clock.hpp"
 #include "engine/app/playtest.hpp"
 #include "engine/sim/game_sim.hpp"
+#include "engine/sim/combat_trace.hpp"
+#include <sstream>
 #include "engine/sim/sight.hpp"
 #include "engine/world/visibility.hpp"
 #include "engine/sim/savegame.hpp"
@@ -871,6 +873,15 @@ static void test_projectiles() {
     initial.objects = {shooter, target};
     World a = initial, b = initial;
     GameSim sa(rules), sb(rules); sa.init(a); sb.init(b);
+    std::ostringstream trace;
+    int launches = 0, impacts = 0, hits = 0;
+    sa.set_combat_observer([&](uint64_t tick, const char* event, const Effect& effect, uint32_t victim, int before, int after) {
+      CHECK(tick > 0 && effect.trace_id > 0);
+      const std::string name(event);
+      launches += name == "launch"; impacts += name == "impact"; hits += name == "damage";
+      if (name == "damage") CHECK(victim == 2 && before - after > 0);
+      write_combat_event(trace, tick, event, effect, victim, before, after, a);
+    });
     Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
     sa.submit(attack); sb.submit(attack);
     a.begin_tick(); sa.tick(a); b.begin_tick(); sb.tick(b);
@@ -879,6 +890,7 @@ static void test_projectiles() {
       // Visual metadata alone must not enable invented damage or scheduling.
       for (int tick = 0; tick < 8; tick++) {
         CHECK(a.effects.empty() && !a.objects[0].has_fired && a.objects[1].hp == 30000);
+        CHECK(trace.str().empty());
         CHECK(sa.state_hash(a) == sb.state_hash(b));
         a.begin_tick(); sa.tick(a); b.begin_tick(); sb.tick(b);
       }
@@ -891,6 +903,9 @@ static void test_projectiles() {
     CHECK(sa.state_hash(a) == sb.state_hash(b));
     if (!a.effects.empty()) {
       auto hash = sa.state_hash(a);
+      a.effects[0].trace_id++;
+      CHECK(sa.state_hash(a) == hash); // diagnostic identity cannot affect lockstep
+      a.effects[0].trace_id--;
       a.effects[0].end_x++;
       CHECK(sa.state_hash(a) != hash);
       a.effects[0].end_x--;
@@ -905,11 +920,16 @@ static void test_projectiles() {
       CHECK(sa.state_hash(a) == sb.state_hash(b));
     }
     CHECK(a.objects[1].hp == 30000 - shot.damage);
+    CHECK(launches > 0 && impacts == launches && hits == launches);
+    CHECK(trace.str().find("\"event\":\"position\"") != std::string::npos);
+    CHECK(trace.str().find("\"victim_type\":10") != std::string::npos);
+    const auto trace_before_pause = trace.str();
     Command pause; pause.type = Pct::PauseOn;
     sa.submit(pause); a.begin_tick(); sa.tick(a);
     auto effects = a.effects;
     a.begin_tick(); sa.tick(a);
     CHECK(a.effects.size() == effects.size());
+    CHECK(trace.str() == trace_before_pause);
     for (size_t i = 0; i < effects.size(); i++) CHECK(a.effects[i].x == effects[i].x && a.effects[i].age == effects[i].age);
   }
   // A splash hits hostile neighbours once, keeps allies safe, and retains its source id after death.

@@ -52,6 +52,10 @@ class GameSim : public Simulation {
   // Excludes local selection, camera, audio and diagnostics. Includes queued commands.
   uint64_t state_hash(const World& w) const;
 
+  // Synchronous, read-only diagnostics. Events occur inside the tick, before death handling.
+  using CombatObserver = std::function<void(uint64_t, const char*, const Effect&, uint32_t, int, int)>;
+  void set_combat_observer(CombatObserver observer) { combat_observer_ = std::move(observer); }
+
   // Queries for the UI.
   std::vector<MenuItem> menu(const World& w, int side, int town = -1) const;
   bool can_place(const World& w, int side, int type, int tx, int ty, const char** why = nullptr, const QueueItem* reservation = nullptr, int town = -1) const;
@@ -82,6 +86,11 @@ class GameSim : public Simulation {
                                          const std::string& scn_path = "", ReplayObserver before_commands = {}, Modifications modifications = {});
 
  private:
+  CombatObserver combat_observer_;
+  uint64_t next_trace_id_ = 0;
+  void trace_combat(const char* event, const Effect& e, uint32_t victim = 0, int before = 0, int after = 0) const {
+    if (combat_observer_) combat_observer_(tick_, event, e, victim, before, after);
+  }
   void apply(World& w, const Command& c);
   void economy(World& w);
   void maintain_town_marks(World& w);

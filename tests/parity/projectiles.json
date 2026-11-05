@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "map": "ztest_battle",
+  "template": "mission_14",
+  "evidence": "P",
+  "first_tick": 1,
+  "last_tick": 720,
+  "families": {
+    "arrow": 27,
+    "bolt": 30,
+    "catapult": 83,
+    "cannon": 4,
+    "fire": 35,
+    "magic": 28,
+    "air": 34
+  },
+  "variants": [
+    "clear_near", "clear_middle", "clear_far", "moving_target", "source_death",
+    "terrain", "structure", "unit", "splash_organic", "splash_armor",
+    "splash_structure", "splash_air", "splash_nonorganic", "friendly", "neutral",
+    "burn_stationary", "burn_moving", "burn_source_death"
+  ],
+  "splash_offsets_px": [0, 24, 48, 96, 192, 384],
+  "victim_types": {"organic": 0, "armor": 6, "structure": 14, "air": 33, "nonorganic": 3},
+  "controls": [
+    "Candidate family names select types; verify actual weapon dispatch on the reference.",
+    "Audit initial visibility, diplomacy, cash, tech, day clock, HP, regeneration and passive AI.",
+    "Issue one attack at tick 12; suppress further launches without cancelling the first flight.",
+    "Move target or kill source at tick 13 in the corresponding variants; record actual launch ordering.",
+    "Verify clear paths and matched endpoints; terrain interception requires an audited terrain/height fixture.",
+    "Sweep splash offsets separately per victim type and side; refine observed transitions at radius minus one, radius and radius plus one pixel.",
+    "Repeat after swapping sides and at diagonal offsets; classify overlapping category flags from audited metadata.",
+    "Capture every flight position and ground/render height, every impact and every damage event through tick 720.",
+    "Burn completion needs an audited status removal event and a damage-free tail after a single shot; building fire animation is insufficient.",
+    "Record and replay twice from identical pristine game copies before comparing the clone."
+  ]
+}
