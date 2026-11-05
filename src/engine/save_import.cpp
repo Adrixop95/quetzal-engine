@@ -70,6 +70,7 @@ bool import_original_save(const SaveGame& save, World& world, std::string& error
     w.original_unit_ids.clear();
     w.side_state.assign(8, {});
     w.visibility.sides.clear();
+    w.visibility_brightness = false;
     w.mission.objects.clear();
     auto initial_sides = w.mission.sides;
     w.mission.sides.assign(sides.size(), {});

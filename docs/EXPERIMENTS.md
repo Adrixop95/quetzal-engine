@@ -361,6 +361,62 @@ cross-program UI state reachability remain unverified. Full pre-commit could not
 initialize its remote hook environment because github.com DNS resolution failed;
 local asset/English hooks, JSON parsing and whitespace checks passed separately.
 
+## V06 sight/fog consumer run sheet (needs live run)
+
+The synthetic `render_contracts`, `animation_headless` and `engine_unit` checks
+exercise invented masks and raw brightness, including the strict 32/33 boundary.
+`tests/parity/fog.json` specifies the later aligned visual experiment. It is an
+L4 preparation recipe, not an executable parity scenario. V02/V10 tick/identity
+observers and validated camera/input routes are still dependencies. No reference
+run is authorized inside the Codex sandbox; use these commands on an unrestricted
+host. Failed namespace setup remains a failed run, never retry without isolation.
+
+Run from the worktree root, using fresh private destinations:
+
+```sh
+mkdir -p work/v06-game/Maps work/v06-game/Saves work/v06-clone
+reference_game=/home/adrox/aztec-re/game
+for item in Aztec.exe Res Video Music Campaign; do
+  if [ -e "$reference_game/$item" ]; then
+    ln -s "$reference_game/$item" "work/v06-game/$item"
+  fi
+done
+for item in "$reference_game"/*.plr "$reference_game"/*.ini; do
+  if [ -f "$item" ]; then cp "$item" work/v06-game/; fi
+done
+find "$reference_game/Maps" -maxdepth 1 -iname 'mission_1.*' \
+  -exec cp '{}' work/v06-game/Maps/ \;
+ZSTAT_GAME_DIR="$PWD/work/v06-game" python3 -I tools/make_zstat.py zfog \
+  0:0:1:20:20:move=28,20@120 1:0:1:24:20 1:14:1:28:24
+build/aztec_map_viewer --maps work/v06-game/Maps --dump zfog \
+  > work/v06-clone/map.txt
+# Engine preparation capture only: this does not align a reference tick.
+timeout -s KILL 30 unshare -rn env \
+  SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+  AZTEC_GAME="$PWD/work/v06-game" AZTEC_USER_DIR="$PWD/work/v06-profile" \
+  build/aztec_engine --game "$PWD/work/v06-game" --rules-dir "$PWD/docs/data" \
+  --size 800x600 --software --no-audio --no-sim \
+  --screenshot "$PWD/work/v06-clone/preparation.png" zfog
+# The runner creates a further private game copy and configures namespace loopback.
+ZSTAT_GAME_DIR="$PWD/work/v06-game" \
+ZSTAT_RUNTIME=/home/adrox/aztec-re/build/aztec_recomp RT_UNIT_EVERY=1 \
+  sh tools/zstat_run.sh zfog work/v06-reference-preparation 16000
+```
+
+Inspect the private map dump before launch: the generator inherits terrain and a
+remote hall, and adds an enemy hall for the structure. Their sight, glow and AI
+can contaminate the intended control. Lock/move or separate them through validated
+inputs before measurement; do not infer a mask radius from the initial spacing.
+The scout move at scenario time 120 is a preparation route, not proof of a
+reference/engine aligned observation. Record actual positions and clocks.
+
+Repeat each measured day/night, mask-edge, scout-departure/death and viewing-side
+case in a fresh private process/profile. Keep simulation frozen at the agreed
+observation boundary; align camera, zoom, viewport, selection and cursor. Save the
+four raw neighbouring samples, mask ID, object IDs and positions beside captures.
+Compare terrain, unit/building and minimap regions separately. Report exact pixel
+counts separately from tolerant metrics; absent reference images are unavailable
+measurements. Keep every generated map, log and capture under ignored `work/`.
 ## Original-save tick-zero run sheet
 
 Task 07 follow-up / V16 status: **needs live run**. Live execution is prohibited
