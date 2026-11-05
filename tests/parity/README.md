@@ -19,6 +19,21 @@ in each file describe required repeats and boundary cases; those repeats are
 pending work, not additional executed scenarios. Target type names are test
 selection labels, not measured armor classes. Population remains uncovered.
 
+Task 65's asset-free measurement handoff is available with:
+
+```sh
+python3 -I tools/parity_rules.py plan --output work/parity/l1-task65-plan
+```
+
+`rules_protocol.json` supplies ordered metric definitions and proposed field
+normalization. It contains no measured expectations. The command writes copied
+specifications and null reference/clone-before/clone-after forms; it does not
+prepare maps, launch processes or normalize captures. `--id` selects one case.
+The [live run sheet](../../docs/EXPERIMENTS.md#l1-task-65-run-sheet-needs-live-run)
+lists all 26 pending cases, clock-horizon requirements and the additional
+population control variant. Task 64's audited runner/observers are still missing
+in this checkout. Their integration and live measurements remain required.
+
 `setup.preplaced_objects` names canonical scenario identities and type IDs;
 positions and command destinations are tiles. `input` contains abstract commands
 at simulation ticks. Both commands at the same tick retain list order.
@@ -189,3 +204,55 @@ trajectory/impact/per-victim sampling are implemented; single-shot reference
 setup, exact pixel offsets, terrain-height fixtures and an audited reference
 projectile/burn observer are pending. See the [run sheet](../../docs/EXPERIMENTS.md#v07-projectile-run-sheet-needs-live-run).
 Status: **needs live run**. Synthetic capture equality does not promote P to M.
+
+## Placement comparison contract
+
+`placement.json` supplies task 66 candidate screen input on ztest_all. Task 64 is
+absent, so selection/card routes, clock alignment and the reference placement
+observer remain blocked. `tools/placement_compare.py prepare` expands the type
+and variant matrix; it does not launch games or translate semantic inputs into
+unaudited clicks. Status: **needs live run**, P scenario, synthetic tooling only.
+See the [live run sheet](../../docs/EXPERIMENTS.md#building-and-mine-placement-run-sheet-needs-live-run).
+
+The comparator hook consumes JSON bundles with exactly `schema: 1`,
+`contract: "placement-v1"`, `origin: "reference"` or `"clone"`, `alignment` and
+`samples`. Alignment contains `scenario`, `map_sha256`, `controls_sha256`,
+`building_type`, `camera: [x,y,zoom]`, `resolution: [w,h]`,
+`overlay_region: [x,y,w,h]`, `first_tick`, `last_tick`, and
+`phase: "before_input"`. Hash the same map bytes and audited common setup/input
+specification; retain those inputs for review. Each adapter must stop at this
+boundary, before the next scenario input, with matching clock/camera/UI state.
+The engine raw UI trace is at a different boundary and is not accepted directly.
+
+Every inclusive tick requires exactly one sample, with these fields:
+
+| Field | Meaning |
+| --- | --- |
+| `tick` | Contiguous scenario tick; never a rendered frame counter |
+| `active` | Boolean placement mode |
+| `valid` | Boolean decision, or null when inactive |
+| `snapped` | Integer `[x,y]` cell, or null when inactive |
+| `footprint` | `[x,y,valid]` cells sorted by y then x, no duplicates; empty when inactive |
+| `feedback` | Observed user feedback text, empty when none |
+| `rotation` | Measured orientation integer, null when absent |
+| `ghost_sprite` | Audited normalized sprite identity string, null when absent |
+| `cursor` | Audited normalized visible cursor identity |
+| `accepted` | Boolean confirmation accepted during the preceding input interval, independent of current placement mode |
+| `overlay` | Relative path to a complete opaque RGB PNG/P6 capture at this tick |
+
+Aggregate validity must equal the conjunction of cell validity. Both observers
+must supply every actual footprint cell, not an inferred rectangle. After a
+successful confirmation, observe the new mode and occupancy at the
+next boundary; the preceding preview, input and `accepted` event identify the
+site that was confirmed. Do not recompute that previous decision against the
+new construction occupancy. Explicit cancellation has inactive/null fields, no
+acceptance and an empty footprint. Unsupported rotation
+or an absent ghost is null; it is not assigned a guessed orientation/sprite.
+
+The declared rectangular overlay region is compared exactly in decoded RGB,
+including cursor/ghost/grid/feedback if they fall inside it. Include all placement
+feedback or separately compare its region; do not use a tiny crop to hide a
+difference. Keep matching full captures for review. Both complete bundles and all
+images are validated before the first differing tick/field or exact pixel count
+is reported. Digest equality records a claimed alignment, not proof that an
+adapter obeyed it; synthetic equality never establishes reference parity.
