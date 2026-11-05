@@ -814,6 +814,12 @@ void GameSim::economy(World& w) {
         ss.money -= q.paid;
         if (q.town < int(w.ai_towns.size())) w.ai_towns[q.town].spent += q.paid;
         if (auto* object = w.find_mut(q.object)) object->build_total = q.total;
+        if (ai_observer_ && std::any_of(w.mission.sides.begin(), w.mission.sides.end(),
+            [s](const auto& side) { return side.index == int(s) && side.only_comp && !side.neutral; })) {
+          AiEvent event; event.kind = "production"; event.side = int(s); event.town = q.town;
+          event.x = q.tile_x; event.y = q.tile_y; event.composition.at(size_t(q.type)) = 1;
+          ai_observer_(tick_, event);
+        }
       }
       if (q.paused) { ++i; continue; }
       if (q.remaining > 0) --q.remaining;

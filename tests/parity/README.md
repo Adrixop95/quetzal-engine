@@ -189,3 +189,76 @@ trajectory/impact/per-victim sampling are implemented; single-shot reference
 setup, exact pixel offsets, terrain-height fixtures and an audited reference
 projectile/burn observer are pending. See the [run sheet](../../docs/EXPERIMENTS.md#v07-projectile-run-sheet-needs-live-run).
 Status: **needs live run**. Synthetic capture equality does not promote P to M.
+
+### L8 repeated distributions and clone decision observer
+
+Task 75 adds **S (synthetic controls)**, with **P (protocol)** candidates in
+`ai_passive.json` and `ai_provocation.json`. They are measurement recipes, not
+runnable L0 fixtures: task 64's shared setup/input/reference adapters are absent.
+Their map recipes still need audited terrain, enabled build trees, placement,
+initial units, fog and input realization. The `reference_audit: null` field is an
+intentional block. The 0.2 total-variation limit is a provisional acceptance
+choice, not a measured rule. Freeze the setup, limit and groups before collecting
+runs; retain their content hashes with all inputs and runtime revisions privately.
+
+`aztec_engine --headless --ai-trace FILE` emits JSONL `engine-ai-v1` diagnostics.
+The header declares schema 1, origin `engine`, 12 Hz and `last_tick`. Every tick
+ends with `{"event":"tick","tick":N}` and the stream ends with an `end` marker.
+Early mission termination leaves a shorter horizon and cannot pass the parser.
+Resume is refused. Events contain `tick`, `event`, `side`, `town`, `x`, `y`, and
+`composition` (unique `[type,count]` pairs). Town is the mission **vector index**,
+not the possibly sparse town ID. Placement uses tiles; `-1,-1` means no placement.
+
+The independently audited clone emission sites are:
+
+- `sim/ai.cpp`: `build_order` after `apply` adds a queue item, with the reserved
+  site and single type. This is a planner order, before payment.
+- `GameSim::economy`: `production` after payment, marking the first active service
+  of a computer-town queue item. This includes script/player requests for that
+  computer town; use script-free setups to attribute it to the planner.
+- `sim/ai.cpp`: `launch` after the offensive AttackMove decision is applied, or
+  `defence` after the planner's direct Attack response. Each includes the full
+  accepted force composition once per decision, excluding script-owned troops.
+  Repeated reinforcement decisions remain separate events.
+
+The observer has no simulation state and is excluded from hashes/saves. It does
+not infer launches from ordinary movement, expansions from upgrades, or retreat
+from an idle order. Expansion and retreat are unsupported planner decisions and
+produce no events. The comparator understands those classes so their absence
+cannot silently pass. Launch scoring and instantaneous income estimation remain
+fallback policies; event observations alone do not expose an internal score.
+
+A future reference adapter must produce `audited-ai-v1`, origin `reference`,
+with an `audit` identifier equal to a **private copy** of the scenario's
+`reference_audit`. The remaining header and rows follow the same schema. This
+identifier is an audit attestation, not proof: retain the reviewed field/identity
+mapping, tick-rate/phase conversion, raw logs, scenario/input acknowledgements
+and setup fingerprints. In particular, validate paid production versus requests,
+autonomous force membership, town ownership/identity, expansion (a new town's
+hall at its new tile site, attributed to the issuing town), and explicit retreat.
+Raw `RT_UNIT_LOG`, order/position deltas and arbitrary self-labelled JSON are
+insufficient. No reference hook or audited mapping is supplied by this task.
+
+`tools/ai_measure.py --scenario FILE --reference REF... --clone CLONE...
+--output work/parity/NEW` requires distinct capture paths and at least the
+scenario's repeat count **on each side**. It validates complete streams even
+outside selected groups. A group selects one side, issuing town, event class and
+inclusive tick interval. Its start is the observation origin or fixed provocation
+tick. The report includes per-run count envelopes, first/last and ordinal event
+timing windows relative to that start, and empirical total variation (TV) for
+whole-force compositions and joint `(composition,x,y)` placements. TV is half the
+sum of absolute frequency differences. Timings must overlap inclusively; all
+clone counts must lie inside the reference count envelope; both TVs must be at
+most the declared limit. Variable wave counts are supported. Zero-event runs
+contribute zero counts, never invented zero latency. Entirely absent clone
+classes fail; entirely absent reference classes return `needs live run`.
+
+The CLI returns 0 for this bounded comparison passing, 1 for differences, 2 for
+invalid/truncated input or reused output paths, and 77 for missing audited
+reference data. A 77 result writes the explicit blocker to `diff.json`. Events
+are pooled for empirical frequencies, so runs with more events carry more weight.
+Ordinal matching assumes the same observation interval/trigger; it cannot identify
+which internal plan caused a wave. This is a diagnostic distribution check, not
+a confidence interval, proof of stochastic equivalence, launch-score recovery,
+or full AI parity. Retain raw captures and distributions only under ignored work/.
+See the [live run sheet](../../docs/EXPERIMENTS.md#l8-ai-run-sheet-needs-live-run).

@@ -202,7 +202,7 @@ void audit(const Script& script, const World& w, Report& report) {
 
 int run_headless(int argc, char** argv) {
   Report report;
-  std::string game = "game", rules_dir = default_rules_dir(), orders_path, output, observations_path, combat_path, hashes_path, save_path, resume_path;
+  std::string game = "game", rules_dir = default_rules_dir(), orders_path, output, observations_path, combat_path, ai_path, hashes_path, save_path, resume_path;
   std::string l0_schedule, l0_output, l0_frames;
   int max_ticks = 43200, interval = 120, save_tick = 0;
   bool auto_orders = true, order_observations = false;
@@ -231,13 +231,14 @@ int run_headless(int argc, char** argv) {
       else if (a == "--l0-frames") l0_frames = value();
       else if (a == "--order-observations") order_observations = true;
       else if (a == "--combat-trace") combat_path = value();
+      else if (a == "--ai-trace") ai_path = value();
       else if (a == "--tick-hashes") hashes_path = value();
       else if (a == "--save-at") save_tick = number(value(), 1);
       else if (a == "--save") save_path = value();
       else if (a == "--resume") resume_path = value();
       else if (a == "--no-auto-orders") auto_orders = false;
       else if (a == "--help") {
-        std::puts("usage: aztec_engine --headless [--settings FILE] --game DIR --rules-dir DIR [--mod parallel_construction=on|off] [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE [--order-observations]] [--combat-trace FILE] [--tick-hashes FILE] [--l0-schedule FILE --l0-output FILE --l0-frames DIR] [--save-at N --save FILE] [--resume FILE] MISSION");
+        std::puts("usage: aztec_engine --headless [--settings FILE] --game DIR --rules-dir DIR [--mod parallel_construction=on|off] [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE [--order-observations]] [--combat-trace FILE] [--ai-trace FILE] [--tick-hashes FILE] [--l0-schedule FILE --l0-output FILE --l0-frames DIR] [--save-at N --save FILE] [--resume FILE] MISSION");
         return 0;
       } else if (a.empty() || a[0] == '-' || mission_given) throw std::runtime_error("unexpected argument: " + a);
       else { report.mission = a; mission_given = true; }
@@ -292,6 +293,17 @@ int run_headless(int argc, char** argv) {
       if (!session) throw std::runtime_error(error);
     }
     GameSim& sim = *session;
+    std::ofstream ai_trace;
+    if (!ai_path.empty()) {
+      if (!resume_path.empty()) throw std::runtime_error("AI traces require a fresh run");
+      ai_trace.open(ai_path);
+      if (!ai_trace) throw std::runtime_error("cannot open AI trace");
+      ai_trace << "{\"schema\":1,\"contract\":\"engine-ai-v1\",\"origin\":\"engine\",\"hz\":12,\"last_tick\":" << max_ticks << "}\n";
+      sim.set_ai_observer([&](uint64_t tick, const AiEvent& event) {
+        write_ai_event(ai_trace, tick, event);
+        if (!ai_trace) throw std::runtime_error("cannot write AI event");
+      });
+    }
     std::ofstream combat;
     if (!combat_path.empty()) {
       if (!resume_path.empty()) throw std::runtime_error("combat traces require a fresh run");
@@ -382,6 +394,10 @@ int run_headless(int argc, char** argv) {
       }
       world.begin_tick();
       sim.tick(world);
+      if (ai_trace.is_open()) {
+        ai_trace << "{\"event\":\"tick\",\"tick\":" << tick << "}\n";
+        if (!ai_trace) throw std::runtime_error("cannot write AI tick");
+      }
       if (combat.is_open()) {
         combat << "{\"tick\":" << tick << ",\"event\":\"tick\",\"objects\":[";
         bool first = true;
@@ -410,6 +426,11 @@ int run_headless(int argc, char** argv) {
             o.cur_x != p.x || o.cur_y != p.y) p = {o.cur_x, o.cur_y, sim.tick_count()};
       }
       if (world.outcome != kRunning) break;
+    }
+    if (ai_trace.is_open()) {
+      ai_trace << "{\"event\":\"end\",\"tick\":" << sim.tick_count() << "}\n";
+      ai_trace.close();
+      if (!ai_trace) throw std::runtime_error("cannot finish AI trace");
     }
     if (combat.is_open()) {
       combat << "{\"event\":\"end\",\"tick\":" << sim.tick_count() << "}\n";

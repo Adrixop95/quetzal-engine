@@ -857,3 +857,125 @@ two reference observations before comparing the clone. Keep private reports and
 inputs local; publish only evidence labels and a factual result summary. A
 matching supported-field snapshot or retained opaque block is not complete
 resume, and tick-zero equality alone is not continuation parity.
+
+## L8 AI run sheet (needs live run)
+
+Task 75 / V11, 2026-11-05: **S** clone semantic observer and synthetic distribution
+controls; **P** passive/provocation recipes. **Needs live run.** No reference run
+was attempted: this sandbox denies the required network namespaces. Dependency
+`64-shared-runner-observer` is still in the queue and its audited reference
+production/town/tactic/input mapping is absent. No M evidence or planner policy
+correction follows from these controls. The existing twenty-minute skirmish and
+replay assertions remain required.
+
+Validation in this worktree: Release build passed; 44 CTest entries passed and
+six skipped (five private-data entries and restricted UDP process creation).
+Pre-commit passed for tracked files and all new files. The eight `ai_measure`
+controls include actual headless synthetic traces, repeated byte identity and
+traced/untraced tick-hash equality. These results contain no reference evidence.
+
+First verify the independent controls (no original installation needed):
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR=
+cmake --build build --parallel 2
+ctest --test-dir build -R '^(ai_unit|ai_skirmish|parity_ai|ai_measure)$' --output-on-failure
+```
+
+The following command works now and writes a blocked report, returning 77. Use a
+fresh output name for each invocation; missing data must never become a pass:
+
+```sh
+python3 -I tools/ai_measure.py --scenario tests/parity/ai_passive.json \
+  --reference work/parity/l8/reference-1.jsonl work/parity/l8/reference-2.jsonl \
+  --clone work/parity/l8/clone-1.jsonl work/parity/l8/clone-2.jsonl \
+  --output work/parity/l8-missing-reference-01
+```
+
+On an unrestricted host, finish task 64 before using the remaining commands.
+Review the proposed private adapter interface below when implementing it; the
+executable `work/parity/l8/reference-adapter` **does not exist in this checkout**.
+It must launch the selected runtime, install audited normalized AI observers,
+realize the scenario input at exact simulation ticks, and write complete
+`audited-ai-v1` JSONL. Do not replace it with raw unit-log conversion. See
+[the event contracts](../tests/parity/README.md#l8-repeated-distributions-and-clone-decision-observer).
+
+Prepare each recipe independently. Place its fully audited fixtures under
+`work/parity/l8/setup/<case>/Maps/` (all map/resource sidecars and script), and
+`clone-orders.txt` beside that Maps directory. The order file may be empty for a
+passive run. Script/input setup must produce the declared attacks, force loss,
+harvest suspension and reinforcements on both sides; the present clone CLI order
+file alone cannot express all those actions. Retain action acknowledgements and
+before/after state controls. Confirm zero inherited campaign tactics, matching
+seed, cash, technology, enabled IDs, daylight/fog and town identity mapping. Freeze
+a private `scenario.json` copy with `reference_audit` set to the reviewed audit ID;
+keep evidence P until actual observations justify M. Candidate values and setups
+are deliberately provisional; do not silently change them between repeats.
+
+After those prerequisites are satisfied, these are the exact paired commands.
+Run from the worktree root. `case_name` selects either `ai_passive` or
+`ai_provocation`. Each process gets ordinary private Maps/Saves and copied
+settings; only read-only assets are symlinked. Never pass the shared installation
+as the runtime's writable game directory. Use a new case root for another batch.
+
+```sh
+case_name=ai_passive
+source_game=/home/adrox/aztec-re/game
+reference_runtime=/home/adrox/aztec-re/build/aztec_recomp
+adapter="$PWD/work/parity/l8/reference-adapter"
+setup="$PWD/work/parity/l8/setup/$case_name"
+batch="$PWD/work/parity/l8/$case_name"
+engine="$PWD/build/aztec_engine"
+rules="$PWD/docs/data"
+test -x "$adapter" && test -f "$setup/scenario.json" || exit 1
+mkdir "$batch" || exit 1
+for repeat in 1 2 3 4 5; do
+  for origin in reference clone; do
+    run="$batch/$origin-$repeat"
+    mkdir -p "$run/game/Maps" "$run/game/Saves" "$run/user" || exit 1
+    for asset in Aztec.exe Res Video Music Campaign; do
+      test ! -e "$source_game/$asset" || ln -s "$source_game/$asset" "$run/game/$asset" || exit 1
+    done
+    for config in "$source_game"/*.ini "$source_game"/*.plr "$source_game"/*.cfg; do
+      test ! -f "$config" || cp "$config" "$run/game/" || exit 1
+    done
+    cp -R "$setup/Maps/." "$run/game/Maps/" || exit 1
+    if test "$origin" = reference; then
+      timeout -s KILL 300 unshare -rn sh -eu -c '
+        ip link set lo up
+        ip addr add 192.168.1.125/24 dev lo
+        cd "$1/game"
+        exec env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+          RT_NO_GRAB=1 RT_NO_VIDEO=1 RT_RESOLUTION=800x600 \
+          "$2" --game "$1/game" --runtime "$3" --scenario "$4/scenario.json" \
+          --output "$1/events.jsonl"
+      ' sh "$run" "$adapter" "$reference_runtime" "$setup" >"$run/stdout.log" 2>"$run/stderr.log" || exit 1
+    else
+      map_name=zai_passive
+      test "$case_name" != ai_provocation || map_name=zai_provocation
+      timeout -s KILL 300 unshare -rn env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+        AZTEC_USER_DIR="$run/user" "$engine" --headless --game "$run/game" \
+        --rules-dir "$rules" --no-auto-orders --orders "$setup/clone-orders.txt" \
+        --max-ticks 14400 --ai-trace "$run/events.jsonl" \
+        --tick-hashes "$run/hashes.txt" --report "$run/report.json" "$map_name" \
+        >"$run/stdout.log" 2>"$run/stderr.log" || exit 1
+    fi
+  done
+done
+python3 -I tools/ai_measure.py --scenario "$setup/scenario.json" \
+  --reference "$batch"/reference-*/events.jsonl --clone "$batch"/clone-*/events.jsonl \
+  --output "$batch/comparison"
+```
+
+Repeat the entire block with `case_name=ai_provocation` after auditing that setup.
+Never bypass failed loopback/socket setup. Preserve nonzero exits, early horizons,
+missing reference classes and empty clone classes as failures/blockers. Run
+reference record/replay controls before interpreting these measurements. Five
+repeats per side are an initial protocol, not statistical proof; retain per-run
+counts, tick windows, whole-force/type/site frequencies and raw provenance. The
+full recipe includes expansion/retreat, which the clone currently cannot issue;
+once observed on the reference they must fail rather than be removed to get green.
+Use overlapping windows to bracket policy changes, then add synthetic regressions
+for each measured boundary and rerun all existing AI soak/replay checks. Only
+measured results can justify replacing cheapest-unit, eight-tile placement,
+force-count launch and average-income fallback policies or changing V11 to M.
