@@ -121,6 +121,7 @@ struct Report {
   uint64_t ticks = 0, hash = 0, trace = 1469598103934665603ull;
   size_t unsupported_executions = 0, commands = 0;
   std::optional<ScriptOutcomeOrigin> outcome_origin;
+  std::vector<ScriptActionObservation> action_observations;
   std::vector<std::string> script_errors, unsupported_actions, unreachable, unmet;
   std::vector<uint32_t> stalled;
   void write(std::ostream& out) const {
@@ -143,6 +144,23 @@ struct Report {
     strings("unsupported_actions", unsupported_actions);
     strings("unreachable_objectives", unreachable);
     strings("unmet_objectives", unmet);
+    out << ",\"action_observations\":[";
+    for (size_t i = 0; i < action_observations.size(); ++i) {
+      if (i) out << ',';
+      const auto& a = action_observations[i];
+      out << "{\"trigger_index\":" << a.trigger_index << ",\"action_index\":" << a.action_index
+          << ",\"trigger\":" << a.trigger << ",\"line\":" << a.line << ",\"kind\":" << quoted(action_name(a.kind))
+          << ",\"supported\":" << (ScriptRunner::supports(a.kind) ? "true" : "false")
+          << ",\"enabled\":" << (a.enabled ? "true" : "false")
+          << ",\"executions\":" << a.trace.executions << ",\"first_tick\":" << a.trace.first_tick
+          << ",\"last_tick\":" << a.trace.last_tick << ",\"false_condition_lines\":[";
+      for (size_t j = 0; j < a.false_condition_lines.size(); ++j) {
+        if (j) out << ',';
+        out << a.false_condition_lines[j];
+      }
+      out << "]}";
+    }
+    out << ']';
     out << ",\"stalled_order_ids\":[";
     for (size_t i = 0; i < stalled.size(); ++i) { if (i) out << ','; out << stalled[i]; }
     out << "]}\n";
@@ -184,7 +202,7 @@ int run_headless(int argc, char** argv) {
   Report report;
   std::string game = "game", rules_dir = default_rules_dir(), orders_path, output, observations_path, hashes_path, save_path, resume_path;
   int max_ticks = 43200, interval = 120, save_tick = 0;
-  bool auto_orders = true;
+  bool auto_orders = true, order_observations = false;
   Modifications modifications;
   try {
     std::string settings_error;
@@ -205,18 +223,20 @@ int run_headless(int argc, char** argv) {
       else if (a == "--orders") orders_path = value();
       else if (a == "--report") output = value();
       else if (a == "--observations") observations_path = value();
+      else if (a == "--order-observations") order_observations = true;
       else if (a == "--tick-hashes") hashes_path = value();
       else if (a == "--save-at") save_tick = number(value(), 1);
       else if (a == "--save") save_path = value();
       else if (a == "--resume") resume_path = value();
       else if (a == "--no-auto-orders") auto_orders = false;
       else if (a == "--help") {
-        std::puts("usage: aztec_engine --headless [--settings FILE] --game DIR --rules-dir DIR [--mod parallel_construction=on|off] [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE] [--tick-hashes FILE] [--save-at N --save FILE] [--resume FILE] MISSION");
+        std::puts("usage: aztec_engine --headless [--settings FILE] --game DIR --rules-dir DIR [--mod parallel_construction=on|off] [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE [--order-observations]] [--tick-hashes FILE] [--save-at N --save FILE] [--resume FILE] MISSION");
         return 0;
       } else if (a.empty() || a[0] == '-' || mission_given) throw std::runtime_error("unexpected argument: " + a);
       else { report.mission = a; mission_given = true; }
     }
     if (!mission_given) throw std::runtime_error("headless mode requires a mission");
+    if (order_observations && observations_path.empty()) throw std::runtime_error("--order-observations requires --observations FILE");
     GameData data;
     std::string error;
     if (!data.open(game, error)) throw std::runtime_error(error);
@@ -290,8 +310,9 @@ int run_headless(int argc, char** argv) {
         mission_id = 0;  // Custom map names have no campaign number.
       // Engine-local identity contract; a reference adapter must audit its mapping separately.
       observations << "{\"schema\":1,\"mission\":" << mission_id << ",\"phase\":\"before_commands\","
-                      "\"contract\":\"engine-index-v1\",\"fields\":[\"hp\",\"side\",\"type\",\"x\",\"y\"],"
-                      "\"first_tick\":1,\"last_tick\":" << max_ticks << "}\n";
+                      "\"contract\":\"engine-index-v1\",\"fields\":[\"hp\",\"side\",\"type\",\"x\",\"y\"";
+      if (order_observations) observations << ",\"order\",\"dest_x\",\"dest_y\",\"target\",\"tactic\",\"scenario\"";
+      observations << "],\"first_tick\":1,\"last_tick\":" << max_ticks << "}\n";
     }
     size_t next = 0;
     while (next < orders.size() && uint64_t(orders[next].tick) <= sim.tick_count()) ++next;
@@ -307,7 +328,11 @@ int run_headless(int argc, char** argv) {
           first = false;
           observations << quoted("engine:" + std::to_string(o.id)) << ":{\"hp\":" << o.hp
                        << ",\"side\":" << o.side << ",\"type\":" << o.type
-                       << ",\"x\":" << o.cur_x << ",\"y\":" << o.cur_y << '}';
+                       << ",\"x\":" << o.cur_x << ",\"y\":" << o.cur_y;
+          if (order_observations)
+            observations << ",\"order\":" << unsigned(o.order) << ",\"dest_x\":" << o.dest_x << ",\"dest_y\":" << o.dest_y
+                         << ",\"target\":" << o.target << ",\"tactic\":" << o.tactic << ",\"scenario\":" << o.scenario;
+          observations << '}';
         }
         observations << "}}\n";
         if (!observations) throw std::runtime_error("cannot write observations: " + observations_path);
@@ -359,6 +384,7 @@ int run_headless(int argc, char** argv) {
     report.commands = sim.log().size();
     report.unsupported_executions = sim.script().unsupported();
     report.outcome_origin = sim.script().outcome_origin();
+    report.action_observations = sim.script().action_observations(world);
     report.status = world.outcome == kVictory ? "victory" : world.outcome == kDefeat ? "defeat" : "timeout";
     for (const auto& o : world.objects) {
       if (o.alive && !o.removed && (o.order == uint8_t(Order::Move) || o.order == uint8_t(Order::AttackMove)) &&
@@ -368,8 +394,12 @@ int run_headless(int argc, char** argv) {
       bool objective = false;
       for (const auto& a : t.actions)
         if (a.kind == ActKind::SideVictory && (a.side == kLocal || a.side == world.script_side)) objective = true;
-      if (objective) for (const auto& c : t.conditions) if (!sim.script().eval(world, c))
-        report.unmet.push_back("victory trigger " + std::to_string(t.id) + ": false condition at line " + std::to_string(c.line));
+      if (objective) {
+        if (!sim.script().trigger_enabled(t.id))
+          report.unmet.push_back("victory trigger " + std::to_string(t.id) + ": disabled at termination");
+        for (const auto& c : t.conditions) if (!sim.script().eval(world, c))
+          report.unmet.push_back("victory trigger " + std::to_string(t.id) + ": false condition at line " + std::to_string(c.line));
+      }
     }
   } catch (const std::exception& e) { report.status = "error"; report.error = e.what(); }
   if (output.empty()) report.write(std::cout);

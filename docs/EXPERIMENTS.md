@@ -360,3 +360,142 @@ launched. Original loading, vessel entry routes, original computer control and
 cross-program UI state reachability remain unverified. Full pre-commit could not
 initialize its remote hook environment because github.com DNS resolution failed;
 local asset/English hooks, JSON parsing and whitespace checks passed separately.
+
+## Campaign transport and objective run sheet: needs live run
+
+The task-71 sandbox explicitly denies live reference runs. Do not execute this
+sheet there or remove `unshare -rn` to work around a denial. All commands below
+are for a host allowing the documented namespace/network setup. Run from this
+worktree root in Bash. Keep every generated file under ignored `work/`.
+No successful reference observation is supplied by this change.
+
+First retain the complete static inventory and the paired engine findings:
+
+```sh
+mkdir -p work
+campaign_inventory=$(mktemp -d "$PWD/work/campaign-inventory.XXXXXX")
+build/aztec_script_audit --maps /home/adrox/aztec-re/game/Maps \
+  > "$campaign_inventory/counts.tsv" 2> "$campaign_inventory/sites.txt"
+# This strict gate currently returns 1 for 19 unsupported sites; retain the failure.
+build/aztec_script_audit --maps /home/adrox/aztec-re/game/Maps --require-supported \
+  > "$campaign_inventory/strict.tsv" 2> "$campaign_inventory/strict.txt"
+python3 tools/playthrough.py --game /home/adrox/aztec-re/game \
+  --no-auto-orders --max-ticks 14400 --timeout 180
+# The printed report directory contains actions.md, matrix.md and summary.json.
+# Repeat with --scenarios work/campaign-routes/scenarios.json once normal player
+# routes and mid-mission save ticks are available. No route is supplied here.
+```
+
+For reference controls, prepare **separate** record and replay installations for
+all 15 missions. This uses only read-only resource/map symlinks, ordinary private
+Maps/Saves directories and copied writable profiles. It generates normal campaign
+menu navigation, not a custom-map substitution. The route is initially a passive
+one-minute probe; optional `work/campaign-routes/mission_N.rt` files can append
+ordinary input commands after entering the mission. Do not put cheats, memory
+writes or forced outcomes into acceptance routes. Frame/time sleeps are navigation
+assumptions: verify the entry captures before interpreting any logs.
+
+```sh
+campaign_reference=$(mktemp -d "$PWD/work/campaign-reference.XXXXXX")
+export campaign_reference
+python3 - <<'PY'
+import importlib.util
+import os
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location('playthrough', 'tools/playthrough.py')
+harness = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(harness)
+source = Path('/home/adrox/aztec-re/game')
+maps, available = harness.discover(source)
+assert all(m in available for m in range(1, 16))
+output = Path(os.environ['campaign_reference'])
+for mission in range(1, 16):
+    directory = output / f'mission_{mission}'
+    directory.mkdir()
+    for phase in ('record', 'replay'):
+        run = directory / phase
+        run.mkdir()
+        harness.private_game(source, maps, run / 'game')
+    commands = ['wait 6000', 'click 140 239', 'wait 800', 'click 160 543', 'wait 5000']
+    if mission >= 10:
+        commands += ['click 645 421', 'wait 800']
+    row = mission - 1 if mission < 10 else mission - 10
+    commands += [f'click 150 {257 + 20 * row}', 'wait 800', 'shot',
+                 'click 140 544', 'wait 3000', 'click 700 430', 'wait 7000', 'shot']
+    route = Path('work/campaign-routes') / f'mission_{mission}.rt'
+    if route.is_file():
+        commands += route.read_text().splitlines()
+    commands += ['wait 60000', 'shot', 'quit']
+    (directory / 'input.rt').write_text('\n'.join(commands) + '\n')
+PY
+sha256sum /home/adrox/aztec-re/build/aztec_recomp > "$campaign_reference/runtime.sha256"
+for mission in $(seq 1 15); do
+  mission_probe="$campaign_reference/mission_$mission"
+  for phase in record replay; do
+    run_probe="$mission_probe/$phase"
+    replay_env=()
+    if [ "$phase" = replay ]; then
+      # A missing recording is a failure; never replace it with an empty input.
+      test -s "$mission_probe/record/commands.txt" || break
+      replay_env=("RT_CMD_REPLAY=$mission_probe/record/commands.txt")
+    fi
+    (
+      cd "$run_probe/game" || exit 1
+      timeout -s KILL 200 unshare -rn env -u RT_CMD_REPLAY \
+        SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+        RT_NO_GRAB=1 RT_NO_VIDEO=1 RT_RESOLUTION=800x600 \
+        RT_SCRIPT="$mission_probe/input.rt" RT_DUMP_DIR="$run_probe" \
+        RT_UNIT_LOG="$run_probe/units.log" RT_UNIT_EVERY=1 \
+        RT_STATE_LOG="$run_probe/state.txt" RT_CMD_LOG="$run_probe/commands.txt" \
+        "${replay_env[@]}" sh -ec '
+          ip link set lo up
+          ip addr add 192.168.1.125/24 dev lo
+          exec /home/adrox/aztec-re/build/aztec_recomp "$1/Aztec.exe"
+        ' sh "$run_probe/game"
+    ) > "$run_probe/stdout.log" 2> "$run_probe/stderr.log"
+    printf '%s\n' "$?" > "$run_probe/exit-status.txt"
+  done
+done
+```
+
+Retain nonzero exit statuses, absent logs and wrong-menu captures as failed
+experiments. Existing reference logs are not a script-action observer: dispatch
+ticks, cargo membership and ownership must be established with aligned unit/object
+observations and normal-input controls. Raw engine and reference hashes use
+different representations and cannot be compared directly. Audit packet readback
+and reference repeatability as described in [parity.md](parity.md) before using a
+recording as an oracle. A passive probe cannot explain dormant late objectives.
+
+For each of the 19 sites in [the disposition table](campaign_scripts.md#transport-follow-up-2026-11-04-needs-live-run),
+record the initial vessel identity/side/position, script dispatch tick, first
+motion tick, approach route and waypoints, boarding candidates and boarding order,
+capacity/eligibility, loaded membership, unload coordinates/order, final route
+and completion tick. Vary candidate placement/order, off-map entry, occupied
+landing points, repeated activation and Johnka initial enabled state separately.
+Use matched inactive and delayed-activation controls in **private copies**; retain
+which data changed. Preserve original campaign scripts for the acceptance run.
+Camera activation requires separate duration/locking and second-argument controls.
+
+For every victory/defeat chain, record prerequisite trigger enablement, condition
+transitions, alliances, gifts and protected tactic membership before and after
+transport. Pay particular attention to mission 11's town-derived protected group;
+the current engine's immediate defeat is not evidence of original behavior.
+For a stalled engine ID, rerun its normal route with the existing observation
+option, keeping outputs private:
+
+```sh
+# Select an already prepared private game directory; do not use the shared installation.
+timeout -s KILL 180 unshare -rn env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+  build/aztec_engine --headless --game "$campaign_reference/mission_2/record/game" \
+  --rules-dir "$PWD/docs/data" --no-auto-orders --max-ticks 14400 \
+  --report "$campaign_reference/mission_2/engine.json" \
+  --observations "$campaign_reference/mission_2/engine-objects.jsonl" --order-observations 2
+```
+
+Inspect order/destination/target changes with position and passability; 600 ticks
+without positional progress is only a lead. Require mission-specific normal
+routes, paired engine replay, mid-mission save continuation and aligned reference
+outcomes before promoting V12/V19 evidence. When a site is not observed, keep its
+status **needs live run** until a reachable route or an evidenced original
+nonexecution explanation exists. Do not infer that the original never fires it.

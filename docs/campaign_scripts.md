@@ -156,3 +156,61 @@ The final script unit and audit CLI checks also passed after the last fixture
 change. All pre-commit hooks passed for tracked and new files using copied local
 hook caches; network fetching was unavailable. `git diff --check` passed.
 The reference probe failure above remains a failure, not a skipped parity check.
+
+## Transport follow-up (2026-11-04): needs live run
+
+A fresh read-only inventory of the supplied installation still finds 19
+unsupported sites. The table identifies every site without reproducing script
+bodies. **No site has evidence that the original never fires it.** A dormant
+engine site cannot justify removing an action or implementing a successful no-op.
+
+| Mission | Trigger ID | Action lines | Kind | Disposition |
+| --- | ---: | --- | --- | --- |
+| 2 | 0 | 5, 6 | BoatActivate | Needs live activation/loading/route observations |
+| 2 | 101 | 35 | SubmarineGo | Needs live dispatch/arrival observations |
+| 2 | 3 | 64 | BoatActivate | Needs live activation/loading/route observations |
+| 7 | 2 | 30, 31, 32, 33, 34 | BoatActivate | Needs live activation/loading/route observations |
+| 9 | 1 | 18 | SubmarineGo | Needs live dispatch/arrival observations |
+| 9 | 6 | 70, 71, 72, 73 | BoatActivate | Needs live activation/loading/route observations |
+| 15 | 1 | 18 | SubmarineGo | Needs live dispatch/arrival observations |
+| 15 | 3 | 43, 44 | JohnkaEnable | Needs live enable/boarding/route observations |
+| 15 | 4 | 56, 57 | JohnkaEnable | Needs live enable/boarding/route observations |
+
+JohnkaDisable, SideBuildCommand, SideMoveCommand and SideCameraDeactivate still
+have no campaign sites. Absence from these 15 data files is the reason they do
+not execute in this campaign; it says nothing about custom maps or the original
+implementation. Camera activation's second argument and trigger/timer timing
+remain provisional. No measured transport rules were available to implement.
+V02 identity observations, V05 water movement and V10 command/ownership contracts
+remain incomplete dependencies in this checkout. Town-derived protected tactics
+and gifts, including mission 11's immediate defeat, remain unresolved.
+
+The independent work that can precede those dependencies is now implemented:
+
+- `ScriptRunner::action_observations` reports every source action, indexed by
+  trigger position and action position as well as trigger ID and source line.
+  Each source trigger has bounded execution history: count and first/last
+  one-based script ticks. All actions in its list execute together, even after
+  self-disable or a terminal outcome. Repeated trigger IDs share enablement but
+  retain separate histories. Replay reconstructs the history; it is excluded
+  from gameplay hashes.
+- Headless reports include those observations, terminal trigger enablement and
+  false condition lines. These terminal snapshots do not establish why a site
+  failed to fire earlier. A disabled victory trigger is now reported as unmet
+  even when every condition is true. Neither finding proves unreachability.
+- `playthrough.py` validates execution histories against the unsupported dispatch
+  count and writes private `actions.md` findings for every unsupported or
+  unobserved action, including resumed runs. Unsupported dormant sites still
+  fail the existing script coverage gate.
+- `--observations FILE --order-observations` object rows include order, destination, target,
+  tactic and scenario identity for investigating stalled-order IDs. Positions
+  remain fixed-point; destinations are pixels. Observation timing remains
+  before commands. This adds no transport, ownership or reference identity rule.
+
+Synthetic `script_unit` cases exercise each of the seven unsupported branches
+before activation, at dispatch, after self-disable and after reset, plus duplicate
+IDs, false conditions and replay reconstruction. `playthrough` controls cover
+per-site JSON/findings, malformed histories, disabled objectives and observation
+hash neutrality. These establish diagnostic contracts, not transport parity.
+The exact isolated live run sheet is in [EXPERIMENTS.md](EXPERIMENTS.md#campaign-transport-and-objective-run-sheet-needs-live-run).
+Live reference execution was explicitly denied for this task and was not attempted.

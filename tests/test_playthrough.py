@@ -96,6 +96,68 @@ class PlaythroughTests(unittest.TestCase):
         self.script.unlink()
         self.assertTrue('missing mission script' in self.run_engine()['script_errors'])
 
+    def test_action_sites_distinguish_execution_from_terminal_conditions(self):
+        self.script.write_text(
+            'trigger(3) conditions localTime == 2 actions boat(0).activate trigger(3).disable end\n'
+            'trigger(3) conditions always actions johnka(0).enable end\n'
+            'trigger(4) conditions localTime > 100 actions submarine(0).go end\n')
+        save = Path(self.temp.name) / 'actions.azs'
+        report = self.run_engine('--no-auto-orders', '--save-at', '5', '--save', str(save))
+        rows = report['action_observations']
+        self.assertEqual(len(rows), 4)
+        self.assertEqual([(r['trigger_index'], r['action_index']) for r in rows],
+                         [(0, 0), (0, 1), (1, 0), (2, 0)])
+        self.assertEqual([(r['executions'], r['first_tick'], r['last_tick']) for r in rows],
+                         [(1, 2, 2), (1, 2, 2), (1, 1, 1), (0, 0, 0)])
+        self.assertEqual(rows[0]['false_condition_lines'], [1])
+        self.assertFalse(rows[0]['enabled'])
+        self.assertFalse(rows[2]['enabled'])
+        self.assertEqual(rows[2]['false_condition_lines'], [])
+        self.assertTrue(rows[3]['enabled'])
+        self.assertEqual(report['unsupported_executions'], 2)
+        resumed = self.run_engine('--no-auto-orders', '--resume', str(save))
+        self.assertEqual(rows, resumed['action_observations'])
+        self.assertEqual(report['state_hash'], resumed['state_hash'])
+        output = Path(self.temp.name)
+        harness.write_action_findings(output, [dict(id='synthetic', runs=[dict(engine=report)])])
+        findings = (output / 'actions.md').read_text()
+        self.assertTrue('SubmarineGo | needs live run | 0 | 0 / 0 | True | [3]' in findings)
+        self.assertTrue('does not establish that the original never fires' in findings)
+        harness.validate_action_observations(report)
+        for malformed in (None, [dict(rows[0], executions=0)], [rows[0], rows[0]],
+                          [dict(rows[0], first_tick=report['ticks'] + 1)]):
+            with self.subTest(malformed=malformed), self.assertRaises(ValueError):
+                harness.validate_action_observations(dict(report, action_observations=malformed))
+
+    def test_disabled_victory_is_reported_even_with_true_conditions(self):
+        self.script.write_text(
+            'trigger(0) conditions always actions trigger(1).disable trigger(0).disable end\n'
+            'trigger(1) conditions always actions side(local).victory end\n')
+        report = self.run_engine('--no-auto-orders')
+        self.assertEqual(report['status'], 'timeout')
+        self.assertEqual(report['unmet_objectives'], ['victory trigger 1: disabled at termination'])
+        victory = report['action_observations'][-1]
+        self.assertEqual(victory['kind'], 'SideVictory')
+        self.assertEqual(victory['executions'], 0)
+        self.assertEqual(victory['false_condition_lines'], [])
+
+    def test_order_observations_do_not_change_simulation(self):
+        orders = Path(self.temp.name) / 'movement.orders'
+        observations = Path(self.temp.name) / 'objects.jsonl'
+        orders.write_text('1 move 0 3 2 1\n')
+        args = ('--no-auto-orders', '--orders', str(orders))
+        control = self.run_engine(*args)
+        measured = self.run_engine(*args, '--observations', str(observations), '--order-observations')
+        self.assertEqual(control['state_hash'], measured['state_hash'])
+        rows = [json.loads(line) for line in observations.read_text().splitlines()]
+        self.assertEqual(rows[0]['phase'], 'before_commands')
+        before = rows[1]['objects']['engine:1']
+        after = rows[2]['objects']['engine:1']
+        self.assertEqual(set(after), set(rows[0]['fields']))
+        self.assertEqual(before['order'], 0)
+        self.assertEqual((after['dest_x'], after['dest_y']), (3 * 48 + 24, 2 * 48 + 24))
+        self.assertEqual((after['target'], after['tactic'], after['scenario']), (0, -1, -1))
+
     def test_orders_validation_and_execution(self):
         orders = Path(self.temp.name) / 'orders'
         orders.write_text('1 move 0 2 2 1\n')
