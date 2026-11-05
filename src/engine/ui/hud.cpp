@@ -5,6 +5,7 @@
 #include <cstdio>
 
 #include "engine/world/type_info.hpp"
+#include "engine/world/visibility.hpp"
 
 namespace aztec::engine {
 
@@ -12,7 +13,7 @@ const Object* pick_object(const World& w, float wx, float wy, float alpha, float
   const Object* best = nullptr;
   float bd = radius * radius;
   for (const Object& o : w.objects) {
-    if (o.removed || !o.alive) continue;
+    if (o.removed || !o.alive || !object_visible(w, w.local_side, o)) continue;
     Vec2f p = o.interpolated(alpha);
     float d = (p.x - wx) * (p.x - wx) + (p.y - wy) * (p.y - wy);
     if (d <= bd) { bd = d; best = &o; }

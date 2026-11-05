@@ -6,6 +6,7 @@
 #include "engine/data/animation_slots.hpp"
 #include "engine/render/colors.hpp"
 #include "engine/world/type_info.hpp"
+#include "engine/world/visibility.hpp"
 #include "engine/world/object_state.hpp"
 #include "engine/data/light_masks.hpp"
 
@@ -33,6 +34,7 @@ void SceneRenderer::set_light(const Light& l) {
 }
 
 void SceneRenderer::update_lighting() {
+  if (world_.visibility_brightness && fog_.requested()) { mask_lighting_ = true; return; }
   mask_lighting_ = data::LightMask(data_.archive(ArchiveId::Light).get(data::kLightGroup, 1)).ok();
   if (!mask_lighting_) return;
   if (lighting_side_ != world_.local_side) {
@@ -73,6 +75,10 @@ void SceneRenderer::update_lighting() {
   lighting_.combine(fog_.enabled());
 }
 uint8_t SceneRenderer::shade_at(float x, float y) const {
+  if (world_.visibility_brightness && fog_.requested()) {
+    const auto* layer = visibility_layer(world_, world_.local_side);
+    return uint8_t(data::palette_shade(layer ? sight_brightness(*layer, int(x), int(y)) / 256 : 0));
+  }
   return uint8_t(mask_lighting_ ? data::palette_shade(int(lighting_.sample(x, y))) : opts.terrain_shade);
 }
 
@@ -150,7 +156,7 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
     if (o.removed) continue;
     Vec2f p = o.interpolated(alpha);
     if (p.x < cam.x - pad || p.y < cam.y - pad || p.x > cam.x + cam.visible_w() + pad || p.y > cam.y + cam.visible_h() + pad) continue;
-    if (!visible_in_fog(o, p)) continue;
+    if (!visible_in_fog(o, {o.cur_x / 256.f, o.cur_y / 256.f})) continue;
     if (provider_) {
       const bool simulated_fire = std::any_of(world_.effects.begin(), world_.effects.end(),
           [&](const Effect& e) { return e.loop && e.source == o.id; });
@@ -165,8 +171,8 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
   for (const auto& e : world_.effects) {
     float x = (e.prev_x + (e.x - e.prev_x) * alpha) / 256.f;
     float y = (e.prev_y + (e.y - e.prev_y) * alpha) / 256.f;
-    if (fog_.enabled() && e.side != world_.local_side &&
-        (mask_lighting_ ? lighting_.sample(x, y) <= 32 : fog_.darkness(world_, int(x / kTilePx), int(y / kTilePx)) >= 120)) continue;
+    if (fog_.requested() && e.side != world_.local_side &&
+        !position_visible(world_, world_.local_side, e.x >> 8, e.y >> 8)) continue;
     if (x < cam.x - pad || y < cam.y - pad || x > cam.x + cam.visible_w() + pad || y > cam.y + cam.visible_h() + pad) continue;
     if (effect_frame(e).valid()) items.push_back({x, y, nullptr, e.height, 0, {}, false, &e});
   }
@@ -301,9 +307,8 @@ ObjectState SceneRenderer::object_state(const Object& o) const {
 }
 
 bool SceneRenderer::visible_in_fog(const Object& o, Vec2f p) const {
-  if (!fog_.enabled() || o.side == world_.local_side) return true;
-  if (mask_lighting_) return lighting_.sample(p.x, p.y) > 32;
-  return fog_.darkness(world_, int(p.x / kTilePx), int(p.y / kTilePx)) < 120;  // hide other sides' objects in the dark
+  if (!fog_.requested() || o.side == world_.local_side) return true;
+  return position_visible(world_, world_.local_side, int(std::floor(p.x)), int(std::floor(p.y)));
 }
 
 data::SpriteRef SceneRenderer::effect_frame(const Effect& e) const {
@@ -316,6 +321,7 @@ void SceneRenderer::draw(const Camera& cam, float alpha, const std::function<voi
   SDL_Renderer* r = win_.renderer();
   SDL_SetRenderDrawColor(r, 8, 10, 14, 255);
   SDL_RenderClear(r);
+  fog_.update(r, world_);
   update_lighting();
   draw_terrain(cam);
   // Start positions
@@ -332,7 +338,6 @@ void SceneRenderer::draw(const Camera& cam, float alpha, const std::function<voi
   }
   if (ground_overlay) ground_overlay();
   draw_objects(cam, alpha);
-  fog_.update(r, world_);
   if (!mask_lighting_) fog_.draw(r, cam, world_);
 }
 

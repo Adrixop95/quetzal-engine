@@ -140,7 +140,8 @@ struct World {
   TerrainMap terrain;
   Grid<uint8_t> passability;     // may be empty
   Grid<uint16_t> resources;      // .rm, may be empty
-  VisFile visibility;            // .vis per-side light layers, may be empty
+  VisFile visibility;            // Per-side layers, may be empty.
+  bool visibility_brightness = false; // Simulation brightness; false for loaded .vis darkness.
   Sprite preview;                // .spr minimap preview; w == 0 if absent
   std::vector<Object> objects;
   std::vector<Effect> effects;

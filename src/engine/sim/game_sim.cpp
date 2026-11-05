@@ -8,6 +8,7 @@
 #include "engine/world/type_info.hpp"
 #include "engine/world/object_state.hpp"
 #include "engine/sim/sight.hpp"
+#include "engine/world/visibility.hpp"
 
 namespace aztec::engine {
 
@@ -80,6 +81,7 @@ void GameSim::init(World& w) {
   w.tick = tick_;
   pending_.clear();
   log_.clear();
+  next_trace_id_ = 0;
   if (!w.original_save) w.day_clock = (w.mission.start_time % kDayTicks + kDayTicks) % kDayTicks;
   w.ai_towns.assign(w.mission.towns.size(), {});
   w.town_speed.assign(w.mission.towns.size(), 1);
@@ -90,7 +92,7 @@ void GameSim::init(World& w) {
   if (!w.original_save) {
     for (const auto& side : w.mission.sides)
       if (side.only_comp && !side.neutral && side.index >= 0 && side.index < int(w.visibility.sides.size()))
-        std::fill(w.visibility.sides[side.index].v.begin(), w.visibility.sides[side.index].v.end(), uint8_t(24));
+        std::fill(w.visibility.sides[side.index].v.begin(), w.visibility.sides[side.index].v.end(), uint8_t(w.visibility_brightness ? 128 : 24));
   }
   w.town_state.clear();
   for (const TownDef& t : w.mission.towns) {
@@ -297,7 +299,7 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o) const {
   int64_t bd = mask_sight ? std::numeric_limits<int64_t>::max() : fallback_radius * fallback_radius;
   for (const Object& t : w.objects) {
     if (t.removed || !t.alive || t.type < 0 || !w.hostile(o.side, t.side) || t.progress < 1000) continue;
-    if (mask_sight && sight_brightness(w.visibility.sides[o.side], px(t.cur_x), px(t.cur_y)) <= 32 * 256) continue;
+    if (mask_sight && !position_visible(w, o.side, px(t.cur_x), px(t.cur_y))) continue;
     const auto shot = rules_->attack(o.type, t.type, !w.hostile(o.side, t.side));
     if (!shot.damage_known || !shot.getters_known || shot.damage <= 0) continue;
     int64_t d = d2(o, t);
@@ -357,7 +359,8 @@ void GameSim::apply(World& w, const Command& c) {
     }
     case Pct::Attack: {
       const Object* t = w.find(uint32_t(c.a));
-      if (!t || t->removed || !t->alive) break;
+      if (!t || t->removed || !t->alive ||
+          (w.visibility_brightness && !object_visible(w, c.side, *t))) break;
       for (Object* o : own_ids(true)) {
         if (o->id == t->id || !rules_->type(o->type).armed) continue;
         o->order = uint8_t(Order::Attack); o->target = t->id; o->resume = 0;
@@ -1110,11 +1113,19 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
     decoration(w, data::kBeamImpactAnim, 0, target.cur_x, target.cur_y, 0, source.side);
   }
   if (weapon.anim == 0) {
+    Effect hit;
+    hit.trace_id = ++next_trace_id_; hit.source = source.id; hit.target = target.id; hit.side = source.side;
+    hit.x = source.cur_x; hit.y = source.cur_y;
+    trace_combat("launch", hit);
+    hit.x = target.cur_x; hit.y = target.cur_y;
+    trace_combat("impact", hit);
+    trace_combat("damage", hit, target.id, target.hp, target.hp - damage);
     target.hp -= damage; target.last_hit_by = source.id;
     if (target.hp <= 0) kill(w, target);
     return;
   }
   Effect e;
+  e.trace_id = ++next_trace_id_;
   e.kind = weapon.klass == 0 ? data::EffectClass::BallExpl : weapon.klass == 3 ? data::EffectClass::Axe :
            weapon.klass == 7 ? data::EffectClass::FireThrow : data::EffectClass::Arrow;
   e.source = source.id; e.target = target.id; e.side = source.side;
@@ -1137,6 +1148,7 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
     e.gravity = duration > 0 ? int(int64_t(e.altitude) * 2 / (int64_t(duration) * duration)) : 2 * 256;
   }
   e.impact_anim = weapon.impact_anim; e.splash_px = weapon.splash_px; e.shockwave = weapon.shockwave;
+  trace_combat("launch", e);
   w.effects.push_back(e);
 }
 
@@ -1165,14 +1177,17 @@ void GameSim::advance_effects(World& w) {
       e.x += e.velocity_x; e.y += e.velocity_y;
       e.altitude -= e.vertical_speed; e.vertical_speed += e.gravity;
       e.height = std::max(0, e.altitude / 256); ++e.age;
+      trace_combat("position", e);
       if (e.altitude > 0) { w.effects.push_back(e); continue; }
     } else if (path::len2(delta) > int64_t(e.speed) * e.speed) {
       auto step = path::with_length(delta, e.speed);
       e.x += step.x; e.y += step.y; e.age++;
+      trace_combat("position", e);
       w.effects.push_back(e);
       continue;
     }
     if (!ball) { e.x = e.end_x; e.y = e.end_y; }
+    trace_combat("impact", e);
     if (e.impact_anim) decoration(w, e.impact_anim, int(next_visual_rand() % 3), e.x, e.y, 0, e.side);
     if (e.shockwave == data::kShockwaveAnim) decoration(w, e.shockwave, 0, e.x, e.y, 0, e.side);
     for (auto& o : w.objects) {
@@ -1182,14 +1197,19 @@ void GameSim::advance_effects(World& w) {
         int distance = path::length({int32_t(dx), int32_t(dy)}) / 256;
         int damage = rules_->blast_damage(e.payload_id, rules_->type(o.type), distance);
         if (damage > 0) {
+          trace_combat("damage", e, o.id, o.hp, o.hp - damage);
           o.hp -= damage; o.last_hit_by = e.source;
           if (o.hp <= 0) kill(w, o);
-        }
+        } else trace_combat("miss", e, o.id, o.hp, o.hp);
         continue;
       }
       bool splash = e.splash_px > 0 && w.hostile(e.side, o.side) &&
                     dx * dx + dy * dy <= int64_t(e.splash_px * 256) * (e.splash_px * 256);
-      if (o.id != e.target && !splash) continue;
+      if (o.id != e.target && !splash) {
+        trace_combat("miss", e, o.id, o.hp, o.hp);
+        continue;
+      }
+      trace_combat("damage", e, o.id, o.hp, o.hp - e.damage);
       o.hp -= e.damage; o.last_hit_by = e.source;
       if (o.hp <= 0) kill(w, o);
     }
@@ -1291,7 +1311,9 @@ void GameSim::update_fog(World& w) {
       expanded.w = mw; expanded.h = mh; expanded.v.assign(size_t(mw) * mh, 0);
       if (l.w == w.terrain.w && l.h == w.terrain.h && l.v.size() == size_t(l.w) * l.h)
         for (int y = 0; y < l.h; ++y)
-          std::copy_n(l.v.begin() + size_t(y) * l.w, l.w, expanded.v.begin() + size_t(y) * mw);
+          for (int x = 0; x < l.w; ++x)
+            expanded.v[size_t(y) * mw + x] = w.visibility_brightness ? l.v[size_t(y) * l.w + x] :
+                uint8_t(152 - std::min(152, int(l.v[size_t(y) * l.w + x])));
       l = std::move(expanded); changed = true;
     }
     std::vector<uint8_t> vision(glow.size(), 152);
@@ -1306,6 +1328,8 @@ void GameSim::update_fog(World& w) {
       if (nv != l.v[i]) { l.v[i] = nv; changed = true; }
     }
   }
+  if (!w.visibility_brightness) changed = true;
+  w.visibility_brightness = true;
   if (changed) w.fog_version++;
 }
 
@@ -1318,7 +1342,10 @@ void GameSim::tick(World& w) {
     apply(w, c);
   }
   pending_.clear();
-  if (paused_) return;
+  if (paused_) {
+    for (const auto& e : w.effects) if (e.flight) trace_combat("position", e);
+    return;
+  }
   for (auto& o : w.objects) {
     if (o.removed) continue;
     ++o.anim_tick;
@@ -1465,6 +1492,7 @@ uint64_t GameSim::state_hash(const World& w) const {
       mix(q.started); mix(q.paused); mix(uint32_t(q.tile_x)); mix(uint32_t(q.tile_y)); mix(q.object); }
     for (const auto& g : s.groups) { mix(g.size()); for (uint32_t id : g) mix(id); }
   }
+  mix(w.visibility_brightness);
   mix(w.visibility.sides.size());
   for (const VisFile::Layer& l : w.visibility.sides) {
     mix(l.w); mix(l.h); mix(l.v.size()); for (uint8_t value : l.v) mix(value);
