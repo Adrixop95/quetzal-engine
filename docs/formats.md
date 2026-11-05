@@ -107,13 +107,23 @@ fastscroll 6, viewall 7, temporary 8, center 9, putontop 12, garrison 13, send 1
 directcontrol 26, lastcaller 27, toggleinterface 28, scrollleft/right/up/down 38-41, printscreen 45, cheatwin 52. Keys: DirectInput names (`a`-`z`, `f1`-`f12`, `lshift`, `rshift`,
 `lcontrol`, `rcontrol`, `lalt`, `ralt`, `space`, `tab`, `enter`, `caps`, `pad0`-`pad9`, `gray+`, `home`, `left`... full table in `userfiles.cpp`, DIK codes). If the file is missing, the game uses the default table.
 **`aztec_settings.ini`**: NOT an original file, only the recompiled runtime reads it (`runtime/settings.c`): `resolution=WxH`, `window_mode`, `smooth`, `video`, `mouse_speed`.
-**`Saves/singleN.sav` / `multiN.sav`** (write `FUN_004450e0`, read `FUN_004455f0`): `+0 u32`, `+4 u32` (both 0), `+8 char[256]` path to the mission .mp, `+0x108 char[64]` description entered by the player,
-`+0x148` SYSTEMTIME (8 x u16), from `+0x158` a raw state stream: view position (2 x u32), 5 x u32 globals (`0x4cc38c/0x4cc240/0x4cc244/0x4cc23c/0x4c5730`), then sections in order:
-pool `0x4c1978`, pool `0x5156f8`, number of pages and Side objects (0x69c each, virtual method +4), pool `0x4d9b50`, units `0x4cc3d0`, `0x515a98`, `0x4c1298`, `0x4c4ce0`, `0x4cd698`, `0x4d9b88`;
-each object serializes itself via its own virtual method. Only the header is decoded (`parse_save_header`). Two saves of mission 4 made about 25 s apart (RT_SCRIPT: Menu (626,10) -> "Save game" (250,190) -> slot selection
-(y = 138+20*slot) -> Save (184,359); slot 1 = `single1.sav`): size 149924 vs 152428 B (objects are added), path in the header `D:\Maps\mission_4.mp`, and the first `u32` of the stream are:
-view x,y (298,336 / 298,324), then `0,0,1,4`, then the game tick counter (55 -> 363, difference 308 = 25 s at 12 Hz). The rest (about 54 thousand differing bytes) is object state
-(vtable and field pointers, some are raw pointers/garbage); field layout NOT identified. Typing a name via `key DIK` after clicking the slot did not work in my run (description empty).
+**`Saves/singleN.sav` / `multiN.sav`**: the complete stream grammar is decoded by
+`src/core/savegame.*`, including orders, scripts, timer variants, per-side fog
+and opaque research/build-tree blocks. Scalars occupy four little-endian bytes,
+even narrow flags; raw blocks can leave subsequent scalars unaligned. Sparse
+IDs and forward references are preserved without loading host pointers.
+`validate_savegame_references` separately checks all typed pool links before
+engine import. Order queues have at most 256 eight-byte entries.
+
+The independent importer restores the documented subset (units, ownership, HP,
+positions, money, restrictions, fog and clocks); complete simulation resume
+remains open. In particular, wire retention of orders, research, diplomacy and
+script/timer state does not execute them. Interoperability is **import only**;
+neither original `.sav` export nor conversion to engine command-replay saves is
+supported. See [savegame.md](savegame.md#resume-follow-up-evidence-and-policy)
+for supported fields and unresolved mappings, and
+[EXPERIMENTS.md](EXPERIMENTS.md#original-save-tick-zero-run-sheet) for the private
+tick-zero comparison hook. Current reference status: **needs live run**.
 
 ## Sound (`src/core/audio.*`)
 - `Res/Snd.xbe`: group `0x460` elements 1..2013 = WAV files (`sound id`); only 367 are non-empty (empty = same offset as the next one); mixed formats: 44100/22050 Hz, 8/16 bit, mono/stereo.

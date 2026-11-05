@@ -371,3 +371,7 @@ The [engine inventory](engine_rules_status.md#campaign-input-and-outcome-iterati
 records dependencies and validation limits. Town-scenario tactic/ownership,
 transport actions, winning routes and campaign/platform release evidence remain
 open. Private outputs are under ignored `work/parity/roadmap-*` directories.
+
+| Shared L0 control | Cases | Passed | Failed | Live game runs |
+| --- | ---: | ---: | ---: | ---: |
+| Synthetic schema, alignment, comparator and native runner regressions | 6 | 6 | 0 | 0 |

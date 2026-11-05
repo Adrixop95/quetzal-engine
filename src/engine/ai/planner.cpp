@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <limits>
 #include "engine/world/world.hpp"
+#include "engine/world/visibility.hpp"
 
 namespace aztec::engine::ai {
 namespace {
@@ -25,11 +26,12 @@ bool visible(const World& w, int observer, uint32_t id) {
   const auto* o = w.find(id);
   if (!o || !live(*o)) return false;
   if (o->side == observer) return true;
-  if (observer < 0 || observer >= int(w.visibility.sides.size())) return false;
-  const auto& l = w.visibility.sides[observer];
-  int x = (o->cur_x >> 8) / kTilePx, y = (o->cur_y >> 8) / kTilePx;
-  return x >= 0 && y >= 0 && x < l.w && y < l.h &&
-         size_t(y * l.w + x) < l.v.size() && l.v[size_t(y * l.w + x)] <= 24;
+  if (w.visibility_brightness) return object_visible(w, observer, *o);
+  // Legacy computer intelligence has its own initial darkness threshold.
+  const auto* l = visibility_layer(w, observer);
+  const int x = o->cur_x >> 8, y = o->cur_y >> 8;
+  return l && x >= 0 && y >= 0 && x < w.width_px() && y < w.height_px() &&
+      l->v[size_t(y / kTilePx) * l->w + x / kTilePx] <= 24;
 }
 
 std::vector<Intelligence> intelligence(const World& w, const RulesData& rules, int observer) {

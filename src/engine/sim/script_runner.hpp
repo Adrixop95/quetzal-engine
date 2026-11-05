@@ -27,6 +27,20 @@ struct ScriptOutcomeOrigin {
   uint64_t tick = 0;
 };
 
+// Bounded diagnostic history per source trigger, reconstructed by replay. Not gameplay state.
+struct ScriptTriggerTrace {
+  uint64_t executions = 0, first_tick = 0, last_tick = 0;
+};
+
+struct ScriptActionObservation {
+  size_t trigger_index = 0, action_index = 0;
+  int trigger = 0, line = 0;
+  script::ActKind kind = script::ActKind::TriggerEnable;
+  bool enabled = false;
+  ScriptTriggerTrace trace;
+  std::vector<int> false_condition_lines;
+};
+
 class ScriptRunner {
  public:
   bool load(const std::string& path);
@@ -40,6 +54,9 @@ class ScriptRunner {
   static bool supports(script::ActKind kind);
   size_t unsupported() const { return unsupported_; }
   const std::optional<ScriptOutcomeOrigin>& outcome_origin() const { return outcome_origin_; }
+  bool trigger_enabled(int id) const;
+  // Terminal conditions/enablement are a snapshot, not an explanation of historical nonexecution.
+  std::vector<ScriptActionObservation> action_observations(const World& w) const;
   // AI hook: advances units of tactics that follow a path.
   void follow_paths(GameSim& sim, World& w);
 
@@ -58,6 +75,7 @@ class ScriptRunner {
   uint64_t local_time_ = 0;
   size_t unsupported_ = 0;
   std::optional<ScriptOutcomeOrigin> outcome_origin_;
+  std::vector<ScriptTriggerTrace> trigger_traces_;
 };
 
 bool is_town_building(int type);

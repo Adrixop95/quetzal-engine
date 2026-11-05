@@ -116,11 +116,40 @@ def run_once(args, mission, game, directory, *, orders=None, save_tick=None, res
                     any(not isinstance(report[key], list)
                         for key in ('script_errors', 'unsupported_actions', 'unreachable_objectives', 'unmet_objectives', 'stalled_order_ids'))):
                 raise ValueError('invalid engine report values')
+            validate_action_observations(report)
             result['engine'] = report
             result['status'] = report['status'] if code == 0 else 'engine_error'
         except (OSError, ValueError) as error:
             result.update(status='report_error', error=str(error))
     return result
+
+
+def validate_action_observations(report):
+    """Reject incomplete/contradictory execution evidence before labelling sites dormant."""
+    rows = report.get('action_observations')
+    if not isinstance(rows, list):
+        raise ValueError('missing action observations')
+    seen = set()
+    for row in rows:
+        integers = ('trigger_index', 'action_index', 'line', 'executions', 'first_tick', 'last_tick')
+        if (not isinstance(row, dict) or
+                any(type(row.get(k)) is not int or row[k] < 0 for k in integers) or
+                type(row.get('trigger')) is not int or
+                not isinstance(row.get('kind'), str) or not re.fullmatch(r'[A-Za-z]+', row['kind']) or
+                any(type(row.get(k)) is not bool for k in ('supported', 'enabled')) or
+                not isinstance(row.get('false_condition_lines'), list) or
+                any(type(line) is not int or line < 0 for line in row['false_condition_lines'])):
+            raise ValueError('invalid action observation')
+        identity = (row['trigger_index'], row['action_index'])
+        if identity in seen:
+            raise ValueError('duplicate action observation')
+        seen.add(identity)
+        count, first, last = (row[k] for k in ('executions', 'first_tick', 'last_tick'))
+        if ((count == 0 and (first or last)) or
+                (count > 0 and not (1 <= first <= last <= report['ticks'] and count <= last - first + 1))):
+            raise ValueError('invalid action execution history')
+    if sum(r['executions'] for r in rows if not r['supported']) != report['unsupported_executions']:
+        raise ValueError('action observations disagree with unsupported execution count')
 
 
 def compare(runs):
@@ -229,6 +258,33 @@ def write_matrix(output, matrix):
     (output / 'matrix.md').write_text('\n'.join(lines) + '\n')
 
 
+def write_action_findings(output, rows):
+    lines = ['# Campaign action findings', '',
+             'Engine observations only. Zero executions means not observed in this bounded route; '
+             'it does not establish that the original never fires the action. '
+             'Enablement and false condition lines describe termination, not historical causes.', '',
+             '| Scenario / run | Trigger index / ID | Action index / line | Kind | Support | Executions | First / last tick | Enabled | False condition lines |',
+             '| --- | --- | --- | --- | --- | --- | --- | --- | --- |']
+    for scenario in rows:
+        runs = list(enumerate(scenario.get('runs', []), 1))
+        if 'resumed_run' in scenario:
+            runs.append(('resume', scenario['resumed_run']))
+        for label, run in runs:
+            observations = run.get('engine', {}).get('action_observations')
+            if observations is None:
+                lines.append(f"| {scenario['id']} / {label} | unavailable | | | | | | | |")
+                continue
+            for a in observations:
+                if a['supported'] and a['executions']:
+                    continue
+                values = [f"{scenario['id']} / {label}", f"{a['trigger_index']} / {a['trigger']}",
+                          f"{a['action_index']} / {a['line']}", a['kind'],
+                          'implemented' if a['supported'] else 'needs live run', a['executions'],
+                          f"{a['first_tick']} / {a['last_tick']}", a['enabled'], a['false_condition_lines']]
+                lines.append('| ' + ' | '.join(map(str, values)) + ' |')
+    (output / 'actions.md').write_text('\n'.join(lines) + '\n')
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--game', type=Path, required=True, help="user's private read-only game installation")
@@ -330,10 +386,12 @@ def main(argv=None):
             summary['matrix'] = mission_matrix(available, missions, summary['missions'])
             (output / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
             write_matrix(output, summary['matrix'])
+            write_action_findings(output, summary['missions'])
         # Emit a complete matrix even when the selected plan contains no scenarios.
         summary['matrix'] = mission_matrix(available, missions, summary['missions'])
         (output / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
         write_matrix(output, summary['matrix'])
+        write_action_findings(output, summary['missions'])
         print(f'Report: {output / "summary.json"}')
         return 1 if failed else 0
     except (OSError, ValueError) as error:
