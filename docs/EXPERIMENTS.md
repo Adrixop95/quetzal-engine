@@ -857,3 +857,136 @@ two reference observations before comparing the clone. Keep private reports and
 inputs local; publish only evidence labels and a factual result summary. A
 matching supported-field snapshot or retained opaque block is not complete
 resume, and tick-zero equality alone is not continuation parity.
+
+## L3 path tracing run sheet (task 68, needs live run)
+
+Task 64's shared scenario runner/observer is absent in this checkout. This task
+implements the offline comparator only. Do not run reference processes inside
+Codex, bypass `unshare -rn`, or treat historical zpath logs as aligned streams.
+The preparation and comparison commands below are executable now; the shared
+capture invocation must come from task 64 once its audited adapter is available.
+There is no working shared L3 capture command in the current tree.
+
+First preserve the independent 48-configuration baseline and run synthetic checks:
+
+```sh
+mkdir -p work/parity/l3-live
+build/path_bench --json > work/parity/l3-live/path-before.jsonl
+ctest --test-dir build -R 'path|zpath_tools' --output-on-failure
+```
+
+Prepare one private map candidate per course/count/fog combination. This example
+uses one-tile opposing traffic; change only the selected course/count/fog for
+another case, and use a fresh destination. It writes no shared installation data:
+
+```sh
+case_dir="$PWD/work/parity/l3-live/swap1-30-explored"
+mkdir -p "$case_dir/game/Maps" "$case_dir/game/Saves"
+reference_game=/home/adrox/aztec-re/game
+for item in Aztec.exe Res Video Music Campaign; do
+  if [ -e "$reference_game/$item" ]; then
+    ln -s "$reference_game/$item" "$case_dir/game/$item"
+  fi
+done
+for item in "$reference_game"/*.plr "$reference_game"/*.ini; do
+  if [ -f "$item" ]; then cp "$item" "$case_dir/game/"; fi
+done
+ZPATH_GAME_DIR="$reference_game" python3 -I tools/make_zpath.py \
+  swap1 30 "$case_dir/game" explored
+build/aztec_map_viewer --maps "$case_dir/game/Maps" --dump zpath1 \
+  > "$case_dir/map-dump.txt"
+```
+
+`game/course.json` describes geometry, initial units, group destinations and raw
+packet order frames; `game/cmd.txt` contains reference packets. These are setup
+candidates, not a shared semantic scenario. Task 64 must convert setup and orders
+for BOTH programs and verify actual initial positions, unit types, ownership,
+identity mappings and command readback. Never pass reference packets directly
+to the clone or assume pool IDs equal engine IDs. The current harness supports
+numbered campaign missions only, so `zpath1` also requires its custom-map adapter.
+Use the supplied reference binary `/home/adrox/aztec-re/build/aztec_recomp` only
+if it supports the audited observer; otherwise build the hand-written observer
+with private generated inputs inside this worktree.
+
+On an unrestricted namespace-capable host, capture one reference recording,
+two independent reference replays and two clone runs from the same shared
+scenario. Each process needs its own private Maps/Saves/profiles and immutable
+resource symlinks, both dummy SDL drivers, a kill timeout and `unshare -rn`.
+Reference namespace setup must fail closed at `ip link set lo up` or
+`ip addr add 192.168.1.125/24 dev lo`. Retain command readback, before-command
+normalized positions **every tick**, order tick, goals, complete horizon and
+producer/identity/scale provenance. Keep 1490 ticks after each unit's order,
+including the delayed park group's full budget; extend if arrivals are censored.
+Validate reference replay repeatability before clone comparison. Namespace,
+command, setup, mapping and observation failures are failed experiments.
+
+Required coverage (each ground course at 1/10/30 units, both fog modes):
+
+| Control | Existing preparation | Additional audited setup needed |
+| --- | --- | --- |
+| Open and obstacle detours | open, wall, clusters, maze, utrap, rooms, diag | Actual terrain/footprint checks |
+| Chokepoints and crowds | gap1/2/4, corr1/2, swap/swap1, park, mixed | Opposing orders and delayed budgets |
+| Unreachable goal | Synthetic path regression only | Sealed destination with normal orders |
+| Disconnected group | Synthetic path regression only | Members on both sides of sealed wall, both selection orders |
+| Boats and Johnka | None in zpath generator | Types 84/88, measured water channels/landing destinations |
+| Flight | None in zpath generator | Bird/Zeppelin controls, matched distance and obstacle crossing |
+| Radius/footprint boundaries | Ground layout proxies only | Small/large units, actual building occupancy and narrow clearance |
+
+Do not label a `ZP_TYPES` substitution as a boat/flight suite: the generator's
+legacy type table and ground passability do not establish water or air setup.
+For unreachable/disconnected controls retain closest approach, terminal position,
+orders and stalls; null arrival is censored even if both programs stop.
+
+After task 64 supplies complete normalized streams, write a private plan with
+its **actual audited contract name**, mission identifier (0 for a custom map)
+and identity mapping.
+This example uses placeholder identities/contract and a tile-(80,30) pixel-centre
+goal (each coordinate times 256); replace them with observed values:
+
+```sh
+cat > "$case_dir/trace-plan.json" <<'JSON'
+{
+  "schema": 1,
+  "contract": "REPLACE_WITH_AUDITED_CONTRACT",
+  "mission": 0,
+  "position_scale": 256,
+  "units": {
+    "group0-unit0": {
+      "reference": "REPLACE_REFERENCE_ID",
+      "clone": "REPLACE_CLONE_ID",
+      "goal": [989184, 374784],
+      "order_tick": 62
+    }
+  },
+  "tolerance": {
+    "arrival_ticks": 12,
+    "arrival_radius_px": 288,
+    "path_ratio_max": 1.25,
+    "shape_px": 48,
+    "idle_px": 0.5,
+    "stall_ticks": 120
+  }
+}
+JSON
+# Add EVERY intended unit and its own group goal/order tick before comparison.
+python3 -I tools/zpath_trace.py "$case_dir/trace-plan.json" \
+  "$case_dir/reference.jsonl" "$case_dir/clone.jsonl" \
+  --output "$case_dir/trace-comparison.json"
+```
+
+The report includes each unit's arrival tick, traveled distance, maximum idle
+run, clone/reference path ratio, maximum aligned separation, and first divergent
+unit/tick/cause class. Shape is aligned positional deviation, so inspect both
+trajectories to separate speed from route choice. Provisional gates and censoring
+are documented in [rules_movement.md](rules_movement.md#11-l3-trace-comparison-preparation-2026-11-05-needs-live-run).
+A missing/truncated observation, lifecycle change or mismatched contract produces
+`invalid` with a nonzero exit code, never a pass. Keep every map, log, plot and
+report containing private observations under ignored `work/`.
+
+Only after reference repeatability and a diagnosed paired divergence should a
+path behavior change be made. Save before/after `path_bench --json` outputs and
+compare all 48 hashes and movement metrics excluding wall-clock timing. Preserve
+them unless a documented reference measurement justifies the specific change.
+Update L3 paired counts from actual selected diff reports after live capture;
+currently **0 scenarios, 0 pass, 0 fail, 0 skip**. No first live divergence or
+arrival/path tolerance pass is available. Status: **needs live run**.
