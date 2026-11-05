@@ -2,6 +2,7 @@
 #pragma once
 #include "core/savegame.hpp"
 #include "engine/world/world.hpp"
+#include <iosfwd>
 
 namespace aztec::engine {
 
@@ -12,5 +13,8 @@ bool import_original_save(const SaveGame& save, World& world, std::string& error
 // Resolves only the saved mission basename inside GameData::maps_dir().
 bool load_original_save(const GameData& data, const std::string& path,
                         World& world, std::string& error);
+// Normalized simulation fields at the import boundary; unsupported domains are
+// explicitly listed and cannot establish complete resume parity.
+bool write_original_save_snapshot(const World& world, std::ostream& out, std::string& error);
 
 } // namespace aztec::engine

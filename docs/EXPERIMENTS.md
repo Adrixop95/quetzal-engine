@@ -360,3 +360,95 @@ launched. Original loading, vessel entry routes, original computer control and
 cross-program UI state reachability remain unverified. Full pre-commit could not
 initialize its remote hook environment because github.com DNS resolution failed;
 local asset/English hooks, JSON parsing and whitespace checks passed separately.
+
+## Original-save tick-zero run sheet
+
+Task 07 follow-up / V16 status: **needs live run**. Live execution is prohibited
+in the Codex sandbox; do not remove `unshare -rn` or use the shared installation
+as writable state. The commands below are for a namespace-capable external host.
+All outputs remain in this worktree's ignored directories.
+
+First build and exercise the synthetic generator and actual clone observer:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR=
+cmake --build build --parallel 2
+ctest --test-dir build -R 'savegame|save_import|save_resume_controls' --output-on-failure
+build/test_save_import --generate build/resume-synthetic.sav build/resume-synthetic.json
+```
+
+The generated file is invented test data; do not install or load it in the
+original game. `save_resume_controls` supplies invented mission files and empty
+resource archives to exercise the standalone clone probe without private data.
+
+The reference prerequisite is still missing: an audited save-load observer at
+**load completion before the first resumed simulation update**. Existing
+`RT_UNIT_LOG`/`RT_STATE_LOG` command-fetch logs do not establish that boundary,
+and their raw pool hashes cannot substitute for normalized fields. The hook
+accepts a private executable adapter with this interface:
+
+```text
+reference-observer --game PRIVATE_DIR --save ABSOLUTE_SAV --output SNAPSHOT_JSON --runtime ABSOLUTE_RUNTIME
+```
+
+The adapter must stage the supplied save in its private profile, load it in the
+supplied runtime using `PRIVATE_DIR/Aztec.exe`, synchronize at the audited load
+barrier, and emit the schema documented in [savegame.md](savegame.md#resume-follow-up-evidence-and-policy).
+Return nonzero if loading or observation fails. It must report actual loaded
+state and unsupported domains, preserve original pool IDs (or use an audited
+identity map), convert positions to pixel*256, and sample bordered fog using the
+same tile convention. It must not advance a tick, use a sleep as the observation
+barrier, copy values from the `.sav` decoder instead of observing the runtime,
+or claim mappings for unresolved research/script/diplomacy fields. The runner
+supplies `save_sha256`; the adapter must omit it. No such audited adapter is
+claimed to exist in this checkout. Completing this V02 prerequisite and the
+semantic mappings remains work; merely supplying a script path is insufficient.
+
+Select one real save locally. This exact command records the missing observer
+status without launching either process (exit 1 is expected):
+
+```sh
+python3 tools/savegame/compare_resume.py run \
+  --game /home/adrox/aztec-re/game \
+  --save /home/adrox/aztec-re/game/Saves/single1.sav \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --clone "$PWD/build/aztec_save_probe" --rules "$PWD/docs/data" \
+  --output "$PWD/work/save-resume/missing-observer-01"
+```
+
+Adjust only the save filename if it lives under `Saves/<profile>/`. After the
+reference observer is implemented and audited, install it privately at
+`work/save-resume/reference-observer` and run:
+
+```sh
+python3 tools/savegame/compare_resume.py run \
+  --game /home/adrox/aztec-re/game \
+  --save /home/adrox/aztec-re/game/Saves/single1.sav \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --reference-adapter "$PWD/work/save-resume/reference-observer" \
+  --clone "$PWD/build/aztec_save_probe" --rules "$PWD/docs/data" \
+  --output "$PWD/work/save-resume/live-01" --timeout 60
+python3 tools/savegame/compare_resume.py compare \
+  work/save-resume/live-01/reference/snapshot.json \
+  work/save-resume/live-01/clone/snapshot.json
+```
+
+The runner makes independent reference/clone game copies, symlinks immutable
+resources, copies Maps/Saves/profiles/configuration, and copies the input save.
+Each process runs with dummy SDL video/audio inside `timeout -s KILL 60 unshare
+-rn`; reference loopback/address setup uses shell `-e` and stops on failure.
+Inherited `RT_*` settings are removed. Reference video/grab are disabled. Clone
+execution needs no interface setup but still uses its own namespace. Input
+mutation, stale output directories, wrong ticks/phases/digests, missing
+observations and malformed JSON never count as successful comparison. Failure
+logs and exact invocations remain beside `result.json`. The current clone will
+produce `incomplete` even when supported fields match, because seven requested
+domains remain unsupported.
+
+Repeat with a fresh output directory and a save exercising each of movement,
+attack targets, queued production, research/upgrade progress, active/disabled
+triggers, scalar/sample timers, asymmetric diplomacy and explored fog. Obtain
+two reference observations before comparing the clone. Keep private reports and
+inputs local; publish only evidence labels and a factual result summary. A
+matching supported-field snapshot or retained opaque block is not complete
+resume, and tick-zero equality alone is not continuation parity.
