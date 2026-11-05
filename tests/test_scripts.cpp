@@ -239,6 +239,48 @@ static void defence_loading() {
   w.objects[0].removed = true; CHECK(condition(r, w, "side(0).defence(42).valid == 0"));
 }
 
+static void action_observation_contracts() {
+  // Each unresolved grammar branch must remain visible both before and after dispatch.
+  for (const auto& method : {"boat(5).activate", "johnka(5).enable", "johnka(5).disable", "submarine(5).go",
+                            "side(local).buildCommand(UGI_FOOTMAN,1,2)", "side(local).moveCommand(1,2)",
+                            "side(local).cameraDeactivate(0)"}) {
+    World w = world(); GameSim sim(rules()); sim.init(w);
+    auto r = runner(w,
+        "trigger(7) conditions localTime == 2 actions " + std::string(method) + " trigger(7).disable end\n"
+        "trigger(8) conditions localTime > 10 actions " + method + " end\n"
+        "trigger(9) conditions always actions trigger(8).enable trigger(9).disable end\n");
+    auto observations = r.action_observations(w);
+    CHECK(observations.size() == 5);
+    CHECK(!observations[2].enabled && observations[2].trace.executions == 0);
+    r.tick(sim, w); observations = r.action_observations(w);
+    CHECK(observations[2].enabled && observations[2].trace.executions == 0);
+    CHECK(!observations[0].false_condition_lines.empty());
+    r.tick(sim, w); observations = r.action_observations(w);
+    CHECK(r.unsupported() == 1);
+    const auto& a = observations[0];
+    CHECK(a.trigger_index == 0 && a.action_index == 0 && a.trigger == 7 && a.line == 1);
+    CHECK(!a.enabled && !ScriptRunner::supports(a.kind));
+    CHECK(a.trace.executions == 1 && a.trace.first_tick == 2 && a.trace.last_tick == 2);
+    CHECK(a.false_condition_lines.empty()); // disabled even though its condition is still true
+    CHECK(observations[1].trace.executions == 1); // self-disable completes the action list
+    r.tick(sim, w); observations = r.action_observations(w);
+    CHECK(observations[0].false_condition_lines.size() == 1);
+    const auto h = r.state_hash(); r.action_observations(w); CHECK(h == r.state_hash());
+    r.init(w); observations = r.action_observations(w);
+    for (const auto& row : observations)
+      CHECK(row.trace.executions == 0 && row.trace.first_tick == 0 && row.trace.last_tick == 0);
+  }
+  // Repeated IDs share enablement, but never share execution provenance.
+  World w = world(); GameSim sim(rules()); sim.init(w);
+  auto r = runner(w,
+      "trigger(3) conditions always actions trigger(3).disable end "
+      "trigger(3) conditions always actions boat(1).activate end");
+  r.tick(sim, w);
+  auto rows = r.action_observations(w);
+  CHECK(rows[0].trace.executions == 1 && rows[1].trace.executions == 0);
+  CHECK(rows[0].trigger_index != rows[1].trigger_index && !rows[1].enabled && r.unsupported() == 0);
+}
+
 static void replay() {
   TempDir dir; const auto path = dir.path() / "synthetic.scn";
   { std::ofstream f(path); f <<
@@ -262,6 +304,16 @@ static void replay() {
       World restored = initial;
       auto continued = GameSim::replay(restored, data, first.log(), first.tick_count(), path.string());
       CHECK(continued->state_hash(restored) == first.state_hash(a));
+      const auto original = first.script().action_observations(a);
+      const auto rebuilt = continued->script().action_observations(restored);
+      CHECK(original.size() == rebuilt.size());
+      for (size_t i = 0; i < original.size(); ++i) {
+        CHECK(original[i].trace.executions == rebuilt[i].trace.executions);
+        CHECK(original[i].trace.first_tick == rebuilt[i].trace.first_tick);
+        CHECK(original[i].trace.last_tick == rebuilt[i].trace.last_tick);
+        CHECK(original[i].enabled == rebuilt[i].enabled);
+        CHECK(original[i].false_condition_lines == rebuilt[i].false_condition_lines);
+      }
       for (int step = 0; step < 30; ++step) { restored.begin_tick(); continued->tick(restored); }
       World uninterrupted = initial;
       auto control = GameSim::replay(uninterrupted, data, first.log(), first.tick_count() + 30, path.string());
@@ -272,6 +324,6 @@ static void replay() {
 }
 
 int main() {
-  source_locations(); order_and_enablement(); timers(); conditions_and_identity(); paths_and_gifts(); actions_and_outcomes(); defence_loading(); replay();
+  source_locations(); order_and_enablement(); timers(); conditions_and_identity(); paths_and_gifts(); actions_and_outcomes(); defence_loading(); action_observation_contracts(); replay();
   std::puts("Synthetic script contracts passed.");
 }

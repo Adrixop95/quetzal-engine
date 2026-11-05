@@ -2025,3 +2025,53 @@ skips six (five private-data checks and restricted UDP processes). The repositor
 asset/English hooks and `git diff --check` pass. Full pre-commit cannot initialize:
 the default cache is read-only and a worktree-local cache cannot fetch hooks
 because GitHub DNS is unavailable. This is an uncompleted gate, not a hook pass.
+
+## V12/V19 transport and objective diagnostics (2026-11-04, needs live run)
+
+**Construction / synthetic evidence:** script execution now retains bounded
+per-source-trigger counts and first/last dispatch ticks, exposed as per-action
+observations. Repeated trigger IDs retain separate execution histories and shared
+enablement. Histories are reset on initialization, reconstructed by replay and
+excluded from gameplay hashes. Terminal enablement and false condition lines
+are snapshots, not historical explanations. A disabled local victory trigger
+now appears among unmet objectives even when its conditions are true.
+`playthrough.py` validates the histories, reconciles unsupported dispatch totals,
+and writes private findings for every unsupported/unobserved action. Headless
+object observations with `--order-observations` include order, pixel destination,
+target, tactic and scenario alongside fixed-point positions for investigating
+stalled-order IDs. Their header declares the added fields; these are engine
+identities, not reference mappings.
+
+`script_unit` has separate controls for BoatActivate, JohnkaEnable, JohnkaDisable,
+SubmarineGo, SideBuildCommand, SideMoveCommand and SideCameraDeactivate, covering
+unobserved sites, dispatch, self-disable and reset. Duplicate IDs and replay
+history are covered. `playthrough` checks source-site identity, malformed counts,
+private findings, disabled objectives, resumed history and observation neutrality.
+No unsupported branch became a successful no-op. Gameplay script/transport rules
+and existing timing conventions are unchanged.
+
+**Read-only private data evidence:** all 15 supplied scripts still parse, with
+19 required unsupported transport sites in missions 2/7/9/15 and the two existing
+mission-6 missing-trigger warnings. The [site disposition table](campaign_scripts.md#transport-follow-up-2026-11-04-needs-live-run)
+accounts for every unsupported campaign site. No site has evidence that the
+original never fires it. The other four unsupported grammar branches have no
+sites in this campaign; campaign absence is not original behavior evidence.
+
+**Dependencies / status:** V02 identity observers, V05 water movement and V10
+command/ownership contracts remain incomplete. No measured loading, boarding
+order, unload point, route choice, activation timing or objective completion
+rule was available to implement. Mission 11's town-derived protected tactic,
+gifts and immediate engine defeat remain unresolved. Live reference runs were
+explicitly denied and were not attempted. The [exact live run sheet](EXPERIMENTS.md#campaign-transport-and-objective-run-sheet-needs-live-run)
+prepares separate record/replay copies and normal campaign navigation for all
+15 missions, followed by transport/objective controls. V12 and V19 remain open;
+this task's status is **needs live run**.
+
+**Validation (2026-11-05):** Release build and the full 46-entry CTest suite
+passed with 40 passes and six skips (five private-data entries and restricted
+UDP processes). The default parity observation contract passes its existing
+scenario checks; order details require the explicit diagnostic option. The final
+playthrough regression rerun and all pre-commit hooks passed after correcting a
+codespell finding in test assertion names. `git diff --check` passed. Bash and
+Python snippets in the live run sheet passed syntax checks without executing
+reference commands. No campaign completion or reference parity was measured.

@@ -134,13 +134,15 @@ class ProjectileControls(unittest.TestCase):
         (maps / 'ztest_battle.scn').write_text('')
         orders = self.root / 'orders.txt'
         orders.write_text('1 attack-move 0 7 5 1\n')
-        def run(name, trace):
+        def run(name, trace, observe_orders=False):
             hashes = self.root / f'{name}.hashes'
             argv = [str(ENGINE), '--headless', '--game', str(game), '--rules-dir', str(ROOT / 'docs/data'),
                     '--no-auto-orders', '--orders', str(orders), '--max-ticks', '10',
                     '--tick-hashes', str(hashes)]
             if trace:
                 argv += ['--combat-trace', str(self.root / f'{name}.jsonl')]
+            if observe_orders:
+                argv += ['--observations', str(self.root / f'{name}.objects.jsonl'), '--order-observations']
             completed = subprocess.run([*argv, 'ztest_battle'], capture_output=True, text=True,
                                        env=dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy'), timeout=8)
             self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -151,11 +153,22 @@ class ProjectileControls(unittest.TestCase):
         result = measure.summarize(self.root / 'traced.jsonl')
         self.assertTrue(result['flights'])
         self.assertTrue(any(f['damage'] for f in result['flights'].values()))
+        self.assertEqual(run('traced', True), run('combined', True, observe_orders=True))
+        self.assertEqual((self.root / 'traced.jsonl').read_bytes(), (self.root / 'combined.jsonl').read_bytes())
+        rows = [json.loads(line) for line in (self.root / 'combined.objects.jsonl').read_text().splitlines()]
+        self.assertEqual(rows[0]['phase'], 'before_commands')
+        self.assertTrue({'order', 'dest_x', 'dest_y', 'target', 'tactic', 'scenario'} <= set(rows[0]['fields']))
+        self.assertEqual(len(rows), 11)
+        for row in rows[1:]:
+            self.assertTrue(row['objects'])
+            for obj in row['objects'].values():
+                self.assertEqual(set(obj), set(rows[0]['fields']))
 
     @unittest.skipUnless(ENGINE, 'engine binary not supplied')
     def test_headless_help_exposes_trace(self):
         result = subprocess.run([ENGINE, '--headless', '--help'], capture_output=True, text=True, check=True)
         self.assertTrue('--combat-trace FILE' in result.stdout)
+        self.assertTrue('--observations FILE [--order-observations]' in result.stdout)
 
 
 if __name__ == '__main__':

@@ -164,14 +164,27 @@ class SharedControls(unittest.TestCase):
             schedule, native = run / "schedule", run / "native.jsonl"
             l0.write_schedule(self.s, schedule)
             env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
-            trace_args = ["--combat-trace", str(run / "combat.jsonl")] if repetition == 2 else []
+            trace_args = ["--combat-trace", str(run / "combat.jsonl"),
+                          "--observations", str(run / "objects.jsonl"), "--order-observations"] if repetition == 2 else []
             result = subprocess.run([str(ENGINE), "--headless", "--game", str(game), "--rules-dir", str(ROOT / "docs/data"),
                                      "--no-auto-orders", "--max-ticks", "3", "--l0-schedule", str(schedule),
-                                     "--l0-output", str(native), "--l0-frames", str(run), *trace_args, "1"],
+                                     "--l0-output", str(native), "--l0-frames", str(run),
+                                     "--tick-hashes", str(run / "hashes.txt"), *trace_args, "1"],
                                     env=env, capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             outputs.append(l0.bundle(self.s, native, "clone", base / "clone.json"))
         self.assertEqual(outputs[0], outputs[1])
+        self.assertEqual((self.root / "1/clone/hashes.txt").read_bytes(),
+                         (self.root / "2/clone/hashes.txt").read_bytes())
+        observations = [json.loads(row) for row in (self.root / "2/clone/objects.jsonl").read_text().splitlines()]
+        self.assertEqual(observations[0]["phase"], "before_commands")
+        self.assertTrue({"order", "dest_x", "dest_y", "target", "tactic", "scenario"} <=
+                        set(observations[0]["fields"]))
+        self.assertEqual([row["tick"] for row in observations[1:]], [1, 2, 3])
+        for row in observations[1:]:
+            self.assertTrue(row["objects"])
+            for obj in row["objects"].values():
+                self.assertEqual(set(obj), set(observations[0]["fields"]))
         combat = [json.loads(row) for row in (self.root / "2/clone/combat.jsonl").read_text().splitlines()]
         self.assertEqual(combat[0]["contract"], "engine-combat-v1")
         self.assertEqual([row["tick"] for row in combat[1:] if row["event"] == "tick"], [1, 2, 3])

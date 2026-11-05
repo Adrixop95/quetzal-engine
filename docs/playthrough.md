@@ -372,3 +372,32 @@ provenance after a fresh-process resume. All fixtures use invented data.
 
 The isolated private campaign observations for this iteration and unresolved
 acceptance steps are recorded in [the engine inventory](engine_rules_status.md#campaign-input-and-outcome-iteration-2026-11-04-partial).
+
+## Action history and objective blockers (2026-11-04)
+
+Every engine report now includes `action_observations`, one row per source action,
+with `trigger_index`, `action_index`, trigger ID, source line, kind and support
+classification. `executions`, `first_tick` and `last_tick` count dispatches at
+one-based script ticks; an unobserved site has three zeros. Unsupported dispatch
+counts mean the branch was reached, not that the action succeeded. Indices are
+zero-based and distinguish repeated trigger IDs or actions on the same line.
+`enabled` and `false_condition_lines` describe termination only. Histories cover
+the whole run, including the replayed prefix after a save load.
+
+The runner requires these additive schema-1 fields from its engine snapshot and
+checks histories against `unsupported_executions`. It writes `actions.md` beside
+`matrix.md`, retaining every unsupported site and every unobserved supported
+site for both repetitions and the resumed run. Missing reports remain unavailable
+evidence. An unobserved action is never evidence that the original never fires it.
+A disabled local-victory trigger now appears in `unmet_objectives` even when all
+its conditions are true; its current condition snapshot alone could previously
+leave the unmet list empty.
+
+For stalled-order investigations use `--observations FILE --order-observations`
+with the headless engine. The default five-field parity stream stays unchanged.
+Object rows include order, pixel destination, target ID, tactic and
+scenario identity alongside fixed-point positions. They are sampled before
+commands, so tick N+1 shows the effects of tick N. No original identity mapping,
+transport route solver or general objective reachability analysis is implied.
+The [site disposition table](campaign_scripts.md#transport-follow-up-2026-11-04-needs-live-run)
+keeps all 19 required transport sites open pending measurements.
