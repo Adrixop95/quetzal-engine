@@ -515,10 +515,13 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         scene.set_light(daylight.sample(world.mission.tileset, t));
       }
       minimap.set_tint(scene.light_tint());
+      bool placement_overlay_drawn = false;
       scene.draw(cam, alpha, [&] {
         if (world.outcome == kRunning && !pause.open && !submodal && !on_mm && !on_panel &&
-            !drag_minimap && !pan && in.mouse_inside)
+            !drag_minimap && !pan && in.mouse_inside) {
+          placement_overlay_drawn = cmdui.placing() >= 0;
           cmdui.draw_ghost(win.renderer(), world, cam, in.mx, in.my);
+        }
       });
       if (!show_panel) minimap.draw(win.renderer(), cam, alpha, &scene.fog());
       hud.mouse_x = in.mx; hud.mouse_y = in.my; hud.alpha = alpha;
@@ -600,7 +603,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       if (ui_trace.is_open()) {
         trace_ui(ui_trace, frame, world, cam, alpha, in, cmdui, game, ui_command_start,
                  panel.rect(), pscale, show_panel, pause.open, ck, cursor_drawn, cursor_ms,
-                 rendered_tooltip, periodic_shot.empty() ? pending_shot : periodic_shot);
+                 rendered_tooltip, periodic_shot.empty() ? pending_shot : periodic_shot, placement_overlay_drawn);
         ui_trace.flush();
         if (!ui_trace) { std::fprintf(stderr, "UI trace write failed\n"); rc = 1; break; }
       }
