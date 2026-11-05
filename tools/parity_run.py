@@ -15,6 +15,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("parity_report", ROOT / "tools/parity_report.py")
 report = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(report)
+L0_SPEC = importlib.util.spec_from_file_location("parity_l0", ROOT / "tools/parity_l0.py")
+l0 = importlib.util.module_from_spec(L0_SPEC)
+L0_SPEC.loader.exec_module(l0)
 FIELDS = ["hp", "side", "type", "x", "y"]
 
 
@@ -39,6 +42,9 @@ def harness_scenario(path):
 def load_scenario(path):
     """Version 1 is deliberately narrow; reject unsupported semantics explicitly."""
     s = report.json_object(path.read_text())
+    if type(s.get("schema")) is int and s["schema"] == 2:
+        require(isinstance(s.get("id"), str) and re.fullmatch(r"[a-z0-9][a-z0-9_-]*", s["id"]), "invalid scenario ID")
+        return l0.validate_scenario(s)
     require(set(s) == {"schema", "id", "layer", "map", "setup", "input", "observe", "tolerance", "evidence"},
             "unexpected or missing scenario keys")
     require(type(s["schema"]) is int and s["schema"] == 1, "unsupported scenario schema")
@@ -106,7 +112,44 @@ def validate_observations(s, path):
     report.compare(path, path)
 
 
+def shared_runner(s, args, directory, name):
+    directory.mkdir()
+    report.private_game(args.game, directory / "game")
+    schedule = directory / "schedule.txt"
+    l0.write_schedule(s, schedule)
+    native = directory / "observations.jsonl"
+    ticks = s["observe"]["ticks"][-1]
+    if name == "reference":
+        require(not args.commands or not report.command_horizon(args.commands), "shared L0 does not translate command packets")
+        commands = directory / "commands.txt"
+        commands.write_text("")
+        mission = s["map"]["mission"]
+        navigation = (ROOT / "tests/scenarios/mission1_start.txt").read_text()
+        row = 257 + 20 * (mission - 1 if mission <= 9 else mission - 10)
+        navigation = navigation.replace("click 150 257", ("click 645 421\nwait 1200\n" if mission > 9 else "") + f"click 150 {row}")
+        if args.script:
+            navigation = args.script.read_text()
+        script = directory / "start.txt"
+        script.write_text(navigation + f"\nwait {args.timeout * 1000}\nquit\n")
+        report.execute([args.runtime, directory / "game/Aztec.exe"], directory, args.timeout, dict(
+            RT_SCRIPT=str(script), RT_CMD_REPLAY=str(commands), RT_NO_GRAB="1", RT_NO_VIDEO="1",
+            RT_RESOLUTION="800x600", RT_DUMP_DIR=str(directory), RT_L0_SCHEDULE=str(schedule), RT_L0_OUTPUT=str(native)))
+    else:
+        report.execute([args.engine, "--headless", "--game", directory / "game", "--rules-dir", ROOT / "docs/data",
+                        "--no-auto-orders", "--max-ticks", ticks, "--l0-schedule", schedule,
+                        "--l0-output", native, "--l0-frames", directory, "--report", directory / "report.json",
+                        s["map"]["mission"]], directory, args.timeout,
+                       {"AZTEC_USER_DIR": str(directory / "profile")}, setup_network=False)
+        engine = json.loads((directory / "report.json").read_text())
+        require(engine["ticks"] == ticks and engine["status"] != "error" and not engine["script_errors"]
+                and not engine["unsupported_executions"], "clone did not complete supported shared L0 horizon")
+    l0.bundle(s, native, name, directory.parent / f"{name}.json")
+    return None
+
+
 def reference_runner(s, args, directory):
+    if s["schema"] == 2:
+        return shared_runner(s, args, directory, "reference")
     directory.mkdir()
     report.private_game(args.game, directory / "game")
     commands = directory / "commands.txt"
@@ -142,6 +185,8 @@ def reference_runner(s, args, directory):
 
 
 def clone_runner(s, args, directory):
+    if s["schema"] == 2:
+        return shared_runner(s, args, directory, "clone")
     directory.mkdir()
     report.private_game(args.game, directory / "game")
     output = directory.parent / "clone.jsonl"
@@ -166,7 +211,7 @@ def run_scenario(s, args, directory):
     missing = [str(p) for p in (args.game / "Aztec.exe", args.game / "Res", args.game / "Maps", args.runtime, args.engine) if not p.exists()]
     if missing:
         return report.result("skipped_missing_private_inputs", detail=", ".join(missing))
-    if (s["layer"] != "L0" or s["setup"] or s["input"] or args.commands and report.command_horizon(args.commands)
+    if s["schema"] == 1 and (s["layer"] != "L0" or s["setup"] or s["input"] or args.commands and report.command_horizon(args.commands)
             or s["observe"]["contract"] != "engine-index-v1" or s["observe"]["fields"] != FIELDS):
         return report.result("blocked_observation_contract", detail="setup/input translator or requested layer/normalization is not implemented")
     outcomes = []
@@ -180,6 +225,8 @@ def run_scenario(s, args, directory):
         for outcome in outcomes:
             if outcome and outcome["category"] == category:
                 return outcome
+    if s["schema"] == 2:
+        return l0.compare(directory / "reference.json", directory / "clone.json")
     return report.compare(directory / "reference.jsonl", directory / "clone.jsonl")
 
 
@@ -191,6 +238,7 @@ def main(argv=None):
     parser.add_argument("--layer", choices=[f"L{i}" for i in range(9)])
     parser.add_argument("--scenarios-dir", type=Path, default=ROOT / "tests/parity")
     parser.add_argument("--output", type=Path, default=ROOT / "work/parity" / datetime.now(timezone.utc).strftime("l0-%Y%m%dT%H%M%S%f"))
+    parser.add_argument("--flat-output", action="store_true", help="write one scenario directly into --output")
     parser.add_argument("--game", type=Path, default=ROOT / "game")
     parser.add_argument("--runtime", type=Path, default=ROOT / "build/aztec_recomp")
     parser.add_argument("--engine", type=Path, default=ROOT / "build/aztec_engine")
@@ -221,14 +269,20 @@ def main(argv=None):
         for p in (args.game, args.runtime, args.engine, args.reference_adapter, args.script, args.commands, args.scenarios_dir.resolve()):
             if p is not None:
                 require(not output.is_relative_to(p) and not p.is_relative_to(output), "output overlaps an input path")
-        output.mkdir(parents=True, exist_ok=False)
+        require(not args.flat_output or len(selected) == 1, "--flat-output requires exactly one scenario")
+        if args.flat_output:
+            require(not output.exists(), "output already exists")
+            output.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            output.mkdir(parents=True, exist_ok=False)
         rows = []
         for s in selected:
+            directory = output if args.flat_output else output / s["id"]
             try:
-                verdict = run_scenario(s, args, output / s["id"])
+                verdict = run_scenario(s, args, directory)
             except (OSError, ValueError, RuntimeError, StopIteration) as exc:
                 verdict = report.result("experiment_failed", detail=str(exc))
-            report.write_json(output / s["id"] / "diff.json", verdict)
+            report.write_json(directory / "diff.json", verdict)
             rows.append(dict(id=s["id"], layer=s["layer"], **verdict))
             print(f"{s['id']}: {verdict['category']}")
         report.write_json(output / "report.json", rows)

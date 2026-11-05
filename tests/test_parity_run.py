@@ -148,7 +148,7 @@ class ParityTests(unittest.TestCase):
         (game / "profile.plr").write_text("invented profile")
         run = self.directory / "reference"
         run.mkdir()
-        s = harness.load_scenario(ROOT / "tests/parity/private_l0.json")
+        s = legacy_scenario()
         args = argparse_args(game=game, runtime=Path("/missing/runtime"), commands=None, script=None,
                              timeout=3, reference_adapter=None)
 
@@ -181,7 +181,7 @@ class ParityTests(unittest.TestCase):
     @unittest.skipUnless(sys.platform.startswith("linux"), "private runners require Linux namespaces")
     def test_clone_runner_preserves_namespace_and_checks_requested_contract(self):
         game = self.synthetic_game()
-        scenario = harness.load_scenario(ROOT / "tests/parity/private_l0.json")
+        scenario = legacy_scenario()
         scenario["observe"]["last_tick"] = 5
         args = argparse_args(game=game, engine=ENGINE, timeout=5)
         original_run = subprocess.run
@@ -203,7 +203,7 @@ class ParityTests(unittest.TestCase):
     def test_failed_reference_does_not_prevent_clone_and_is_never_a_pass(self):
         game = self.synthetic_game()
         (game / "Aztec.exe").write_bytes(b"invented placeholder, never executed")
-        scenario = harness.load_scenario(ROOT / "tests/parity/private_l0.json")
+        scenario = legacy_scenario()
         args = argparse_args(game=game, engine=ENGINE, runtime=ENGINE, commands=None)
         failure = harness.report.result("experiment_failed", runner="reference")
         with patch.object(harness, "reference_runner", return_value=failure), \
@@ -216,6 +216,12 @@ class ParityTests(unittest.TestCase):
             verdict = harness.run_scenario(scenario, args, self.directory / "blocked")
         self.assertEqual(verdict["category"], "blocked_observation_contract")
         reference.assert_not_called()
+
+
+def legacy_scenario():
+    return dict(schema=1, id="legacy", layer="L0", map=dict(kind="campaign", mission=1), setup={}, input=[],
+                observe=dict(first_tick=1, last_tick=12, fields=harness.FIELDS, contract="engine-index-v1"),
+                tolerance=dict(exact=True), evidence="P")
 
 
 def argparse_args(**kwargs):

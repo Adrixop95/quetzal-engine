@@ -1,11 +1,41 @@
 {
-  "schema": 1,
+  "schema": 2,
   "id": "private_l0",
   "layer": "L0",
-  "map": {"kind": "campaign", "mission": 1},
+  "map": {
+    "kind": "campaign",
+    "mission": 1
+  },
   "setup": {},
   "input": [],
-  "observe": {"first_tick": 1, "last_tick": 12, "fields": ["hp", "side", "type", "x", "y"], "contract": "engine-index-v1"},
-  "tolerance": {"exact": true},
-  "evidence": "P"
+  "observe": {
+    "ticks": [
+      1,
+      6,
+      12
+    ],
+    "contract": "shared-l0-v2"
+  },
+  "tolerance": {
+    "exact": true
+  },
+  "evidence": "P",
+  "view": {
+    "camera": [
+      0,
+      0,
+      1
+    ],
+    "resolution": [
+      800,
+      600
+    ],
+    "side": 0,
+    "selection": [],
+    "panel": true,
+    "cursor": [
+      400,
+      300
+    ]
+  }
 }

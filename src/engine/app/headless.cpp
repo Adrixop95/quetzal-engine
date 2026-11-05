@@ -1,5 +1,6 @@
 #include "engine/app/headless.hpp"
 #include "engine/app/options.hpp"
+#include "engine/app/parity_observer.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -183,6 +184,7 @@ void audit(const Script& script, const World& w, Report& report) {
 int run_headless(int argc, char** argv) {
   Report report;
   std::string game = "game", rules_dir = default_rules_dir(), orders_path, output, observations_path, hashes_path, save_path, resume_path;
+  std::string l0_schedule, l0_output, l0_frames;
   int max_ticks = 43200, interval = 120, save_tick = 0;
   bool auto_orders = true;
   Modifications modifications;
@@ -205,13 +207,16 @@ int run_headless(int argc, char** argv) {
       else if (a == "--orders") orders_path = value();
       else if (a == "--report") output = value();
       else if (a == "--observations") observations_path = value();
+      else if (a == "--l0-schedule") l0_schedule = value();
+      else if (a == "--l0-output") l0_output = value();
+      else if (a == "--l0-frames") l0_frames = value();
       else if (a == "--tick-hashes") hashes_path = value();
       else if (a == "--save-at") save_tick = number(value(), 1);
       else if (a == "--save") save_path = value();
       else if (a == "--resume") resume_path = value();
       else if (a == "--no-auto-orders") auto_orders = false;
       else if (a == "--help") {
-        std::puts("usage: aztec_engine --headless [--settings FILE] --game DIR --rules-dir DIR [--mod parallel_construction=on|off] [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE] [--tick-hashes FILE] [--save-at N --save FILE] [--resume FILE] MISSION");
+        std::puts("usage: aztec_engine --headless [--settings FILE] --game DIR --rules-dir DIR [--mod parallel_construction=on|off] [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE] [--tick-hashes FILE] [--l0-schedule FILE --l0-output FILE --l0-frames DIR] [--save-at N --save FILE] [--resume FILE] MISSION");
         return 0;
       } else if (a.empty() || a[0] == '-' || mission_given) throw std::runtime_error("unexpected argument: " + a);
       else { report.mission = a; mission_given = true; }
@@ -293,11 +298,19 @@ int run_headless(int argc, char** argv) {
                       "\"contract\":\"engine-index-v1\",\"fields\":[\"hp\",\"side\",\"type\",\"x\",\"y\"],"
                       "\"first_tick\":1,\"last_tick\":" << max_ticks << "}\n";
     }
+    ParityObserver parity;
+    if (!l0_schedule.empty()) {
+      if (auto_orders || !orders_path.empty() || !resume_path.empty() || l0_output.empty() || l0_frames.empty())
+        throw std::runtime_error("L0 requires no auto orders, no orders/resume, and output/frame paths");
+      parity.open(l0_schedule, l0_output, l0_frames, data, world, sim, rules_dir);
+      if (parity.last_tick() != uint32_t(max_ticks)) throw std::runtime_error("L0 schedule horizon differs");
+    } else if (!l0_output.empty() || !l0_frames.empty()) throw std::runtime_error("L0 requires a schedule");
     size_t next = 0;
     while (next < orders.size() && uint64_t(orders[next].tick) <= sim.tick_count()) ++next;
     struct Position { Fixed x = 0, y = 0; uint64_t since = 0; };
     std::map<uint32_t, Position> positions;
     for (int64_t tick = int64_t(sim.tick_count()) + 1; tick <= max_ticks && world.outcome == kRunning; ++tick) {
+      if (!l0_schedule.empty()) parity.observe(uint32_t(tick), world);
       if (observations.is_open()) {
         observations << "{\"tick\":" << tick << ",\"objects\":{";
         bool first = true;
