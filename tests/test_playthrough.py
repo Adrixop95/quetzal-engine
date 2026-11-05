@@ -351,20 +351,119 @@ class PlaythroughTests(unittest.TestCase):
                 (self.maps / f'mission_{mission}.{ext}').write_bytes(source.read_bytes())
         for mission in range(1, 16):
             (self.maps / f'mission_{mission}.scn').write_text(
-                'trigger(0) conditions localTime == 15 actions side(local).victory end\n')
+                'trigger(0) conditions localTime == 3 actions trigger(0).disable end\n'
+                'trigger(1) conditions localTime == 15 actions side(local).victory end\n')
         temp = tempfile.TemporaryDirectory(dir=ROOT / 'work')
         self.addCleanup(temp.cleanup)
         output = Path(temp.name) / 'all'
+        plan = Path(temp.name) / 'routes.json'
+        routes = [dict(id=f'mission-{m}', mission=m, route='Move, regroup, then wait for invented objectives',
+                       expected_outcome='victory', save_tick=5,
+                       steps=[dict(tick=1, action='move', side=0, x=2, y=2, ids=[1]),
+                              dict(tick=7, action='attack-move', side=0, x=3, y=3, ids=[1])],
+                       checkpoints=[dict(id='started', trigger_index=0, action_index=0, kind='TriggerDisable'),
+                                    dict(id='won', trigger_index=1, action_index=0, kind='SideVictory')])
+                  for m in range(1, 16)]
+        plan.write_text(json.dumps(routes))
+        common = ['--game', str(self.game), '--engine', str(ENGINE), '--max-ticks', '20',
+                  '--routes', str(plan), '--no-auto-orders', '--require-reference']
         real_popen = subprocess.Popen
         with patch.object(harness.subprocess, 'Popen',
                           side_effect=lambda cmd, **kw: real_popen(cmd[2:], **kw)), contextlib.redirect_stdout(io.StringIO()):
-            code = harness.main(['--game', str(self.game), '--engine', str(ENGINE),
-                                 '--out', str(output), '--max-ticks', '20'])
-        self.assertEqual(code, 0)
+            code = harness.main([*common, '--out', str(output)])
+        self.assertEqual(code, 1)
         summary = json.loads((output / 'summary.json').read_text())
         self.assertEqual([m['mission'] for m in summary['matrix']], list(range(1, 16)))
-        self.assertTrue(all(r['passed'] for r in summary['missions']))
+        self.assertTrue(all(not r['verified'] and r['reference']['status'] == 'needs live run'
+                            for r in summary['missions']))
         self.assertTrue(all(m['progression'] == 'pending' for m in summary['matrix']))
+        self.assertFalse(list(output.rglob('diff.json')))
+        references = Path(temp.name) / 'reference'
+        references.mkdir()
+        for row in summary['missions']:
+            # Invented oracle fixture; never export this as real reference evidence.
+            timeline = dict(schema=1, contract='campaign-checkpoints-v1', mission=row['mission'],
+                            route_sha256=row['route_sha256'], status='victory', ticks=15,
+                            events=[dict(id='started', tick=3), dict(id='won', tick=15)])
+            for repetition in (1, 2):
+                (references / f"{row['id']}-{repetition}.json").write_text(json.dumps(timeline))
+        paired = Path(temp.name) / 'paired'
+        with patch.object(harness.subprocess, 'Popen',
+                          side_effect=lambda cmd, **kw: real_popen(cmd[2:], **kw)), contextlib.redirect_stdout(io.StringIO()):
+            code = harness.main([*common, '--out', str(paired), '--reference-dir', str(references)])
+        self.assertEqual(code, 0)
+        rows = json.loads((paired / 'summary.json').read_text())['missions']
+        self.assertTrue(all(r['verified'] and r['passed'] and r['save_continuation']['equal'] for r in rows))
+        self.assertTrue(all(r['resumed_run']['engine']['commands'] == 2 for r in rows))
+        self.assertEqual(len(list(paired.rglob('diff.json'))), 15)
+        self.assertTrue('first_divergence' in (paired / 'matrix.md').read_text())
+        for repetition in (1, 2):
+            path = references / f'mission-1-{repetition}.json'
+            timeline = json.loads(path.read_text())
+            timeline['events'][-1]['tick'] = 14
+            path.write_text(json.dumps(timeline))
+        different = Path(temp.name) / 'different'
+        with patch.object(harness.subprocess, 'Popen',
+                          side_effect=lambda cmd, **kw: real_popen(cmd[2:], **kw)), contextlib.redirect_stdout(io.StringIO()):
+            code = harness.main([*common, '--missions', '1', '--out', str(different),
+                                 '--reference-dir', str(references)])
+        self.assertEqual(code, 1)
+        diff = json.loads((different / 'mission-1-reference/diff.json').read_text())
+        self.assertEqual((diff['layer'], diff['category'], diff['first_divergence']['tick']), ('L7', 'timing', 14))
+
+    def test_route_validation_and_checkpoint_order(self):
+        valid = dict(steps=[dict(tick=1, action='move', side=0, x=2, y=2, ids=[])],
+                     checkpoints=[dict(id='start', trigger_index=0, action_index=0, kind='TriggerDisable'),
+                                  dict(id='finish', trigger_index=1, action_index=0, kind='SideVictory')])
+        harness.validate_route(valid, 20)
+        for change in (dict(orders='ambiguous'), dict(steps='bad'), dict(checkpoints=[{}]),
+                       dict(checkpoints=valid['checkpoints'] * 2)):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                harness.validate_route(dict(valid, **change), 20)
+        for change in (dict(tick=True), dict(tick=21), dict(action='board'), dict(ids=[1, 1]), dict(side=8)):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                harness.validate_route(dict(steps=[dict(valid['steps'][0], **change)]), 20)
+        self.script.write_text('trigger(0) conditions localTime == 3 actions trigger(0).disable end\n'
+                               'trigger(1) conditions localTime == 15 actions side(local).victory end\n')
+        run = dict(returncode=0, engine=self.run_engine('--no-auto-orders'))
+        self.assertTrue(harness.checkpoint_timeline(valid, run)['passed'])
+        self.assertFalse(harness.checkpoint_timeline(dict(checkpoints=valid['checkpoints'][::-1]), run)['passed'])
+        self.assertFalse(harness.checkpoint_timeline(dict(checkpoints=[dict(valid['checkpoints'][0], kind='Wrong')]), run)['passed'])
+        run['engine']['action_observations'][-1]['first_tick'] = 3
+        self.assertFalse(harness.checkpoint_timeline(valid, run)['passed'])
+
+    def test_reference_first_difference_and_invalid_evidence(self):
+        checkpoints = [dict(id='finish', trigger_index=0, action_index=0, kind='SideVictory')]
+        run = dict(returncode=0, engine=self.run_engine())
+        row = dict(id='route', mission=1, route_sha256='a' * 64, max_ticks=20, runs=[run, run],
+                   checkpoints=checkpoints, checkpoint_checks=[dict(passed=True, events=[dict(id='finish', tick=10)])] * 2)
+        directory = Path(self.temp.name)
+        value = dict(schema=1, contract='campaign-checkpoints-v1', mission=1, route_sha256='a' * 64,
+                     status='victory', ticks=10, events=[dict(id='finish', tick=10)])
+
+        def write_pair(first, second=None):
+            for i, data in enumerate((first, first if second is None else second), 1):
+                (directory / f'route-{i}.json').write_text(json.dumps(data))
+
+        self.assertIsNone(harness.reference_comparison(row, directory)['equal'])
+        write_pair(value)
+        self.assertTrue(harness.reference_comparison(row, directory)['equal'])
+        write_pair(dict(value, events=[dict(id='finish', tick=9)]))
+        difference = harness.reference_comparison(row, directory)['first_divergence']
+        self.assertEqual((difference['tick'], difference['field']), (9, 'checkpoint'))
+        write_pair(dict(value, status='defeat', ticks=8, events=[]))
+        self.assertEqual(harness.reference_comparison(row, directory)['first_divergence']['tick'], 8)
+        write_pair(value, dict(value, status='defeat'))
+        self.assertEqual(harness.reference_comparison(row, directory)['status'], 'needs live run')
+        for change in (dict(mission=2), dict(route_sha256='b' * 64), dict(ticks=True), dict(events='bad'),
+                       dict(events=[dict(id='finish', tick=11)]), dict(events=[dict(id='unknown', tick=3)])):
+            write_pair(dict(value, **change))
+            self.assertIsNone(harness.reference_comparison(row, directory)['equal'])
+        (directory / 'route-1.json').write_text('{')
+        self.assertIsNone(harness.reference_comparison(row, directory)['equal'])
+        args = type('Args', (), dict(max_ticks=20, no_auto_orders=True, order_interval=120))()
+        identity = harness.route_identity(dict(steps=[]), args)
+        self.assertNotEqual(identity, harness.route_identity(dict(steps=[], checkpoints=checkpoints), args))
 
     def test_expected_defeat_scenario_and_fresh_retry(self):
         temp = tempfile.TemporaryDirectory(dir=ROOT / 'work')
