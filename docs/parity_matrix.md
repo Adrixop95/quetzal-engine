@@ -384,6 +384,27 @@ records dependencies and validation limits. Town-scenario tactic/ownership,
 transport actions, winning routes and campaign/platform release evidence remain
 open. Private outputs are under ignored `work/parity/roadmap-*` directories.
 
+## L7 scripted campaign routes (2026-11-05): needs live run
+
+The L7 row remains **0 scenarios / 0 pass / 0 fail / 0 skip**. No paired live
+reference timelines were supplied or collected in this sandbox. The fifteen
+pending mission specifications are not fifteen skipped comparisons and do not
+change the total of 35 historical scenario results above.
+
+| Campaign route evidence | Count | Label |
+| --- | ---: | --- |
+| Missions requiring a winning route | 15 | P |
+| Verified original-mission routes | 0 | needs live run |
+| Measured first reference divergences | 0 | needs live run |
+| Live save-to-completion comparisons in this iteration | 0 | needs live run |
+| Invented missions exercising route steps, objective sequence, repeated-reference import and save continuation | 15 | S; outside live counts |
+
+The [route matrix and comparison contract](playthrough.md#scripted-route-contract-2026-11-05-needs-live-run)
+keep reached outcome, unsupported actions, reference divergence and mid-mission
+continuation explicit. Missing reference files have an unknown divergence, not
+an equal verdict. Task 71 remains incomplete; transport/objective fixes, actual
+player routes and an audited reference milestone observer are still required.
+See [the live run sheet](EXPERIMENTS.md#v19-scripted-route-run-sheet-needs-live-run).
 | Shared L0 control | Cases | Passed | Failed | Live game runs |
 | --- | ---: | ---: | ---: | ---: |
 | Synthetic schema, alignment, comparator and native runner regressions | 6 | 6 | 0 | 0 |

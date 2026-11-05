@@ -401,3 +401,135 @@ commands, so tick N+1 shows the effects of tick N. No original identity mapping,
 transport route solver or general objective reachability analysis is implied.
 The [site disposition table](campaign_scripts.md#transport-follow-up-2026-11-04-needs-live-run)
 keeps all 19 required transport sites open pending measurements.
+
+## Scripted route contract (2026-11-05): needs live run
+
+Task 80 adds tooling independently of the incomplete task 71. There are **0/15
+verified campaign routes**. In particular, transport in missions 2/7/9/15 and
+town-derived objective identity in mission 11 remain blockers. No live campaign
+or reference run was attempted in this sandbox. The earlier private sweeps above
+are historical observations, not results of this change.
+
+`--routes` aliases `--scenarios` and accepts the existing JSON list. A route may
+replace `orders` with `steps` and add `checkpoints`. For example, this specification
+uses invented coordinates and action sites; it is a synthetic example only:
+
+```json
+[
+  {
+    "id": "example-win",
+    "mission": 1,
+    "route": "Move, regroup after the save, then reach the two objective checkpoints",
+    "expected_outcome": "victory",
+    "save_tick": 5,
+    "steps": [
+      {"tick": 1, "action": "move", "side": 0, "x": 2, "y": 2, "ids": [1]},
+      {"tick": 7, "action": "attack-move", "side": 0, "x": 3, "y": 3, "ids": [1]}
+    ],
+    "checkpoints": [
+      {"id": "started", "trigger_index": 0, "action_index": 0, "kind": "TriggerDisable"},
+      {"id": "won", "trigger_index": 1, "action_index": 0, "kind": "SideVictory"}
+    ]
+  }
+]
+```
+
+Inline steps require `--no-auto-orders` and cannot be combined with `orders` or
+`--orders-dir`. Ticks must be positive, ordered and within `--max-ticks`; equal
+command ticks preserve list order. Coordinates are terrain tiles. IDs select
+ordinary engine objects; an empty list selects all eligible mobile units of the
+specified side. Only `move` and `attack-move` are supported. Boarding, unloading,
+building and other commands require future driver support; validation rejects
+them explicitly. No cheats or forced mission outcomes are introduced.
+
+Checkpoint IDs are stable English names for equivalent semantic milestones in
+both implementations. Source indices are zero-based engine action-observation
+indices, with the kind checked to detect stale mappings. They are authored
+specifications, not executable-derived code. Every checkpoint must execute a
+supported action, with first dispatches strictly increasing in the specified
+sequence. Multiple milestones in one tick are ambiguous with aggregated action
+histories and fail this contract. Repeated dispatches after the first are outside
+its scope. Resume checks reconstruct the full checkpoint history as well as
+comparing every continuation hash. Missing checkpoints, reversed sequences and
+unsupported sites cannot pass route acceptance.
+
+The private summary records `route_sha256`, reached outcomes, checkpoint checks,
+script diagnostics, paired ticks, save continuation and a separate `verified`
+flag. The fingerprint binds the specification, order text, automatic-policy
+settings and tick budget; it excludes absolute order-file paths. It identifies
+inputs, not proof that a reference input translator executed them correctly.
+
+`--reference-dir DIR` imports two **audited** private timelines per route,
+`ID-1.json` and `ID-2.json`. Both must agree completely. Their format is:
+
+```json
+{
+  "schema": 1,
+  "contract": "campaign-checkpoints-v1",
+  "mission": 1,
+  "route_sha256": "COPY_THE_FINGERPRINT_FROM_THE_PRIVATE_CLONE_SUMMARY",
+  "status": "victory",
+  "ticks": 15,
+  "events": [{"id": "started", "tick": 3}, {"id": "won", "tick": 15}]
+}
+```
+
+The example is not an observation. An audited reference observer must derive
+these events from actual runs, establish equivalent mission-start ticks, verify
+normal player inputs against the route, and observe the terminal outcome.
+Reference logs currently lack this general objective observer and a translator
+for arbitrary player routes. Do not generate reference timelines from clone
+reports, script expectations, raw hash equality or wall-clock sleeps. Record
+missing observed milestones by omitting their events; never fill expected ticks
+into measurements. Unsupported identity/timing mappings remain pending.
+
+The comparator validates both complete timelines, then reports the earliest
+checkpoint identity/tick or terminal outcome/tick difference against both clone
+runs. The result describes **checkpoints and outcome only**, not full state parity.
+Missing, malformed, mismatched-plan or inconsistent reference files retain
+`equal: null`, `first_divergence: null` and status `needs live run`, with a reason.
+Absence of a divergence measurement does not mean equality. Reference files are
+copied into private output before comparison. Supply `--require-reference` to
+fail when reference evidence is absent. Supplying `--reference-dir` also makes
+reference equality mandatory. Legacy engine-only runs retain their exit behavior,
+but `verified` is always false without reference evidence.
+
+Complete comparisons write private `ID-reference/diff.json` files labelled L7
+for the existing parity aggregation tools. Missing reference evidence emits no
+paired diff and adds no pass, fail or skip to the public paired-scenario totals.
+Even a measured equal outcome does not count as a verified route unless the
+expected outcome, objective sequence, diagnostics and save continuation also pass.
+Interactive retry, campaign progression and native platform acceptance remain
+separate requirements.
+
+The public route specification inventory below records required outcomes and
+unmeasured fields instead of inventing mission solutions. For every row,
+reached outcome, first reference divergence, current unsupported executions and
+save-to-completion are **needs live run**. No current runtime counts are inferred
+from the historical source-site inventory.
+
+| Mission | Required route outcome | Objective sequence specification | Verified routes | Blocking evidence |
+| --- | --- | --- | ---: | --- |
+| 1 | Victory | Needs measured player route and named milestones | 0 | Task 71 / live observer |
+| 2 | Victory | Needs transport and objective milestones | 0 | Task 71; 4 historical unsupported sites |
+| 3 | Victory | Needs measured player route and named milestones | 0 | Task 71 / live observer |
+| 4 | Victory | Needs measured player route and named milestones | 0 | Task 71 / live observer |
+| 5 | Victory | Needs measured player route and named milestones | 0 | Task 71 / live observer |
+| 6 | Victory | Needs measured player route and named milestones | 0 | Task 71; two historical missing-trigger warnings |
+| 7 | Victory | Needs transport and objective milestones | 0 | Task 71; 5 historical unsupported sites |
+| 8 | Victory | Needs measured player route and named milestones | 0 | Task 71 / live observer |
+| 9 | Victory | Needs transport and objective milestones | 0 | Task 71; 5 historical unsupported sites |
+| 10 | Victory | Needs measured player route and named milestones | 0 | Task 71 / live observer |
+| 11 | Victory | Needs protected-group ownership milestones | 0 | Task 71; town-derived objective identity |
+| 12 | Victory | Needs measured player route and named milestones | 0 | Task 71 / live observer |
+| 13 | Victory | Needs measured player route and named milestones | 0 | Task 71 / live observer |
+| 14 | Victory | Needs measured player route and named milestones | 0 | Task 71 / live observer |
+| 15 | Victory | Needs transport, objective and ending milestones | 0 | Task 71; 5 historical unsupported sites |
+
+Expected-defeat routes can use `expected_outcome: defeat`; they never substitute
+for winning routes. The expanded synthetic regression runs all 15 invented
+missions with steps before/after saving, two ordered objectives, missing-reference
+failure and two agreeing invented reference timelines. Additional controls cover
+first divergence, stale route identity, malformed/inconsistent timelines,
+unsupported commands and checkpoint order. This is S tooling evidence only.
+See the [live run sheet](EXPERIMENTS.md#v19-scripted-route-run-sheet-needs-live-run).

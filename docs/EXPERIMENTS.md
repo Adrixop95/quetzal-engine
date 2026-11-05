@@ -979,3 +979,161 @@ live value for either implementation. No before/after rule comparison is claimed
 | 26 | `l1_train_cannon` | spawn_delay | N/A | N/A | N/A | P |
 
 Status: **needs live run**.
+## V19 scripted route run sheet: needs live run
+
+Task 80 supplies route tooling and synthetic regressions while task 71 remains
+incomplete. This sandbox denies live reference runs; execute this sheet only on
+a host permitting network namespaces. Keep `unshare -rn` and dummy SDL enabled.
+The current result is **needs live run**, with 0/15 verified campaign routes.
+No live runs were attempted for this iteration.
+
+Run from the worktree root. Create a private route workspace and a baseline
+specification for every mission. These empty player-input plans are **pending
+specifications**, not solutions or verified routes:
+
+```sh
+mkdir -p work/campaign-routes
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+path = Path('work/campaign-routes/scenarios.json')
+if path.exists():
+    raise SystemExit('Refusing to overwrite existing player route specifications')
+rows = [dict(id=f'mission-{m}-win', mission=m,
+             route=f'Pending measured player completion route for mission {m}',
+             expected_outcome='victory', save_tick=600, steps=[], checkpoints=[])
+        for m in range(1, 16)]
+path.write_text(json.dumps(rows, indent=2) + '\n')
+PY
+```
+
+Author normal player steps and named objective checkpoints in that private file
+using [the route contract](playthrough.md#scripted-route-contract-2026-11-05-needs-live-run).
+Choose save ticks strictly before the measured outcome and after mission start.
+Inspect action source indices/kinds using the script audit and `actions.md`.
+Empty steps are useful passive controls; they must not be described as winning
+player routes without actual completion. Commands beyond move/attack-move need
+engine driver work first; transport semantics need task 71. Add separate defeat
+specifications where useful; they do not replace the fifteen winning routes.
+
+On the unrestricted host, run paired clone simulations and fresh-process saves:
+
+```sh
+campaign_route_stamp=$(date -u +%Y%m%dT%H%M%S)
+campaign_clone="$PWD/work/parity/campaign-routes-$campaign_route_stamp"
+python3 tools/playthrough.py --game /home/adrox/aztec-re/game \
+  --engine "$PWD/build/aztec_engine" --rules-dir "$PWD/docs/data" \
+  --routes "$PWD/work/campaign-routes/scenarios.json" --no-auto-orders \
+  --max-ticks 43200 --timeout 900 --require-reference --out "$campaign_clone"
+campaign_clone_status=$?
+printf '%s\n' "$campaign_clone_status" > "$campaign_clone/gate-exit-status.txt"
+```
+
+This first strict run intentionally fails without reference timelines, even if
+clone completion succeeds. Inspect `summary.json`, `matrix.md`, `actions.md`,
+per-run process logs, tick transcripts and the save-continuation result. Isolation
+failures are failures; do not rerun without namespaces. A real missing game file
+is not a synthetic-test result. The output includes the exact order files,
+route fingerprints, executable digest and copied rules for review.
+
+Use the complete reference preparation and record/replay shell commands in
+[the campaign transport run sheet](#campaign-transport-and-objective-run-sheet-needs-live-run),
+with one **audited normal-input** `work/campaign-routes/mission_N.rt` per mission
+matching the authored route. That sheet creates separate private installations
+for record and replay and invokes the supplied runtime with dummy SDL inside
+`timeout -s KILL 200 unshare -rn`, setting loopback only inside the namespace.
+Set its final `wait` and process timeout to cover the route's actual duration;
+its default one-minute probe cannot measure a long route. A concrete one-hour
+variant after that sheet has prepared `$campaign_reference` is below. It uses
+separate `route-record` and `route-replay` installations and preserves each exit
+status; it does not reuse the initial probe's writable state.
+
+```sh
+export campaign_reference
+python3 - <<'PY'
+import importlib.util
+import os
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location('playthrough', 'tools/playthrough.py')
+harness = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(harness)
+source = Path('/home/adrox/aztec-re/game')
+maps, _ = harness.discover(source)
+for mission in range(1, 16):
+    directory = Path(os.environ['campaign_reference']) / f'mission_{mission}'
+    route = Path('work/campaign-routes') / f'mission_{mission}.rt'
+    if not route.is_file():
+        raise SystemExit(f'Missing audited normal-input route: {route}')
+    for phase in ('route-record', 'route-replay'):
+        run = directory / phase
+        run.mkdir()
+        harness.private_game(source, maps, run / 'game')
+    # The earlier preparation has already appended the matching mission_N.rt.
+    navigation = (directory / 'input.rt').read_text()
+    if not navigation.endswith('wait 60000\nshot\nquit\n'):
+        raise SystemExit('Unexpected navigation suffix; review before launching')
+    navigation = navigation.removesuffix('wait 60000\nshot\nquit\n')
+    (directory / 'route-input.rt').write_text(navigation + 'wait 3600000\nshot\nquit\n')
+PY
+for mission in $(seq 1 15); do
+  mission_probe="$campaign_reference/mission_$mission"
+  for phase in route-record route-replay; do
+    run_probe="$mission_probe/$phase"
+    replay_env=()
+    if [ "$phase" = route-replay ]; then
+      test -s "$mission_probe/route-record/commands.txt" || break
+      replay_env=("RT_CMD_REPLAY=$mission_probe/route-record/commands.txt")
+    fi
+    (
+      cd "$run_probe/game" || exit 1
+      timeout -s KILL 3900 unshare -rn env -u RT_CMD_REPLAY \
+        SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+        RT_NO_GRAB=1 RT_NO_VIDEO=1 RT_RESOLUTION=800x600 \
+        RT_SCRIPT="$mission_probe/route-input.rt" RT_DUMP_DIR="$run_probe" \
+        RT_UNIT_LOG="$run_probe/units.log" RT_UNIT_EVERY=1 \
+        RT_STATE_LOG="$run_probe/state.txt" RT_CMD_LOG="$run_probe/commands.txt" \
+        "${replay_env[@]}" sh -ec '
+          ip link set lo up
+          ip addr add 192.168.1.125/24 dev lo
+          exec /home/adrox/aztec-re/build/aztec_recomp "$1/Aztec.exe"
+        ' sh "$run_probe/game"
+    ) > "$run_probe/stdout.log" 2> "$run_probe/stderr.log"
+    printf '%s\n' "$?" > "$run_probe/exit-status.txt"
+  done
+done
+```
+
+Review replay command readback and reference repeatability before deriving
+semantic observations. Screen-coordinate clicks and millisecond waits do not
+establish equivalent simulation ticks or object identity. The replay runtime
+suppresses live lockstep commands when replay is enabled; retain navigation and
+check that replay packets actually cover the route. A general objective/outcome
+observer and route translator remain unavailable. These commands collect private
+inputs for that audit; they cannot themselves generate certified timelines.
+
+Once an audited observer establishes route equivalence and tick alignment,
+write its two actual reference timelines per route to
+`work/campaign-routes/reference/ID-1.json` and `ID-2.json`, following the documented
+`campaign-checkpoints-v1` format. Use the `route_sha256` from the first clone
+summary. Preserve the underlying observer version, runtime digest, readback and
+raw records privately. Never populate reference events from clone output or
+expected mission script timings. Missing observations keep this step pending.
+Then compare in a fresh private output directory:
+
+```sh
+python3 tools/playthrough.py --game /home/adrox/aztec-re/game \
+  --engine "$PWD/build/aztec_engine" --rules-dir "$PWD/docs/data" \
+  --routes "$PWD/work/campaign-routes/scenarios.json" --no-auto-orders \
+  --max-ticks 43200 --timeout 900 --require-reference \
+  --reference-dir "$PWD/work/campaign-routes/reference" \
+  --out "$PWD/work/parity/campaign-paired-$(date -u +%Y%m%dT%H%M%S)"
+```
+
+A changed route, save tick, tick budget or policy changes the fingerprint; collect
+new reference timelines for that specification. Publish only factual aggregate
+counts and English route specifications. Keep saves, command logs, observations,
+assets, screenshots and other captured data under ignored `work/`. Update L7
+paired counts only after reviewing actual `ID-reference/diff.json` results;
+pending routes and synthetic oracle fixtures add no live parity results.
