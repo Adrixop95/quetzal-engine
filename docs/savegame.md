@@ -408,3 +408,79 @@ screenshots with markers and with original sprites, exiting successfully.
 All synthetic CTest checks and pre-commit gates passed; the optional private-save
 check also passed when supplied that installation. This did not compare resumed
 simulation against a reference-runtime replay, and makes no parity claim.
+
+## Resume follow-up: evidence and policy
+
+Status (2026-11-05): **partial; needs live run**. This checkout does not contain
+verified translations from original command tags, BuildTree/per-type entries,
+diplomacy members or timer units into the engine's state. The V02 reference
+identity/load-boundary observer is also incomplete. The follow-up implements
+independent validation and observation tooling; it does **not** complete
+original-save simulation resume. Do not infer engine orders from unrelated
+animation fields, research from disabled-type bytes, or timer values from the
+saved simulation tick.
+
+| Domain | Synthetic evidence in this follow-up | Remaining semantic dependency |
+|---|---|---|
+| Orders and queues | Sparse forward order links; tag-zero unit references; scalar tags kept intact; 256-entry capacity and dangling/duplicate IDs rejected | Command tags, active/pending order translation, production time/payment/placement state |
+| Research and upgrades | Nonzero Side per-type and Town BuildTree bytes retained through import and simulation initialization; blocks now have stable names | Per-entry meanings, current research, completed upgrades and effects on engine rules |
+| Scripts and timers | Trigger condition/action buffers, enabled-state wire bytes, both timer forms and path points retained; scenario/state fields named | Packet translation, enable semantics, timer units/sample cursor and ScriptRunner restoration |
+| Diplomacy | Typed side links checked; unresolved Side state retained | Member-to-relation mapping; mission defaults are still used by simulation |
+| Fog | Per-side saved tile samples restored and observed after initialization; border adaptation retains the full original grid | Original interpolation and subsequent fog-update parity |
+| Town identity | Saved hall links restore `Object::town_hall` before initialization | Ambiguous hall levels/build-tree completion still need evidence |
+
+`validate_savegame_references` is a separate graph check: the structural parser
+still accepts unresolved IDs for inspection. Import requires every nonnull typed
+reference to resolve in the correct pool, including orders, script harvest
+links, route members and effects. It builds all pools before checking forward
+links, rejects duplicate/null identities, and reports the offending byte. It
+does not interpret untyped words inside raw packets. Import failure leaves the
+active world unchanged. This strict policy can reject a save whose stale links
+the original loader might clear; no silent repair is attempted.
+
+Interoperability is import only. The original snapshot is immutable provenance,
+not a second simulation: it does not change when the engine advances. Export to
+original `.sav`, conversion to AZS3 command replay and resumed multiplayer are
+out of scope. Unknown state remains available to private investigation without
+pretending that retention restores engine execution. Synthetic fixture output
+is a test generator, not an original-save writer for gameplay.
+
+`aztec_save_probe --game DIR --save FILE --rules DIR --output FILE` loads a save
+through the real importer and initializes GameSim, then emits JSON before any
+continued tick. Its numeric `state` contains original-ID-keyed units (type,
+zero-based side, original tagged town ID or zero, current/secondary HP and
+positions in pixel*256), side-indexed money, tile-sampled fog and daylight clock.
+It reports the saved absolute tick separately from elapsed tick zero. Raw
+packets, padding, paths, descriptions and resource contents are excluded.
+Unsupported orders, queues, research, upgrades, scripts, timers and diplomacy
+are listed explicitly. Those fields are never replaced with mission defaults
+in the comparison stream. The observer refuses an already advanced world.
+
+`tools/savegame/compare_resume.py` adds the input SHA-256, validates both complete
+JSON documents, checks phase/ticks/save identity and compares common supported
+domains exactly. Missing domains produce `incomplete`, never a match; malformed
+observations fail and namespace/observer failures produce `needs live run`.
+Schema 1 defines layouts only for units, money, fog and clock, and rejects claims
+of extended coverage using arbitrary numeric placeholders. It therefore cannot
+produce a complete tick-zero match or exit zero. Extending the schema requires
+audited layouts/mappings for the remaining domains; a future fully covered
+tick-zero match would still not prove continued simulation parity.
+Reference adapters must observe the loaded runtime, not
+reparse the input save as a substitute for reference state. See the run sheet
+for the adapter boundary and missing prerequisite.
+
+`save_resume_controls` generates invented `.sav` bytes via
+`test_save_import --generate SAVE SNAPSHOT`, loads them through the standalone
+probe with invented mission/archive files, and tests schema, identity,
+phase, mismatch, missing coverage, private copies, input mutation and namespace
+failure controls. `save_import` also checks retained nondefault continuation
+fields and atomic graph-validation failures. No real saves or resources are
+fixtures. These checks provide synthetic structural evidence only; no new live
+reference result was obtained for this follow-up.
+
+Local verification on 2026-11-05: the independent Release build succeeded; all
+41 runnable checks out of 47 CTest entries passed, with six skips for private
+inputs/restricted networking. The final save-focused regressions and pre-commit
+gates passed, including explicit checks of the new untracked source files.
+No live reference process was launched. Status remains **needs live run**;
+the semantic mappings and audited reference observer remain open.
