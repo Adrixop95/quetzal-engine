@@ -66,7 +66,10 @@ bool ScriptRunner::load(const std::string& path) {
   return true;
 }
 
-void ScriptRunner::set(Script s) { script_ = std::move(s); }
+void ScriptRunner::set(Script s) {
+  script_ = std::move(s);
+  trigger_traces_.assign(script_.triggers.size(), {});
+}
 
 void ScriptRunner::init(const World&) {
   enabled_.clear();
@@ -76,11 +79,31 @@ void ScriptRunner::init(const World&) {
   local_time_ = 0;
   unsupported_ = 0;
   outcome_origin_.reset();
+  trigger_traces_.assign(script_.triggers.size(), {});
   // Triggers that another trigger enables start disabled (initial state is not documented; see header).
   for (const Trigger& t : script_.triggers) enabled_[t.id] = true;
   for (const Trigger& t : script_.triggers)
     for (const Action& a : t.actions)
       if (a.kind == ActKind::TriggerEnable && a.id != t.id) enabled_[a.id] = false;
+}
+
+bool ScriptRunner::trigger_enabled(int id) const {
+  const auto it = enabled_.find(id);
+  return it != enabled_.end() && it->second;
+}
+
+std::vector<ScriptActionObservation> ScriptRunner::action_observations(const World& w) const {
+  std::vector<ScriptActionObservation> result;
+  for (size_t i = 0; i < script_.triggers.size(); ++i) {
+    const auto& t = script_.triggers[i];
+    std::vector<int> false_lines;
+    for (const auto& c : t.conditions) if (!eval(w, c)) false_lines.push_back(c.line);
+    for (size_t j = 0; j < t.actions.size(); ++j) {
+      const auto& a = t.actions[j];
+      result.push_back({i, j, t.id, a.line, a.kind, trigger_enabled(t.id), trigger_traces_[i], false_lines});
+    }
+  }
+  return result;
 }
 
 int ScriptRunner::count_units(const World& w, int side) const {
@@ -349,12 +372,17 @@ void ScriptRunner::tick(GameSim& sim, World& w) {
   local_time_++;
   for (auto& kv : timers_)
     if (kv.second.exists && kv.second.running) kv.second.value++;
-  for (const Trigger& t : script_.triggers) {
+  for (size_t i = 0; i < script_.triggers.size(); ++i) {
+    const Trigger& t = script_.triggers[i];
     auto it = enabled_.find(t.id);
     if (it != enabled_.end() && !it->second) continue;
     bool ok = true;
     for (const Condition& c : t.conditions) if (!eval(w, c)) { ok = false; break; }
     if (!ok) continue;
+    auto& trace = trigger_traces_[i];
+    if (!trace.executions) trace.first_tick = local_time_;
+    ++trace.executions;
+    trace.last_tick = local_time_;
     for (const Action& a : t.actions) {
       const auto before = w.outcome;
       run(sim, w, a);
