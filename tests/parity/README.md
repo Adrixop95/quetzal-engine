@@ -179,3 +179,13 @@ state recipes and explicit missing input/observer adapters. It is not accepted b
 the strict L0 harness or executed by `parity_rules.py`. Generate maps with
 `tools/make_testmaps.py`; see EXPERIMENTS.md for isolated direct launch probes.
 No successful clone probe or structural test establishes original-game loading.
+
+## V07 projectile candidates
+
+`projectiles.json` is a separate P protocol catalogue for seven candidate families
+and 18 controls each. It is consumed by `tools/projectile_measure.py`, not the
+L1 runner. Private ztest_battle placement preparation and engine-local JSONL
+trajectory/impact/per-victim sampling are implemented; single-shot reference
+setup, exact pixel offsets, terrain-height fixtures and an audited reference
+projectile/burn observer are pending. See the [run sheet](../../docs/EXPERIMENTS.md#v07-projectile-run-sheet-needs-live-run).
+Status: **needs live run**. Synthetic capture equality does not promote P to M.

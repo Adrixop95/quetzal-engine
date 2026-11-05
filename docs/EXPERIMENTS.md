@@ -360,3 +360,140 @@ launched. Original loading, vessel entry routes, original computer control and
 cross-program UI state reachability remain unverified. Full pre-commit could not
 initialize its remote hook environment because github.com DNS resolution failed;
 local asset/English hooks, JSON parsing and whitespace checks passed separately.
+
+## V07 projectile run sheet (needs live run)
+
+The task-74 tooling adds **P** placement specifications and **S** synthetic
+observer checks, not **M** reference measurements. Use
+`python3 -I tools/projectile_measure.py list` to enumerate 126 cases: arrow
+(type 27), bolt (30), catapult (83), cannon (4), fire (35), magic (28) and air
+(34), each with 18 controls. Family names are candidate selections; air type 34
+and standalone flame behavior are unresolved in the engine. The JSON protocol
+is [projectiles.json](../tests/parity/projectiles.json). It includes three
+separations, moving target, source death, terrain/structure/unit interception,
+five victim categories, allied/neutral bystanders and three burn controls.
+Every case creates a separate `ztest_battle` placement candidate on mission 14
+terrain; it does not alter the existing full battle-map generator.
+
+Prepare one case from the read-only installation, on a machine that can run the
+required namespaces. Run from this worktree root; use new output directories
+for every attempt:
+
+```sh
+python3 -I tools/projectile_measure.py prepare --id arrow_clear_middle \
+  --game /home/adrox/aztec-re/game \
+  --output work/parity/projectiles/arrow-clear-middle
+build/aztec_map_viewer \
+  --maps work/parity/projectiles/arrow-clear-middle/game/Maps --dump ztest_battle \
+  > work/parity/projectiles/arrow-clear-middle/map-dump.txt
+```
+
+Only immutable resources/executable are symlinked. Maps/Saves and copied settings
+are private. `scenario.json`, `pending.json` and the map's `.layout.json` preserve
+requested and actual placements. The generator relocates occupied/impassable
+slots. It does **not** silently apply the tick-12 attack, tick-13 move/source
+kill, suppress reloads, construct a terrain-height obstacle, set pixel splash
+offsets or control original AI/visibility/regeneration. Resolve `pending.json`
+with an audited setup/command adapter before treating this as a measurement.
+Friendly/neutral variants retain an enemy direct target and add a bystander;
+no-hit friendly acquisition would not measure friendly splash.
+
+The independent engine can already capture its implemented combat behavior:
+
+```sh
+case_dir="$PWD/work/parity/projectiles/arrow-clear-middle"
+timeout -s KILL 100 unshare -rn env \
+  SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+  AZTEC_USER_DIR="$case_dir/engine-profile" \
+  "$PWD/build/aztec_engine" --headless --game "$case_dir/game" \
+  --rules-dir "$PWD/docs/data" --no-auto-orders --max-ticks 720 \
+  --combat-trace "$case_dir/engine-combat.jsonl" \
+  --observations "$case_dir/engine-units.jsonl" \
+  --tick-hashes "$case_dir/engine-hashes.txt" \
+  --report "$case_dir/engine-report.json" ztest_battle
+python3 -I tools/projectile_measure.py summarize \
+  --trace "$case_dir/engine-combat.jsonl" \
+  --output "$case_dir/engine-samples"
+```
+
+This remains an engine candidate with native acquisition, not the isolated
+single-shot experiment. Engine-local traces cannot be relabeled as reference
+captures. Resume traces are rejected: the diagnostic flight IDs would otherwise
+lack their launch records. An early mission outcome or missing tick/position
+makes the summarizer fail without exporting samples. An in-flight projectile at
+the complete horizon has `impact_tick: null`; extend the horizon before claiming
+its travel time. An empty complete trace is zero engine launches, never a verified
+reference immunity or unsupported-weapon implementation.
+
+Reference launch, record and two replay controls (exact commands; **not run in
+Codex**, where namespace networking is denied):
+
+```sh
+case_dir="$PWD/work/parity/projectiles/arrow-clear-middle"
+export ZSTAT_GAME_DIR="$case_dir/game"
+export ZSTAT_RUNTIME=/home/adrox/aztec-re/build/aztec_recomp
+export RT_UNIT_EVERY=1 TMO=120
+mkdir "$case_dir/record"
+RT_CMD_LOG="$case_dir/record/commands.txt" \
+RT_STATE_LOG="$case_dir/record/state.txt" \
+  sh tools/zstat_run.sh ztest_battle "$case_dir/record" 65000
+for repetition in 1 2; do
+  replay_dir="$case_dir/replay-$repetition"
+  mkdir "$replay_dir"
+  RT_CMD_REPLAY="$case_dir/record/commands.txt" \
+  RT_CMD_LOG="$replay_dir/commands.txt" RT_STATE_LOG="$replay_dir/state.txt" \
+    sh tools/zstat_run.sh ztest_battle "$replay_dir" 65000
+done
+```
+
+`zstat_run.sh` makes another pristine private game copy for each launch, sets
+both dummy SDL drivers, wraps the process in `timeout -s KILL`, and runs
+`unshare -rn sh -ec` with loopback/address setup. Any namespace failure is an
+experiment failure; never retry without isolation. Its UI waits are milliseconds,
+not simulation tick guarantees: verify the actual tick horizon in the logs.
+Keep captures, command/unit logs and generated maps in ignored `work/`.
+
+The supplied runtime's unit log has no audited projectile identity, ground
+coordinates/altitude, impact, victim-distance or burn lifecycle observer. There
+is currently **no reference projectile-log environment switch** supplied by this
+task. The commands above exercise launch/record/replay prerequisites only; they
+cannot fill that gap. V02/L1 setup/command and reference semantic observer work
+remains a dependency. Verify packet readback and normalized reference repeats as
+specified in [parity.md](parity.md) before interpreting combat differences.
+Do not substitute raw state-hash equality or unit HP differences for trajectory
+or burn observations. Repeat the prepare/run sequence with another listed ID
+and fresh directories for every family/control after the adapter is available.
+
+The `engine-combat-v1` JSONL contract has an engine-origin header, 1-based first
+and requested last tick, position scale 256 and height scale 1. Events are in
+simulation execution order inside each tick:
+
+- `launch`, `position`, `impact`: stable diagnostic flight ID, source/target IDs,
+  side, effect kind, ground x/y (pixels times 256), integer render height and raw
+  ball altitude (pixels times 256). Direct weapons emit launch/impact in one tick;
+  their effect kind is Decoration, not a fabricated projectile class.
+- `damage` and `miss`: victim identity/type/side, diplomacy (0 enemy, 1 friend,
+  2 neutral), victim ground position **at evaluation**, and HP before/after.
+  Misses describe living victims evaluated without damage, including immunity,
+  range or diplomacy filtering; they do not identify which condition rejected
+  the victim. Negative HP is retained before death handling.
+- `tick`: end-of-tick object rows `[id,type,side,x,y,hp,alive]`, including dead
+  objects. `end` confirms the last completed tick. Existing `--observations`
+  remains a separate before-command unit stream.
+
+The summarizer validates full coverage and projectile lifetimes, then exports
+per-flight trajectories, launch/impact ticks and per-victim damage/miss samples
+with squared fixed-point distance and diplomacy. Splash radius/falloff rules,
+burn duration and friendly-fire rules remain null. These samples can expose
+engine behavior for later comparison; they cannot establish a rule from one
+victim/shot. Splash measurement needs matched actual distances, category flags,
+zero-damage controls and refined inner/outer boundaries. Burn measurement needs
+explicit start/removal status and damage events through a damage-free tail,
+with movement/source death and regeneration accounted for. Damage-fire decoration
+lifetimes are not a burn-damage clock. No burn mechanic or terrain interception
+was enabled by this tooling.
+
+Synthetic verification: `ctest --test-dir build -R 'engine_unit|projectile_measure' --output-on-failure`. Checks cover paired
+launch identity, trace/hash independence, pause, unresolved weapons, deterministic
+repeated captures, actual hit coordinates, per-victim samples, private placement
+copies and rejection of incomplete/invalid captures. Status: **needs live run**.

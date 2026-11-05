@@ -80,6 +80,7 @@ void GameSim::init(World& w) {
   w.tick = tick_;
   pending_.clear();
   log_.clear();
+  next_trace_id_ = 0;
   if (!w.original_save) w.day_clock = (w.mission.start_time % kDayTicks + kDayTicks) % kDayTicks;
   w.ai_towns.assign(w.mission.towns.size(), {});
   w.town_speed.assign(w.mission.towns.size(), 1);
@@ -1110,11 +1111,19 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
     decoration(w, data::kBeamImpactAnim, 0, target.cur_x, target.cur_y, 0, source.side);
   }
   if (weapon.anim == 0) {
+    Effect hit;
+    hit.trace_id = ++next_trace_id_; hit.source = source.id; hit.target = target.id; hit.side = source.side;
+    hit.x = source.cur_x; hit.y = source.cur_y;
+    trace_combat("launch", hit);
+    hit.x = target.cur_x; hit.y = target.cur_y;
+    trace_combat("impact", hit);
+    trace_combat("damage", hit, target.id, target.hp, target.hp - damage);
     target.hp -= damage; target.last_hit_by = source.id;
     if (target.hp <= 0) kill(w, target);
     return;
   }
   Effect e;
+  e.trace_id = ++next_trace_id_;
   e.kind = weapon.klass == 0 ? data::EffectClass::BallExpl : weapon.klass == 3 ? data::EffectClass::Axe :
            weapon.klass == 7 ? data::EffectClass::FireThrow : data::EffectClass::Arrow;
   e.source = source.id; e.target = target.id; e.side = source.side;
@@ -1137,6 +1146,7 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
     e.gravity = duration > 0 ? int(int64_t(e.altitude) * 2 / (int64_t(duration) * duration)) : 2 * 256;
   }
   e.impact_anim = weapon.impact_anim; e.splash_px = weapon.splash_px; e.shockwave = weapon.shockwave;
+  trace_combat("launch", e);
   w.effects.push_back(e);
 }
 
@@ -1165,14 +1175,17 @@ void GameSim::advance_effects(World& w) {
       e.x += e.velocity_x; e.y += e.velocity_y;
       e.altitude -= e.vertical_speed; e.vertical_speed += e.gravity;
       e.height = std::max(0, e.altitude / 256); ++e.age;
+      trace_combat("position", e);
       if (e.altitude > 0) { w.effects.push_back(e); continue; }
     } else if (path::len2(delta) > int64_t(e.speed) * e.speed) {
       auto step = path::with_length(delta, e.speed);
       e.x += step.x; e.y += step.y; e.age++;
+      trace_combat("position", e);
       w.effects.push_back(e);
       continue;
     }
     if (!ball) { e.x = e.end_x; e.y = e.end_y; }
+    trace_combat("impact", e);
     if (e.impact_anim) decoration(w, e.impact_anim, int(next_visual_rand() % 3), e.x, e.y, 0, e.side);
     if (e.shockwave == data::kShockwaveAnim) decoration(w, e.shockwave, 0, e.x, e.y, 0, e.side);
     for (auto& o : w.objects) {
@@ -1182,14 +1195,19 @@ void GameSim::advance_effects(World& w) {
         int distance = path::length({int32_t(dx), int32_t(dy)}) / 256;
         int damage = rules_->blast_damage(e.payload_id, rules_->type(o.type), distance);
         if (damage > 0) {
+          trace_combat("damage", e, o.id, o.hp, o.hp - damage);
           o.hp -= damage; o.last_hit_by = e.source;
           if (o.hp <= 0) kill(w, o);
-        }
+        } else trace_combat("miss", e, o.id, o.hp, o.hp);
         continue;
       }
       bool splash = e.splash_px > 0 && w.hostile(e.side, o.side) &&
                     dx * dx + dy * dy <= int64_t(e.splash_px * 256) * (e.splash_px * 256);
-      if (o.id != e.target && !splash) continue;
+      if (o.id != e.target && !splash) {
+        trace_combat("miss", e, o.id, o.hp, o.hp);
+        continue;
+      }
+      trace_combat("damage", e, o.id, o.hp, o.hp - e.damage);
       o.hp -= e.damage; o.last_hit_by = e.source;
       if (o.hp <= 0) kill(w, o);
     }
@@ -1318,7 +1336,10 @@ void GameSim::tick(World& w) {
     apply(w, c);
   }
   pending_.clear();
-  if (paused_) return;
+  if (paused_) {
+    for (const auto& e : w.effects) if (e.flight) trace_combat("position", e);
+    return;
+  }
   for (auto& o : w.objects) {
     if (o.removed) continue;
     ++o.anim_tick;

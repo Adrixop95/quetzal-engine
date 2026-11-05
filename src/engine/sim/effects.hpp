@@ -5,6 +5,7 @@
 
 namespace aztec::engine {
 struct Effect {
+  uint64_t trace_id = 0; // diagnostic identity only; never read by combat rules
   data::EffectClass kind = data::EffectClass::Decoration;
   uint32_t source = 0, target = 0;
   int side = 0, anim = 0, slot = 0, angle = 0;
