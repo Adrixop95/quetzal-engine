@@ -4,6 +4,7 @@
 #include <bit>
 #include <cctype>
 #include <limits>
+#include <ostream>
 #include <stdexcept>
 #include <unordered_map>
 
@@ -50,6 +51,9 @@ struct Group { int side = 0, town = -1; };
 bool import_original_save(const SaveGame& save, World& world, std::string& error) {
   error.clear();
   try {
+    SaveError reference_error;
+    if (!validate_savegame_references(save, &reference_error))
+      throw Invalid("Invalid save reference at byte " + std::to_string(reference_error.offset) + ": " + reference_error.message);
     if (world.terrain.w <= 0 || world.terrain.h <= 0) throw Invalid("Mission map is empty");
     auto saved_name = mission_name(save);
     auto dot = saved_name.find_last_of('.');
@@ -160,6 +164,7 @@ bool import_original_save(const SaveGame& save, World& world, std::string& error
       auto& o = w.objects[it->second - 1];
       auto& t = w.mission.towns[i];
       if (o.town != int(i) || o.side != t.side) throw Invalid("Saved town hall has a different owner");
+      o.town_hall = true;
       t.x = o.cur_x / 256 / kTilePx; t.y = o.cur_y / 256 / kTilePx;
       // Reuse only matching mission metadata; build-tree level semantics remain unresolved.
       for (const auto& initial : initial_towns)
@@ -206,5 +211,49 @@ bool load_original_save(const GameData& data, const std::string& path, World& wo
     world = std::move(fresh);
     return true;
   } catch (const Invalid& e) { error = e.what(); return false; }
+}
+
+bool write_original_save_snapshot(const World& w, std::ostream& out, std::string& error) {
+  error.clear();
+  if (!w.original_save || w.objects.size() != w.original_unit_ids.size() || w.tick != w.original_save->globals[4]
+      || w.side_state.size() < w.mission.sides.size() || w.visibility.sides.size() != w.mission.sides.size()) {
+    error = "Snapshot requires an imported world before its first continued tick";
+    return false;
+  }
+  const auto* towns = w.original_save->section("towns");
+  if (!towns) { error = "Missing original town identities"; return false; }
+  for (const auto& o : w.objects)
+    if (o.town < -1 || o.town >= int(towns->records.size())) { error = "Invalid imported town identity"; return false; }
+  // Only numeric gameplay values enter this stream. Private packets, raw memory,
+  // descriptions and file paths remain in the retained decoder snapshot.
+  out << "{\"schema\":1,\"phase\":\"after_load_before_tick\",\"elapsed_ticks\":0,\"saved_tick\":" << w.tick
+      << ",\"unsupported\":[\"orders\",\"queues\",\"research\",\"upgrades\",\"scripts\",\"timers\",\"diplomacy\"]"
+      << ",\"state\":{\"units\":{";
+  std::vector<size_t> order(w.objects.size());
+  for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+  std::sort(order.begin(), order.end(), [&](size_t a, size_t b) { return w.original_unit_ids[a] < w.original_unit_ids[b]; });
+  bool comma = false;
+  for (size_t i : order) {
+    const auto& o = w.objects[i];
+    if (comma) out << ',';
+    comma = true;
+    out << '"' << w.original_unit_ids[i] << "\":{\"type\":" << o.type << ",\"side\":" << o.side
+        << ",\"town\":" << (o.town < 0 ? 0 : towns->records[size_t(o.town)].id)
+        << ",\"hp\":" << o.hp << ",\"secondary_hp\":" << o.secondary_hp
+        << ",\"x256\":" << o.cur_x << ",\"y256\":" << o.cur_y << '}';
+  }
+  out << "},\"money\":[";
+  for (size_t i = 0; i < w.mission.sides.size(); ++i) { if (i) out << ','; out << w.side_state.at(i).money; }
+  out << "],\"fog\":[";
+  for (size_t i = 0; i < w.visibility.sides.size(); ++i) {
+    if (i) out << ',';
+    const auto& fog = w.visibility.sides[i];
+    out << "{\"width\":" << fog.w << ",\"height\":" << fog.h << ",\"values\":[";
+    for (size_t j = 0; j < fog.v.size(); ++j) { if (j) out << ','; out << unsigned(fog.v[j]); }
+    out << "]}";
+  }
+  out << "],\"clock\":" << w.day_clock << "}}\n";
+  if (!out) { error = "Cannot write original save snapshot"; return false; }
+  return true;
 }
 } // namespace aztec::engine

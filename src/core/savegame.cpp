@@ -3,6 +3,7 @@
 #include "core/mapfiles.hpp"
 #include <initializer_list>
 #include <utility>
+#include <unordered_set>
 
 namespace aztec {
 const SaveField* SaveRecord::field(int offset, const std::string& scope) const {
@@ -72,7 +73,11 @@ public:
     if (n > detail::kCells || (n && stride > (data.size() - pos) / n)) fail("Invalid array size");
     block(n * stride, -1, name);
   }
-  void refs(V kind) { size_t n = count(); for (size_t i=0; i<n; ++i) word(-1, kind); }
+  void refs(V kind, const char* name = "references") {
+    auto previous = scope; scope += std::string(".") + name;
+    size_t n = count(); for (size_t i=0; i<n; ++i) word(-1, kind);
+    scope = previous;
+  }
   void animation(int offset) {
     auto previous = scope; scope += ".animation" + std::to_string(offset);
     word(0, V::word, "animation_id");
@@ -155,15 +160,15 @@ public:
     scope="town.queue"; queue(); scope="town.harvest"; members({8,0xc,0x10}); word(0x14,V::byte); word(4,V::unit_ref);
     scope="town.units"; members({0x28,0x2c}); refs(V::unit_ref); scope="object";
     word(0x184,V::object_ref); word(0x188,V::order_ref);
-    scope="town.build_tree"; block(0x16c,0x16c); block(0x168,4); block(0x1188,0x2e8); word(0x1470,V::descriptor);
+    scope="town.build_tree"; block(0x16c,0x16c,"state16c"); block(0x168,4,"state4"); block(0x1188,0x2e8,"state2e8"); word(0x1470,V::descriptor);
     members({0x2e0,0x2e1,0x2e2},V::byte); word(0x2e4); scope="object";
   }
   void side() {
     members({4,8,0xc,0x10,0x14}); word(0x138,V::byte); members({0x13c,0x140,0x698,0x63c,0x640,0x644,0x648,0x64c,0x650});
     word(0x694,V::order_ref); word(0x688,V::object_ref);
-    block(0x20,0x18,"name"); block(0x100,0x38); block(0x16c,0x144); block(0x5b,0x2b0,"disabled_types");
-    block(0x16c,0x30c); block(0x168,0x478); block(0x5a,0x5e0);
-    refs(V::object_ref); refs(V::object_ref); refs(V::unit_ref); refs(V::order_ref);
+    block(0x20,0x18,"name"); block(0x100,0x38,"state38"); block(0x16c,0x144,"state144"); block(0x5b,0x2b0,"disabled_types");
+    block(0x16c,0x30c,"state30c"); block(0x168,0x478,"state478"); block(0x5a,0x5e0,"type_state");
+    refs(V::object_ref,"objects654"); refs(V::object_ref,"objects660"); refs(V::unit_ref,"units678"); refs(V::order_ref,"orders66c");
     if (word(0x68c,V::boolean,"explorer_present")) {
       size_t n=count(364); for(size_t i=0;i<n;++i) { word(-1,V::object_ref); block(0x168,-1,"explorer_state"); }
     }
@@ -188,15 +193,15 @@ public:
     }
   }
   void script(uint32_t kind) {
-    word(4);
-    if (kind == 0) { word(8); return; }
+    word(4,V::word,"scenario_id");
+    if (kind == 0) { word(8,V::word,"state8"); return; }
     if (kind == 4) { size_t n=count(8); array(n,8,"path_points"); return; }
     if (kind > 4) fail("Unknown script kind");
-    word(8); word(0xc,V::byte);
+    word(8,V::word,"state8"); word(0xc,V::byte,"flag0c");
     if (kind == 1) {
       size_t n=count(0x408); array(n,0x408,"conditions"); n=count(0x408); array(n,0x408,"actions");
     } else if (kind == 2) {
-      if (word(0x14,V::byte)) { size_t n=count(4,0x20); word(0x1c); array(n,4,"timer_samples"); }
+      if (word(0x14,V::byte,"sample_mode")) { size_t n=count(4,0x20); word(0x1c); array(n,4,"timer_samples"); }
       else members({0x18,0x1c});
     }
   }
@@ -238,7 +243,9 @@ public:
           members({0x118,0x11c,0x120,0x124}); members({0x128,0x129,0x12a,0x12b},V::byte); block(0xc4,0x50);
         } else if (s=="scripts") { record->kind=word(-1,V::word,"kind"); script(record->kind); }
         else if (s=="orders") {
-          members({0x80c,0x808},V::object_ref); size_t entries=count(8,0x804); word(0x810,V::byte); scope="order.entry";
+          members({0x80c,0x808},V::object_ref); size_t entries=count(8,0x804);
+          if (entries > 256) fail("Order queue exceeds 256 entries");
+          word(0x810,V::byte); scope="order.entry";
           for(size_t j=0;j<entries;++j) { uint32_t t=word(0); word(4,t==0 ? V::unit_ref : V::word); }
         } else if (s=="ui") {
           ui_level("ui.selection0"); ui_level("ui.selection1"); scope="ui.panel"; word(0x4c,V::object_ref); word(0x50);
@@ -265,5 +272,48 @@ bool load_savegame(const std::string& path, SaveGame& out, SaveError* error) {
   std::vector<uint8_t> data;
   if(!read_file(path,data)) { out={}; if(error) *error={0,"Cannot read save game"}; return false; }
   return parse_savegame(data,out,error);
+}
+bool validate_savegame_references(const SaveGame& game, SaveError* error) {
+  if (error) *error = {};
+  auto fail = [&](size_t offset, const std::string& message) {
+    if (error) *error = {offset, message};
+    return false;
+  };
+  using Pool = std::unordered_set<uint32_t>;
+  Pool units, objects, decorations, effects, scripts, transports, orders;
+  const std::pair<const char*, Pool*> pools[] = {
+    {"units", &units}, {"towns", &objects}, {"tactics", &objects},
+    {"decorations", &decorations}, {"effects", &effects},
+    {"scripts", &scripts}, {"transports", &transports}, {"orders", &orders}
+  };
+  for (const auto& [name, pool] : pools) {
+    const auto* section = game.section(name);
+    if (!section) return fail(0, std::string("Missing save section: ") + name);
+    for (const auto& record : section->records)
+      if (!record.id || !pool->insert(record.id).second)
+        return fail(record.offset, std::string("Duplicate or null ID in ") + name);
+  }
+  const auto* sides = game.section("sides");
+  if (!sides) return fail(0, "Missing save section: sides");
+  for (const auto& section : game.sections) for (const auto& record : section.records)
+    for (const auto& field : record.fields) {
+      const Pool* pool = nullptr;
+      switch (field.kind) {
+      case V::unit_ref: pool = &units; break;
+      case V::object_ref: pool = &objects; break;
+      case V::decoration_ref: pool = &decorations; break;
+      case V::effect_ref: pool = &effects; break;
+      case V::script_ref: pool = &scripts; break;
+      case V::transport_ref: pool = &transports; break;
+      case V::order_ref: pool = &orders; break;
+      case V::side_ref:
+        if (field.value > sides->records.size()) return fail(field.offset, "Unresolved side reference");
+        break;
+      default: break;
+      }
+      if (pool && field.value && pool->find(field.value) == pool->end())
+        return fail(field.offset, "Unresolved reference in " + section.name + "/" + field.scope);
+    }
+  return true;
 }
 } // namespace aztec
