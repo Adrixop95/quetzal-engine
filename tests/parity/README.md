@@ -385,3 +385,73 @@ difference. Keep matching full captures for review. Both complete bundles and al
 images are validated before the first differing tick/field or exact pixel count
 is reported. Digest equality records a claimed alignment, not proof that an
 adapter obeyed it; synthetic equality never establishes reference parity.
+
+## V07 all-weapon comparison (task 87)
+
+`tools/weapon_measure.py plan` expands the task-74 controls for every current
+positive-HP descriptor attacker and every positive-HP descriptor victim, with
+additional reload/range/composite/death/corpse cases. Its inventory covers all
+60 existing weapon IDs, including unowned payloads and unresolved dispatches.
+This is P coverage planning; S tests validate the tooling. No M evidence or new
+combat fixes are claimed. See the [run sheet](../../docs/EXPERIMENTS.md#v07-all-weapon-run-sheet-task-87-needs-live-run).
+
+The proposed `weapon-v1` JSON bundle has exactly `schema: 1`,
+`contract: "weapon-v1"`, `origin` (`reference` or `clone`), `alignment`, and
+`samples`. This contract requires an audited adapter for each implementation;
+it is not the existing engine-combat-v1 trace or raw reference unit log.
+
+Alignment has exactly `scenario` (ID from the generated scenario catalogue),
+`specification_sha256` (SHA-256 of that scenario encoded by Python
+`json.dumps(case, sort_keys=True, separators=(',', ':')).encode()`),
+`map_sha256`, `controls_sha256`, `normalization_sha256`, `first_tick: 1`,
+`last_tick` (2–100000), and `phase: "after_tick"`. All four digests are lowercase
+hexadecimal SHA-256. The map digest must cover all map/scenario inputs through
+an audited manifest; controls cover accepted commands, placements, diplomacy,
+visibility, regeneration, tech/speed, AI and clock. Normalization identifies the
+reviewed field definitions, category bits and canonical identity mapping. Keep
+adapter versions, source-runtime identities and record/replay audits privately.
+
+Each sample has exactly `tick`, `objects`, `flights`, `events`, `unavailable`.
+Ticks are contiguous through the requested horizon. `unavailable` must be empty;
+unsupported fields block comparison, never become fabricated zeros. All rows
+below have exactly the named fields, each an integer (booleans are rejected):
+
+| Channel | Row fields |
+| --- | --- |
+| objects | id type side x y hp secondary_hp armor categories alive corpse burn |
+| flights | id source target weapon x y height altitude |
+| events | kind id source target weapon victim x y height before after |
+
+Object/flight rows are ordered by unique positive canonical `id`. Preserve all
+objects including dead/corpse records until native removal. `alive`, `corpse`
+and `burn` are binary states. `categories` is the audited combined bit mask,
+not one exclusive armor label. `armor` retains native precision; HP and secondary
+HP retain their native signed values. Positions and altitude are pixels times
+256; render height is integer pixels. Types use public IDs 0–89; sides use 0–7.
+Canonical source, target, victim and flight IDs must remain stable across ticks
+and repeats, including shots whose sources died. Audit corpse/object identity
+mapping before treating disappearance as removal. Empty channel lists mean an
+observed absence, not an unsupported channel.
+
+Event order is native execution order within the tick. Kinds are: 1 accepted
+attack, 2 launch, 3 impact, 4 damage, 5 interception, 6 burn start, 7 burn end,
+8 death, 9 corpse removal. Event `id` identifies its flight, or zero for a
+nonflight lifecycle event. `weapon` identifies the actual child dispatch for
+launch/impact/damage; accepted attack identifies the source's descriptor weapon.
+`before`/`after` are native HP for damage, otherwise zero; `victim` identifies
+the affected object, otherwise zero. Unused event coordinates/height are zero
+only where the audited definition establishes inapplicability. No accepted
+attack from the scenario source/target/weapon means the idle control cannot pass.
+The initial sample must include the scenario source on side 0 and target on
+side 1; later death/removal may legitimately remove either.
+
+The comparator checks alignment and complete field/tick coverage, then compares
+the two reference streams before issuing a clone verdict. It reports the first
+differing tick/channel, preserving event order, every victim and every flight.
+It cannot certify adapter truthfulness, derive an unobserved splash boundary,
+or infer burn duration from a visual fire effect. A complete equal no-damage
+stream still needs audited accepted attacks, category/diplomacy/visibility
+controls and a sufficient horizon before it establishes immunity. Per-class
+measured/matching/fixed status stays pending until reviewed live observations
+cover that class's applicable controls. Synthetic fixtures are invented and do
+not supply gameplay expectations.
