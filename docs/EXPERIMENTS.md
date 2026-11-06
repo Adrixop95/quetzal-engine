@@ -787,6 +787,166 @@ routes, paired engine replay, mid-mission save continuation and aligned referenc
 outcomes before promoting V12/V19 evidence. When a site is not observed, keep its
 status **needs live run** until a reachable route or an evidenced original
 nonexecution explanation exists. Do not infer that the original never fires it.
+## V05/V12 vessel run sheet (task 86): needs live run
+
+Task 86 adds **S** comparison controls, **P** live recipes and **no M** transport
+measurements. The sandbox reference prohibition applies here too. Task 71's
+diagnostics are present; V02 aligned identity/dispatch/cargo observations and
+V05/V10 water movement/command contracts remain incomplete. Engine behaviour is
+unchanged until an original measurement repeated in two runs confirms a
+divergence. All 19 sites remain open, including those dormant in engine runs.
+
+List the complete per-site checklist without reading private data:
+
+```sh
+python3 -I tools/transport_measure.py plan
+python3 -I tests/test_transport_measure.py
+```
+
+The previous record/replay pair checks replay, not independent repeatability.
+Use the following **two independent recordings per mission** on the orchestrator
+host. Supply normal-input routes at `work/vessel-routes/mission_N.rt` for missions
+2/7/9/15 first; each starts after briefing entry. Missing routes deliberately
+stop preparation. Do not substitute passive timeouts, cheats or memory writes.
+Navigation uses the historical 800x600 coordinates; retain screenshots proving
+entry, since locked missions and slow menu transitions can invalidate a run.
+These commands collect evidence; they cannot by themselves identify cargo or
+script dispatch. Keep runtime version, input routes, captures and all modified
+test maps private.
+
+```sh
+vessel_probe=$(mktemp -d "$PWD/work/vessel-reference.XXXXXX")
+export vessel_probe
+python3 - <<'PY'
+import importlib.util
+import os
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location('playthrough', 'tools/playthrough.py')
+harness = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(harness)
+source = Path('/home/adrox/aztec-re/game')
+maps, available = harness.discover(source)
+output = Path(os.environ['vessel_probe'])
+routes = {m: Path(f'work/vessel-routes/mission_{m}.rt').read_text()
+          for m in (2, 7, 9, 15)}
+for mission, route in routes.items():
+    assert mission in available and route.strip(), f'missing route: {mission}'
+    commands = ['wait 6000', 'click 140 239', 'wait 800', 'click 160 543', 'wait 5000']
+    if mission >= 10:
+        commands += ['click 645 421', 'wait 800']
+    row = mission - 1 if mission < 10 else mission - 10
+    commands += [f'click 150 {257 + 20 * row}', 'wait 800', 'shot',
+                 'click 140 544', 'wait 3000', 'click 700 430', 'wait 7000', 'shot']
+    commands += route.splitlines() + ['shot', 'quit']
+    for repetition in (1, 2):
+        run = output / f'mission_{mission}' / f'run_{repetition}'
+        run.mkdir(parents=True)
+        harness.private_game(source, maps, run / 'game')
+        (run / 'input.rt').write_text('\n'.join(commands) + '\n')
+PY
+sha256sum /home/adrox/aztec-re/build/aztec_recomp > "$vessel_probe/runtime.sha256"
+python3 -I tools/transport_measure.py plan > "$vessel_probe/plan.json"
+for mission in 2 7 9 15; do
+  for repetition in 1 2; do
+    vessel_run="$vessel_probe/mission_$mission/run_$repetition"
+    test -s "$vessel_run/input.rt" || break
+    sha256sum "$vessel_run/input.rt" > "$vessel_run/input.sha256"
+    (
+      cd "$vessel_run/game" || exit 1
+      timeout -s KILL 900 unshare -rn env -u RT_CMD_REPLAY \
+        SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+        RT_NO_GRAB=1 RT_NO_VIDEO=1 RT_RESOLUTION=800x600 \
+        RT_SCRIPT="$vessel_run/input.rt" RT_DUMP_DIR="$vessel_run" \
+        RT_UNIT_LOG="$vessel_run/units.log" RT_UNIT_EVERY=1 \
+        RT_STATE_LOG="$vessel_run/state.txt" RT_CMD_LOG="$vessel_run/commands.txt" \
+        sh -ec '
+          ip link set lo up
+          ip addr add 192.168.1.125/24 dev lo
+          exec /home/adrox/aztec-re/build/aztec_recomp "$1/Aztec.exe"
+        ' sh "$vessel_run/game"
+    ) > "$vessel_run/stdout.log" 2> "$vessel_run/stderr.log"
+    printf '%s\n' "$?" > "$vessel_run/exit-status.txt"
+  done
+done
+```
+
+Reject nonzero exits, empty logs, wrong-menu captures and unequal mission entry
+state before normalizing anything. Record/replay remains a separate control as
+in the task-71 sheet. Do not use replay as the second independent recording.
+The supplied unit log reads a generic object pool and raw offsets: it does not
+provide audited vessel/cargo membership or transport-script start/finish events.
+Do not interpret missing rows as unloading or death. A reference observer adapter
+must establish those identities and align simulation ticks before these classes
+can receive measurements. No transport observer adapter or automatic raw-log
+normalizer is supplied by task 86; this is an explicit dependency, not a working
+live measurement pipeline.
+
+Run matched isolated controls on private copies of the maps, twice per control.
+Copy any map or script symlink to an ordinary private file before editing it.
+Retain hashes and the exact data changes, and keep acceptance scripts intact.
+Use this matrix for Boat, Submarine and Johnka separately where applicable:
+
+| Class | Required observations and controls |
+| --- | --- |
+| activation | Vessel source/section/scenario/side identity, initial Up/Enabled, dispatch/enable tick, first phase/motion; inactive, delayed and repeated activation controls |
+| boarding | Candidate eligibility, stable identities, positions, arrival times and membership at each tick; permute source order and distance, test below/at/above observed capacity, simultaneous candidates, foreign side and empty load |
+| unloading | Ordered membership transitions and pixel landing coordinates; empty/occupied landing, more passengers than free landing tiles and moving blockers |
+| route | Every position/waypoint/phase from start to finish; symmetric alternative water channels, blocked channel and off-map approach |
+| arrival | First arrival, opening, boarding, departure and enabled/idle transitions on the same simulation clock; vary travel distance separately from animation length |
+| speed | Pixel displacement per simulation tick in straight unobstructed water; both directions and chosen game speeds; never use render frames as ticks |
+| turning | Body orientation and position through both turn directions, reversal and repeated activation while turning |
+| shore | Pixel position and phase at each shoreline boundary; concave shore, narrow channel, occupied landing and off-map start |
+| stuck | Position/order/phase through a fixed blocked interval, then after removing the blocker; unreachable destination and persistent blocker controls |
+| completion | Script start and finish, vessel enabled/idle state, final passenger identities/ownership, repeat dispatch and objective condition transitions |
+
+Normalize observations into separate private JSON files, one case/site/run per
+file. Schema 1 requires `source` (`reference` or `engine`), distinct `run_id`,
+`case`, a `site` ID from `plan`, `binary_sha256`, `input_sha256`, `observer`,
+`alignment`, `artifacts` and `observations`. Hash strings use lowercase SHA-256.
+`input_sha256` hashes a shared canonical case specification (map/script/route
+hashes and game speed); it must describe equivalent engine/reference inputs.
+`observer` identifies the audited observer/normalization revision; both reference
+runs must use the same revision. `alignment` documents the common tick origin,
+position units and stable identity mapping. Never align each event independently
+or discard a delay. Reference runtime hashes must agree across repetitions.
+
+Each artifact is `{"path":"units.log","sha256":"<actual hash>"}`, relative to
+the JSON file or absolute; the tool checks actual nonempty bytes. Include every
+capture used to derive samples, not merely a token log. Repetitions must use
+distinct capture files and run IDs. Provenance validation cannot prove that an
+operator ran independent processes or interpreted raw fields correctly.
+Each observation class contains a nonempty ordered list of
+`{"tick":12,"value":{"cargo":["passenger-A","passenger-B"]}}` samples.
+This is an invented schema example, not a capacity observation. Use explicit
+fields/units from the matrix above; retain passenger/position list order. Omit
+unmeasured classes. Do not fill unknown values with guessed defaults. A dormant
+site is unmeasured; an empty list never proves original nonexecution.
+
+After the observer and normalizer exist, compare a site/case using exact commands
+such as these (the private JSON filenames below are the normalizer's outputs):
+
+```sh
+python3 -I tools/transport_measure.py compare \
+  --reference "$vessel_probe/mission_2/run_1/boat-case.json" \
+  --repeat "$vessel_probe/mission_2/run_2/boat-case.json" \
+  --engine "$vessel_probe/mission_2/engine/boat-case.json" \
+  > "$vessel_probe/mission_2/boat-comparison.json"
+# For one isolated behaviour control, add e.g. --class boarding.
+```
+
+Exit 0 means only that every requested class has identical recorded samples;
+exit 1 retains missing/nonrepeatable evidence or confirmed sample divergence;
+exit 2 rejects malformed provenance/captures. Reference-only comparison stays
+`needs live run` even if samples repeat, because no engine comparison exists.
+Default comparison requires all ten classes; a selected-class pass does not close
+the other classes. The comparator checks supplied JSON values, not semantic
+completeness, observer correctness, successful campaign routes or nonexecution.
+Only an audited two-run divergence permits an engine behaviour correction.
+Then add synthetic engine regressions using independent fixtures for the measured
+class, repeat build/CTest/pre-commit, and run all 19 original sites with the
+objective/replay/save controls. Do not promote V05/V12 on these tool tests alone.
+
 ## V07 projectile run sheet (needs live run)
 
 The task-74 tooling adds **P** placement specifications and **S** synthetic
@@ -2205,3 +2365,436 @@ canonical/native streams, masks and full frames for both repeats and versions.
 Return those reports to the orchestrator; update the ledger and V13 M labels only
 after review. Commit none of the captures, private JSON, maps or derived data.
 Current status: **needs live run**.
+## Economy and town service run sheet (needs live run)
+
+V08/V09 follow-up, 2026-11-06: **S** for asset-free engine continuation and
+comparison checks; **P** for the five `tests/parity/town.json` families and their
+variants. No live reference was launched in this sandbox and no new repeated
+measurements justify an engine behavior change. Task 64's semantic input/reference
+observer adapters and task 66 placement acceptance remain incomplete. This work
+completes the independent comparison/test portion only. Parallel construction
+remains a default-off modification. Status: **needs live run**.
+
+Use the task 66 placement catalogue and task 67 construction catalogue/run sheet
+above for all building classes, placeholder, worker travel, stages, payment,
+cancel/refund and completion sound/selection/rally. The town catalogue adds clock,
+training/spawn, service/protection and upgrade/build-tree/save observations.
+Run every selected variant separately with the same race, level, speed, resource
+mask, cash, prerequisites, hall identity, initial HP and controlled AI/fog state.
+Showcase objects are initially complete: establish a matched legal setup rather
+than assuming the generated map directly executes a construction scenario.
+
+The following exact preparation commands create independent diagnostic copies
+for one case. Repeat with a fresh output path for each variant, race, speed and
+save boundary. No command below executes a high-level catalogue recipe by itself.
+Run from the worktree root on the orchestrator's namespace-capable host:
+
+```sh
+export town_probe="$PWD/work/parity/town-resource-clock-live"
+python3 - <<'PY'
+import os
+from pathlib import Path
+import shutil
+
+source = Path('/home/adrox/aztec-re/game')
+root = Path(os.environ['town_probe'])
+root.mkdir(parents=True, exist_ok=False)
+for label in ('reference', 'repeat', 'replay', 'clone'):
+    game = root / label / 'game'
+    (game / 'Maps').mkdir(parents=True)
+    (game / 'Saves').mkdir()
+    for name in ('Aztec.exe', 'Res', 'Video', 'Music', 'Campaign'):
+        if (source / name).exists():
+            (game / name).symlink_to(source / name)
+    for item in source.iterdir():
+        if item.is_file() and item.suffix.lower() in ('.ini', '.plr'):
+            shutil.copy2(item, game / item.name)
+    for item in (source / 'Maps').iterdir():
+        if item.is_file() and item.stem.lower() == 'mission_14':
+            shutil.copy2(item, game / 'Maps' / item.name)
+PY
+for label in reference repeat replay clone; do
+  python3 -I tools/make_testmaps.py --game "$town_probe/$label/game" || exit 1
+done
+```
+
+Resolve case inputs from each generated layout manifest and audit identical
+private map/setup changes. Supply the audited reference navigation/input route
+as `$town_probe/reference/input.txt` and the clone route as
+`$town_probe/clone/input.txt`. Millisecond `RT_SCRIPT` and frame-based clone
+scripts are diagnostic controls; they cannot establish tick alignment. Task 64
+must provide measured command translation, tick phase and semantic observers.
+Do not manufacture `town-v1` from raw HP deltas or engine output. The supplied
+runtime may require a private rebuild for observer hooks.
+
+These diagnostic commands preserve isolation and record/repeat/replay separately:
+
+```sh
+test -s "$town_probe/reference/input.txt" || exit 1
+for label in reference repeat replay; do
+  town_replay_env=()
+  if [ "$label" = replay ]; then
+    test -s "$town_probe/reference/commands.txt" || exit 1
+    town_replay_env=("RT_CMD_REPLAY=$town_probe/reference/commands.txt")
+  fi
+  (
+    cd "$town_probe/$label/game" || exit 1
+    timeout -s KILL 1500 unshare -rn env -u RT_CMD_REPLAY \
+      SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+      RT_NO_GRAB=1 RT_NO_VIDEO=1 RT_RESOLUTION=800x600 \
+      RT_SCRIPT="$town_probe/reference/input.txt" RT_DUMP_DIR="$town_probe/$label" \
+      RT_CMD_LOG="$town_probe/$label/commands.txt" \
+      RT_STATE_LOG="$town_probe/$label/state.txt" \
+      RT_UNIT_LOG="$town_probe/$label/units.txt" RT_UNIT_EVERY=1 \
+      "${town_replay_env[@]}" sh -ec '
+        ip link set lo up
+        ip addr add 192.168.1.125/24 dev lo
+        exec /home/adrox/aztec-re/build/aztec_recomp "$1/Aztec.exe"
+      ' sh "$town_probe/$label/game"
+  ) > "$town_probe/$label/stdout.log" 2> "$town_probe/$label/stderr.log" || exit 1
+done
+test -s "$town_probe/clone/input.txt" || exit 1
+timeout -s KILL 1500 unshare -rn env \
+  SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+  AZTEC_USER_DIR="$town_probe/clone/profile" \
+  build/aztec_engine --game "$town_probe/clone/game" --rules-dir "$PWD/docs/data" \
+  --mod parallel_construction=off --size 800x600 --software --no-audio \
+  --script "$town_probe/clone/input.txt" --ui-trace "$town_probe/clone/ui.jsonl" \
+  --capture-dir "$town_probe/clone/frames" --capture-every 1 ztest_all \
+  > "$town_probe/clone/stdout.log" 2> "$town_probe/clone/stderr.log"
+```
+
+A namespace/interface failure fails the experiment. Never bypass isolation.
+Set route duration and timeout to cover at least two relevant harvest/service
+periods and one sample after completion; 1500 seconds is a process limit, not a
+measured duration. Check command readback and reference repeatability first.
+Capture actual audio request IDs with an audited hook for the construction
+contract; dummy audio and `--no-audio` do not prove absence of a sound request.
+
+For service, observe generated work separately from the target HP transitions,
+including protected targets that consume work, capped/zero shares, town-local
+supply and unused-credit disposal. For hall/tree cases, use independently loaded
+branches at paused, precompletion and postcompletion boundaries. Observe hall
+identity, type, HP and the enabled build tree on every tick; require the same
+result on uninterrupted and loaded branches in both implementations. Engine
+command-log saves and reference simulation saves use separate formats; each
+implementation loads its own saves. Audited reference save/load routes and
+resumed observations remain dependencies; missing support blocks that variant.
+
+After audited adapters produce complete bundles using
+[the town contract](../tests/parity/README.md#economy-and-town-service-v08v09-needs-live-run),
+run these exact comparisons in fresh private outputs:
+
+```sh
+python3 -I tools/town_compare.py \
+  --reference "$town_probe/reference/town.json" \
+  --repeat "$town_probe/replay/town.json" \
+  --clone "$town_probe/clone/town.json" --output "$town_probe/replay-comparison.json"
+python3 -I tools/town_compare.py \
+  --reference "$town_probe/reference/town.json" \
+  --repeat "$town_probe/repeat/town.json" \
+  --clone "$town_probe/clone/town.json" --output "$town_probe/comparison-before.json"
+```
+
+Exit 0 means equal declared observations; 1 means a clone divergence or unstable
+reference; 2 means invalid, missing or unaligned input. The first comparison
+also checks replay stability, but never substitutes for the independent repeat.
+For construction observations use `tools/construction_compare.py` as above;
+that contract retains worker, sound, selection, rally and exact overlay checks.
+Return the private normalization audit, command readback, full reference repeat
+and clone-before bundles plus comparison outputs to the orchestrator. Fix only
+divergences confirmed by both original runs, then add an asset-free regression
+and repeat the matched clone as `comparison-after.json`. No reference/clone
+values are currently measured. Keep all logs, saves, numeric observations,
+frames and game-derived material in ignored `work/`; publish only reviewed
+factual expectations and evidence labels. V08/V09 remain P / **needs live run**.
+## V07 all-weapon run sheet, task 87 (needs live run)
+
+**P:** `tools/weapon_measure.py` inventories the existing public metadata for all
+90 types and all 60 weapon IDs. It records direct owners, payload/composite
+children, reachable owners, missing tables and IDs requiring a dispatch audit.
+These are candidate bindings from the current engine, not newly verified
+reference mappings. Ordinary Building descriptors have no weapon binding;
+Boat/Johnka/Camera bindings remain unresolved. Do not infer immunity or an absent
+attack from these entries. No new numeric data was extracted from private files.
+
+**S:** synthetic tests check all bindings, every descriptor attacker/victim pair,
+structure placement, primary-HP overrides and the repeated-reference comparison
+gate. There are 4,290 proposed cases: 39 descriptor attackers against 87 positive-HP
+descriptor victim types, plus the 18 task-74 controls and reload, range boundary,
+composite schedule, target death and corpse removal for each attacker. Testing
+all victim types preserves distinct physical armor and overlapping categories;
+it does not certify the engine's category mappings. The seven task-74 family
+names alone do not cover every dispatch class.
+
+**M:** none from this task. No reference was launched in the sandbox. Task 64's
+audited setup/command/reference observer is absent; task 74's placement generator
+and engine trace diagnostics are present. No combat behavior or unresolved engine
+mapping was changed. Keep unknown families disabled until two independent
+reference runs confirm a divergence. The table reports this task's evidence,
+not a rejection of historical inspected descriptor arithmetic.
+
+| Existing dispatch class | Measured | Matching | Fixed |
+| --- | --- | --- | --- |
+| 0 ball | No | Unmeasured | No |
+| 1 arrow | No | Unmeasured | No |
+| 2 direct | No | Unmeasured | No |
+| 3 axe | No | Unmeasured | No |
+| 4 | No | Unmeasured | No |
+| 5 | No | Unmeasured | No |
+| 6 | No | Unmeasured | No |
+| 7 flame/blast | No | Unmeasured | No |
+| 8 wrapper | No | Unmeasured | No |
+| 9 payload | No | Unmeasured | No |
+| 10 | No | Unmeasured | No |
+| 11 unresolved | No | Unmeasured | No |
+| 12 composite | No | Unmeasured | No |
+| 13 direct | No | Unmeasured | No |
+| 14 sentinel (ID 0) | N/A | N/A | No |
+
+Run from the worktree root. Planning needs no installation or executable:
+
+```sh
+python3 -I tools/weapon_measure.py plan --output work/parity/v07-all-plan
+```
+
+Keep its `inventory.json`, `scenarios.json`, `coverage.md` and blank
+`measurement-form.json` private. Null values mean unmeasured. Unowned weapon IDs
+remain listed; measure them through a verified parent launch or document their
+unreachable/unused status after a live dispatch audit. Never invent an owner or
+launch arbitrary weapon IDs with memory pokes as a normal gameplay comparison.
+
+The following exact commands prepare and launch one candidate on a namespace-
+capable host. Substitute another ID from `scenarios.json`, with a fresh output
+for each attempt. `prepare` uses the task-74 ztest_battle generator, places both
+attacking and defending structures through Town sections, and supplies primary
+HP from the current engine bindings. Requested positions may relocate; audit
+actual `.layout.json` and `pending.json` before collecting a rule measurement.
+
+```sh
+python3 -I tools/weapon_measure.py prepare --id type27_clear_middle \
+  --game /home/adrox/aztec-re/game --output work/parity/v07-all/type27-clear-middle
+weapon_case="$PWD/work/parity/v07-all/type27-clear-middle"
+build/aztec_map_viewer --maps "$weapon_case/game/Maps" --dump ztest_battle \
+  > "$weapon_case/map-dump.txt"
+export ZSTAT_GAME_DIR="$weapon_case/game"
+export ZSTAT_RUNTIME=/home/adrox/aztec-re/build/aztec_recomp
+export RT_UNIT_EVERY=1 TMO=120
+mkdir "$weapon_case/record"
+RT_CMD_LOG="$weapon_case/record/commands.txt" \
+RT_STATE_LOG="$weapon_case/record/state.txt" \
+  sh tools/zstat_run.sh ztest_battle "$weapon_case/record" 65000
+for repetition in 1 2; do
+  replay_dir="$weapon_case/replay-$repetition"
+  mkdir "$replay_dir"
+  RT_CMD_REPLAY="$weapon_case/record/commands.txt" \
+  RT_CMD_LOG="$replay_dir/commands.txt" RT_STATE_LOG="$replay_dir/state.txt" \
+    sh tools/zstat_run.sh ztest_battle "$replay_dir" 65000
+done
+timeout -s KILL 100 unshare -rn env \
+  SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+  AZTEC_USER_DIR="$weapon_case/clone-profile" \
+  "$PWD/build/aztec_engine" --headless --game "$weapon_case/game" \
+  --rules-dir "$PWD/docs/data" --no-auto-orders --max-ticks 720 \
+  --combat-trace "$weapon_case/clone-combat.jsonl" \
+  --observations "$weapon_case/clone-objects.jsonl" \
+  --tick-hashes "$weapon_case/clone-hashes.txt" ztest_battle
+python3 -I tools/projectile_measure.py summarize \
+  --trace "$weapon_case/clone-combat.jsonl" --output "$weapon_case/clone-samples"
+```
+
+These are launch diagnostics, not controlled attack commands or a normalized
+combat observer. `zstat_run.sh` makes independent writable copies, sets dummy
+SDL, and uses `timeout -s KILL ... unshare -rn` with loopback/address setup.
+Namespace, setup, runtime or horizon failures remain failures. Never bypass
+isolation. The supplied reference unit log cannot observe projectile, burn,
+interception, secondary HP or corpse lifecycle fully. There is no reference
+combat environment switch or audited adapter invocation to add to these commands
+yet; do not relabel an engine trace or populate observations from expectations.
+
+Before measurement, resolve task 64 and each candidate's pending controls. Use
+a normal accepted attack with readback at the same simulation tick. For damage,
+isolate one shot per victim/category; for reload, allow at least three launches
+without moving or retargeting. For range, bracket actual accepted launches in
+pixels with matched footprint/visibility controls. Sweep splash offsets from the
+task-74 protocol, then radius minus one/radius/radius plus one separately for
+every victim, relation and combined category. Measure both composite child
+launches and impacts independently, through source/target death and interruption.
+Track HP, secondary HP, armor, ground/render/air height, interception events,
+burn start/end and damage ticks, death, corpse creation and removal. Extend
+horizons until flight/burn/corpse completion and a damage-free tail are observed;
+720 ticks or no damage alone establishes none of those durations. Retain native
+ordered events to disambiguate multiple events within one tick.
+
+After audited adapters produce the three complete `weapon-v1` bundles described
+in [the contract](../tests/parity/README.md#v07-all-weapon-comparison-task-87), run:
+
+```sh
+python3 -I tools/weapon_measure.py compare \
+  --reference work/parity/v07-all/type27-clear-middle/reference.json \
+  --repeat work/parity/v07-all/type27-clear-middle/reference-repeat.json \
+  --clone work/parity/v07-all/type27-clear-middle/clone-before.json \
+  --output work/parity/v07-all/type27-clear-middle/comparison-before.json
+```
+
+Exit 0 is equality within the declared observations, 1 is a difference or unstable
+reference, and 2 is an invalid/incomplete input. `repeatable_difference` permits
+review of a candidate correction only after the observer/setup audit. It does not
+authorize a rule inferred from clone behavior. Retain clone-before, make only a
+confirmed correction, add synthetic boundary/replay tests, and rerun with
+`clone-after.json` and a fresh `comparison-after.json`. Fill each metric's private
+form from the actual samples, citing both repeated reference captures and the
+adapter audit. Publish only reviewed factual expectations and aggregate counts;
+keep maps, captures, raw numeric records and executable-derived inputs private.
+Update V07 P to M only for the classes and controls actually measured.
+
+Status: **needs live run**.
+## L0 pool and mission startup follow-up (2026-11-06): needs live run
+
+Task 82's embedded-ring correction and optional-probe failure handling are
+present in this checkout. Its live acceptance is still pending. The supplied
+orchestrator run removed the pool divisibility check temporarily and completed
+mission 1 at ticks 1/6/12: 63 common live objects, equal money, nine initial HP
+differences, and movement counts 33 versus 15 at tick 6. This is supplied evidence,
+not a new repeated measurement. No reference or private-data process was launched
+in this sandbox. Do not mark the mission as matching the original yet.
+
+Read-only inspection of the private allocator establishes the layout:
+
+| Pool offset | Meaning |
+| --- | --- |
+| `+4` | Reserved storage base |
+| `+8` | Free-chain head, not an end pointer |
+| `+0xc` | Requested allocation size including list links |
+| `+0x10` | Allocation stride rounded to eight bytes |
+| `+0x14` | Requested reservation slot count |
+| `+0x18` | Allocated slot count |
+| `+0x1c` | Committed bytes, increased by the OS page size |
+| `+0x20` | Number of active lists |
+| `+0x24` | Active-list sentinel storage |
+
+Constructor `0x473c40` establishes the storage fields; list constructor
+`0x473e00` adds eight link bytes and sentinel storage. Growth at `0x473bb0`
+commits another page and exposes only complete strides. Allocation/free at
+`0x473d80`/`0x473dc0` maintain the free head and allocated count. Consequently,
+capacity is committed bytes divided by stride, rounded down. The remainder
+cannot contain a valid slot. The observer retains the full doubly linked active
+chain and disjoint free-chain/count audits, plus alignment and overflow checks.
+Synthetic controls cover the reported byte-size/stride combination, 63 live
+objects, all complete free slots, and rejection of a pointer into the partial
+tail. These are format facts and independently written tests; no derived code
+has been copied into the repository.
+
+The initial HP cause is a loader mismatch, not evidence for a side handicap.
+Mission unit loader `0x430930` scans three integers separated by two characters
+(five conversions), then constructs the specified type. It never consumes the
+fourth integer as health. Marine constructor `0x433190` initializes primary HP
+from descriptor d1 and secondary HP from d4. The existing descriptor data gives
+12000 for type 6 and 13000 for type 32, explaining both reported differences.
+The clone now leaves mission-placement health to descriptor initialization;
+the parser still retains the fourth integer for map inspection. Explicit spawn
+health and saved health keep their existing semantics. Asset-free regressions
+cover both owners, town/team placement, omitted/negative/below/above-descriptor
+metadata, explicit instance health and saved secondary health. The previous
+all-type initialization test now checks descriptor health instead of preserving
+its invented fourth-field value. The live nine-to-zero HP result is **pending**.
+
+Movement remains unresolved. Inspection of mission 1's script finds scheduled
+attacks and attacked-group reactions, without a direct immediate startup move
+action. This does not rule out an early reaction, tactic formation movement or
+an observation-phase difference. Do not add an invented idle walk or a
+mission-specific position correction. Marine Think (`0x433db0`) establishes
+execution states 0 inactive, 1 idle, 2 walk, 3 attack, 4 death, 5 idle animation;
+current-step destination at `+0x74/+0x78` is in pixels and walking velocity at
+`+0x98/+0x9c` is in pixel/256 per tick. The observer now decodes these states and
+records the actual step destination, replacing the misleading tile-centre
+value. Candidate attack, firing and pursuit targets are separate handles at
+`+0x90/+0x94/+0x8c`. The existing tactic state/mode, anchor and route diagnostics
+remain available. Synthetic tests deliberately give the tile and step different
+values and retain distinct targets and signed velocity.
+
+The embedded town ring additionally reports `queued_types` in the same logical
+order as `queued_handles`, after validating each object's type-field span and
+type range. Failed records retain raw pointers and have no usable handles/types.
+These improvements decode native execution and waiting-ring entries; they do
+**not** complete normalized logical orders or production remaining/total/payment
+semantics. Those domains remain declared unavailable in the shared contract.
+Other mobile classes still need an order-layout audit. No movement engine fix,
+full order/queue parity or measured owner queue count is claimed.
+
+Build the independent engine and the updated reference observer from this
+worktree. The supplied external runtime predates these changes unless rebuilt:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR= -DGAME_DIR=
+cmake --build build --parallel 2
+cmake -S . -B build_l0_reference -DCMAKE_BUILD_TYPE=Release \
+  -DAZTEC_GEN_DIR=/home/adrox/aztec-re/work/gen
+cmake --build build_l0_reference --target aztec_recomp --parallel 2
+```
+
+On the namespace-capable orchestrator host, run both repeats of all three
+scenarios. Use a fresh `startup_probe` for each attempt, preserve nonzero
+contract verdicts and inspect `runners.json` for process failures. The runner
+creates separate private game directories (immutable asset symlinks, copied
+mutable files), uses dummy SDL video/audio, and launches inside `unshare -rn`
+with the required reference loopback setup. Never bypass a failed namespace.
+
+```sh
+startup_probe="$PWD/work/parity/l0-startup-$(date -u +%Y%m%dT%H%M%S)"
+mkdir -p "$startup_probe"
+for scenario in private_l0 private_l0_mission_2 private_l0_mission_3; do
+  for repetition in 1 2; do
+    python3 -I tools/parity_run.py "$scenario" --flat-output \
+      --game /home/adrox/aztec-re/game \
+      --runtime "$PWD/build_l0_reference/aztec_recomp" \
+      --engine "$PWD/build/aztec_engine" --timeout 120 \
+      --output "$startup_probe/$scenario-$repetition"
+  done
+  python3 -I tools/parity_l0.py \
+    "$startup_probe/$scenario-1/reference.json" \
+    "$startup_probe/$scenario-1/clone.json" \
+    --repeat-reference "$startup_probe/$scenario-2/reference.json" \
+    --repeat-clone "$startup_probe/$scenario-2/clone.json" \
+    --output "$startup_probe/$scenario-review.json"
+done
+```
+
+Each review reports per-tick scalar counts (common objects, compared fields,
+HP/position/all scalar divergences and unmatched identities), plus reference
+owner-0/1 live object, decoded-unit-state, town and waiting-queue-entry counts.
+Scalar scope is exactly type/owner/x/y/HP plus four side balances, excluding
+unavailable orders, queues and UI. Failed town enumeration or a failed owner
+queue yields null counts, never zero. Reviews first require repeated bundles
+and frame bytes to match within each program; `run_nondeterminism` blocks the
+counts. Raw handles and all numeric streams/reports remain private.
+
+For the first changed movement step, generate dense private versions of each
+scenario with ticks 1 through 12 (do not edit the tracked passive scenarios):
+
+```sh
+python3 - <<'PYDENSE'
+import json
+from pathlib import Path
+root = Path('work/parity/l0-startup-dense-scenarios')
+root.mkdir(parents=True, exist_ok=False)
+for name in ('private_l0', 'private_l0_mission_2', 'private_l0_mission_3'):
+    scenario = json.loads(Path(f'tests/parity/{name}.json').read_text())
+    scenario['observe']['ticks'] = list(range(1, 13))
+    (root / f'{name}.json').write_text(json.dumps(scenario, indent=2) + '\n')
+PYDENSE
+```
+
+Repeat the loop above with a fresh `startup_probe` and append
+`--scenarios-dir "$PWD/work/parity/l0-startup-dense-scenarios"` to each runner
+invocation. Return both repeats, native order/queue diagnostics, process logs and
+reviews privately. Confirm the first changing execution state/step against tactic
+state, mission actions and spawn ordering before implementing movement changes.
+Preserve the clone-before captures separately, then rerun the identical schedules
+after each fix. Populate the matrix only from reviewed comparisons; use null for
+unmeasured after-values and missions 2/3 until those captures exist.
+
+Status: **needs live run**. HP loader correction and pool/diagnostic regressions
+are implemented; repeated reference confirmation, movement reproduction,
+normalized orders/production semantics and mission-2/3 divergence results remain
+open. This is not the first verified matching game output yet.

@@ -2075,3 +2075,24 @@ playthrough regression rerun and all pre-commit hooks passed after correcting a
 codespell finding in test assertion names. `git diff --check` passed. Bash and
 Python snippets in the live run sheet passed syntax checks without executing
 reference commands. No campaign completion or reference parity was measured.
+
+## V08/V09 synthetic comparison follow-up (2026-11-06)
+
+**S:** `engine_unit` compares every saved continuation tick across resource-clock
+wrap/global pause for farm/mine/hall, two-town training/spawn, service destruction
+and all-race hall upgrades including precompletion build-tree availability.
+Existing suites retain construction pause/damage/refund, activation, town-local
+service/protection and non-map recipe coverage. `town_compare` uses invented
+captures to test first differing tick/field across economy/service classes,
+ordered events, repeated-reference instability and fail-closed late validation.
+No engine behavior changed; parallel construction remains default off.
+
+**P / needs live run:** `tests/parity/town.json` adds five ztest_all case families
+and control variants alongside tasks 66/67. The town observation contract and
+[run sheet](EXPERIMENTS.md#economy-and-town-service-run-sheet-needs-live-run)
+are ready for the orchestrator. Task 64 audited inputs/semantic observers, task 66
+placement acceptance and audited reference save/load observations remain missing.
+No reference was launched here; no new M evidence, measured engine fix or parity
+claim follows from the synthetic checks. Worker travel, stages/timing, original
+payment/refunds, sound/selection/rally, training/spawn, service/protection/HP and
+hall/tree transitions through saves all still require two repeated live runs.

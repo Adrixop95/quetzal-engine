@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "id": "economy-town-service",
+  "evidence": "P",
+  "status": "needs live run",
+  "map": "ztest_all",
+  "dependencies": ["64-shared-runner-observer", "66-building-and-mine-placement", "67-construction-flow"],
+  "modifications": {"parallel_construction": false},
+  "controls": [
+    "Use placement.json and construction.json for legal sites and construction lifecycle variants.",
+    "Audit town membership, race, hall level, speed, prerequisites, money, HP, resource mask, day phase, AI and fog in both programs.",
+    "Preserve command acceptance/readback, stable creation identities and before-command observation phase.",
+    "Repeat each reference twice from independent private profiles; record/replay is an additional control.",
+    "Extend horizons through two relevant clock/service events and one tick after completion; never infer absence from a timeout."
+  ],
+  "cases": [
+    {
+      "id": "resource-clock",
+      "input": "Observe farm, mine and hall across day wrap, then complete another economy structure.",
+      "variants": ["zero-resource", "positive-resource", "warehouse-local", "warehouse-other-town", "unfinished-warehouse", "activation", "suspension"],
+      "measure": "Clock phase, activation/suspension ticks, resource channels/mask, per-event credits and first harvest after completion."
+    },
+    {
+      "id": "training-towns",
+      "input": "Queue two units in one town and one in another on the same tick; pause and resume only one town.",
+      "variants": ["all-races", "all-speeds", "shared-cash-shortage", "missing-hall", "incomplete-hall", "blocked-spawn", "local-prerequisites"],
+      "measure": "Acceptance, start/payment and spawn ticks, spawn positions, ordered town-local queues and next-item start."
+    },
+    {
+      "id": "payment-cancel",
+      "input": "Use task 67 waiting, active and paused cancellation routes, then repeat cancellation after completion/destruction.",
+      "variants": ["waiting", "active", "paused", "destroyed-site", "completed", "duplicate-cancel", "rounding-boundary"],
+      "measure": "Accepted debit and refund ticks/amounts, no duplicate credit, queue and site removal; retain original paid speed/price."
+    },
+    {
+      "id": "town-service",
+      "input": "Mark damaged ordinary buildings and defences in two towns; cycle repair/off/destroy modes around a service event.",
+      "variants": ["priority-boundaries", "capped-share", "zero-share", "unused-credit", "protected", "unprotected", "death-footprint", "other-town", "save-before-service"],
+      "measure": "Service event tick, supplied work, ordered target HP transitions, protection, marks and death/occupancy cleanup."
+    },
+    {
+      "id": "hall-tree-save",
+      "input": "Upgrade each reachable hall branch and complete each non-map recipe; save while paused and one tick before completion, then load in a fresh process.",
+      "variants": ["all-races", "all-reachable-levels", "cancel-upgrade", "damaged-hall", "paused-save", "precompletion-save", "postcompletion-save", "non-map-repeat"],
+      "measure": "Debit, timer, hall identity/type/HP and build-tree transitions; compare uninterrupted and saved continuations per tick against both reference repeats."
+    }
+  ]
+}

@@ -350,6 +350,9 @@ set_tests_properties(ui_screenshots PROPERTIES LABELS "unit" TIMEOUT 30
 
 # L1 specifications and L8 event-window comparisons use synthetic inputs in CI.
 if(Python3_Interpreter_FOUND)
+  add_test(NAME town_compare COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_town_compare.py)
+  set_tests_properties(town_compare PROPERTIES LABELS "unit;parity" TIMEOUT 20)
   add_test(NAME construction_compare COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_construction_compare.py)
   set_tests_properties(construction_compare PROPERTIES LABELS "unit;parity" TIMEOUT 20)
@@ -365,6 +368,12 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME projectile_measure COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_projectile_measure.py $<TARGET_FILE:aztec_engine>)
   set_tests_properties(projectile_measure PROPERTIES LABELS "unit;parity" TIMEOUT 30)
+  add_test(NAME weapon_measure COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_weapon_measure.py)
+  set_tests_properties(weapon_measure PROPERTIES LABELS "unit;parity" TIMEOUT 30)
+  add_test(NAME transport_measure COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_transport_measure.py)
+  set_tests_properties(transport_measure PROPERTIES LABELS "unit;parity" TIMEOUT 20)
   add_test(NAME parity_rules COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_rules.py)
   set_tests_properties(parity_rules PROPERTIES LABELS "unit;parity" TIMEOUT 20)
