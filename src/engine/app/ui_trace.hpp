@@ -21,7 +21,8 @@ inline void trace_ui(std::ostream& out, int frame, const World& world, const Cam
                      float alpha, const Input& input, const CommandsUi& ui, const GameSim* sim,
                      size_t command_start, SDL_Rect panel, int scale, bool panel_visible,
                      bool menu_open, CursorKind cursor, bool cursor_visible, uint32_t cursor_ms,
-                     const std::string& tooltip, const std::string& screenshot, const std::string& screen = "gameplay") {
+                     const std::string& tooltip, const std::string& screenshot, bool placement_overlay_drawn,
+                     const std::string& screen = "gameplay") {
   static const char* cursors[] = {"arrow", "attack", "move", "pan", "north", "northeast", "east",
                                  "southeast", "south", "southwest", "west", "northwest"};
   out << std::setprecision(9) << "{\"schema\":1,\"contract\":\"engine-ui-raw-v1\",\"frame\":" << frame
@@ -35,6 +36,20 @@ inline void trace_ui(std::ostream& out, int frame, const World& world, const Cam
       << ",\"cursor\":{\"shape\":\"" << cursors[int(cursor)] << "\",\"visible\":" << (cursor_visible ? "true" : "false")
       << ",\"time_ms\":" << cursor_ms << "},\"tooltip\":";
   trace_string(out, tooltip);
+  out << ",\"placement\":";
+  if (sim && ui.placing() >= 0) {
+    const auto preview = ui.placement_preview(world, cam, input.mx, input.my);
+    out << "{\"cell\":[" << preview.x << ',' << preview.y << "],\"valid\":"
+        << (preview.valid ? "true" : "false") << ",\"overlay_drawn\":"
+        << (placement_overlay_drawn ? "true" : "false") << ",\"ghost_sprite\":null,\"rotation\":null,\"cells\":[";
+    for (size_t i = 0; i < preview.cells.size(); ++i) {
+      const auto& cell = preview.cells[i];
+      out << (i ? "," : "") << "{\"x\":" << cell.x << ",\"y\":" << cell.y << ",\"blocked\":";
+      if (cell.blocked) trace_string(out, cell.blocked); else out << "null";
+      out << '}';
+    }
+    out << "]}";
+  } else out << "null";
   out << ",\"screenshot\":"; trace_string(out, screenshot);
   out << ",\"screen\":"; trace_string(out, screen);
   out << ",\"selection\":[";

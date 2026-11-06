@@ -922,3 +922,801 @@ confirmation and multiplayer graph routes still need observation and adapters.
 Do not force a simulation outcome as evidence of a normally reachable mission
 completion. No live result, unlock policy, graph completeness or pixel score is
 claimed by the synthetic regressions.
+## L6 live audio run sheet (task 76, needs live run)
+
+**Evidence: synthetic only; status: needs live run.** Do not execute this sheet
+inside the restricted Codex sandbox. Use a host that permits `unshare -rn` and
+namespace interface/socket setup. No live attempt was made for this follow-up.
+Task 64's shared fixed-tick observer/input translator is missing here; the smoke
+steps below are available independently, while paired capture acceptance remains
+blocked on it. All outputs belong under ignored `work/parity/`. Record event
+metadata only: never enable `RT_AUDIO_DUMP`, screenshots or sample capture.
+
+First verify the independent build and synthetic regressions:
+
+```sh
+sh tools/bootstrap.sh --no-hooks
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR=
+cmake --build build --parallel 2
+ctest --test-dir build --output-on-failure
+pre-commit run --all-files
+```
+
+For a startup reference hook/isolation smoke, use a fresh destination:
+
+```sh
+python3 -I tools/audio_parity.py probe \
+  --game /home/adrox/aztec-re/game \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --output "$PWD/work/parity/l6-startup-01" --timeout 60
+cat work/parity/l6-startup-01/report.json
+```
+
+The probe copies writable Maps/Saves/profiles/configuration, symlinks immutable
+resources, clears inherited `RT_*` variables, and runs with both dummy SDL
+drivers through `timeout -s KILL 60 unshare -rn sh -ec`, configuring loopback and
+192.168.1.125 inside the namespace. Failure stops before launch. It requests
+`RT_AUDIO_LOG`, `RT_CMD_LOG` and `RT_STATE_LOG`; the default script waits 3000 ms
+and quits. Exit 1 is expected even after raw capture (`captured_unmapped`); exit
+77 means missing private inputs. Missing/empty audio logs are blocked, never a
+pass. Check `invocation.json` and `process.log`. An old runtime without the audio
+hook requires a private rebuild from hand-written runtime sources plus the
+user's local lift; never modify the supplied binary or publish derived outputs.
+A startup run is not a mission, event-matrix or record/replay acceptance run.
+
+A clone-only dispatcher smoke uses its own private copy and a tick-driven script.
+Run from the worktree root on the same namespace-capable host:
+
+```sh
+python3 - <<'PY'
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path('tools').resolve()))
+from parity_report import execute, private_game
+root = Path('work/parity/l6-clone-smoke-01').resolve()
+root.mkdir(parents=True, exist_ok=False)
+private_game(Path('/home/adrox/aztec-re/game'), root / 'game')
+script = root / 'input.txt'
+script.write_text('run 120\nquit\n')
+execute([Path('build/aztec_engine').resolve(), '--game', root / 'game', '1',
+         '--software', '--no-mouse-grab', '--no-edge-scroll',
+         '--script', script, '--audio-log', root / 'clone.jsonl'],
+        root, 60, setup_network=False)
+PY
+```
+
+This uses dummy SDL inside its own namespace; `execute` also clears inherited
+`RT_*` variables, including sample-dump settings. It runs the graphical
+application with a dummy video driver: `--headless` currently omits the audio
+dispatcher. Do not pass `--no-audio`, which disables captions and event requests.
+This smoke is not aligned to the reference startup run.
+
+After task 64 is available, have its driver/auditor prepare private scripts at
+`work/parity/l6-input/reference-record.txt`, `reference-replay.txt` and
+`clone.txt` for one common scenario/horizon/camera/UI state. The replay script
+must navigate into the same mission without reissuing the recorded in-mission
+orders. Reference scripts use milliseconds/DIK keys; clone scripts use
+frames/ticks/SDL keys. Reusing one script verbatim is not a shared clock contract.
+The scenario must exercise selection, orders, combat, construction (`building`),
+production announcements (`production`), UI, ambient loops and music. Then run:
+
+```sh
+python3 -I tools/audio_parity.py probe \
+  --game /home/adrox/aztec-re/game \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --script "$PWD/work/parity/l6-input/reference-record.txt" \
+  --output "$PWD/work/parity/l6-record-01" --timeout 120
+python3 -I tools/audio_parity.py probe \
+  --game /home/adrox/aztec-re/game \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --script "$PWD/work/parity/l6-input/reference-replay.txt" \
+  --replay "$PWD/work/parity/l6-record-01/commands.txt" \
+  --output "$PWD/work/parity/l6-replay-01" --timeout 120
+```
+
+Inspect both reports even though both commands return 1 for unmapped captures.
+Require complete nonempty mission state logs over the declared horizon and
+audit injected packet readback against the recording, excluding NOTHING packets.
+Use the existing `parity_report.verify_packet_readback`, `state_rows` and
+`pool_differences` helpers after task 64 establishes the exact horizon. Preserve
+transient reference state differences as failures; matching clone hashes cannot
+replace this audit. Each probe creates a separate private installation copy.
+
+For the paired clone capture, rerun the clone Python block above with a fresh
+`root` of `work/parity/l6-clone-01` and replace the two script lines with:
+
+```python
+script = Path('work/parity/l6-input/clone.txt').resolve()
+```
+
+Keep mission number, viewport/camera, profile/options, action sequence and tick
+horizon consistent with the shared scenario. The startup/smoke scripts are not
+substitutes for these audited inputs. For each raw capture, prepare a private
+SHA-256-bound manifest as specified in [parity.md](parity.md#private-capture-and-normalization).
+Use the same scenario/clock/identity header on both sides and an explicitly
+audited tick offset. Reference annotations must resolve every buffer request to
+an evidenced sound ID, kind and trigger. Never take IDs or ordering from clone
+expectations. Streamed music transitions, speech/caption timing and events absent
+from the DirectSound shim need an audited reference observer; do not fabricate
+extra events or assert completeness while those observations are missing.
+
+After those audits, normalize and compare:
+
+```sh
+python3 -I tools/audio_parity.py normalize reference \
+  work/parity/l6-record-01/reference.jsonl \
+  work/parity/l6-record-01/reference-manifest.json \
+  --output work/parity/l6-record-01/reference-normalized.json
+python3 -I tools/audio_parity.py normalize clone \
+  work/parity/l6-clone-01/clone.jsonl \
+  work/parity/l6-clone-01/clone-manifest.json \
+  --output work/parity/l6-clone-01/clone-normalized.json
+python3 -I tools/audio_parity.py compare \
+  work/parity/l6-record-01/reference-normalized.json \
+  work/parity/l6-clone-01/clone-normalized.json \
+  --require-all-classes --output work/parity/l6-record-01/diff.json
+```
+
+Normalize replay with its own digest/annotations and compare it to the recording
+before accepting clone differences. Compare preserves the global sequence and
+reports the first differing event; timing tolerance is one tick. The strict
+coverage gate requires events in all eight classes on both sides. It cannot
+establish per-mission or settings coverage by itself. Repeat in fresh directories
+for each mission and independently varied effects/music/speech gains, mute,
+acknowledgements and captions; test positional loops entering/leaving visibility,
+range and object lifetime, plus music transitions through the allowed playlist.
+Retain event logs and failure reports privately. Publish only evidence labels
+and factual counts, with unresolved mappings still marked **needs live run**.
+## L8 AI run sheet (needs live run)
+
+Task 75 / V11, 2026-11-05: **S** clone semantic observer and synthetic distribution
+controls; **P** passive/provocation recipes. **Needs live run.** No reference run
+was attempted: this sandbox denies the required network namespaces. Dependency
+`64-shared-runner-observer` is still in the queue and its audited reference
+production/town/tactic/input mapping is absent. No M evidence or planner policy
+correction follows from these controls. The existing twenty-minute skirmish and
+replay assertions remain required.
+
+Validation in this worktree: Release build passed; 44 CTest entries passed and
+six skipped (five private-data entries and restricted UDP process creation).
+Pre-commit passed for tracked files and all new files. The eight `ai_measure`
+controls include actual headless synthetic traces, repeated byte identity and
+traced/untraced tick-hash equality. These results contain no reference evidence.
+
+First verify the independent controls (no original installation needed):
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR=
+cmake --build build --parallel 2
+ctest --test-dir build -R '^(ai_unit|ai_skirmish|parity_ai|ai_measure)$' --output-on-failure
+```
+
+The following command works now and writes a blocked report, returning 77. Use a
+fresh output name for each invocation; missing data must never become a pass:
+
+```sh
+python3 -I tools/ai_measure.py --scenario tests/parity/ai_passive.json \
+  --reference work/parity/l8/reference-1.jsonl work/parity/l8/reference-2.jsonl \
+  --clone work/parity/l8/clone-1.jsonl work/parity/l8/clone-2.jsonl \
+  --output work/parity/l8-missing-reference-01
+```
+
+On an unrestricted host, finish task 64 before using the remaining commands.
+Review the proposed private adapter interface below when implementing it; the
+executable `work/parity/l8/reference-adapter` **does not exist in this checkout**.
+It must launch the selected runtime, install audited normalized AI observers,
+realize the scenario input at exact simulation ticks, and write complete
+`audited-ai-v1` JSONL. Do not replace it with raw unit-log conversion. See
+[the event contracts](../tests/parity/README.md#l8-repeated-distributions-and-clone-decision-observer).
+
+Prepare each recipe independently. Place its fully audited fixtures under
+`work/parity/l8/setup/<case>/Maps/` (all map/resource sidecars and script), and
+`clone-orders.txt` beside that Maps directory. The order file may be empty for a
+passive run. Script/input setup must produce the declared attacks, force loss,
+harvest suspension and reinforcements on both sides; the present clone CLI order
+file alone cannot express all those actions. Retain action acknowledgements and
+before/after state controls. Confirm zero inherited campaign tactics, matching
+seed, cash, technology, enabled IDs, daylight/fog and town identity mapping. Freeze
+a private `scenario.json` copy with `reference_audit` set to the reviewed audit ID;
+keep evidence P until actual observations justify M. Candidate values and setups
+are deliberately provisional; do not silently change them between repeats.
+
+After those prerequisites are satisfied, these are the exact paired commands.
+Run from the worktree root. `case_name` selects either `ai_passive` or
+`ai_provocation`. Each process gets ordinary private Maps/Saves and copied
+settings; only read-only assets are symlinked. Never pass the shared installation
+as the runtime's writable game directory. Use a new case root for another batch.
+
+```sh
+case_name=ai_passive
+source_game=/home/adrox/aztec-re/game
+reference_runtime=/home/adrox/aztec-re/build/aztec_recomp
+adapter="$PWD/work/parity/l8/reference-adapter"
+setup="$PWD/work/parity/l8/setup/$case_name"
+batch="$PWD/work/parity/l8/$case_name"
+engine="$PWD/build/aztec_engine"
+rules="$PWD/docs/data"
+test -x "$adapter" && test -f "$setup/scenario.json" || exit 1
+mkdir "$batch" || exit 1
+for repeat in 1 2 3 4 5; do
+  for origin in reference clone; do
+    run="$batch/$origin-$repeat"
+    mkdir -p "$run/game/Maps" "$run/game/Saves" "$run/user" || exit 1
+    for asset in Aztec.exe Res Video Music Campaign; do
+      test ! -e "$source_game/$asset" || ln -s "$source_game/$asset" "$run/game/$asset" || exit 1
+    done
+    for config in "$source_game"/*.ini "$source_game"/*.plr "$source_game"/*.cfg; do
+      test ! -f "$config" || cp "$config" "$run/game/" || exit 1
+    done
+    cp -R "$setup/Maps/." "$run/game/Maps/" || exit 1
+    if test "$origin" = reference; then
+      timeout -s KILL 300 unshare -rn sh -eu -c '
+        ip link set lo up
+        ip addr add 192.168.1.125/24 dev lo
+        cd "$1/game"
+        exec env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+          RT_NO_GRAB=1 RT_NO_VIDEO=1 RT_RESOLUTION=800x600 \
+          "$2" --game "$1/game" --runtime "$3" --scenario "$4/scenario.json" \
+          --output "$1/events.jsonl"
+      ' sh "$run" "$adapter" "$reference_runtime" "$setup" >"$run/stdout.log" 2>"$run/stderr.log" || exit 1
+    else
+      map_name=zai_passive
+      test "$case_name" != ai_provocation || map_name=zai_provocation
+      timeout -s KILL 300 unshare -rn env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+        AZTEC_USER_DIR="$run/user" "$engine" --headless --game "$run/game" \
+        --rules-dir "$rules" --no-auto-orders --orders "$setup/clone-orders.txt" \
+        --max-ticks 14400 --ai-trace "$run/events.jsonl" \
+        --tick-hashes "$run/hashes.txt" --report "$run/report.json" "$map_name" \
+        >"$run/stdout.log" 2>"$run/stderr.log" || exit 1
+    fi
+  done
+done
+python3 -I tools/ai_measure.py --scenario "$setup/scenario.json" \
+  --reference "$batch"/reference-*/events.jsonl --clone "$batch"/clone-*/events.jsonl \
+  --output "$batch/comparison"
+```
+
+Repeat the entire block with `case_name=ai_provocation` after auditing that setup.
+Never bypass failed loopback/socket setup. Preserve nonzero exits, early horizons,
+missing reference classes and empty clone classes as failures/blockers. Run
+reference record/replay controls before interpreting these measurements. Five
+repeats per side are an initial protocol, not statistical proof; retain per-run
+counts, tick windows, whole-force/type/site frequencies and raw provenance. The
+full recipe includes expansion/retreat, which the clone currently cannot issue;
+once observed on the reference they must fail rather than be removed to get green.
+Use overlapping windows to bracket policy changes, then add synthetic regressions
+for each measured boundary and rerun all existing AI soak/replay checks. Only
+measured results can justify replacing cheapest-unit, eight-tile placement,
+force-count launch and average-income fallback policies or changing V11 to M.
+## L3 path tracing run sheet (task 68, needs live run)
+
+Task 64's shared scenario runner/observer is absent in this checkout. This task
+implements the offline comparator only. Do not run reference processes inside
+Codex, bypass `unshare -rn`, or treat historical zpath logs as aligned streams.
+The preparation and comparison commands below are executable now; the shared
+capture invocation must come from task 64 once its audited adapter is available.
+There is no working shared L3 capture command in the current tree.
+
+First preserve the independent 48-configuration baseline and run synthetic checks:
+
+```sh
+mkdir -p work/parity/l3-live
+build/path_bench --json > work/parity/l3-live/path-before.jsonl
+ctest --test-dir build -R 'path|zpath_tools' --output-on-failure
+```
+
+Prepare one private map candidate per course/count/fog combination. This example
+uses one-tile opposing traffic; change only the selected course/count/fog for
+another case, and use a fresh destination. It writes no shared installation data:
+
+```sh
+case_dir="$PWD/work/parity/l3-live/swap1-30-explored"
+mkdir -p "$case_dir/game/Maps" "$case_dir/game/Saves"
+reference_game=/home/adrox/aztec-re/game
+for item in Aztec.exe Res Video Music Campaign; do
+  if [ -e "$reference_game/$item" ]; then
+    ln -s "$reference_game/$item" "$case_dir/game/$item"
+  fi
+done
+for item in "$reference_game"/*.plr "$reference_game"/*.ini; do
+  if [ -f "$item" ]; then cp "$item" "$case_dir/game/"; fi
+done
+ZPATH_GAME_DIR="$reference_game" python3 -I tools/make_zpath.py \
+  swap1 30 "$case_dir/game" explored
+build/aztec_map_viewer --maps "$case_dir/game/Maps" --dump zpath1 \
+  > "$case_dir/map-dump.txt"
+```
+
+`game/course.json` describes geometry, initial units, group destinations and raw
+packet order frames; `game/cmd.txt` contains reference packets. These are setup
+candidates, not a shared semantic scenario. Task 64 must convert setup and orders
+for BOTH programs and verify actual initial positions, unit types, ownership,
+identity mappings and command readback. Never pass reference packets directly
+to the clone or assume pool IDs equal engine IDs. The current harness supports
+numbered campaign missions only, so `zpath1` also requires its custom-map adapter.
+Use the supplied reference binary `/home/adrox/aztec-re/build/aztec_recomp` only
+if it supports the audited observer; otherwise build the hand-written observer
+with private generated inputs inside this worktree.
+
+On an unrestricted namespace-capable host, capture one reference recording,
+two independent reference replays and two clone runs from the same shared
+scenario. Each process needs its own private Maps/Saves/profiles and immutable
+resource symlinks, both dummy SDL drivers, a kill timeout and `unshare -rn`.
+Reference namespace setup must fail closed at `ip link set lo up` or
+`ip addr add 192.168.1.125/24 dev lo`. Retain command readback, before-command
+normalized positions **every tick**, order tick, goals, complete horizon and
+producer/identity/scale provenance. Keep 1490 ticks after each unit's order,
+including the delayed park group's full budget; extend if arrivals are censored.
+Validate reference replay repeatability before clone comparison. Namespace,
+command, setup, mapping and observation failures are failed experiments.
+
+Required coverage (each ground course at 1/10/30 units, both fog modes):
+
+| Control | Existing preparation | Additional audited setup needed |
+| --- | --- | --- |
+| Open and obstacle detours | open, wall, clusters, maze, utrap, rooms, diag | Actual terrain/footprint checks |
+| Chokepoints and crowds | gap1/2/4, corr1/2, swap/swap1, park, mixed | Opposing orders and delayed budgets |
+| Unreachable goal | Synthetic path regression only | Sealed destination with normal orders |
+| Disconnected group | Synthetic path regression only | Members on both sides of sealed wall, both selection orders |
+| Boats and Johnka | None in zpath generator | Types 84/88, measured water channels/landing destinations |
+| Flight | None in zpath generator | Bird/Zeppelin controls, matched distance and obstacle crossing |
+| Radius/footprint boundaries | Ground layout proxies only | Small/large units, actual building occupancy and narrow clearance |
+
+Do not label a `ZP_TYPES` substitution as a boat/flight suite: the generator's
+legacy type table and ground passability do not establish water or air setup.
+For unreachable/disconnected controls retain closest approach, terminal position,
+orders and stalls; null arrival is censored even if both programs stop.
+
+After task 64 supplies complete normalized streams, write a private plan with
+its **actual audited contract name**, mission identifier (0 for a custom map)
+and identity mapping.
+This example uses placeholder identities/contract and a tile-(80,30) pixel-centre
+goal (each coordinate times 256); replace them with observed values:
+
+```sh
+cat > "$case_dir/trace-plan.json" <<'JSON'
+{
+  "schema": 1,
+  "contract": "REPLACE_WITH_AUDITED_CONTRACT",
+  "mission": 0,
+  "position_scale": 256,
+  "units": {
+    "group0-unit0": {
+      "reference": "REPLACE_REFERENCE_ID",
+      "clone": "REPLACE_CLONE_ID",
+      "goal": [989184, 374784],
+      "order_tick": 62
+    }
+  },
+  "tolerance": {
+    "arrival_ticks": 12,
+    "arrival_radius_px": 288,
+    "path_ratio_max": 1.25,
+    "shape_px": 48,
+    "idle_px": 0.5,
+    "stall_ticks": 120
+  }
+}
+JSON
+# Add EVERY intended unit and its own group goal/order tick before comparison.
+python3 -I tools/zpath_trace.py "$case_dir/trace-plan.json" \
+  "$case_dir/reference.jsonl" "$case_dir/clone.jsonl" \
+  --output "$case_dir/trace-comparison.json"
+```
+
+The report includes each unit's arrival tick, traveled distance, maximum idle
+run, clone/reference path ratio, maximum aligned separation, and first divergent
+unit/tick/cause class. Shape is aligned positional deviation, so inspect both
+trajectories to separate speed from route choice. Provisional gates and censoring
+are documented in [rules_movement.md](rules_movement.md#11-l3-trace-comparison-preparation-2026-11-05-needs-live-run).
+A missing/truncated observation, lifecycle change or mismatched contract produces
+`invalid` with a nonzero exit code, never a pass. Keep every map, log, plot and
+report containing private observations under ignored `work/`.
+
+Only after reference repeatability and a diagnosed paired divergence should a
+path behavior change be made. Save before/after `path_bench --json` outputs and
+compare all 48 hashes and movement metrics excluding wall-clock timing. Preserve
+them unless a documented reference measurement justifies the specific change.
+Update L3 paired counts from actual selected diff reports after live capture;
+currently **0 scenarios, 0 pass, 0 fail, 0 skip**. No first live divergence or
+arrival/path tolerance pass is available. Status: **needs live run**.
+## Building and mine placement run sheet (needs live run)
+
+Task 66 depends on **64-shared-runner-observer**, which is still queued and is
+absent from this checkout. No live reference placement observations were supplied
+or collected for this follow-up. Do not promote the task 47 provisional rules
+from deterministic engine tests or code inspection. Live reference launches are
+denied in this sandbox; run the following probes on a host with the required
+namespace support. Preserve any isolation/launch failure as a failed experiment.
+
+`tests/parity/placement.json` is a candidate screen-input catalogue for ztest_all,
+covering every public Building/Defence type once in eight classes and ten variant
+families. It is **not** an executable `parity_run.py` scenario. The declared
+screen coordinates must be used identically in both programs after measuring the
+camera and setup route. They are candidates, not assertions of a clear site or
+of the original's snap boundary. Hall/outpost placement routes and rotation may
+be unavailable; record that fact rather than inventing input or a rotate key.
+Expand the catalogue privately:
+
+```sh
+python3 tools/placement_compare.py list
+python3 tools/placement_compare.py prepare --output work/parity/placement-plan
+```
+
+Prepare two fresh, separate private installations; this command copies only the
+campaign template needed by the generator and writable configuration files. It
+never changes the read-only installation. Run from this worktree root, once:
+
+```sh
+python3 - <<'PY'
+from pathlib import Path
+import shutil
+source = Path('/home/adrox/aztec-re/game')
+for label in ('reference', 'clone'):
+    target = Path('work/parity/placement-live') / label / 'game'
+    target.mkdir(parents=True, exist_ok=False)
+    (target / 'Maps').mkdir()
+    (target / 'Saves').mkdir()
+    for name in ('Aztec.exe', 'Res', 'Video', 'Music', 'Campaign'):
+        if (source / name).exists():
+            (target / name).symlink_to((source / name).resolve())
+    for item in source.iterdir():
+        if item.is_file() and item.suffix.lower() in ('.ini', '.plr', '.cfg'):
+            shutil.copy2(item, target / item.name)
+    for item in (source / 'Maps').iterdir():
+        if item.name.lower().startswith('mission_14.'):
+            shutil.copy2(item, target / 'Maps' / item.name)
+PY
+python3 tools/make_testmaps.py --game work/parity/placement-live/reference/game
+python3 tools/make_testmaps.py --game work/parity/placement-live/clone/game
+```
+
+Keep only the generated ztest_all files in each private Maps directory before
+reference custom-map navigation (first row at 258). Retain `.layout.json` for
+actual shifted positions. On the live host, prepare and audit separate input
+routes at `work/parity/placement-live/reference/input.txt` (RT_SCRIPT grammar,
+including player/custom-map navigation) and `clone/input.txt` (PlaytestScript
+screen input, starting directly in ztest_all). Select the producer and building
+card through the UI; confirm its type and prerequisites, money, owning town,
+fog, diplomacy, passive AI and camera before the common screen sweep. Copy fresh
+private profiles/maps per repetition and variant. Never reuse modified placement
+state for a new distance/deposit boundary control.
+
+These are **unaligned diagnostic probes**, executable once those input files
+exist; they cannot emit normalized per-tick reference decisions by themselves:
+
+```sh
+test -s work/parity/placement-live/reference/input.txt
+timeout -s KILL 90 unshare -rn sh -eu -c '
+  ip link set lo up
+  ip addr add 192.168.1.125/24 dev lo
+  exec env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+    RT_NO_GRAB=1 RT_NO_VIDEO=1 RT_RESOLUTION=800x600 \
+    RT_SCRIPT="$PWD/work/parity/placement-live/reference/input.txt" \
+    RT_DUMP_DIR="$PWD/work/parity/placement-live/reference" \
+    RT_CMD_LOG="$PWD/work/parity/placement-live/reference/commands.txt" \
+    RT_STATE_LOG="$PWD/work/parity/placement-live/reference/state.txt" \
+    /home/adrox/aztec-re/build/aztec_recomp \
+    "$PWD/work/parity/placement-live/reference/game/Aztec.exe"
+'
+test -s work/parity/placement-live/clone/input.txt
+timeout -s KILL 90 unshare -rn env \
+  SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+  AZTEC_USER_DIR="$PWD/work/parity/placement-live/clone/profile" \
+  build/aztec_engine --game "$PWD/work/parity/placement-live/clone/game" \
+  --size 800x600 --software --no-audio \
+  --script "$PWD/work/parity/placement-live/clone/input.txt" \
+  --ui-trace "$PWD/work/parity/placement-live/clone/ui.jsonl" \
+  --capture-dir "$PWD/work/parity/placement-live/clone/frames" \
+  --capture-every 1 ztest_all
+```
+
+`--ui-trace` now includes `placement`: snapped `cell`, aggregate `valid`,
+`cells` with individual blocking reasons, actual `overlay_drawn`, and
+`ghost_sprite: null` because the engine currently draws only the coloured grid.
+The existing cursor, tooltip, command and screenshot fields complete the raw
+engine diagnostic. Click validation, overlay and trace share the preview query.
+This trace is after input/before presentation; a successful click can close the
+mode, so inspect the previous preview and submitted command together. Raw frames
+and raw tick numbers must **not** be relabelled as aligned reference observations.
+
+After task 64 supplies audited setup/input/clock and observation adapters, emit
+`placement-v1` bundles as described in [tests/parity/README.md](../tests/parity/README.md#placement-comparison-contract).
+Compare complete per-tick captures using:
+
+```sh
+python3 tools/placement_compare.py compare \
+  --reference work/parity/placement-live/reference/placement.json \
+  --clone work/parity/placement-live/clone/placement.json \
+  --output work/parity/placement-live/comparison.json
+```
+
+Exit 0 means equality of the declared observations, 1 a measured difference, and
+2 invalid/missing/unaligned observations. Missing captures are never zero error.
+Measure radius/metric, clearance mask values, deposit channel/threshold and
+terrain exceptions before changing engine rules. Sweep own/allied/enemy town
+centre distances along axes and diagonals; test blocked cells, reservations,
+ground/air occupants and mineral values independently. Capture cancel, invalid
+click, repeated placement and any measured rotation input, including feedback,
+cursor and ghost. Keep exact overlay pixel differences separate from tolerant
+visual diagnostics and from semantic validity. All maps, logs, bundles and
+captures remain private under ignored `work/`; commit none of them.
+## L1 task 65 run sheet (needs live run)
+
+Task 64 (`64-shared-runner-observer`) is still in the queue in this checkout.
+The shared setup/command adapters and audited semantic reference observer are
+absent. This task prepares the independent portion only. No reference process
+was launched in Codex: namespace creation is denied. No engine rule change is
+justified by new measurements, and all 26 rules retain P. Baseline Release build
+and CTest passed (43 passes, six skips); all pre-commit hooks passed.
+
+Generate an asset-free handoff, without invoking either executable:
+
+```sh
+python3 -I tools/parity_rules.py plan --output work/parity/l1-task65-plan
+```
+
+This creates ordered `measurements.json`, a normalization proposal, and each
+case's scenario and blank measurement form. It requires no private installation
+and applies no inputs. Null reference/clone-before/clone-after values mean
+**unmeasured**, never zero or equality. `tests/parity/rules_protocol.json` defines
+one primary metric per case and proposed integer units for every observed field.
+The existing matrix has only a layer row, no individual case ordering; this run
+sheet makes the existing filename/list order explicit. Collect cases in that
+order. Triage measured fixes by impact: damage/armor, reload, build time, income,
+then the other mechanics. Keep the original clone measurement before each fix.
+
+After task 64 supplies audited adapters, on a namespace-capable host:
+
+1. Make independent private reference-record, reference-repeat and clone copies
+   per case/control. Symlink immutable resources/executable from
+   `/home/adrox/aztec-re/game`; copy Maps/Saves/settings. Use the runtime
+   `/home/adrox/aztec-re/build/aztec_recomp`. Keep all outputs under ignored
+   `work/parity/`. Do not reuse mutated profiles between runs.
+2. Resolve the scenario's controls and candidate `pending.json`: verify actual
+   placements, generated halls, town membership, money, tech/speed, initial HP,
+   resource footprints, day phase, visibility, AI and legal command acceptance.
+   Task 64 must supply the invocation for its runner; the existing `probe`
+   command is only a launch control and cannot execute the abstract inputs.
+3. Run dummy SDL video/audio inside `timeout -s KILL N unshare -rn sh -ec`.
+   Reference setup must bring loopback up and add `192.168.1.125/24` before exec.
+   A denied namespace/network setup is a failed experiment. Never bypass it.
+   Record exact executable/configuration identities and command readback privately.
+4. Record and replay twice; validate packet readback, complete horizons and
+   semantic reference repeatability before clone comparison. Preserve actual
+   event ticks, not wall-clock script waits. Use canonical scenario identities,
+   stable spawn/projectile identities, and the same before-command boundary.
+   Events during tick T first appear in the tick T+1 snapshot; retain native
+   launch/impact/service events to distinguish multiple changes within a tick.
+   Generic HP deltas cannot establish flight time, launch count or immunity.
+5. Resolve every proposed field definition against both audited observers.
+   Inapplicable fields need a documented representation on each row kind;
+   unsupported fields must block the case, never silently become zero. Positions
+   are pixel*256, inputs are tiles. Scope balances/supply to the correct side/town.
+   Preserve combined category flags and native armor precision. The proposal
+   does not certify the current engine-index or historical raw unit logs.
+6. Compare complete normalized streams with the existing command below. It
+   exports private numeric observations, not a scalar rule measurement. Derive
+   the primary metric using the protocol definition and retain all secondary
+   events/controls. Missing events require a longer horizon or a blocker, never
+   an assumed timing/rate. For income, regeneration and repair, extend the common
+   scenario/stream horizon through at least two relevant clock/service events.
+   The base 720 ticks and empty resource map alone cannot measure positive yield.
+7. Fill each private measurement form with reference, clone-before, clone-after,
+   unit, control variant, uncertainty and evidence label linking the private
+   repeatable capture/audit. Add a synthetic regression for every justified
+   engine fix. Rerun the same controlled clone after the fix. Publish only the
+   reviewed small integer expectation with its specification/evidence label;
+   keep raw numeric streams, extracted metadata and captures private. Change P
+   to M/V only after the reference measurement and adapter audit exist.
+
+```sh
+# Substitute the selected ID and the audited adapter output paths for each case.
+python3 -I tools/parity_rules.py compare --id l1_build_barracks \
+  --reference work/parity/l1-live/l1_build_barracks/reference.jsonl \
+  --repeat work/parity/l1-live/l1_build_barracks/reference-repeat.jsonl \
+  --clone work/parity/l1-live/l1_build_barracks/clone-before.jsonl \
+  --output work/parity/l1-live/l1_build_barracks/comparison-before
+```
+
+Population is not covered by the existing 26 base inputs. Before closing L1,
+add a separate population control variant to `l1_queue_two_towns`: record living
+side population and per-town accepted queues/spawns before and after crossing
+80, 100 and 110 units, with matched single-town, human/AI, sufficient-cash,
+prerequisite and free-spawn-space controls. These thresholds are experimental
+choices from existing synthetic cap regressions, not reference limits. Distinguish
+queue/tactic capacity from a side population restriction. Task 64 needs a
+population/command-acceptance observer and controlled repeated queue inputs for
+this variant; the base two commands cannot establish any cap or its absence.
+
+The per-case table below is also the handoff status report. N/A means no audited
+live value for either implementation. No before/after rule comparison is claimed.
+
+| Order | Scenario | Metric | Reference | Clone before | Clone after | Evidence |
+| ---: | --- | --- | --- | --- | --- | --- |
+| 1 | `l1_build_barracks` | completion_delay | N/A | N/A | N/A | P |
+| 2 | `l1_build_mine` | completion_delay | N/A | N/A | N/A | P |
+| 3 | `l1_damage_armored` | hit_damage | N/A | N/A | N/A | P |
+| 4 | `l1_damage_bird` | hit_damage | N/A | N/A | N/A | P |
+| 5 | `l1_damage_building` | hit_damage | N/A | N/A | N/A | P |
+| 6 | `l1_damage_defence` | hit_damage | N/A | N/A | N/A | P |
+| 7 | `l1_damage_ground` | hit_damage | N/A | N/A | N/A | P |
+| 8 | `l1_damage_zeppelin` | hit_damage | N/A | N/A | N/A | P |
+| 9 | `l1_flight_catapult` | flight_duration | N/A | N/A | N/A | P |
+| 10 | `l1_income_farm` | harvest_credit | N/A | N/A | N/A | P |
+| 11 | `l1_income_mine` | harvest_credit | N/A | N/A | N/A | P |
+| 12 | `l1_price_mine` | accepted_debit | N/A | N/A | N/A | P |
+| 13 | `l1_queue_serial` | completion_delay | N/A | N/A | N/A | P |
+| 14 | `l1_queue_two_towns` | completion_delay | N/A | N/A | N/A | P |
+| 15 | `l1_range_hopcannon` | range_boundary | N/A | N/A | N/A | P |
+| 16 | `l1_regeneration` | regeneration_delta | N/A | N/A | N/A | P |
+| 17 | `l1_regeneration_building` | regeneration_delta | N/A | N/A | N/A | P |
+| 18 | `l1_regeneration_organic` | regeneration_delta | N/A | N/A | N/A | P |
+| 19 | `l1_reload_cannon` | launch_interval | N/A | N/A | N/A | P |
+| 20 | `l1_repair_building` | repair_delta | N/A | N/A | N/A | P |
+| 21 | `l1_repair_defence` | repair_delta | N/A | N/A | N/A | P |
+| 22 | `l1_sight_cannon` | visibility_boundary | N/A | N/A | N/A | P |
+| 23 | `l1_speed_cannon` | position_delta | N/A | N/A | N/A | P |
+| 24 | `l1_speed_catapult` | position_delta | N/A | N/A | N/A | P |
+| 25 | `l1_speed_hopcannon` | position_delta | N/A | N/A | N/A | P |
+| 26 | `l1_train_cannon` | spawn_delay | N/A | N/A | N/A | P |
+
+Status: **needs live run**.
+## V19 scripted route run sheet: needs live run
+
+Task 80 supplies route tooling and synthetic regressions while task 71 remains
+incomplete. This sandbox denies live reference runs; execute this sheet only on
+a host permitting network namespaces. Keep `unshare -rn` and dummy SDL enabled.
+The current result is **needs live run**, with 0/15 verified campaign routes.
+No live runs were attempted for this iteration.
+
+Run from the worktree root. Create a private route workspace and a baseline
+specification for every mission. These empty player-input plans are **pending
+specifications**, not solutions or verified routes:
+
+```sh
+mkdir -p work/campaign-routes
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+path = Path('work/campaign-routes/scenarios.json')
+if path.exists():
+    raise SystemExit('Refusing to overwrite existing player route specifications')
+rows = [dict(id=f'mission-{m}-win', mission=m,
+             route=f'Pending measured player completion route for mission {m}',
+             expected_outcome='victory', save_tick=600, steps=[], checkpoints=[])
+        for m in range(1, 16)]
+path.write_text(json.dumps(rows, indent=2) + '\n')
+PY
+```
+
+Author normal player steps and named objective checkpoints in that private file
+using [the route contract](playthrough.md#scripted-route-contract-2026-11-05-needs-live-run).
+Choose save ticks strictly before the measured outcome and after mission start.
+Inspect action source indices/kinds using the script audit and `actions.md`.
+Empty steps are useful passive controls; they must not be described as winning
+player routes without actual completion. Commands beyond move/attack-move need
+engine driver work first; transport semantics need task 71. Add separate defeat
+specifications where useful; they do not replace the fifteen winning routes.
+
+On the unrestricted host, run paired clone simulations and fresh-process saves:
+
+```sh
+campaign_route_stamp=$(date -u +%Y%m%dT%H%M%S)
+campaign_clone="$PWD/work/parity/campaign-routes-$campaign_route_stamp"
+python3 tools/playthrough.py --game /home/adrox/aztec-re/game \
+  --engine "$PWD/build/aztec_engine" --rules-dir "$PWD/docs/data" \
+  --routes "$PWD/work/campaign-routes/scenarios.json" --no-auto-orders \
+  --max-ticks 43200 --timeout 900 --require-reference --out "$campaign_clone"
+campaign_clone_status=$?
+printf '%s\n' "$campaign_clone_status" > "$campaign_clone/gate-exit-status.txt"
+```
+
+This first strict run intentionally fails without reference timelines, even if
+clone completion succeeds. Inspect `summary.json`, `matrix.md`, `actions.md`,
+per-run process logs, tick transcripts and the save-continuation result. Isolation
+failures are failures; do not rerun without namespaces. A real missing game file
+is not a synthetic-test result. The output includes the exact order files,
+route fingerprints, executable digest and copied rules for review.
+
+Use the complete reference preparation and record/replay shell commands in
+[the campaign transport run sheet](#campaign-transport-and-objective-run-sheet-needs-live-run),
+with one **audited normal-input** `work/campaign-routes/mission_N.rt` per mission
+matching the authored route. That sheet creates separate private installations
+for record and replay and invokes the supplied runtime with dummy SDL inside
+`timeout -s KILL 200 unshare -rn`, setting loopback only inside the namespace.
+Set its final `wait` and process timeout to cover the route's actual duration;
+its default one-minute probe cannot measure a long route. A concrete one-hour
+variant after that sheet has prepared `$campaign_reference` is below. It uses
+separate `route-record` and `route-replay` installations and preserves each exit
+status; it does not reuse the initial probe's writable state.
+
+```sh
+export campaign_reference
+python3 - <<'PY'
+import importlib.util
+import os
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location('playthrough', 'tools/playthrough.py')
+harness = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(harness)
+source = Path('/home/adrox/aztec-re/game')
+maps, _ = harness.discover(source)
+for mission in range(1, 16):
+    directory = Path(os.environ['campaign_reference']) / f'mission_{mission}'
+    route = Path('work/campaign-routes') / f'mission_{mission}.rt'
+    if not route.is_file():
+        raise SystemExit(f'Missing audited normal-input route: {route}')
+    for phase in ('route-record', 'route-replay'):
+        run = directory / phase
+        run.mkdir()
+        harness.private_game(source, maps, run / 'game')
+    # The earlier preparation has already appended the matching mission_N.rt.
+    navigation = (directory / 'input.rt').read_text()
+    if not navigation.endswith('wait 60000\nshot\nquit\n'):
+        raise SystemExit('Unexpected navigation suffix; review before launching')
+    navigation = navigation.removesuffix('wait 60000\nshot\nquit\n')
+    (directory / 'route-input.rt').write_text(navigation + 'wait 3600000\nshot\nquit\n')
+PY
+for mission in $(seq 1 15); do
+  mission_probe="$campaign_reference/mission_$mission"
+  for phase in route-record route-replay; do
+    run_probe="$mission_probe/$phase"
+    replay_env=()
+    if [ "$phase" = route-replay ]; then
+      test -s "$mission_probe/route-record/commands.txt" || break
+      replay_env=("RT_CMD_REPLAY=$mission_probe/route-record/commands.txt")
+    fi
+    (
+      cd "$run_probe/game" || exit 1
+      timeout -s KILL 3900 unshare -rn env -u RT_CMD_REPLAY \
+        SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+        RT_NO_GRAB=1 RT_NO_VIDEO=1 RT_RESOLUTION=800x600 \
+        RT_SCRIPT="$mission_probe/route-input.rt" RT_DUMP_DIR="$run_probe" \
+        RT_UNIT_LOG="$run_probe/units.log" RT_UNIT_EVERY=1 \
+        RT_STATE_LOG="$run_probe/state.txt" RT_CMD_LOG="$run_probe/commands.txt" \
+        "${replay_env[@]}" sh -ec '
+          ip link set lo up
+          ip addr add 192.168.1.125/24 dev lo
+          exec /home/adrox/aztec-re/build/aztec_recomp "$1/Aztec.exe"
+        ' sh "$run_probe/game"
+    ) > "$run_probe/stdout.log" 2> "$run_probe/stderr.log"
+    printf '%s\n' "$?" > "$run_probe/exit-status.txt"
+  done
+done
+```
+
+Review replay command readback and reference repeatability before deriving
+semantic observations. Screen-coordinate clicks and millisecond waits do not
+establish equivalent simulation ticks or object identity. The replay runtime
+suppresses live lockstep commands when replay is enabled; retain navigation and
+check that replay packets actually cover the route. A general objective/outcome
+observer and route translator remain unavailable. These commands collect private
+inputs for that audit; they cannot themselves generate certified timelines.
+
+Once an audited observer establishes route equivalence and tick alignment,
+write its two actual reference timelines per route to
+`work/campaign-routes/reference/ID-1.json` and `ID-2.json`, following the documented
+`campaign-checkpoints-v1` format. Use the `route_sha256` from the first clone
+summary. Preserve the underlying observer version, runtime digest, readback and
+raw records privately. Never populate reference events from clone output or
+expected mission script timings. Missing observations keep this step pending.
+Then compare in a fresh private output directory:
+
+```sh
+python3 tools/playthrough.py --game /home/adrox/aztec-re/game \
+  --engine "$PWD/build/aztec_engine" --rules-dir "$PWD/docs/data" \
+  --routes "$PWD/work/campaign-routes/scenarios.json" --no-auto-orders \
+  --max-ticks 43200 --timeout 900 --require-reference \
+  --reference-dir "$PWD/work/campaign-routes/reference" \
+  --out "$PWD/work/parity/campaign-paired-$(date -u +%Y%m%dT%H%M%S)"
+```
+
+A changed route, save tick, tick budget or policy changes the fingerprint; collect
+new reference timelines for that specification. Publish only factual aggregate
+counts and English route specifications. Keep saves, command logs, observations,
+assets, screenshots and other captured data under ignored `work/`. Update L7
+paired counts only after reviewing actual `ID-reference/diff.json` results;
+pending routes and synthetic oracle fixtures add no live parity results.
