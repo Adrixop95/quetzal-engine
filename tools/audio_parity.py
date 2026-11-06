@@ -11,7 +11,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from parity_report import execute, json_object, private_game, private_output, write_json
 
-CLASSES = ('selection', 'orders', 'combat', 'building', 'ui', 'music', 'ambient')
+CLASSES = ('selection', 'orders', 'combat', 'building', 'ui', 'music', 'ambient', 'production')
 KINDS = ('sound', 'loop_start', 'loop_stop', 'music', 'music_stop', 'speech', 'subtitle')
 
 
@@ -70,7 +70,9 @@ def normalize(raw, manifest, source):
         if not isinstance(annotation, dict):
             raise ValueError('invalid annotation')
         if source == 'reference':
-            if row.get('kind') not in ('play', 'stop', 'release') or row.get('sound') is not None:
+            if (row.get('kind') not in ('play', 'stop', 'release') or 'sound' not in row
+                    or row['sound'] is not None or row.get('trigger') != 'unknown'
+                    or not integer(row.get('buffer'), 1) or not integer(row.get('flags'))):
                 raise ValueError('expected reference shim capture')
             # The shim lacks resource IDs and causal triggers; require every annotation.
             if set(annotation) != {'sound', 'kind', 'trigger'}:
@@ -118,7 +120,9 @@ def compare(reference, clone):
     for row in classes.values():
         row['status'] = ('different' if row['differences'] else
                          'compared' if row['reference'] or row['clone'] else 'unobserved')
+    unobserved = [c for c, row in classes.items() if not row['reference'] or not row['clone']]
     return dict(category='different' if differences else 'equal_observed_events' if left else 'no_events',
+                coverage_complete=not unobserved, unobserved_classes=unobserved,
                 tolerance_ticks=1, classes=classes, first=differences[0] if differences else None,
                 differences=differences)
 
@@ -138,10 +142,16 @@ def probe(args):
         script.write_text('wait 3000\nquit\n')
     category = 'captured_unmapped'
     try:
+        controls = dict(RT_AUDIO_LOG=str(output / 'reference.jsonl'), RT_SCRIPT=str(script),
+                        RT_CMD_LOG=str(output / 'commands.txt'), RT_STATE_LOG=str(output / 'state.txt'),
+                        RT_NO_GRAB='1', RT_NO_VIDEO='1', RT_RESOLUTION='800x600')
+        if getattr(args, 'replay', None):
+            shutil.copyfile(args.replay, output / 'replay.txt')
+            controls['RT_CMD_REPLAY'] = str(output / 'replay.txt')
         execute([args.runtime.resolve(), output / 'game/Aztec.exe'], output, args.timeout,
-                dict(RT_AUDIO_LOG=str(output / 'reference.jsonl'), RT_SCRIPT=str(script),
-                     RT_NO_GRAB='1', RT_NO_VIDEO='1', RT_RESOLUTION='800x600'))
-        if not (output / 'reference.jsonl').is_file():
+                controls)
+        trace = output / 'reference.jsonl'
+        if not trace.is_file() or not trace.stat().st_size:
             category = 'blocked_missing_audio_hook_or_no_requests'
     except (RuntimeError, OSError) as error:
         write_json(output / 'report.json', dict(category='experiment_failed', reason=str(error),
@@ -162,10 +172,13 @@ def main():
     diff = commands.add_parser('compare')
     diff.add_argument('reference', type=Path)
     diff.add_argument('clone', type=Path)
+    diff.add_argument('--require-all-classes', action='store_true',
+                      help='return failure when any trigger class lacks events on either side')
     run = commands.add_parser('probe')
     run.add_argument('--game', required=True, type=Path)
     run.add_argument('--runtime', required=True, type=Path)
     run.add_argument('--script', type=Path)
+    run.add_argument('--replay', type=Path, help='private reference command recording to replay')
     run.add_argument('--timeout', type=int, default=30)
     for command in (norm, diff, run):
         command.add_argument('--output', required=True, type=Path)
@@ -185,7 +198,9 @@ def main():
         with output.open('x') as stream:
             json.dump(result, stream, indent=2, sort_keys=True)
             stream.write('\n')
-        return int(args.command == 'compare' and result['category'] != 'equal_observed_events')
+        return int(args.command == 'compare' and
+                   (result['category'] != 'equal_observed_events' or
+                    (args.require_all_classes and not result['coverage_complete'])))
     except (OSError, ValueError, TypeError, KeyError) as error:
         parser.exit(2, f'audio parity: {error}\n')
 

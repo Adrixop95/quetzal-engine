@@ -97,7 +97,14 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
   World world;
   bool loaded = o.original_save.empty() ? load_world(data, spec, world, err)
                                        : load_original_save(data, o.original_save, world, err);
-  if (!loaded) { std::fprintf(stderr, "%s\n", err.c_str()); rc = 1; return PlayExit::Quit; }
+  if (!loaded) {
+    std::fprintf(stderr, "%s\n", err.c_str());
+    if (!o.resume_save.empty()) {
+      o.resume_save.clear(); o.frontend_notice = "Load failed: mission unavailable";
+      return PlayExit::ToMenu;
+    }
+    rc = 1; return PlayExit::Quit;
+  }
   win.set_title("Aztec Empire - " + (world.mission.title.empty() ? world.mission.file_name : world.mission.title));
   PlayExit exit_reason = PlayExit::Quit;
   {
@@ -177,6 +184,25 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       cam.center_on((s.start_x + 0.5f) * kTilePx, (s.start_y + 0.5f) * kTilePx);
     }
 
+    if (!o.resume_save.empty()) {
+      SaveData saved;
+      auto resumed = std::unique_ptr<GameSim>{};
+      try {
+        if (save_content_ok && read_save(o.resume_save, saved) && saved.mission == world.mission.file_name)
+          resumed = replay_save(saved, world, rules, session_content, data.map_file(world.mission.file_name, "scn"), err);
+      } catch (const std::exception& error) { err = error.what(); }
+      if (!resumed) {
+        std::fprintf(stderr, "Cannot resume selected save: %s\n", err.c_str());
+        o.resume_save.clear();
+        o.frontend_notice = "Load failed: invalid or incompatible save";
+        return PlayExit::ToMenu;
+      }
+      game = resumed.get(); sim = std::move(resumed); cmdui.set_sim(game);
+      o.modifications = game->modifications();
+      cam.x = saved.cam_x; cam.y = saved.cam_y; cam.zoom = saved.cam_zoom;
+      o.resume_save.clear();
+      o.frontend_notice.clear();
+    }
     std::ofstream ui_trace;
     if (!o.ui_trace.empty()) {
       ui_trace.open(o.ui_trace);
@@ -239,6 +265,8 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
     TextOverlay briefing;
     AudioOptions audio_options;
     ModificationOptions modification_options;
+    SaveLoadMenu slots;
+    std::string save_path = SaveLoadMenu::slot_path(0);
     const std::string briefing_text = mission_briefing(data, world.mission.file_name);
     const std::string next_mission = world.original_save ? "" : next_campaign_mission(data, world.mission.file_name);
     std::string notice;
@@ -295,7 +323,9 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       if (in.hit(SDL_SCANCODE_F11)) win.cycle_borderless();
       if (in.hit(SDL_SCANCODE_RETURN) && in.alt) win.toggle_fullscreen();
       notice_left = std::max(0.0, notice_left - dt);
-      const bool submodal = briefing.open || audio_options.open || modification_options.open;
+      const bool submodal = briefing.open || audio_options.open || modification_options.open || slots.open;
+      const bool slot_saving = slots.saving;
+      const int confirmed_slot = slots.update(in, ow, oh, pscale);
       if (modification_options.open) {
         const auto before = o.modifications.bits();
         modification_options.update(in, o, ow, oh, pscale);
@@ -334,13 +364,16 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
           modification_options.open = true;
         }
         if (pa == PauseMenu::Action::Resume) pause.open = false;
-        bool do_save = pa == PauseMenu::Action::Save || (in.ctrl && in.hit(SDL_SCANCODE_S));
-        bool do_load = pa == PauseMenu::Action::Load || (in.ctrl && in.hit(SDL_SCANCODE_L));
+        if (pa == PauseMenu::Action::Save || pa == PauseMenu::Action::Load)
+          slots.show(pa == PauseMenu::Action::Save);
+        bool do_save = (confirmed_slot >= 0 && slot_saving) || (in.ctrl && in.hit(SDL_SCANCODE_S));
+        bool do_load = (confirmed_slot >= 0 && !slot_saving) || (in.ctrl && in.hit(SDL_SCANCODE_L));
+        if (do_save || do_load) save_path = SaveLoadMenu::slot_path(confirmed_slot >= 0 ? confirmed_slot : 0);
         if (game && do_save && world.original_save)
           notify("Saving imported worlds is unsupported");
         if (game && do_save && !world.original_save) {
           save_requested = true;
-          if (pa == PauseMenu::Action::Save) pause.open = false;
+          pause.open = false;
           if (game->has_pending_commands())
             std::fprintf(stderr, "Save queued until pending commands are processed (resume simulation if paused)\n");
         }
@@ -356,7 +389,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
           fs::create_directories(dir, sec);
           uint64_t current_content = 0;
           bool saved = !sec && save_content_ok && current_save_content(data, world, spec, loaded_rules_dir, current_content) &&
-              current_content == session_content && write_save(dir + "/engine_slot1.azs", sd);
+              current_content == session_content && write_save(save_path, sd);
           std::printf(saved ? "saved game (tick %llu)\n" : "save failed (tick %llu)\n", (unsigned long long)sd.tick);
           notify(saved ? "Game saved" : "Save failed");
         }
@@ -365,7 +398,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
           notify("Loading an engine replay into an imported world is unsupported");
         if (game && do_load && !world.original_save) {
           SaveData sd;
-          std::string path = user_file("Saves/engine_slot1.azs");
+          std::string path = save_path;
           World fresh;
           std::string lerr = "Invalid or incompatible save";
           std::unique_ptr<GameSim> ns;
@@ -569,6 +602,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       briefing.draw(win.renderer(), scene.font(), ow, oh, pscale);
       audio_options.draw(win.renderer(), scene.font(), o, ow, oh, pscale);
       modification_options.draw(win.renderer(), scene.font(), o, ow, oh, pscale);
+      slots.draw(win.renderer(), scene.font(), ow, oh, pscale);
       if (world.outcome != kRunning) OutcomeMenu::draw(win.renderer(), scene.font(), ow, oh, pscale,
           world.outcome == kVictory, campaign_number(world.mission.file_name) == 15, !next_mission.empty());
       if (notice_left > 0) draw_messages(win.renderer(), scene.font(), {{notice, 1}},
@@ -603,7 +637,11 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       if (ui_trace.is_open()) {
         trace_ui(ui_trace, frame, world, cam, alpha, in, cmdui, game, ui_command_start,
                  panel.rect(), pscale, show_panel, pause.open, ck, cursor_drawn, cursor_ms,
-                 rendered_tooltip, periodic_shot.empty() ? pending_shot : periodic_shot, placement_overlay_drawn);
+                 rendered_tooltip, periodic_shot.empty() ? pending_shot : periodic_shot, placement_overlay_drawn,
+                 world.outcome == kVictory ? (campaign_number(world.mission.file_name) == 15 ? "victory" : "mission-result-victory") :
+                 world.outcome != kRunning ? "mission-result-defeat" : slots.open ? slots.screen_id() :
+                 briefing.open ? "objectives" : audio_options.open ? "audio" : modification_options.open ? "modifications" :
+                 pause.open ? "pause-menu" : "gameplay");
         ui_trace.flush();
         if (!ui_trace) { std::fprintf(stderr, "UI trace write failed\n"); rc = 1; break; }
       }
@@ -681,6 +719,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
         if (!selected || !opts.menu_script.empty()) break;
         opts.menu_session = true;
         spec = fr.mission;
+        opts.resume_save = fr.resume_save;
         open_brief.clear();
         menu = false;
       }

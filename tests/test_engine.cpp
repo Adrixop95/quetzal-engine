@@ -24,6 +24,7 @@
 #include "engine/assets/sprite_provider.hpp"
 #include "engine/platform/clock.hpp"
 #include "engine/app/playtest.hpp"
+#include "engine/app/ui_trace.hpp"
 #include "engine/sim/game_sim.hpp"
 #include "engine/sim/combat_trace.hpp"
 #include <sstream>
@@ -1421,6 +1422,17 @@ static void test_mine_construction_flow() {
     const auto preview = ui.placement_preview(w, cam, 12 * 48 + 24, 12 * 48 + 24);
     CHECK(preview.valid && preview.x == 12 && preview.y == 12 && !preview.cells.empty());
     for (const auto& cell : preview.cells) CHECK(!cell.blocked);
+    Input hover; hover.mx = 12 * 48 + 24; hover.my = 12 * 48 + 24;
+    for (bool overlay_drawn : {false, true}) {
+      std::ostringstream trace;
+      trace_ui(trace, 1, w, cam, 0, hover, ui, &sim, 0, panel, 1, true,
+               !overlay_drawn, CursorKind::Arrow, true, 0, "", "", overlay_drawn,
+               overlay_drawn ? "gameplay" : "pause-menu");
+      CHECK(trace.str().find("\"placement\":{\"cell\":[12,12],\"valid\":true") != std::string::npos);
+      CHECK(trace.str().find(overlay_drawn ? "\"overlay_drawn\":true" : "\"overlay_drawn\":false") != std::string::npos);
+      CHECK(trace.str().find(overlay_drawn ? "\"screen\":\"gameplay\"" : "\"screen\":\"pause-menu\"") != std::string::npos);
+      CHECK(trace.str().find("\"blocked\":null") != std::string::npos);
+    }
     Input target; target.mx = 20 * 48 + 24; target.my = 12 * 48 + 24; target.pressed[SDL_BUTTON_LEFT] = true;
     CHECK(ui.update(target, w, cam, 1, mm, true, panel));
     CHECK(ui.placing() == type && sim.pending_commands().empty()); // invalid click keeps mode
@@ -1428,6 +1440,11 @@ static void test_mine_construction_flow() {
     ui.update(cancel, w, cam, 1, mm, true, panel);
     CHECK(!ui.wants_left_click() && sim.pending_commands().empty());
     CHECK(ui.placement_preview(w, cam, 12 * 48, 12 * 48).cells.empty());
+    std::ostringstream idle_trace;
+    trace_ui(idle_trace, 2, w, cam, 0, hover, ui, &sim, 0, panel, 1, true,
+             false, CursorKind::Arrow, true, 0, "", "", false);
+    CHECK(idle_trace.str().find("\"placement\":null") != std::string::npos);
+    CHECK(idle_trace.str().find("\"screen\":\"gameplay\"") != std::string::npos);
     choose_mine();
     Input right; right.pressed[SDL_BUTTON_RIGHT] = true; right.buttons[SDL_BUTTON_RIGHT] = true;
     ui.update(right, w, cam, 1, mm, true, panel);

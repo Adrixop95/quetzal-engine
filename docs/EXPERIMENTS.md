@@ -422,13 +422,14 @@ Return both private run directories to the orchestrator, especially:
 - the rebuilt runtime identity and any build/namespace errors.
 
 Expected current verdict after successful launch is
-`blocked_observation_contract`: reference orders/queues, fractional coordinates,
+`blocked_observation_contract`: logical reference orders/queues,
 actual UI state and complete-render alignment remain unaudited. Captures are
 probes held at a simulation boundary, not certified paired L4/L5 frames. The
 five-second per-sample rendering wait may fail if the guest renderer needs a
 mutex held by the stopped logic thread; retain this result so the complete-frame
-hook can be placed at a verified boundary. Reference owner decoding and pool
-coverage also need live checks against mission placements. Initial anchor
+hook can be placed at a verified boundary. Pool liveness and class-specific
+fractional coordinates now have synthetic checks; their live coverage still
+needs checks against mission placements. Initial anchor
 ambiguity or a spawned object is an explicit experiment failure, not something
 to resolve by matching the nearest unit. See the schema and outstanding work in
 [PARITY_TEST_PLAN.md](PARITY_TEST_PLAN.md#shared-l0-schema-2-implementation).
@@ -436,6 +437,116 @@ to resolve by matching the nearest unit. See the schema and outstanding work in
 Do not update public parity passes from these probes. Update
 `docs/parity_matrix.md` with counts only after selecting and reviewing the
 returned reports. Never commit the captures, private JSON or game-derived data.
+### First live findings follow-up (2026-11-05): needs live run
+
+The orchestrator's first mission-1 run sampled ticks 1, 6 and 12 and reported
+63 matching live identities plus 70 suspected inactive entries. This is one
+externally supplied run, not a repeated rule measurement. The observer now
+checks both allocator chains/counts, enumerates allocated slots, and requires
+the world liveness byte at object `+0x5c`. It reports free allocator slots
+separately from allocated but inactive world objects. The previous pool bound
+was actually the allocator's free-list head. No sentinel HP/owner/position
+filter is used. A synthetic 133-slot pool retains exactly 63 live objects of
+sides 0/1, including across fractional movement; another control retains a live
+object with all three sentinel values. This does not prove the live count yet.
+
+Reference `diagnostics.orders` records allocated handles, type, owner, class,
+liveness, tactic, tile and (for Marines) unit state, attack-target handle and
+step destination. Tactic state/mode, anchor and route count/cursor are included.
+`diagnostics.queues` records each town/hall/owner, production/staged handles,
+the three production words at town `+118/+11c/+120`, and the logical
+head-to-tail ring contents, including wrapped rings. These are
+read-only probes. A tile step is not a logical command destination; a ring
+entry alone does not establish remaining/total time, payment, started or paused
+semantics. **Normalized orders and production queues remain unfinished.**
+The camera and viewport globals are recorded, but selection/panel/cursor/local
+view translation and a complete-render barrier also remain unfinished. The
+phase probe explicitly says `raw_primary_present`; it does not certify an L4
+frame. These limitations continue to block the shared observation contract.
+
+Rebuild with the commands above. On the unrestricted host, repeat the original
+schedule into fresh directories, preserving the earlier captures:
+
+```sh
+for repetition in 1 2; do
+  python3 -I tools/parity_run.py private_l0 --flat-output \
+    --game /home/adrox/aztec-re/game \
+    --runtime "$PWD/build_l0_reference/aztec_recomp" \
+    --engine "$PWD/build/aztec_engine" --timeout 120 \
+    --output "$PWD/work/parity/l0-followup-$repetition"
+  # Preserve blocked verdicts; process failures remain failures in runners.json.
+done
+cmp work/parity/l0-followup-1/reference/observations.jsonl \
+    work/parity/l0-followup-2/reference/observations.jsonl
+cmp work/parity/l0-followup-1/clone/observations.jsonl \
+    work/parity/l0-followup-2/clone/observations.jsonl
+python3 -I tools/parity_l0.py \
+  work/parity/l0-followup-1/reference.json work/parity/l0-followup-1/clone.json \
+  --repeat-reference work/parity/l0-followup-2/reference.json \
+  --repeat-clone work/parity/l0-followup-2/clone.json \
+  --output work/parity/l0-followup-review.json
+```
+
+The review intentionally returns nonzero while acceptance is pending. It rejects
+unequal repeated bundles or frame bytes as `run_nondeterminism`, and otherwise
+exports live/common identity counts, initial HP candidates grouped by type/value,
+and moved identities at each sample relative to tick 1. Pool exclusions are
+notices, never divergences. HP candidates remain `confirmed: false`: repeatable
+incomplete observations are not enough to change an engine rule. Inspect
+`diagnostics.pool` to distinguish genuinely free slots from inactive allocated
+objects; require the 63 expected live identities, owners 0/1 and their exact
+initial anchors before interpreting the HP or movement leads.
+
+Sample more densely to locate the first movement and order changes. Prepare a
+private scenario, then run the same paired/repeated experiment:
+
+```sh
+mkdir -p work/parity/l0-followup-scenarios
+python3 - <<'PY'
+import json
+from pathlib import Path
+s = json.loads(Path('tests/parity/private_l0.json').read_text())
+s['observe']['ticks'] = [1, 2, 3, 4, 5, 6, 8, 12, 18, 24, 36, 60]
+Path('work/parity/l0-followup-scenarios/private_l0.json').write_text(json.dumps(s, indent=2) + '\n')
+PY
+for repetition in 1 2; do
+  python3 -I tools/parity_run.py private_l0 --flat-output \
+    --scenarios-dir "$PWD/work/parity/l0-followup-scenarios" \
+    --game /home/adrox/aztec-re/game \
+    --runtime "$PWD/build_l0_reference/aztec_recomp" \
+    --engine "$PWD/build/aztec_engine" --timeout 180 \
+    --output "$PWD/work/parity/l0-dense-$repetition"
+done
+cmp work/parity/l0-dense-1/reference/observations.jsonl \
+    work/parity/l0-dense-2/reference/observations.jsonl
+cmp work/parity/l0-dense-1/clone/observations.jsonl \
+    work/parity/l0-dense-2/clone/observations.jsonl
+python3 -I tools/parity_l0.py \
+  work/parity/l0-dense-1/reference.json work/parity/l0-dense-1/clone.json \
+  --repeat-reference work/parity/l0-dense-2/reference.json \
+  --repeat-clone work/parity/l0-dense-2/clone.json \
+  --output work/parity/l0-dense-review.json
+```
+
+Read Marine unit states with positions and tactic/route changes: rest 1/5,
+march 2, attack 3, dying 4. Compare the snapshots *before* work for tick n;
+tick 6 reflects five completed updates. An initial script or AI tactic may
+move without any human packet. Do not label such movement a missing engine
+movement rule, or equate a physical rest state with a logical idle command.
+Use the shared schedule unchanged between both processes and repetitions.
+
+Before confirming type 32 (13000 versus 14000, six objects) or type 6
+(12000 versus 10000, three objects), retain the actual difficulty/profile and
+mission settings from both private game copies, initial mission HP overrides,
+rules identity and scenario identity beside the review. Repeat each separately
+controlled difficulty/map-setting variant twice in fresh private copies and
+fresh output directories. The current shared schema has no audited difficulty
+input adapter; equal requested mission IDs do not prove equal difficulty.
+Do not edit the shared installation, invent a difficulty switch, or change the
+engine HP tables from these leads. No engine HP or movement rule was changed
+in this follow-up. All live conclusions, full semantic adapters and measured
+L1/L4/L5/L8 acceptance remain **needs live run**.
+
 ## Campaign transport and objective run sheet: needs live run
 
 The task-71 sandbox explicitly denies live reference runs. Do not execute this
@@ -858,6 +969,215 @@ inputs local; publish only evidence labels and a factual result summary. A
 matching supported-field snapshot or retained opaque block is not complete
 resume, and tick-zero equality alone is not continuation parity.
 
+## V14 campaign UI run sheet (task 77, needs live run)
+
+Run these commands from this worktree root on a namespace-capable host, never
+inside the restricted Codex sandbox. All captures, profiles and traces remain
+private. Do not bypass `unshare -rn` after a namespace failure.
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR=
+cmake --build build --parallel 2
+ctest --test-dir build -R 'campaign_ui|ui_capture|frontend_capture_controls' --output-on-failure
+python3 -I tools/ui_capture.py frontend \
+  --scenario tests/parity/ui/campaign-ui.json \
+  --game /home/adrox/aztec-re/game \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --clone "$PWD/build/aztec_engine" \
+  --output "$PWD/work/parity/ui/campaign77-live-01" --timeout 60
+```
+
+The runner creates separate private game copies for the reference and both
+clone repetitions, symlinks immutable assets, copies mutable installation files,
+sets dummy SDL video/audio and executes through `timeout -s KILL` and
+`unshare -rn`. Clone captures now have separate `AZTEC_USER_DIR` profiles and
+clear inherited front-end automation variables. Reference loopback/address setup
+fails closed. Keep the nonzero exit status: this front-end runner deliberately
+reports exploratory, unaligned evidence, even if every capture succeeds.
+The scenario retains the previously documented reference startup/campaign/
+briefing probe. Its labels are requested capture points, not observed screen IDs.
+The extended clone route has 44 frames; it does not pretend to be an equivalent
+44-frame reference route.
+
+Before sequence comparison, finish/audit the task-64 reference UI adapter and
+measure the original menu graph through normal inputs. It must emit one actual
+screen observation per presentation, with normalized IDs from the documented
+`reference-ui-raw-v1` contract in ui_screens.md. No environment switch in this
+checkout currently supplies that stream. Do not rename a clone trace or fill it
+from the scenario's expected labels. Extend the reference input route to walk the
+same states and record its declared horizon before launch. In particular, the
+current reference startup probe is insufficient for the extended clone route.
+
+After that adapter produces `reference/screens.jsonl`, compare a complete route
+as follows (44 is the candidate horizon only when the audited reference route
+has explicitly been scheduled for 44 presentations):
+
+```sh
+python3 -I tools/ui_sequence.py \
+  --reference work/parity/ui/campaign77-live-01/reference/screens.jsonl \
+  --clone work/parity/ui/campaign77-live-01/clone-1/trace.jsonl \
+  --reference-frames 44 --clone-frames 44 \
+  --output work/parity/ui/campaign77-live-01/sequence
+```
+
+With the current missing observer this produces status `needs live run` and exits
+1. Screen-order equality alone is not L4/L5 acceptance. Repeat with fresh output
+folders and independently captured reference traces; require both reference
+repeats to agree. Capture normal winning and losing command routes for each of
+15 missions, then cover objective review, defeat/retry, return, next briefing,
+final ending, profile reopen, locked/unlocked selection, empty/occupied/corrupt
+slots, overwrite/load confirmation/cancel and settings after process restart.
+Use a fresh private profile for each initial-state control. Original new-game,
+difficulty, player selection, campaign-map, options categories, credits, quit
+confirmation and multiplayer graph routes still need observation and adapters.
+Do not force a simulation outcome as evidence of a normally reachable mission
+completion. No live result, unlock policy, graph completeness or pixel score is
+claimed by the synthetic regressions.
+## L6 live audio run sheet (task 76, needs live run)
+
+**Evidence: synthetic only; status: needs live run.** Do not execute this sheet
+inside the restricted Codex sandbox. Use a host that permits `unshare -rn` and
+namespace interface/socket setup. No live attempt was made for this follow-up.
+Task 64's shared fixed-tick observer/input translator is missing here; the smoke
+steps below are available independently, while paired capture acceptance remains
+blocked on it. All outputs belong under ignored `work/parity/`. Record event
+metadata only: never enable `RT_AUDIO_DUMP`, screenshots or sample capture.
+
+First verify the independent build and synthetic regressions:
+
+```sh
+sh tools/bootstrap.sh --no-hooks
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR=
+cmake --build build --parallel 2
+ctest --test-dir build --output-on-failure
+pre-commit run --all-files
+```
+
+For a startup reference hook/isolation smoke, use a fresh destination:
+
+```sh
+python3 -I tools/audio_parity.py probe \
+  --game /home/adrox/aztec-re/game \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --output "$PWD/work/parity/l6-startup-01" --timeout 60
+cat work/parity/l6-startup-01/report.json
+```
+
+The probe copies writable Maps/Saves/profiles/configuration, symlinks immutable
+resources, clears inherited `RT_*` variables, and runs with both dummy SDL
+drivers through `timeout -s KILL 60 unshare -rn sh -ec`, configuring loopback and
+192.168.1.125 inside the namespace. Failure stops before launch. It requests
+`RT_AUDIO_LOG`, `RT_CMD_LOG` and `RT_STATE_LOG`; the default script waits 3000 ms
+and quits. Exit 1 is expected even after raw capture (`captured_unmapped`); exit
+77 means missing private inputs. Missing/empty audio logs are blocked, never a
+pass. Check `invocation.json` and `process.log`. An old runtime without the audio
+hook requires a private rebuild from hand-written runtime sources plus the
+user's local lift; never modify the supplied binary or publish derived outputs.
+A startup run is not a mission, event-matrix or record/replay acceptance run.
+
+A clone-only dispatcher smoke uses its own private copy and a tick-driven script.
+Run from the worktree root on the same namespace-capable host:
+
+```sh
+python3 - <<'PY'
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path('tools').resolve()))
+from parity_report import execute, private_game
+root = Path('work/parity/l6-clone-smoke-01').resolve()
+root.mkdir(parents=True, exist_ok=False)
+private_game(Path('/home/adrox/aztec-re/game'), root / 'game')
+script = root / 'input.txt'
+script.write_text('run 120\nquit\n')
+execute([Path('build/aztec_engine').resolve(), '--game', root / 'game', '1',
+         '--software', '--no-mouse-grab', '--no-edge-scroll',
+         '--script', script, '--audio-log', root / 'clone.jsonl'],
+        root, 60, setup_network=False)
+PY
+```
+
+This uses dummy SDL inside its own namespace; `execute` also clears inherited
+`RT_*` variables, including sample-dump settings. It runs the graphical
+application with a dummy video driver: `--headless` currently omits the audio
+dispatcher. Do not pass `--no-audio`, which disables captions and event requests.
+This smoke is not aligned to the reference startup run.
+
+After task 64 is available, have its driver/auditor prepare private scripts at
+`work/parity/l6-input/reference-record.txt`, `reference-replay.txt` and
+`clone.txt` for one common scenario/horizon/camera/UI state. The replay script
+must navigate into the same mission without reissuing the recorded in-mission
+orders. Reference scripts use milliseconds/DIK keys; clone scripts use
+frames/ticks/SDL keys. Reusing one script verbatim is not a shared clock contract.
+The scenario must exercise selection, orders, combat, construction (`building`),
+production announcements (`production`), UI, ambient loops and music. Then run:
+
+```sh
+python3 -I tools/audio_parity.py probe \
+  --game /home/adrox/aztec-re/game \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --script "$PWD/work/parity/l6-input/reference-record.txt" \
+  --output "$PWD/work/parity/l6-record-01" --timeout 120
+python3 -I tools/audio_parity.py probe \
+  --game /home/adrox/aztec-re/game \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --script "$PWD/work/parity/l6-input/reference-replay.txt" \
+  --replay "$PWD/work/parity/l6-record-01/commands.txt" \
+  --output "$PWD/work/parity/l6-replay-01" --timeout 120
+```
+
+Inspect both reports even though both commands return 1 for unmapped captures.
+Require complete nonempty mission state logs over the declared horizon and
+audit injected packet readback against the recording, excluding NOTHING packets.
+Use the existing `parity_report.verify_packet_readback`, `state_rows` and
+`pool_differences` helpers after task 64 establishes the exact horizon. Preserve
+transient reference state differences as failures; matching clone hashes cannot
+replace this audit. Each probe creates a separate private installation copy.
+
+For the paired clone capture, rerun the clone Python block above with a fresh
+`root` of `work/parity/l6-clone-01` and replace the two script lines with:
+
+```python
+script = Path('work/parity/l6-input/clone.txt').resolve()
+```
+
+Keep mission number, viewport/camera, profile/options, action sequence and tick
+horizon consistent with the shared scenario. The startup/smoke scripts are not
+substitutes for these audited inputs. For each raw capture, prepare a private
+SHA-256-bound manifest as specified in [parity.md](parity.md#private-capture-and-normalization).
+Use the same scenario/clock/identity header on both sides and an explicitly
+audited tick offset. Reference annotations must resolve every buffer request to
+an evidenced sound ID, kind and trigger. Never take IDs or ordering from clone
+expectations. Streamed music transitions, speech/caption timing and events absent
+from the DirectSound shim need an audited reference observer; do not fabricate
+extra events or assert completeness while those observations are missing.
+
+After those audits, normalize and compare:
+
+```sh
+python3 -I tools/audio_parity.py normalize reference \
+  work/parity/l6-record-01/reference.jsonl \
+  work/parity/l6-record-01/reference-manifest.json \
+  --output work/parity/l6-record-01/reference-normalized.json
+python3 -I tools/audio_parity.py normalize clone \
+  work/parity/l6-clone-01/clone.jsonl \
+  work/parity/l6-clone-01/clone-manifest.json \
+  --output work/parity/l6-clone-01/clone-normalized.json
+python3 -I tools/audio_parity.py compare \
+  work/parity/l6-record-01/reference-normalized.json \
+  work/parity/l6-clone-01/clone-normalized.json \
+  --require-all-classes --output work/parity/l6-record-01/diff.json
+```
+
+Normalize replay with its own digest/annotations and compare it to the recording
+before accepting clone differences. Compare preserves the global sequence and
+reports the first differing event; timing tolerance is one tick. The strict
+coverage gate requires events in all eight classes on both sides. It cannot
+establish per-mission or settings coverage by itself. Repeat in fresh directories
+for each mission and independently varied effects/music/speech gains, mute,
+acknowledgements and captions; test positional loops entering/leaving visibility,
+range and object lifetime, plus music transitions through the allowed playlist.
+Retain event logs and failure reports privately. Publish only evidence labels
+and factual counts, with unresolved mappings still marked **needs live run**.
 ## L8 AI run sheet (needs live run)
 
 Task 75 / V11, 2026-11-05: **S** clone semantic observer and synthetic distribution

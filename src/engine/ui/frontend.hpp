@@ -14,6 +14,7 @@ namespace aztec::engine {
 
 struct FrontendResult {
   std::string mission;   // spec to play ("mission_3", "Pentagram")
+  std::string resume_save; // engine replay selected by the load dialog
   bool quit = false;
   bool failed = false;  // automation input, trace or capture failure
 };

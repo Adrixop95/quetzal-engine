@@ -21,7 +21,8 @@ inline void trace_ui(std::ostream& out, int frame, const World& world, const Cam
                      float alpha, const Input& input, const CommandsUi& ui, const GameSim* sim,
                      size_t command_start, SDL_Rect panel, int scale, bool panel_visible,
                      bool menu_open, CursorKind cursor, bool cursor_visible, uint32_t cursor_ms,
-                     const std::string& tooltip, const std::string& screenshot, bool placement_overlay_drawn) {
+                     const std::string& tooltip, const std::string& screenshot, bool placement_overlay_drawn,
+                     const std::string& screen = "gameplay") {
   static const char* cursors[] = {"arrow", "attack", "move", "pan", "north", "northeast", "east",
                                  "southeast", "south", "southwest", "west", "northwest"};
   out << std::setprecision(9) << "{\"schema\":1,\"contract\":\"engine-ui-raw-v1\",\"frame\":" << frame
@@ -50,6 +51,7 @@ inline void trace_ui(std::ostream& out, int frame, const World& world, const Cam
     out << "]}";
   } else out << "null";
   out << ",\"screenshot\":"; trace_string(out, screenshot);
+  out << ",\"screen\":"; trace_string(out, screen);
   out << ",\"selection\":[";
   for (size_t i = 0; i < world.selection.ids.size(); ++i) out << (i ? "," : "") << world.selection.ids[i];
   out << "],\"buttons\":[";
