@@ -11,6 +11,23 @@
 
 uint8_t* g_mem;
 static _Atomic int done;
+
+static void pool_fixture(uint32_t pool, uint32_t base, uint32_t stride, uint32_t capacity,
+                         uint32_t count, uint32_t sentinel) {
+  GU32(pool + 4) = base; GU32(pool + 8) = count < capacity ? base + count * stride : 0;
+  GU32(pool + 0x10) = stride; GU32(pool + 0x18) = count;
+  GU32(pool + 0x1c) = capacity * stride; GU32(pool + 0x24) = sentinel;
+  GU32(sentinel) = count ? base : sentinel;
+  GU32(sentinel + 4) = count ? base + (count - 1) * stride : sentinel;
+  for (uint32_t i = 0; i < capacity; ++i) {
+    uint32_t a = base + i * stride;
+    GU32(a) = i + 1 < capacity ? a + stride : 0;
+    if (i < count) {
+      GU32(a) = i + 1 < count ? a + stride : sentinel;
+      GU32(a + 4) = i ? a - stride : sentinel;
+    }
+  }
+}
 void rt_fatal(const char* fmt, ...) {
   va_list args;
   va_start(args, fmt);
@@ -37,21 +54,67 @@ int main(int argc, char** argv) {
   setenv("RT_DUMP_DIR", argv[3], 1);
   g_mem = calloc(0x700000, 1);
   if (!g_mem) return 2;
-  GU32(0x4cc3d4) = 0x600000; GU32(0x4cc3d8) = 0x600100; GU32(0x4cc3e0) = 0x100;
-  GU32(0x4dd2f4) = 0x601000;
-  GU32(0x600008) = 0x480000;
-  GU32(0x600008 + 0x30) = 0x603000;
-  GU32(0x603008) = 0x601000;
-  GU32(0x600008 + 0x50) = 3;
-  GU32(0x600008 + 0x24) = 72; GU32(0x600008 + 0x28) = 72;
-  GU32(0x600008 + 0x38) = 100;
-  GU32(0x601000 + 0x698) = 123;
+  pool_fixture(0x4cc3d0, 0x600000, 0x100, 133, 63, 0x610000);
+  pool_fixture(0x5156f8, 0x620000, 0x200, 1, 1, 0x610008);
+  GU32(0x4dd2f4) = 0x630000;
+  GU32(0x640008) = 0x630000; GU32(0x640108) = 0x63069c;
+  GU32(0x4933f8 + 3 * 8) = 6;
+  GU32(0x4933f8 + 20 * 8) = 2;
+  for (uint32_t i = 0; i < 133; ++i) {
+    uint32_t o = 0x600008 + i * 0x100;
+    GU32(o) = 0x480000;
+    GU32(o + 0x50) = i == 0 ? 3 : i < 63 ? 27 + i % 2 : 20;
+    GU32(o + 0x30) = i < 63 ? 0x640000 + (i % 2) * 0x100 : 0;
+    GU32(o + 0x24) = i < 63 ? 72 + i * 48 : (uint32_t)-1000;
+    GU32(o + 0x28) = i < 63 ? 72 : (uint32_t)-1000;
+    GU32(o + 0x38) = i < 63 ? 100 : 0;
+    GU8(o + 0x5c) = i < 63;
+    GU32(o + 0x64) = 1;
+    unsigned pos = i == 0 ? 0x70 : 0x6c;
+    GU32(o + pos) = GU32(o + 0x24) * 256;
+    GU32(o + pos + 4) = GU32(o + 0x28) * 256;
+  }
+  // A free slot with entirely plausible live payload must still be excluded.
+  GU8(0x604008 + 0x5c) = 1;
+  GU32(0x604008 + 0x30) = 0x640000;
+  GU32(0x604008 + 0x24) = 100; GU32(0x604008 + 0x28) = 200;
+  GU32(0x604008 + 0x38) = 300;
+  GU32(0x620008 + 8) = 0x630000;
+  GU32(0x620008 + 0xf8) = 0x650000;
+  GU32(0x650004) = 0x651000; GU32(0x650010) = 50;
+  GU32(0x630000 + 0x698) = 123;
+  const char* test_case = getenv("L0_TEST_CASE");
+  if (test_case && !strcmp(test_case, "inactive")) GU8(0x600108 + 0x5c) = 0;
+  if (test_case && !strcmp(test_case, "sentinel_live")) {
+    GU32(0x600008 + 0x38) = 0; GU32(0x600008 + 0x30) = 0;
+    GU32(0x600008 + 0x24) = (uint32_t)-1000; GU32(0x600008 + 0x28) = (uint32_t)-1000;
+    GU32(0x600008 + 0x70) = (uint32_t)-256000; GU32(0x600008 + 0x74) = (uint32_t)-256000;
+  }
+  if (test_case && !strcmp(test_case, "cycle")) GU32(0x604000) = 0x604000;
+  if (test_case && !strcmp(test_case, "active_count")) GU32(0x4cc3e8) = 62;
+  if (test_case && !strcmp(test_case, "queue")) {
+    GU32(0x650008) = 49; GU32(0x650014) = 2;
+    GU32(0x651000 + 49 * 4) = 0x600108; GU32(0x651000) = 0x600208;
+  }
+  if (test_case && !strcmp(test_case, "classes")) {
+    const unsigned types[] = {0, 30, 10, 7, 83, 33, 3, 17};
+    const unsigned positions[] = {0x6c, 0x78, 0, 0x68, 0x6c, 0x68, 0x70, 0};
+    for (unsigned i = 0; i < 8; ++i) {
+      uint32_t o = 0x600008 + i * 0x100;
+      GU32(o + 0x50) = types[i]; GU32(0x4933f8 + types[i] * 8) = i;
+      if (positions[i]) {
+        GU32(o + positions[i]) = (72 + i * 48) * 256 + 64;
+        GU32(o + positions[i] + 4) = 72 * 256 + 128;
+      }
+    }
+  }
   rt_l0_clock(100000);
   pthread_t thread;
   if (pthread_create(&thread, NULL, renderer, NULL)) return 2;
   for (uint32_t tick = 1; tick <= 3; ++tick) {
     rt_l0_observe(tick);
     GU32(0x600008 + 0x38) -= 1;
+    GU32(0x600008 + 0x70) += 64;
   }
   atomic_store(&done, 1);
   pthread_join(thread, NULL);

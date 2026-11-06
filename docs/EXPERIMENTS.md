@@ -422,13 +422,14 @@ Return both private run directories to the orchestrator, especially:
 - the rebuilt runtime identity and any build/namespace errors.
 
 Expected current verdict after successful launch is
-`blocked_observation_contract`: reference orders/queues, fractional coordinates,
+`blocked_observation_contract`: logical reference orders/queues,
 actual UI state and complete-render alignment remain unaudited. Captures are
 probes held at a simulation boundary, not certified paired L4/L5 frames. The
 five-second per-sample rendering wait may fail if the guest renderer needs a
 mutex held by the stopped logic thread; retain this result so the complete-frame
-hook can be placed at a verified boundary. Reference owner decoding and pool
-coverage also need live checks against mission placements. Initial anchor
+hook can be placed at a verified boundary. Pool liveness and class-specific
+fractional coordinates now have synthetic checks; their live coverage still
+needs checks against mission placements. Initial anchor
 ambiguity or a spawned object is an explicit experiment failure, not something
 to resolve by matching the nearest unit. See the schema and outstanding work in
 [PARITY_TEST_PLAN.md](PARITY_TEST_PLAN.md#shared-l0-schema-2-implementation).
@@ -436,6 +437,116 @@ to resolve by matching the nearest unit. See the schema and outstanding work in
 Do not update public parity passes from these probes. Update
 `docs/parity_matrix.md` with counts only after selecting and reviewing the
 returned reports. Never commit the captures, private JSON or game-derived data.
+### First live findings follow-up (2026-11-05): needs live run
+
+The orchestrator's first mission-1 run sampled ticks 1, 6 and 12 and reported
+63 matching live identities plus 70 suspected inactive entries. This is one
+externally supplied run, not a repeated rule measurement. The observer now
+checks both allocator chains/counts, enumerates allocated slots, and requires
+the world liveness byte at object `+0x5c`. It reports free allocator slots
+separately from allocated but inactive world objects. The previous pool bound
+was actually the allocator's free-list head. No sentinel HP/owner/position
+filter is used. A synthetic 133-slot pool retains exactly 63 live objects of
+sides 0/1, including across fractional movement; another control retains a live
+object with all three sentinel values. This does not prove the live count yet.
+
+Reference `diagnostics.orders` records allocated handles, type, owner, class,
+liveness, tactic, tile and (for Marines) unit state, attack-target handle and
+step destination. Tactic state/mode, anchor and route count/cursor are included.
+`diagnostics.queues` records each town/hall/owner, production/staged handles,
+the three production words at town `+118/+11c/+120`, and the logical
+head-to-tail ring contents, including wrapped rings. These are
+read-only probes. A tile step is not a logical command destination; a ring
+entry alone does not establish remaining/total time, payment, started or paused
+semantics. **Normalized orders and production queues remain unfinished.**
+The camera and viewport globals are recorded, but selection/panel/cursor/local
+view translation and a complete-render barrier also remain unfinished. The
+phase probe explicitly says `raw_primary_present`; it does not certify an L4
+frame. These limitations continue to block the shared observation contract.
+
+Rebuild with the commands above. On the unrestricted host, repeat the original
+schedule into fresh directories, preserving the earlier captures:
+
+```sh
+for repetition in 1 2; do
+  python3 -I tools/parity_run.py private_l0 --flat-output \
+    --game /home/adrox/aztec-re/game \
+    --runtime "$PWD/build_l0_reference/aztec_recomp" \
+    --engine "$PWD/build/aztec_engine" --timeout 120 \
+    --output "$PWD/work/parity/l0-followup-$repetition"
+  # Preserve blocked verdicts; process failures remain failures in runners.json.
+done
+cmp work/parity/l0-followup-1/reference/observations.jsonl \
+    work/parity/l0-followup-2/reference/observations.jsonl
+cmp work/parity/l0-followup-1/clone/observations.jsonl \
+    work/parity/l0-followup-2/clone/observations.jsonl
+python3 -I tools/parity_l0.py \
+  work/parity/l0-followup-1/reference.json work/parity/l0-followup-1/clone.json \
+  --repeat-reference work/parity/l0-followup-2/reference.json \
+  --repeat-clone work/parity/l0-followup-2/clone.json \
+  --output work/parity/l0-followup-review.json
+```
+
+The review intentionally returns nonzero while acceptance is pending. It rejects
+unequal repeated bundles or frame bytes as `run_nondeterminism`, and otherwise
+exports live/common identity counts, initial HP candidates grouped by type/value,
+and moved identities at each sample relative to tick 1. Pool exclusions are
+notices, never divergences. HP candidates remain `confirmed: false`: repeatable
+incomplete observations are not enough to change an engine rule. Inspect
+`diagnostics.pool` to distinguish genuinely free slots from inactive allocated
+objects; require the 63 expected live identities, owners 0/1 and their exact
+initial anchors before interpreting the HP or movement leads.
+
+Sample more densely to locate the first movement and order changes. Prepare a
+private scenario, then run the same paired/repeated experiment:
+
+```sh
+mkdir -p work/parity/l0-followup-scenarios
+python3 - <<'PY'
+import json
+from pathlib import Path
+s = json.loads(Path('tests/parity/private_l0.json').read_text())
+s['observe']['ticks'] = [1, 2, 3, 4, 5, 6, 8, 12, 18, 24, 36, 60]
+Path('work/parity/l0-followup-scenarios/private_l0.json').write_text(json.dumps(s, indent=2) + '\n')
+PY
+for repetition in 1 2; do
+  python3 -I tools/parity_run.py private_l0 --flat-output \
+    --scenarios-dir "$PWD/work/parity/l0-followup-scenarios" \
+    --game /home/adrox/aztec-re/game \
+    --runtime "$PWD/build_l0_reference/aztec_recomp" \
+    --engine "$PWD/build/aztec_engine" --timeout 180 \
+    --output "$PWD/work/parity/l0-dense-$repetition"
+done
+cmp work/parity/l0-dense-1/reference/observations.jsonl \
+    work/parity/l0-dense-2/reference/observations.jsonl
+cmp work/parity/l0-dense-1/clone/observations.jsonl \
+    work/parity/l0-dense-2/clone/observations.jsonl
+python3 -I tools/parity_l0.py \
+  work/parity/l0-dense-1/reference.json work/parity/l0-dense-1/clone.json \
+  --repeat-reference work/parity/l0-dense-2/reference.json \
+  --repeat-clone work/parity/l0-dense-2/clone.json \
+  --output work/parity/l0-dense-review.json
+```
+
+Read Marine unit states with positions and tactic/route changes: rest 1/5,
+march 2, attack 3, dying 4. Compare the snapshots *before* work for tick n;
+tick 6 reflects five completed updates. An initial script or AI tactic may
+move without any human packet. Do not label such movement a missing engine
+movement rule, or equate a physical rest state with a logical idle command.
+Use the shared schedule unchanged between both processes and repetitions.
+
+Before confirming type 32 (13000 versus 14000, six objects) or type 6
+(12000 versus 10000, three objects), retain the actual difficulty/profile and
+mission settings from both private game copies, initial mission HP overrides,
+rules identity and scenario identity beside the review. Repeat each separately
+controlled difficulty/map-setting variant twice in fresh private copies and
+fresh output directories. The current shared schema has no audited difficulty
+input adapter; equal requested mission IDs do not prove equal difficulty.
+Do not edit the shared installation, invent a difficulty switch, or change the
+engine HP tables from these leads. No engine HP or movement rule was changed
+in this follow-up. All live conclusions, full semantic adapters and measured
+L1/L4/L5/L8 acceptance remain **needs live run**.
+
 ## Campaign transport and objective run sheet: needs live run
 
 The task-71 sandbox explicitly denies live reference runs. Do not execute this
