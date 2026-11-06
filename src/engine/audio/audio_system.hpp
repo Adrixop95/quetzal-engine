@@ -14,7 +14,7 @@
 namespace aztec::engine {
 
 struct AudioEvent {
-  enum class Trigger { Unknown, Selection, Orders, Combat, Building, UI, Music, Ambient };
+  enum class Trigger { Unknown, Selection, Orders, Combat, Building, UI, Music, Ambient, Production };
   enum class Kind { Sound, LoopStart, LoopStop, Music, MusicStop, Speech, Subtitle };
   Kind kind;
   uint64_t source = 0;
