@@ -32,6 +32,14 @@ class SharedControls(unittest.TestCase):
         self.s = legacy.harness.load_scenario(ROOT / "tests/parity/private_l0.json")
         self.s["observe"]["ticks"] = [1, 3]
 
+    def test_campaign_followup_scenarios(self):
+        for mission in (2, 3):
+            scenario = legacy.harness.load_scenario(ROOT / f"tests/parity/private_l0_mission_{mission}.json")
+            self.assertEqual(scenario["map"], dict(kind="campaign", mission=mission))
+            self.assertEqual(scenario["observe"]["ticks"], [1, 6, 12])
+            self.assertEqual(scenario["input"], [])
+            l0.validate_scenario(scenario)
+
     def complete_bundle(self, name):
         directory = self.root / name
         directory.mkdir()
@@ -134,6 +142,10 @@ class SharedControls(unittest.TestCase):
         self.assertEqual(review["category"], "repeated_observations")
         self.assertEqual(review["initial_counts"], dict(reference=1, clone=1, common=1))
         self.assertFalse(review["hp_candidates"][0]["confirmed"])
+        self.assertEqual(review["scalar_counts"][0], dict(tick=1, objects_compared=1,
+                         reference_only=0, clone_only=0, fields_compared=9,
+                         divergences=1, hp_divergences=1, position_divergences=0))
+        self.assertEqual(review["scalar_counts"][1]["position_divergences"], 1)
         self.assertEqual(review["movement"][1]["clone"], [identity])
         (repeated / "clone/3.ppm").write_bytes(b"P6\n800 600\n255\n" + bytes([1]) * (800 * 600 * 3))
         self.assertEqual(l0.review_repeats(*paths)["category"], "run_nondeterminism")
@@ -174,6 +186,10 @@ class SharedControls(unittest.TestCase):
         self.assertEqual(b["samples"][0]["diagnostics"]["pool"], dict(
             capacity=133, allocated=63, free_slot_filtered=70, inactive_object_filtered=0, live_objects=63))
         self.assertTrue("frame_phase" in b["samples"][0]["unavailable"])
+        counts = l0.diagnostic_counts(b)
+        self.assertEqual(counts[0], dict(tick=1, owner=0, objects=32, decoded_unit_states=31,
+                                        towns=1, queue_entries=0))
+        self.assertEqual(counts[1]["queue_entries"], 1)
         # Repeated native streams include the same raw order/queue diagnostics.
         repeat = run / "repeat.jsonl"
         subprocess.run([str(OBSERVER), str(schedule), str(repeat), str(run)], check=True, timeout=10)
@@ -227,6 +243,8 @@ class SharedControls(unittest.TestCase):
                                  queued_objects=[0x600108, 0x600208]))
                 self.assertEqual(d["queues"][1]["owner"], 1)
                 self.assertEqual(d["queues"][1]["queued_handles"], [0x600300])
+                self.assertEqual(d["queues"][0]["queued_types"], [28, 27])
+                self.assertEqual(d["queues"][1]["queued_types"], [28])
                 self.assertNotIn("diagnostics.queues", b["samples"][0]["unavailable"])
                 self.assertIsNone(b["samples"][0]["queues"])
                 self.assertTrue("queues" in b["samples"][0]["unavailable"])
@@ -240,6 +258,45 @@ class SharedControls(unittest.TestCase):
                     obj = next(o for o in b["samples"][0]["objects"].values() if o["type"] == kind)
                     self.assertEqual(obj["x"], (72 + i * 48) * 256 + (0 if i in (2, 7) else 64))
 
+    def test_native_unit_execution_decode(self):
+        run = self.root / "unit_steps" / "reference"
+        run.mkdir(parents=True)
+        schedule, native = run / "schedule", run / "native.jsonl"
+        l0.write_schedule(self.s, schedule)
+        subprocess.run([str(OBSERVER), str(schedule), str(native), str(run)],
+                       env=dict(os.environ, L0_TEST_CASE="unit_steps"), check=True, timeout=10)
+        b = l0.bundle(self.s, native, "reference", run.parent / "reference.json")
+        for row in b["samples"]:
+            for state, kind in enumerate(("inactive", "idle", "walk", "attack", "death", "idle_animation")):
+                record = row["diagnostics"]["orders"][state + 1]
+                self.assertEqual(record["unit_state"], state)
+                self.assertEqual(record["execution_kind"], kind)
+                self.assertEqual(record["step_destination"], [456, 789])
+                self.assertEqual(record["step_velocity"], [2371, -512])
+                self.assertEqual(record["attack_target_handle"], 0x600000)
+                self.assertEqual(record["firing_target_handle"], 0x600200)
+                self.assertEqual(record["pursuit_target_handle"], 0x600300)
+
+    def test_page_committed_pool_padding(self):
+        for case in ("pool_padding", "pool_tail"):
+            with self.subTest(case=case):
+                run = self.root / case / "reference"
+                run.mkdir(parents=True)
+                schedule, native = run / "schedule", run / "native.jsonl"
+                l0.write_schedule(self.s, schedule)
+                result = subprocess.run([str(OBSERVER), str(schedule), str(native), str(run)],
+                                        env=dict(os.environ, L0_TEST_CASE=case), capture_output=True, timeout=10)
+                if case == "pool_tail":
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertTrue(b"Invalid L0 free pool chain" in result.stderr)
+                    continue
+                self.assertEqual(result.returncode, 0, result.stderr)
+                b = l0.bundle(self.s, native, "reference", run.parent / "reference.json")
+                for row in b["samples"]:
+                    self.assertEqual(len(row["objects"]), 63)
+                    self.assertEqual(row["diagnostics"]["pool"]["capacity"], 155)
+                    self.assertEqual(row["diagnostics"]["pool"]["free_slot_filtered"], 92)
+
     def test_optional_probe_failures_keep_both_samples_and_other_records(self):
         cases = {
             "invalid_queue": ("queues", "bounds", "count", 51),
@@ -249,6 +306,7 @@ class SharedControls(unittest.TestCase):
             "queue_tail": ("queues", "bounds", "tail", 50),
             "queue_capacity": ("queues", "bounds", "capacity", 0),
             "queue_null": ("queues", "queued object", "queued_objects", [0]),
+            "queue_object_span": ("queues", "queued object", "queued_objects", [0xfffffff0]),
             "town_pool": ("queues", "pool metadata", "count", 3),
             "town_chain": ("queues", "active pool chain", "base", 0x620000),
             "short_town": ("queues", "Short", "stride", 0x100),
@@ -270,6 +328,8 @@ class SharedControls(unittest.TestCase):
                     self.assertEqual(row["money"]["0"], 123)
                     self.assertEqual(len(row["objects"]), 62 if probe == "orders" else 63)
                     self.assertTrue(f"diagnostics.{probe}" in row["unavailable"])
+                    if probe == "queues":
+                        self.assertIsNone(l0.diagnostic_counts(b)[0]["queue_entries"])
                     records = row["diagnostics"][probe]
                     bad = records[1 if probe == "orders" else 0]
                     self.assertTrue(reason in bad["unavailable"])
@@ -335,7 +395,8 @@ class SharedControls(unittest.TestCase):
         for tick in (1, 3):
             self.assertEqual((self.root / f"1/clone/tick_{tick}.ppm").read_bytes(),
                              (self.root / f"2/clone/tick_{tick}.ppm").read_bytes())
-        self.assertEqual(outputs[0]["samples"][0]["objects"]["initial:0:3:18432:18432"]["hp"], 100)
+        # Mission metadata HP=100 does not override the truck descriptor.
+        self.assertEqual(outputs[0]["samples"][0]["objects"]["initial:0:3:18432:18432"]["hp"], 20000)
         # Empty invented archives cannot establish a rendered original UI panel.
         self.assertEqual(outputs[0]["samples"][0]["unavailable"], ["panel_assets"])
 

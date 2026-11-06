@@ -2603,7 +2603,7 @@ static void test_campaign_initialization(const std::string& dir) {
       if (o.type < 0) continue; // Submarine remains an unsupported marker.
       const auto& r = rules->type(o.type);
       CHECK(r.hp_src == Src::Verified && o.hp_max == r.hp_max && o.secondary_hp == r.secondary_hp);
-      CHECK(o.hp == (p.hp > 0 ? p.hp : r.hp_max));
+      CHECK(o.hp == r.hp_max);
     }
     for (size_t i = 0; i < w.mission.towns.size(); ++i) {
       const auto& t = w.mission.towns[i];
@@ -2611,6 +2611,34 @@ static void test_campaign_initialization(const std::string& dir) {
       CHECK(hall && hall->town_hall && hall->town == t.index && hall->side == t.side);
     }
   }
+}
+
+static void test_mission_unit_health() {
+  // Invented legacy HP values below and above the descriptors on opposite sides.
+  // Keep the fourth integer available to inspectors without applying it to play.
+  Ini ini;
+  ini.parse("[Globals]\nSides=2\nTeams=2\nTowns=1\n"
+            "[Side0]\nDifficulty=100\n[Side1]\nDifficulty=0\nOnlyComp=1\n"
+            "[Town0]\nSide=0\nX=5\nY=5\nType=0\nRace=0\nUnits=1\nUnit0=4,4,0,17\n"
+            "[Team0]\nSide=0\nUnits=2\nUnit0=1,1,6,41\nUnit1=2,1,6\n"
+            "[Team1]\nSide=1\nUnits=2\nUnit0=7,7,32,99999\nUnit1=8,7,32,-2\n");
+  World world;
+  CHECK(parse_mission(ini, "synthetic-health", world.mission));
+  world.terrain.w = world.terrain.h = 12; world.terrain.cells.resize(144);
+  CHECK(world.mission.objects[1].hp == 41 && world.mission.objects[3].hp == 99999);
+  place_mission_objects(world);
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  GameSim sim(rules); sim.init(world);
+  for (const auto& o : world.objects) CHECK(o.hp == rules->type(o.type).hp_max);
+  CHECK(world.objects[1].hp == 12000 && world.objects[3].hp == 13000);
+  // Explicit instance health and restored state have independent semantics.
+  Object explicit_health; explicit_health.hp = 73;
+  explicit_health.initialize_health(rules->type(6));
+  CHECK(explicit_health.hp == 73 && explicit_health.hp_max == 12000);
+  Object restored = explicit_health; restored.secondary_hp = 19;
+  restored.initialize_health(rules->type(6), true);
+  CHECK(restored.hp == 73 && restored.secondary_hp == 19 && restored.hp_max == 12000);
 }
 
 static void test_object_initialization() {
@@ -2645,7 +2673,7 @@ static void test_object_initialization() {
     CHECK(o.source == p.source && o.scenario == 42 && o.defence == p.defence);
     CHECK(o.town == (p.source == ObjectSource::Town && !p.defence ? p.group : -1));
     CHECK(o.tactic == (p.source == ObjectSource::Team ? 42 : -1));
-    CHECK(o.hp == 123 && o.hp_max == r.hp_max && o.secondary_hp == r.secondary_hp);
+    CHECK(o.hp == r.hp_max && o.hp_max == r.hp_max && o.secondary_hp == r.secondary_hp);
     CHECK(o.cur_x == tile_center_fixed(p.x) && o.cur_y == tile_center_fixed(p.y));
   }
   CHECK(world.objects[90].town_hall && world.objects[90].town == 4 && world.objects[90].side == 3);
@@ -2998,6 +3026,7 @@ int main(int argc, char** argv) {
     test_mixed_production_queue();
     test_projectiles();
     test_object_initialization();
+    test_mission_unit_health();
     test_siege_ranged();
     test_descriptor_combat();
     test_script_animation_clocks();

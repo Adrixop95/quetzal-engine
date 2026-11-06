@@ -415,3 +415,32 @@ See [the live run sheet](EXPERIMENTS.md#v19-scripted-route-run-sheet-needs-live-
 | Shared L0 control | Cases | Passed | Failed | Live game runs |
 | --- | ---: | ---: | ---: | ---: |
 | Synthetic schema, alignment, comparator and native runner regressions | 6 | 6 | 0 | 0 |
+
+## L0 startup follow-up (2026-11-06): needs live run
+
+The supplied mission-1 result establishes the initial HP-only counts below.
+It is not a repeated complete-contract comparison and does not change the
+scenario totals above. Fields in this table are HP scalars only; no full scalar
+field-divergence count was supplied. A dash means unavailable, never zero.
+After-values and mission-2/3 counts require the
+[startup run sheet](EXPERIMENTS.md#l0-pool-and-mission-startup-follow-up-2026-11-06-needs-live-run).
+The HP correction is implemented and tested synthetically; movement and full
+logical order/production normalization remain open.
+
+| Mission | Tick | Objects compared | HP fields compared | HP divergences before | HP divergences after |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1 | 63 | 63 | 9 | — |
+| 2 | 1 | — | — | — | — |
+| 3 | 1 | — | — | — | — |
+
+Supplied movement counts are objects changed since tick 1, not counts of unequal
+position fields. Equal movement counts would not establish equal coordinates.
+
+| Mission | Tick | Reference moved before | Clone moved before | Reference moved after | Clone moved after |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 6 | 33 | 15 | — | — |
+| 1 | 12 | — | — | — | — |
+| 2 | 6 | — | — | — | — |
+| 2 | 12 | — | — | — | — |
+| 3 | 6 | — | — | — | — |
+| 3 | 12 | — | — | — | — |
