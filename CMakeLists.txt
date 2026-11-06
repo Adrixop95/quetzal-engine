@@ -169,6 +169,10 @@ add_executable(test_fuzz tests/test_fuzz.cpp)
 target_link_libraries(test_fuzz aztec_engine_lib)
 add_test(NAME fuzz COMMAND test_fuzz)
 set_tests_properties(fuzz PROPERTIES TIMEOUT 55 LABELS "unit")
+if(AZTEC_SANITIZERS)
+  # Exhaustive malformed-input mutations need more time with sanitizer instrumentation.
+  set_tests_properties(fuzz PROPERTIES TIMEOUT 180)
+endif()
 
 add_executable(test_savegame tests/test_savegame.cpp)
 target_link_libraries(test_savegame aztec_core)
@@ -343,9 +347,15 @@ set_tests_properties(ui_screenshots PROPERTIES LABELS "unit" TIMEOUT 30
 
 # L1 specifications and L8 event-window comparisons use synthetic inputs in CI.
 if(Python3_Interpreter_FOUND)
+  add_test(NAME placement_compare COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_placement_compare.py)
+  set_tests_properties(placement_compare PROPERTIES LABELS "unit;parity" TIMEOUT 20)
   add_test(NAME parity_ai COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_ai.py)
   set_tests_properties(parity_ai PROPERTIES LABELS "unit;parity" TIMEOUT 20)
+  add_test(NAME ai_measure COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ai_measure.py $<TARGET_FILE:aztec_engine>)
+  set_tests_properties(ai_measure PROPERTIES LABELS "unit;parity" TIMEOUT 30)
   add_test(NAME projectile_measure COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_projectile_measure.py $<TARGET_FILE:aztec_engine>)
   set_tests_properties(projectile_measure PROPERTIES LABELS "unit;parity" TIMEOUT 30)

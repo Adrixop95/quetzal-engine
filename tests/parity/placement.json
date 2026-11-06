@@ -1,0 +1,258 @@
+{
+  "schema": 1,
+  "id": "building-and-mine-placement",
+  "layer": "L5",
+  "evidence": "P",
+  "status": "needs live run",
+  "dependency": "64-shared-runner-observer",
+  "map": {
+    "kind": "campaign-derived",
+    "mission": "ztest_all",
+    "generator": "tools/make_testmaps.py"
+  },
+  "classes": {
+    "outpost": [
+      10,
+      37,
+      63
+    ],
+    "village": [
+      11,
+      38,
+      64
+    ],
+    "town": [
+      19,
+      47,
+      71
+    ],
+    "fortress": [
+      24,
+      76
+    ],
+    "economy": [
+      12,
+      18,
+      39,
+      40,
+      65,
+      70
+    ],
+    "military": [
+      14,
+      15,
+      16,
+      20,
+      21,
+      22,
+      25,
+      41,
+      43,
+      44,
+      45,
+      46,
+      50,
+      51,
+      52,
+      67,
+      72,
+      73,
+      74,
+      75,
+      77,
+      78,
+      79
+    ],
+    "defence": [
+      17,
+      23,
+      26,
+      42,
+      49,
+      68,
+      69,
+      80,
+      81,
+      86
+    ],
+    "mine": [
+      13,
+      48,
+      66
+    ]
+  },
+  "variants": [
+    "clear",
+    "terrain-edge",
+    "occupied",
+    "clearance-edge",
+    "town-distance",
+    "mineral-empty",
+    "mineral-edge",
+    "cancel-escape",
+    "cancel-right",
+    "rotate"
+  ],
+  "controls": {
+    "resolution": [
+      800,
+      600
+    ],
+    "camera": [
+      0,
+      0,
+      1
+    ],
+    "phase": "before_input",
+    "setup": "Use private ztest_all.layout.json to select the owning town and building card; measure and freeze the camera and UI route separately for each race/type.",
+    "sites": "Reset both private processes per type/variant; arrange the same measured terrain/resource/occupancy boundary under the screen sweep. Record map and setup digests.",
+    "town_centres": "Sweep distances in both axes and diagonals around own, allied and hostile centres. Hall upgrades may have no manual placement route; record that observation.",
+    "rotate": "Determine whether rotation exists and its input binding in a live control before emitting rotate input. No key is assumed.",
+    "mine": "Sweep high-byte resource zero/nonzero and deposit edges within/outside the footprint; vary resource values and blocked terrain independently.",
+    "frames": "Capture the same viewport including cursor, feedback and ghost every tick; retain full frames privately."
+  },
+  "input": [
+    {
+      "action": "select-building",
+      "type": "case.building_type",
+      "route": "requires audited screen route"
+    },
+    {
+      "action": "move",
+      "screen": [
+        240,
+        240
+      ],
+      "observe": [
+        "valid",
+        "snapped",
+        "footprint",
+        "overlay",
+        "feedback",
+        "cursor",
+        "ghost_sprite"
+      ]
+    },
+    {
+      "action": "move",
+      "screen": [
+        287,
+        240
+      ],
+      "observe": [
+        "valid",
+        "snapped",
+        "footprint",
+        "overlay",
+        "feedback",
+        "cursor",
+        "ghost_sprite"
+      ]
+    },
+    {
+      "action": "move",
+      "screen": [
+        288,
+        240
+      ],
+      "observe": [
+        "valid",
+        "snapped",
+        "footprint",
+        "overlay",
+        "feedback",
+        "cursor",
+        "ghost_sprite"
+      ]
+    },
+    {
+      "action": "move",
+      "screen": [
+        289,
+        240
+      ],
+      "observe": [
+        "valid",
+        "snapped",
+        "footprint",
+        "overlay",
+        "feedback",
+        "cursor",
+        "ghost_sprite"
+      ]
+    },
+    {
+      "action": "move",
+      "screen": [
+        240,
+        287
+      ],
+      "observe": [
+        "valid",
+        "snapped",
+        "footprint",
+        "overlay",
+        "feedback",
+        "cursor",
+        "ghost_sprite"
+      ]
+    },
+    {
+      "action": "move",
+      "screen": [
+        240,
+        288
+      ],
+      "observe": [
+        "valid",
+        "snapped",
+        "footprint",
+        "overlay",
+        "feedback",
+        "cursor",
+        "ghost_sprite"
+      ]
+    },
+    {
+      "action": "move",
+      "screen": [
+        240,
+        289
+      ],
+      "observe": [
+        "valid",
+        "snapped",
+        "footprint",
+        "overlay",
+        "feedback",
+        "cursor",
+        "ghost_sprite"
+      ]
+    },
+    {
+      "action": "click",
+      "screen": [
+        289,
+        240
+      ],
+      "observe": [
+        "accepted"
+      ]
+    },
+    {
+      "action": "cancel",
+      "variant": "Escape or right-click in separate freshly selected modes"
+    },
+    {
+      "action": "rotate",
+      "route": "blocked until binding/existence measured"
+    }
+  ],
+  "blockers": [
+    "Task 64 is not in this checkout; no fixed-tick shared input/reference observer is callable.",
+    "Screen setup/card routes, passive AI, prerequisites, money, fog, camera and site controls require live audit.",
+    "Outposts and hall upgrades may not be manually placeable. Do not invent a placement route.",
+    "Candidate screen coordinates exercise boundaries only after the declared camera/setup has been established.",
+    "Raw engine-ui-raw-v1 traces are after-input diagnostics, not placement-v1 normalized captures."
+  ]
+}

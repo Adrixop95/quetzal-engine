@@ -1,0 +1,99 @@
+{
+  "schema": 1,
+  "evidence": "P",
+  "horizon": 14400,
+  "repeats": 5,
+  "tv_limit": 0.2,
+  "reference_audit": null,
+  "hz": 12,
+  "setup": {
+    "status": "requires task 64 audited setup and reference adapter",
+    "sides": [
+      {
+        "id": 0,
+        "computer": false
+      },
+      {
+        "id": 1,
+        "computer": true
+      }
+    ],
+    "race": 0,
+    "town_level": 1,
+    "starting_cash": 12000,
+    "seed": 1,
+    "visibility": "identical audited initial fog and daylight on both implementations",
+    "map_size": [
+      64,
+      64
+    ],
+    "towns": [
+      [
+        0,
+        12,
+        12
+      ],
+      [
+        1,
+        48,
+        48
+      ]
+    ],
+    "player_policy": "no autonomous player commands; only declared provocations",
+    "scripts": "no campaign tactics; audited setup/input actions only"
+  },
+  "id": "l8_provocation",
+  "map": "zai_provocation",
+  "input": [
+    {
+      "tick": 1200,
+      "action": "visible hostile unit starts damaging computer hall"
+    },
+    {
+      "tick": 2400,
+      "action": "scripted hostile reinforcement creates locally superior force"
+    },
+    {
+      "tick": 3600,
+      "action": "computer harvest sources stop; starting cash remains unchanged"
+    },
+    {
+      "tick": 4800,
+      "action": "computer receives autonomous combat reinforcements"
+    }
+  ],
+  "groups": [
+    {
+      "id": "defence_latency",
+      "event": "defence",
+      "side": 1,
+      "town": 1,
+      "start": 1200,
+      "end": 2399
+    },
+    {
+      "id": "retreat_window",
+      "event": "retreat",
+      "side": 1,
+      "town": 1,
+      "start": 2400,
+      "end": 3599
+    },
+    {
+      "id": "income_shock_build_reaction",
+      "event": "build_order",
+      "side": 1,
+      "town": 1,
+      "start": 3600,
+      "end": 4799
+    },
+    {
+      "id": "reinforcement_launch_reaction",
+      "event": "launch",
+      "side": 1,
+      "town": 1,
+      "start": 4800,
+      "end": 14400
+    }
+  ]
+}
