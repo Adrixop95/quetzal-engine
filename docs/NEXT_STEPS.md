@@ -62,5 +62,5 @@ Orchestrator duties: run the live reference commands from the run sheets in
 `docs/EXPERIMENTS.md` outside the sandbox, feed the data back, review diffs before merge,
 rerun cancelled hosted jobs, keep `CODEX_MAX_PARALLEL=5`.
 
-Deferred to `tasks/backlog/`: 69 UI click feedback, 70 supervisor CI resilience,
+Deferred to `tasks/backlog/`: 69 UI click feedback,
 78 release packaging acceptance, 79 sanitizer and soak workflows.
