@@ -91,6 +91,31 @@ int main(int argc, char** argv) {
   GU32(0x48ff94) = 0x411dd0; GU32(0x48ff98) = 0x411d40;
   GU32(0x630000 + 0x698) = 123;
   const char* test_case = getenv("L0_TEST_CASE");
+  if (test_case && (!strcmp(test_case, "pool_padding") || !strcmp(test_case, "pool_tail"))) {
+    // 4096-byte pages can end partway through a stride. The last full slot
+    // remains usable, and a pointer into the partial slot must be rejected.
+    pool_fixture(0x4cc3d0, 0x600000, 184, 155, 63, 0x610000);
+    GU32(0x4cc3d0 + 0x1c) = 28672;
+    for (uint32_t i = 0; i < 63; ++i) {
+      uint32_t o = 0x600008 + i * 184;
+      GU32(o) = 0x480000; GU32(o + 0x50) = 27; GU32(o + 0x30) = 0x640000;
+      GU8(o + 0x5c) = 1; GU32(o + 0x38) = 100;
+      GU32(o + 0x6c) = (i + 1) * 12288; GU32(o + 0x70) = 18432;
+    }
+    if (!strcmp(test_case, "pool_tail")) GU32(0x4cc3d0 + 8) = 0x600000 + 155 * 184;
+  }
+  if (test_case && !strcmp(test_case, "unit_steps")) {
+    for (uint32_t state = 0; state < 6; ++state) {
+      uint32_t o = 0x600108 + state * 0x100;
+      GU32(o + 0x64) = state;
+      // Deliberately different tile, walking step and attack/firing targets.
+      GU32(o + 0x44) = 2; GU32(o + 0x48) = 3;
+      GU32(o + 0x74) = 456; GU32(o + 0x78) = 789;
+      GU32(o + 0x90) = 0x600008; GU32(o + 0x94) = 0x600208;
+      GU32(o + 0x8c) = 0x600308;
+      GU32(o + 0x98) = 2371; GU32(o + 0x9c) = (uint32_t)-512;
+    }
+  }
   if (test_case && !strcmp(test_case, "inactive")) GU8(0x600108 + 0x5c) = 0;
   if (test_case && !strcmp(test_case, "sentinel_live")) {
     GU32(0x600008 + 0x38) = 0; GU32(0x600008 + 0x30) = 0;
@@ -110,6 +135,9 @@ int main(int argc, char** argv) {
   if (test_case && !strcmp(test_case, "queue_tail")) GU32(q + 0xc) = 50;
   if (test_case && !strcmp(test_case, "queue_capacity")) GU32(q + 0x10) = 0;
   if (test_case && !strcmp(test_case, "queue_null")) GU32(q + 0x14) = 1;
+  if (test_case && !strcmp(test_case, "queue_object_span")) {
+    GU32(q + 0x14) = 1; GU32(0x651000) = 0xfffffff0;
+  }
   if (test_case && !strcmp(test_case, "town_pool")) GU32(0x515710) = 3;
   if (test_case && !strcmp(test_case, "town_chain")) GU32(0x620004) = 0;
   if (test_case && !strcmp(test_case, "short_town")) {

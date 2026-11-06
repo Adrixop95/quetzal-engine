@@ -12,7 +12,8 @@ void place_mission_objects(World& w) {
     o.source = p.source;
     o.defence = p.defence;
     o.side = p.side;
-    o.hp = p.hp;
+    // The mission Unit record's fourth integer is retained by the parser for
+    // inspection, but placement initializes health from the type descriptor.
     o.facing = 6;  // south
     if (p.source == ObjectSource::Team) o.tactic = p.scenario_id;
     if (p.source == ObjectSource::Town && !p.defence) o.town = p.group;

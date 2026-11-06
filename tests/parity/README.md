@@ -55,6 +55,58 @@ or full construction parity. `construction_compare` CTest uses invented data;
 `engine_unit` separately covers damage, pause/resume, replay continuation,
 completion payment and footprint retention with no game data.
 
+## Economy and town service (V08/V09, needs live run)
+
+`town.json` extends tasks 66/67 on `ztest_all` with five P case families:
+resource clock/activation, training in two towns, payment/cancellation, service
+and hall/build-tree completion through saves. Variants are semantic recipes;
+task 64's audited input/observer adapters are still missing. No executable route
+or original timing is implied. Continue to use `placement-v1` and
+`construction-v1` for placement, worker travel/stages, sound, selection and rally.
+The [town run sheet](../../docs/EXPERIMENTS.md#economy-and-town-service-run-sheet-needs-live-run)
+supplies diagnostic launches and the subsequent comparison commands.
+
+`tools/town_compare.py` requires three private JSON bundles with exactly `schema:
+1`, `contract: "town-v1"`, `origin`, `alignment`, `samples`. Origins are reference,
+reference, clone. Alignment contains exactly `scenario` (a case ID in `town.json`),
+`map_sha256`, `controls_sha256`, `normalization_sha256`, `first_tick`, `last_tick`,
+`phase: "before_commands"`. Digests bind actual map bytes, setup/commands/variant
+and audited units/identities/event normalization. Include the controlled variant,
+save boundary and uninterrupted versus loaded branch in the controls digest.
+All alignments must match; all ticks of the declared horizon must be present.
+Each sample has exactly `tick`, `state`, `unavailable: []`. Missing support must
+be declared unavailable and blocks comparison; empty collections mean observed
+absence. The entire capture is validated before an early difference is returned.
+
+State has exactly these fields (all numbers are integers, flags are 0/1):
+
+| Field | Contract |
+| --- | --- |
+| `clock` | Day phase in 0..7199; audit the reference conversion and phase |
+| `money` | Nonempty side-number string keys (0..7) to balances |
+| `towns` | Positive canonical identity string keys to `{side,hall,level,mode,marked,tree}`; hall is canonical object ID or 0 for observed absence; mode is 0/1/2; marked is ordered unique positive object IDs; tree is ordered unique currently enabled recipe type IDs |
+| `objects` | Positive canonical identity string keys to `{type,side,town,x,y,hp,hp_max,alive,protected,active}`; positions are integer world pixels; town is canonical town ID or 0 for no town |
+| `queue` | Complete ordered `{id,town,type,remaining,total,paid,started,paused,site}` entries; canonical queue IDs are unique; town references a captured town; site is canonical object ID or 0; times are simulation ticks |
+| `events` | Ordered `{kind,town,object,value}` events from the preceding tick interval; town references a captured town, object is canonical object ID or 0 |
+
+Event kinds are `accepted`, `rejected`, `debit`, `refund`, `activation`, `harvest`,
+`service`, `spawn`, `completion`, `upgrade`, `save`, `load`. Value means requested
+type for acceptance/rejection; positive cash amount for debit/refund/harvest;
+work supplied for service; resulting type for spawn/completion/upgrade; snapshot
+tick for save/load; active flag for activation. Retain separate target HP samples
+and service events rather than guessing work from HP. Audit event ordering,
+protection meaning, activation and native save support before normalization.
+Use creation causes, never native pointers, for identities. Events during tick T
+appear in sample T+1; include a sample after the final event. Save/load captures
+must use matched observation horizons without renumbering the resumed tick.
+
+Equality covers declared observations only. The comparator cannot prove command
+acceptance, sufficient horizon, observer correctness or scenario execution. The
+synthetic tests deliberately perturb each behavior class and ordered events;
+they supply no live expectation or new M evidence. Reference instability takes
+priority over a clone verdict. Keep raw logs, normalized captures, saves, audio
+and images under ignored `work/`.
+
 ## General L1 rules
 
 Task 42's `tools/parity_run.py` provides the L0 harness. The `l1_*.json`
@@ -446,3 +498,72 @@ produce the earliest differing tick/field; no tolerance, nearest-ID matching,
 bonus, cap or scan formula is inferred. Tests use invented bundles, malformed
 late rows, repeated original instability, and an actual synthetic engine run
 with trace/hash repeatability checks. S success is not M game parity.
+## V07 all-weapon comparison (task 87)
+
+`tools/weapon_measure.py plan` expands the task-74 controls for every current
+positive-HP descriptor attacker and every positive-HP descriptor victim, with
+additional reload/range/composite/death/corpse cases. Its inventory covers all
+60 existing weapon IDs, including unowned payloads and unresolved dispatches.
+This is P coverage planning; S tests validate the tooling. No M evidence or new
+combat fixes are claimed. See the [run sheet](../../docs/EXPERIMENTS.md#v07-all-weapon-run-sheet-task-87-needs-live-run).
+
+The proposed `weapon-v1` JSON bundle has exactly `schema: 1`,
+`contract: "weapon-v1"`, `origin` (`reference` or `clone`), `alignment`, and
+`samples`. This contract requires an audited adapter for each implementation;
+it is not the existing engine-combat-v1 trace or raw reference unit log.
+
+Alignment has exactly `scenario` (ID from the generated scenario catalogue),
+`specification_sha256` (SHA-256 of that scenario encoded by Python
+`json.dumps(case, sort_keys=True, separators=(',', ':')).encode()`),
+`map_sha256`, `controls_sha256`, `normalization_sha256`, `first_tick: 1`,
+`last_tick` (2–100000), and `phase: "after_tick"`. All four digests are lowercase
+hexadecimal SHA-256. The map digest must cover all map/scenario inputs through
+an audited manifest; controls cover accepted commands, placements, diplomacy,
+visibility, regeneration, tech/speed, AI and clock. Normalization identifies the
+reviewed field definitions, category bits and canonical identity mapping. Keep
+adapter versions, source-runtime identities and record/replay audits privately.
+
+Each sample has exactly `tick`, `objects`, `flights`, `events`, `unavailable`.
+Ticks are contiguous through the requested horizon. `unavailable` must be empty;
+unsupported fields block comparison, never become fabricated zeros. All rows
+below have exactly the named fields, each an integer (booleans are rejected):
+
+| Channel | Row fields |
+| --- | --- |
+| objects | id type side x y hp secondary_hp armor categories alive corpse burn |
+| flights | id source target weapon x y height altitude |
+| events | kind id source target weapon victim x y height before after |
+
+Object/flight rows are ordered by unique positive canonical `id`. Preserve all
+objects including dead/corpse records until native removal. `alive`, `corpse`
+and `burn` are binary states. `categories` is the audited combined bit mask,
+not one exclusive armor label. `armor` retains native precision; HP and secondary
+HP retain their native signed values. Positions and altitude are pixels times
+256; render height is integer pixels. Types use public IDs 0–89; sides use 0–7.
+Canonical source, target, victim and flight IDs must remain stable across ticks
+and repeats, including shots whose sources died. Audit corpse/object identity
+mapping before treating disappearance as removal. Empty channel lists mean an
+observed absence, not an unsupported channel.
+
+Event order is native execution order within the tick. Kinds are: 1 accepted
+attack, 2 launch, 3 impact, 4 damage, 5 interception, 6 burn start, 7 burn end,
+8 death, 9 corpse removal. Event `id` identifies its flight, or zero for a
+nonflight lifecycle event. `weapon` identifies the actual child dispatch for
+launch/impact/damage; accepted attack identifies the source's descriptor weapon.
+`before`/`after` are native HP for damage, otherwise zero; `victim` identifies
+the affected object, otherwise zero. Unused event coordinates/height are zero
+only where the audited definition establishes inapplicability. No accepted
+attack from the scenario source/target/weapon means the idle control cannot pass.
+The initial sample must include the scenario source on side 0 and target on
+side 1; later death/removal may legitimately remove either.
+
+The comparator checks alignment and complete field/tick coverage, then compares
+the two reference streams before issuing a clone verdict. It reports the first
+differing tick/channel, preserving event order, every victim and every flight.
+It cannot certify adapter truthfulness, derive an unobserved splash boundary,
+or infer burn duration from a visual fire effect. A complete equal no-damage
+stream still needs audited accepted attacks, category/diplomacy/visibility
+controls and a sufficient horizon before it establishes immunity. Per-class
+measured/matching/fixed status stays pending until reviewed live observations
+cover that class's applicable controls. Synthetic fixtures are invented and do
+not supply gameplay expectations.

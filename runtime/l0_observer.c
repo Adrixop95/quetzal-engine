@@ -41,7 +41,7 @@ static int order_probe(uint32_t node, uint32_t stride) {
   const char* error = NULL;
   if (kind < 0 || kind > 11) error = "Invalid L0 order object type or kind";
   else if (tactic && !l0_span(tactic, 0x44)) error = "Invalid L0 order tactic span";
-  else if (kind == 0 && stride < 8 + 0x94) error = "Short L0 order unit record";
+  else if (kind == 0 && stride < 8 + 0xa0) error = "Short L0 order unit record";
   fprintf(output, "{\"handle\":%u,\"raw\":{\"type\":%u,\"kind\":%d,\"tactic\":%u}",
           node, type, kind, tactic);
   if (error) {
@@ -52,11 +52,16 @@ static int order_probe(uint32_t node, uint32_t stride) {
           type, owner_of(tactic, GU32(0x4dd2f4)), kind, GU8(o + 0x5c) ? "true" : "false", tactic,
           (int32_t)GU32(o + 0x44), (int32_t)GU32(o + 0x48));
   if (kind == 0) {
-    uint32_t target = GU32(o + 0x90);
-    fprintf(output, ",\"unit_state\":%d,\"attack_target_handle\":%u,\"step_destination\":[%lld,%lld]",
-            (int32_t)GU32(o + 0x64), target ? target - 8 : 0,
-            (long long)(int32_t)GU32(o + 0x44) * 48 + 24,
-            (long long)(int32_t)GU32(o + 0x48) * 48 + 24);
+    uint32_t state = GU32(o + 0x64), target = GU32(o + 0x90), firing = GU32(o + 0x94);
+    static const char* states[] = {"inactive", "idle", "walk", "attack", "death", "idle_animation"};
+    // Native execution state and current step, not a reconstructed player command.
+    // Marine Think uses +0x74/+0x78 in pixels and +0x98/+0x9c in pixel/256.
+    fprintf(output, ",\"unit_state\":%d,\"attack_target_handle\":%u,\"firing_target_handle\":%u,\"pursuit_target_handle\":%u,\"step_destination\":[%d,%d],\"step_velocity\":[%d,%d],\"execution_kind\":\"%s\"",
+            (int32_t)state, target ? target - 8 : 0, firing ? firing - 8 : 0,
+            GU32(o + 0x8c) ? GU32(o + 0x8c) - 8 : 0,
+            (int32_t)GU32(o + 0x74), (int32_t)GU32(o + 0x78),
+            (int32_t)GU32(o + 0x98), (int32_t)GU32(o + 0x9c),
+            state < 6 ? states[state] : "unknown");
   }
   if (tactic)
     fprintf(output, ",\"tactic_state\":%d,\"tactic_mode\":%d,\"anchor_tile\":[%d,%d],\"route_count\":%u,\"route_cursor\":%u",
@@ -107,7 +112,8 @@ static int queue_probe(void) {
         uint32_t object = GU32(data + ((head + j) % capacity) * 4);
         objects[read_count++] = object;
         fprintf(output, "%s%u", j ? "," : "", object);
-        if (!l0_span(object, 4)) error = "Invalid L0 queued object";
+        if (!l0_span(object, 0x54)) error = "Invalid L0 queued object";
+        else if (GU32(object + 0x50) >= 90) error = "Invalid L0 queued object type";
       }
     }
     fputs("]}", output);
@@ -119,6 +125,9 @@ static int queue_probe(void) {
     fputs(",\"queued_handles\":[", output);
     for (uint32_t j = 0; j < read_count; ++j)
       fprintf(output, "%s%u", j ? "," : "", objects[j] - 8);
+    fputs("],\"queued_types\":[", output);
+    for (uint32_t j = 0; j < read_count; ++j)
+      fprintf(output, "%s%u", j ? "," : "", GU32(objects[j] + 0x50));
     fputs("]}", output);
   }
   fputc(']', output);
