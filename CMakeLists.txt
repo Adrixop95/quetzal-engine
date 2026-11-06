@@ -305,6 +305,9 @@ if(Python3_Interpreter_FOUND)
     add_test(NAME handoff_tools COMMAND ${Python3_EXECUTABLE} -I
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_handoff_tools.py)
     set_tests_properties(handoff_tools PROPERTIES LABELS "unit" TIMEOUT 30)
+    add_test(NAME codex_supervisor COMMAND ${Python3_EXECUTABLE} -I
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_codex_supervisor.py)
+    set_tests_properties(codex_supervisor PROPERTIES LABELS "unit" TIMEOUT 30)
   endif()
   add_test(NAME parity_triage_matrix COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_triage.py)
