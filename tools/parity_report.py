@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -432,6 +433,13 @@ def main():
     run.add_argument("--timeout", type=int, default=600, help="hard timeout in seconds for each process")
     run.add_argument("--engine-adapter", type=lambda p: Path(p).resolve())
     run.add_argument("--reference-adapter", type=lambda p: Path(p).resolve())
+    shared = sub.add_parser("missions", help="scripted record and two shared-observer replays for missions 1..3")
+    for flag in ("game", "runtime", "engine", "output"):
+        shared.add_argument("--" + flag, type=lambda p: Path(p).resolve(), required=True)
+    shared.add_argument("--ticks", type=int, default=720, help="explicit contiguous log horizon (maximum 100000)")
+    shared.add_argument("--timeout", type=int, default=300)
+    shared.add_argument("--engine-adapter", type=lambda p: Path(p).resolve(),
+                        help="audited packet translator producing a shared-l0-v2 clone bundle")
     diff = sub.add_parser("compare", help="compare validated normalized JSONL streams")
     diff.add_argument("reference", type=Path)
     diff.add_argument("engine", type=Path)
@@ -441,6 +449,13 @@ def main():
     try:
         if args.mode == "self-test":
             return 0 if unittest.TextTestRunner().run(unittest.defaultTestLoader.loadTestsFromTestCase(Controls)).wasSuccessful() else 1
+        if args.mode == "missions":
+            if not 1 <= args.ticks <= 100000 or args.timeout <= 0:
+                raise ValueError("ticks must be 1..100000 and timeout must be positive")
+            spec = importlib.util.spec_from_file_location("parity_l2", ROOT / "tools/parity_l2.py")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module.run(args)
         if args.mode == "run":
             if args.timeout <= 0 or (args.ticks is not None and args.ticks <= 0):
                 raise ValueError("timeout and ticks must be positive")

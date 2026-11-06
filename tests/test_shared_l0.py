@@ -194,6 +194,17 @@ class SharedControls(unittest.TestCase):
         repeat = run / "repeat.jsonl"
         subprocess.run([str(OBSERVER), str(schedule), str(repeat), str(run)], check=True, timeout=10)
         self.assertEqual(native.read_bytes(), repeat.read_bytes())
+        state_dir = self.root / "state-only"
+        state_dir.mkdir()
+        state_log = state_dir / "native.jsonl"
+        subprocess.run([str(OBSERVER), str(schedule), str(state_log), str(state_dir)], check=True, timeout=10,
+                       env=dict(os.environ, RT_L0_STATE_ONLY="1"))
+        state_rows = [json.loads(line) for line in state_log.read_text().splitlines()][1:]
+        self.assertEqual([r["tick"] for r in state_rows], [1, 3])
+        self.assertTrue(all(r["frame"] is None and "frame" in r["unavailable"] for r in state_rows))
+        self.assertFalse(list(state_dir.glob("*.ppm")))
+        self.assertEqual([r["objects"] for r in state_rows],
+                         [json.loads(line)["objects"] for line in native.read_text().splitlines()[1:]])
         clone_path = self.root / "clone.json"
         clone = copy.deepcopy(b)
         clone["runner"] = "clone"
