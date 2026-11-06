@@ -1,6 +1,7 @@
 // Hand-written observation plumbing; no lifted functions or generated source.
 #include "aztec_rt.h"
 #include "l0_observer.h"
+#include "l0_pool.h"
 #include "../src/parity/schedule.h"
 #include <pthread.h>
 #include <stdatomic.h>
@@ -18,6 +19,66 @@ static _Atomic uint32_t frozen_ms;
 static _Atomic uint32_t latest_ms;
 static _Atomic uint32_t paused_ms;
 static char frame_path[1024];
+
+static int owner_of(uint32_t tactic, uint32_t sides) {
+  uint32_t side = tactic ? GU32(tactic + 8) : 0;
+  return sides && side >= sides && (side - sides) / 0x69c < 4 && (side - sides) % 0x69c == 0
+             ? (int)((side - sides) / 0x69c) : -1;
+}
+
+static int kind_of(uint32_t object) {
+  uint32_t type = GU32(object + 0x50);
+  if (type >= 90) rt_fatal("Invalid L0 object type");
+  int kind = (int)GU32(0x4933f8 + type * 8);
+  if (kind < 0 || kind > 11) rt_fatal("Invalid L0 object kind");
+  return kind;
+}
+
+static void order_probe(uint32_t node) {
+  uint32_t o = node + 8, tactic = GU32(o + 0x30);
+  int kind = kind_of(o);
+  fprintf(output, "{\"handle\":%u,\"type\":%u,\"owner\":%d,\"kind\":%d,\"alive\":%s,\"tactic\":%u,\"tile\":[%d,%d]",
+          node, GU32(o + 0x50), owner_of(tactic, GU32(0x4dd2f4)), kind, GU8(o + 0x5c) ? "true" : "false", tactic,
+          (int32_t)GU32(o + 0x44), (int32_t)GU32(o + 0x48));
+  if (kind == 0) {
+    uint32_t target = GU32(o + 0x90);
+    fprintf(output, ",\"unit_state\":%d,\"attack_target_handle\":%u,\"step_destination\":[%lld,%lld]",
+            (int32_t)GU32(o + 0x64), target ? target - 8 : 0,
+            (long long)(int32_t)GU32(o + 0x44) * 48 + 24,
+            (long long)(int32_t)GU32(o + 0x48) * 48 + 24);
+  }
+  if (tactic)
+    fprintf(output, ",\"tactic_state\":%d,\"tactic_mode\":%d,\"anchor_tile\":[%d,%d],\"route_count\":%u,\"route_cursor\":%u",
+            (int32_t)GU32(tactic + 0x20), (int32_t)GU32(tactic + 0x24),
+            (int32_t)GU32(tactic + 0x10), (int32_t)GU32(tactic + 0x14),
+            GU32(tactic + 0x3c), GU32(tactic + 0x40));
+  fputc('}', output);
+}
+
+static void queue_probe(void) {
+  L0Pool towns = l0_pool_read(0x5156f8);
+  fputs("[", output);
+  for (uint32_t i = 0; i < towns.count; ++i) {
+    uint32_t town = towns.nodes[i] + 8, q = GU32(town + 0xf8);
+    if (!q) rt_fatal("Missing L0 town queue");
+    uint32_t data = GU32(q + 4), head = GU32(q + 8), capacity = GU32(q + 0x10), count = GU32(q + 0x14);
+    if (!capacity || capacity > 100000 || count > capacity || head >= capacity || !data)
+      rt_fatal("Invalid L0 town queue");
+    fprintf(output, "%s{\"town_handle\":%u,\"hall_handle\":%u,\"owner\":%d,\"production_object_handle\":%u,\"staged_handle\":%u,\"production_words\":[%u,%u,%u],\"queued_handles\":[",
+            i ? "," : "", towns.nodes[i], GU32(town + 0xf0) ? GU32(town + 0xf0) - 8 : 0,
+            owner_of(town, GU32(0x4dd2f4)), GU32(town + 0x114) ? GU32(town + 0x114) - 8 : 0,
+            GU32(town + 0x168) ? GU32(town + 0x168) - 8 : 0,
+            GU32(town + 0x118), GU32(town + 0x11c), GU32(town + 0x120));
+    for (uint32_t j = 0; j < count; ++j) {
+      uint32_t object = GU32(data + ((head + j) % capacity) * 4);
+      if (!object) rt_fatal("Null L0 queued object");
+      fprintf(output, "%s%u", j ? "," : "", object - 8);
+    }
+    fputs("]}", output);
+  }
+  fputc(']', output);
+  free(towns.nodes);
+}
 
 uint32_t rt_l0_clock(uint32_t wall_ms) {
   wall_ms -= atomic_load(&paused_ms);
@@ -92,20 +153,25 @@ void rt_l0_observe(uint32_t tick) {
   int have_frame = captured;
   pthread_mutex_unlock(&lock);
   fprintf(output, "{\"tick\":%u,\"objects\":[", tick);
-  uint32_t base = GU32(0x4cc3d4), end = GU32(0x4cc3d8), stride = GU32(0x4cc3e0), sides = GU32(0x4dd2f4);
-  if (!base || end < base || stride < 0x70 || stride > 0x400 || (end - base) % stride || (end - base) / stride > 100000)
-    rt_fatal("Invalid L0 object pool");
-  int first = 1;
-  for (uint32_t a = base; a < end; a += stride) {
+  L0Pool pool = l0_pool_read(0x4cc3d0);
+  uint32_t sides = GU32(0x4dd2f4), inactive = 0, live = 0;
+  int first = 1, fractions_known = 1;
+  for (uint32_t i = 0; i < pool.count; ++i) {
+    uint32_t a = pool.nodes[i];
     uint32_t o = a + 8, vt = GU32(o);
-    if (vt < 0x480000 || vt >= 0x4c4000) continue;
-    uint32_t tactic = GU32(o + 0x30), side = tactic ? GU32(tactic + 8) : 0;
-    int owner = -1;
-    if (sides && side >= sides && side < sides + 4 * 0x69c && (side - sides) % 0x69c == 0)
-      owner = (int)((side - sides) / 0x69c);
+    if (pool.stride < 0xb0 || vt < 0x480000 || vt >= 0x4c4000) rt_fatal("Invalid L0 active object");
+    if (!GU8(o + 0x5c)) { ++inactive; continue; }
+    ++live;
+    int owner = owner_of(GU32(o + 0x30), sides), kind = kind_of(o);
+    long long x = (long long)(int32_t)GU32(o + 0x24) * 256;
+    long long y = (long long)(int32_t)GU32(o + 0x28) * 256;
+    // Class-specific current coordinates, distinct from step destinations.
+    static const unsigned positions[12] = {0x6c, 0x78, 0, 0x68, 0x6c, 0x68, 0x70, 0, 0, 0, 0, 0};
+    if (positions[kind]) {
+      x = (int32_t)GU32(o + positions[kind]); y = (int32_t)GU32(o + positions[kind] + 4);
+    } else if (kind != 2 && kind != 7) fractions_known = 0;
     fprintf(output, "%s{\"handle\":%u,\"type\":%d,\"owner\":%d,\"x\":%lld,\"y\":%lld,\"hp\":%d,\"orders\":null}",
-            first ? "" : ",", a, (int)GU32(o + 0x50), owner, (long long)(int32_t)GU32(o + 0x24) * 256,
-            (long long)(int32_t)GU32(o + 0x28) * 256, (int)GU32(o + 0x38));
+            first ? "" : ",", a, (int)GU32(o + 0x50), owner, x, y, (int)GU32(o + 0x38));
     first = 0;
   }
   fputs("],\"money\":{", output);
@@ -115,8 +181,21 @@ void rt_l0_observe(uint32_t tick) {
   fprintf(output, "},\"queues\":null,\"view\":null,\"frame\":");
   if (have_frame) fprintf(output, "\"reference/tick_%u.ppm\"", tick);
   else fputs("null", output);
-  // Raw DirectDraw presents can be partial blits. Never certify their phase or UI.
-  fprintf(output, ",\"unavailable\":[\"orders\",\"queues\",\"position_fraction\",\"view\",\"frame_phase\"%s]}\n", have_frame ? "" : ",\"frame\"");
+  fprintf(output, ",\"diagnostics\":{\"pool\":{\"capacity\":%u,\"allocated\":%u,\"free_slot_filtered\":%u,\"inactive_object_filtered\":%u,\"live_objects\":%u},\"orders\":[",
+          pool.capacity, pool.count, pool.capacity - pool.count, inactive, live);
+  for (uint32_t i = 0; i < pool.count; ++i) {
+    if (i) fputc(',', output);
+    order_probe(pool.nodes[i]);
+  }
+  fputs("],\"queues\":", output);
+  queue_probe();
+  fprintf(output, ",\"camera\":[%d,%d],\"viewport\":[%u,%u],\"local_side_selector\":%u,\"frame_phase\":\"%s\"},",
+          (int32_t)GU32(0x4dd330), (int32_t)GU32(0x4dd334), GU32(0x4dd340), GU32(0x4dd344), GU32(0x4cc38c),
+          have_frame ? "raw_primary_present" : "unavailable");
+  // A unit step/anchor is not the logical command destination. Raw presents may be partial.
+  fprintf(output, "\"unavailable\":[\"orders\",\"queues\",\"view\",\"frame_phase\"%s%s]}\n",
+          fractions_known ? "" : ",\"position_fraction\"", have_frame ? "" : ",\"frame\"");
+  free(pool.nodes);
   if (fflush(output) || ferror(output)) rt_fatal("L0 observation write failed");
   ++schedule.next;
   uint32_t frozen = atomic_load(&frozen_ms);

@@ -4,6 +4,7 @@ import copy
 import importlib.util
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -118,6 +119,28 @@ class SharedControls(unittest.TestCase):
         with self.assertRaises(ValueError):
             l0.compare(a, b)
 
+    def test_repeat_review_keeps_candidates_provisional(self):
+        a, _ = self.complete_bundle("reference")
+        b, clone = self.complete_bundle("clone")
+        identity = next(iter(clone["samples"][0]["objects"]))
+        clone["samples"][0]["objects"][identity]["hp"] = 99
+        clone["samples"][1]["objects"][identity]["x"] += 1
+        b.write_text(json.dumps(clone))
+        repeated = self.root / "repeated"
+        for name in ("reference", "clone"):
+            shutil.copytree(self.root / name, repeated / name)
+        paths = a, b, repeated / "reference/bundle.json", repeated / "clone/bundle.json"
+        review = l0.review_repeats(*paths)
+        self.assertEqual(review["category"], "repeated_observations")
+        self.assertEqual(review["initial_counts"], dict(reference=1, clone=1, common=1))
+        self.assertFalse(review["hp_candidates"][0]["confirmed"])
+        self.assertEqual(review["movement"][1]["clone"], [identity])
+        (repeated / "clone/3.ppm").write_bytes(b"P6\n800 600\n255\n" + bytes([1]) * (800 * 600 * 3))
+        self.assertEqual(l0.review_repeats(*paths)["category"], "run_nondeterminism")
+        clone["samples"][1]["objects"][identity]["hp"] = 7
+        paths[3].write_text(json.dumps(clone))
+        self.assertEqual(l0.review_repeats(*paths)["category"], "run_nondeterminism")
+
     def test_schema_and_native_parser_reject_bad_schedule(self):
         for ticks in ([], [3, 1], [1, 1], [True], [0, 1], [2, 3], [1, 2147483648]):
             bad = copy.deepcopy(self.s)
@@ -143,7 +166,34 @@ class SharedControls(unittest.TestCase):
         self.assertEqual(b["samples"][0]["objects"][identity]["owner"], 0)
         self.assertEqual(b["samples"][1]["objects"][identity]["hp"], 98)
         self.assertEqual(b["samples"][0]["money"]["0"], 123)
+        self.assertEqual(len(b["samples"][0]["objects"]), 63)
+        self.assertEqual({obj["owner"] for obj in b["samples"][0]["objects"].values()}, {0, 1})
+        self.assertEqual(set(b["samples"][0]["objects"]), set(b["samples"][1]["objects"]))
+        self.assertEqual(b["samples"][1]["objects"][identity]["x"], 18432 + 128)
+        self.assertNotIn("position_fraction", b["samples"][0]["unavailable"])
+        self.assertEqual(b["samples"][0]["diagnostics"]["pool"], dict(
+            capacity=133, allocated=63, free_slot_filtered=70, inactive_object_filtered=0, live_objects=63))
         self.assertTrue("frame_phase" in b["samples"][0]["unavailable"])
+        # Repeated native streams include the same raw order/queue diagnostics.
+        repeat = run / "repeat.jsonl"
+        subprocess.run([str(OBSERVER), str(schedule), str(repeat), str(run)], check=True, timeout=10)
+        self.assertEqual(native.read_bytes(), repeat.read_bytes())
+        clone_path = self.root / "clone.json"
+        clone = copy.deepcopy(b)
+        clone["runner"] = "clone"
+        for sample in clone["samples"]:
+            del sample["diagnostics"]
+        clone_path.write_text(json.dumps(clone))
+        verdict = l0.compare(self.root / "reference.json", clone_path)
+        self.assertIsNone(verdict["first_known_difference"])
+        self.assertEqual(verdict["notices"], [dict(category="free_slot_filtered", tick=t, count=70) for t in (1, 3)])
+        clone["samples"][0]["objects"][identity]["hp"] = 97
+        clone_path.write_text(json.dumps(clone))
+        self.assertEqual(l0.compare(self.root / "reference.json", clone_path)["first_known_difference"]["field"], "hp")
+        invalid = copy.deepcopy(b)
+        invalid["samples"][0]["diagnostics"]["pool"]["live_objects"] = 64
+        with self.assertRaises(ValueError):
+            l0.validate_bundle(invalid, self.root)
         rows = native.read_text().splitlines()
         duplicate = json.loads(rows[1])
         duplicate["objects"].append(copy.deepcopy(duplicate["objects"][0]))
@@ -151,6 +201,38 @@ class SharedControls(unittest.TestCase):
         native.write_text("\n".join(rows) + "\n")
         with self.assertRaises(ValueError):
             l0.bundle(self.s, native, "reference", self.root / "bad.json")
+
+    def test_pool_liveness_and_wrapped_queue_probes(self):
+        for case in ("inactive", "sentinel_live", "classes", "queue", "cycle", "active_count"):
+            run = self.root / case / "reference"
+            run.mkdir(parents=True)
+            schedule, native = run / "schedule", run / "native.jsonl"
+            l0.write_schedule(self.s, schedule)
+            result = subprocess.run([str(OBSERVER), str(schedule), str(native), str(run)],
+                                    env=dict(os.environ, L0_TEST_CASE=case), capture_output=True, timeout=10)
+            if case in ("cycle", "active_count"):
+                self.assertNotEqual(result.returncode, 0)
+                self.assertTrue(b"pool" in result.stderr)
+                continue
+            self.assertEqual(result.returncode, 0, result.stderr)
+            b = l0.bundle(self.s, native, "reference", run.parent / "reference.json")
+            d = b["samples"][0]["diagnostics"]
+            if case == "inactive":
+                self.assertEqual(d["pool"]["live_objects"], 62)
+                self.assertEqual(d["pool"]["inactive_object_filtered"], 1)
+            elif case == "queue":
+                self.assertEqual(d["queues"][0]["queued_handles"], [0x600100, 0x600200])
+                self.assertIsNone(b["samples"][0]["queues"])
+                self.assertTrue("queues" in b["samples"][0]["unavailable"])
+            elif case == "sentinel_live":
+                self.assertEqual(d["pool"]["live_objects"], 63)
+                obj = b["samples"][0]["objects"]["initial:-1:3:-256000:-256000"]
+                self.assertEqual(obj["hp"], 0)
+            else:
+                self.assertFalse("position_fraction" in b["samples"][0]["unavailable"])
+                for i, kind in enumerate((0, 30, 10, 7, 83, 33, 3, 17)):
+                    obj = next(o for o in b["samples"][0]["objects"].values() if o["type"] == kind)
+                    self.assertEqual(obj["x"], (72 + i * 48) * 256 + (0 if i in (2, 7) else 64))
 
     def test_headless_schema_schedule_and_repeatable_frames(self):
         fixture = legacy.ParityTests()

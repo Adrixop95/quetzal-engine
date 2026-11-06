@@ -128,6 +128,12 @@ schedule. Automatic human orders and resume are disabled for this contract.
 Each canonical bundle records schema, contract, mission, phase, position unit,
 requested view, ticks, runner provenance and samples. Each sample has `tick`,
 `objects`, `money`, `queues`, observed `view`, relative `frame` and `unavailable`.
+An optional reference-only `diagnostics` object retains pool accounting, raw
+order/tactic and town-queue probes, camera/viewport globals and capture phase.
+These probes are excluded from cross-program field comparison. Nonzero pool
+exclusions produce `free_slot_filtered` or `inactive_object_filtered` notices;
+they cannot become object-presence divergences. Invalid pool accounting fails
+validation. Notices do not override a blocked contract or a real difference.
 Objects contain `type`, `owner`, `x`, `y`, `hp`, `orders`; positions use
 `pixel/256`. Orders contain `kind`, canonical `target` or null, and destination
 `x`,`y` in pixels. Queues are ordered lists per side, with type, town, remaining,
@@ -144,10 +150,16 @@ The reference observer runs on the logic thread at the existing oracle command
 fetch. It blocks that thread, freezes `GetTickCount`/`timeGetTime`, requests the
 camera position, and waits up to five seconds for a renderer callback. Paused
 wall time is subtracted when the clock resumes. It writes normalized integer
-HP, type, whole-pixel position scaled by 256, owner through the owning tactic,
+HP, type, class-specific fixed-point position, owner through the owning tactic,
 and four reference cash slots. The existing legacy unit log is unchanged.
-The reference currently declares **orders, queues, fractional position, observed
-UI state and complete-frame phase unavailable**. A renderer callback can be a
+The reference currently declares **logical orders, normalized production queues,
+observed UI state and complete-frame phase unavailable**. Fractional positions
+are read for Marine, Spider, Zeppelin, Truck, Bird and Headtruck; Building and
+Defence positions are integral. Other classes keep `position_fraction`
+unavailable. The allocator's active/free chains and counts are checked before
+world objects with a cleared `+0x5c` liveness flag are excluded. Retained vtables,
+owner -1, zero HP and off-map positions do not establish allocation or liveness.
+A renderer callback can be a
 partial DirectDraw blit; its capture is diagnostic. A timeout declares the frame
 unavailable too. A requested camera is not certified as a rendered camera.
 This code therefore does not yet unblock L1/L4/L5 acceptance. The missing audited

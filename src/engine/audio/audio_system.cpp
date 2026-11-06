@@ -11,7 +11,7 @@
 namespace aztec::engine {
 
 const char* audio_trigger_name(AudioEvent::Trigger trigger) {
-  static const char* names[] = {"unknown", "selection", "orders", "combat", "building", "ui", "music", "ambient"};
+  static const char* names[] = {"unknown", "selection", "orders", "combat", "building", "ui", "music", "ambient", "production"};
   return names[int(trigger)];
 }
 

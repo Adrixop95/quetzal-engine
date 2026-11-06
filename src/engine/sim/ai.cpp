@@ -56,7 +56,30 @@ void GameSim::run_ai(World& w) {
     }
     auto decision = ai::step(w, *rules_, int(ti), state, offers);
     w.ai_towns[ti] = std::move(decision.next);
-    for (const auto& c : decision.commands) apply(w, c);
+    for (const auto& c : decision.commands) {
+      const size_t queued = w.side_state[town.side].queue.size();
+      apply(w, c);
+      if (!ai_observer_) continue;
+      AiEvent event; event.side = town.side; event.town = int(ti);
+      if (c.type == Pct::Build && w.side_state[town.side].queue.size() > queued) {
+        event.kind = "build_order";
+        const auto& q = w.side_state[town.side].queue.back();
+        event.x = q.tile_x; event.y = q.tile_y;
+        event.composition.at(size_t(q.type)) = 1;
+      } else if (c.type == Pct::Attack || c.type == Pct::AttackMove) {
+        event.kind = c.type == Pct::Attack ? "defence" : "launch";
+        for (uint32_t id : c.ids) {
+          const auto* o = w.find(id);
+          if (!o || !o->alive || o->removed || o->side != c.side || o->type < 0 || o->type >= 90) continue;
+          const bool accepted = c.type == Pct::Attack
+              ? o->order == uint8_t(Order::Attack) && o->target == uint32_t(c.a)
+              : o->order == uint8_t(Order::AttackMove) && o->dest_x == c.a && o->dest_y == c.b;
+          if (accepted) ++event.composition[size_t(o->type)];
+        }
+        if (std::all_of(event.composition.begin(), event.composition.end(), [](int n) { return n == 0; })) continue;
+      } else continue;
+      ai_observer_(tick_, event);
+    }
   }
 }
 }  // namespace aztec::engine

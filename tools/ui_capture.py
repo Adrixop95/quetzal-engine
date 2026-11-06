@@ -273,7 +273,8 @@ def capture_clone(args, spec, directory):
     (directory / 'input.txt').write_text('\n'.join(script) + '\n')
     execute([args.clone.resolve(), '--game', game, '--rules-dir', ROOT / 'docs/data',
              '--size', '800x600', '--software', '--no-audio', '--menu-script', directory / 'input.txt',
-             '--menu-trace', directory / 'trace.jsonl'], directory, args.timeout, setup_network=False)
+             '--menu-trace', directory / 'trace.jsonl'], directory, args.timeout,
+            dict(AZTEC_USER_DIR=str(directory / 'profile'), AZTEC_UI_SCRIPT='', AZTEC_MENU_SHOT=''), setup_network=False)
     rows = [json.loads(line) for line in (directory / 'trace.jsonl').read_text().splitlines()]
     require(rows and all(r['contract'] == 'engine-menu-raw-v1' and r['frame'] == i
                          for i, r in enumerate(rows)), 'invalid/truncated menu trace')

@@ -5,6 +5,25 @@ import re
 
 FIELDS = {"type", "owner", "x", "y", "hp", "orders"}
 VIEW = {"camera", "resolution", "side", "selection", "panel", "cursor"}
+SAMPLE = {"tick", "objects", "money", "queues", "view", "frame", "unavailable"}
+
+
+def validate_diagnostics(row):
+    """Reference-only probes are evidence for an adapter audit, never comparable state."""
+    if "diagnostics" not in row:
+        return
+    d = row["diagnostics"]
+    require(isinstance(d, dict) and set(d) == {"pool", "orders", "queues", "camera", "viewport",
+                                              "local_side_selector", "frame_phase"}, "invalid diagnostics")
+    p = d["pool"]
+    require(isinstance(p, dict) and set(p) == {"capacity", "allocated", "free_slot_filtered",
+                                             "inactive_object_filtered", "live_objects"}
+            and all(integer(v) for v in p.values())
+            and p["capacity"] == p["allocated"] + p["free_slot_filtered"]
+            and p["allocated"] == p["inactive_object_filtered"] + p["live_objects"]
+            and p["live_objects"] == len(row["objects"]), "invalid pool accounting")
+    require(isinstance(d["orders"], list) and len(d["orders"]) == p["allocated"]
+            and isinstance(d["queues"], list), "invalid raw order/queue probes")
 
 
 def require(ok, message):
@@ -79,7 +98,7 @@ def bundle(s, native, runner, destination):
             "invalid native observer header")
     samples = rows[1:]
     require([r.get("tick") for r in samples] == s["observe"]["ticks"], "native observer schedule differs")
-    require(samples and all(set(r) == {"tick", "objects", "money", "queues", "view", "frame", "unavailable"}
+    require(samples and all(set(r) in (SAMPLE, SAMPLE | {"diagnostics"})
                             and isinstance(r["objects"], list) for r in samples), "invalid native sample schema")
     require(samples[0]["objects"], "empty initial campaign observation")
     for row in samples:
@@ -141,7 +160,8 @@ def validate_bundle(b, directory):
     require(isinstance(b["samples"], list) and all(isinstance(r, dict) and integer(r.get("tick"), 1) for r in b["samples"])
             and [r["tick"] for r in b["samples"]] == b["ticks"], "unaligned bundle schedule")
     for r in b["samples"]:
-        require(set(r) == {"tick", "objects", "money", "queues", "view", "frame", "unavailable"}, "invalid sample keys")
+        require(set(r) in (SAMPLE, SAMPLE | {"diagnostics"}), "invalid sample keys")
+        validate_diagnostics(r)
         require(isinstance(r["unavailable"], list) and all(isinstance(f, str) for f in r["unavailable"]), "invalid unavailable fields")
         require(first_difference(r["view"], b["view"]) is None or r["view"] is None and "view" in r["unavailable"],
                 "sample camera/UI differs")
@@ -214,7 +234,12 @@ def compare(reference, clone):
             "unaligned bundle contract")
     first = None
     blocked = None
+    notices = []
     for x, y in zip(a["samples"], b["samples"]):
+        pool = x.get("diagnostics", {}).get("pool", {})
+        for category in ("free_slot_filtered", "inactive_object_filtered"):
+            if pool.get(category):
+                notices.append(dict(category=category, tick=x["tick"], count=pool[category]))
         missing = set(x["unavailable"] + y["unavailable"])
         if missing and blocked is None:
             blocked = dict(category="blocked_observation_contract", tick=x["tick"], object_id=None,
@@ -241,9 +266,50 @@ def compare(reference, clone):
                              field=d[0], reference=d[1], engine=d[2])
         if not missing and first is None and (reference.parent / x["frame"]).read_bytes() != (clone.parent / y["frame"]).read_bytes():
             first = dict(category="frame_difference", tick=x["tick"], object_id=None, field="frame")
-    if blocked:
-        return dict(blocked, first_known_difference=first)
-    return first or dict(category="equal_observed_fields", through_tick=a["ticks"][-1])
+    result = dict(blocked, first_known_difference=first) if blocked else first or dict(
+        category="equal_observed_fields", through_tick=a["ticks"][-1])
+    if notices:
+        result["notices"] = notices
+    return result
+
+
+def review_repeats(reference, clone, repeat_reference, repeat_clone):
+    """Retain leads only after each program reproduces its entire observation stream."""
+    bundles = []
+    for name, first, second in (("reference", reference, repeat_reference), ("clone", clone, repeat_clone)):
+        a = validate_bundle(json_object(first.read_text()), first.parent)
+        b = validate_bundle(json_object(second.read_text()), second.parent)
+        require(a["runner"] == b["runner"] == name, "wrong repeat provenance")
+        d = first_difference(a, b)
+        if d:
+            return dict(category="run_nondeterminism", runner=name, field=d[0], status="needs live run")
+        for sample in a["samples"]:
+            if sample["frame"] and (first.parent / sample["frame"]).read_bytes() != (second.parent / sample["frame"]).read_bytes():
+                return dict(category="run_nondeterminism", runner=name, tick=sample["tick"], field="frame", status="needs live run")
+        bundles.append(a)
+    verdict = compare(reference, clone)
+    a, b = bundles
+    initial_a, initial_b = a["samples"][0]["objects"], b["samples"][0]["objects"]
+    common = set(initial_a) & set(initial_b)
+    hp = {}
+    for identity in sorted(common):
+        left, right = initial_a[identity], initial_b[identity]
+        if left["hp"] != right["hp"]:
+            key = left["type"], left["hp"], right["hp"]
+            hp.setdefault(key, []).append(identity)
+    movement = []
+    for x, y in zip(a["samples"], b["samples"]):
+        row = dict(tick=x["tick"])
+        for name, sample, initial in (("reference", x, initial_a), ("clone", y, initial_b)):
+            row[name] = [identity for identity in sorted(common & set(sample["objects"]))
+                         if any(sample["objects"][identity][axis] != initial[identity][axis] for axis in ("x", "y"))]
+        movement.append(row)
+    return dict(category="repeated_observations", status="needs live run", comparison=verdict,
+                initial_counts=dict(reference=len(initial_a), clone=len(initial_b), common=len(common)),
+                hp_candidates=[dict(type=k[0], reference=k[1], engine=k[2], object_ids=v, confirmed=False)
+                               for k, v in sorted(hp.items())], movement=movement,
+                limitations=["HP candidates require matched difficulty/map settings and completed observation contracts.",
+                             "Movement counts do not distinguish script/AI orders from phase or movement-rule differences."])
 
 
 def main(argv=None):
@@ -252,6 +318,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("reference", type=Path)
     parser.add_argument("clone", type=Path)
+    parser.add_argument("--repeat-reference", type=Path)
+    parser.add_argument("--repeat-clone", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
@@ -259,7 +327,9 @@ def main(argv=None):
         private = (Path(__file__).resolve().parents[1] / "work/parity").resolve()
         require(output.is_relative_to(private) and output != private, "comparison output must stay in work/parity")
         require(not output.exists(), "comparison output already exists")
-        verdict = compare(args.reference, args.clone)
+        require(bool(args.repeat_reference) == bool(args.repeat_clone), "both repeated bundles are required")
+        verdict = (review_repeats(args.reference, args.clone, args.repeat_reference, args.repeat_clone)
+                   if args.repeat_reference else compare(args.reference, args.clone))
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(verdict, indent=2, sort_keys=True) + "\n")
         print(json.dumps(verdict, sort_keys=True))

@@ -117,7 +117,7 @@ class AudioParityTests(unittest.TestCase):
         self.assertEqual(audio.compare(a, short)['first']['category'], 'missing_event')
         self.assertEqual(audio.compare(short, a)['first']['category'], 'extra_event')
         b = copy.deepcopy(a)
-        b['events'].append(dict(b['events'][-1], seq=7))
+        b['events'].append(dict(b['events'][-1], seq=len(b['events'])))
         b['event_count'] += 1
         self.assertEqual(audio.compare(a, b)['first']['category'], 'extra_event')
         for field, value in [('sound', 999), ('kind', 'loop_start')]:
@@ -129,6 +129,17 @@ class AudioParityTests(unittest.TestCase):
         result = audio.compare(capture([]), capture([]))
         self.assertEqual(result['category'], 'no_events')
         self.assertTrue(all(row['status'] == 'unobserved' for row in result['classes'].values()))
+
+    def test_production_coverage_is_distinct_from_construction(self):
+        full = capture()
+        result = audio.compare(full, full)
+        self.assertTrue(result['coverage_complete'])
+        partial = capture(copy.deepcopy(full['events'][:-1]))
+        result = audio.compare(partial, partial)
+        self.assertEqual(result['category'], 'equal_observed_events')
+        self.assertFalse(result['coverage_complete'])
+        self.assertEqual(result['unobserved_classes'], ['production'])
+        self.assertEqual(result['classes']['building']['status'], 'compared')
 
     def test_reject_incomplete_malformed_and_unresolved(self):
         a = capture()
@@ -173,6 +184,17 @@ class AudioParityTests(unittest.TestCase):
             result = audio.normalize(raw, manifest, 'reference')
             self.assertEqual(result['events'][0]['sound'], 123)  # Never the buffer handle.
             self.assertEqual(result['events'][0]['tick'], 5)
+            for field, value in [('buffer', True), ('buffer', 0), ('flags', -1),
+                                 ('trigger', 'selection')]:
+                row = json.loads(raw.read_text())
+                row[field] = value
+                raw.write_text(json.dumps(row) + '\n')
+                manifest['raw_sha256'] = hashlib.sha256(raw.read_bytes()).hexdigest()
+                with self.assertRaises(ValueError):
+                    audio.normalize(raw, manifest, 'reference')
+                row.update(buffer=42, flags=0, trigger='unknown')
+                raw.write_text(json.dumps(row) + '\n')
+            manifest['raw_sha256'] = hashlib.sha256(raw.read_bytes()).hexdigest()
             manifest['annotations']['1'] = manifest['annotations']['0']
             with self.assertRaises(ValueError):
                 audio.normalize(raw, manifest, 'reference')
@@ -219,6 +241,37 @@ class AudioParityTests(unittest.TestCase):
         self.assertTrue('work/parity' in result.stderr)
         self.assertFalse((ROOT / 'docs/forbidden.json').exists())
 
+    def test_probe_records_replay_controls_and_empty_trace_is_blocked(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            game = root / 'game'
+            game.mkdir()
+            (game / 'Aztec.exe').touch()  # Invented input; execute is mocked.
+            runtime = root / 'runtime'
+            runtime.touch()
+            replay = root / 'recording.txt'
+            replay.write_text('invented command recording\n')
+            args = SimpleNamespace(output=root / 'probe', game=game, runtime=runtime,
+                                   script=None, replay=replay, timeout=1)
+            with patch.object(audio, 'private_output', side_effect=lambda p: p), \
+                    patch.object(audio, 'execute') as execute:
+                self.assertEqual(audio.probe(args), 1)
+            controls = execute.call_args.args[3]
+            self.assertEqual(controls['RT_CMD_LOG'], str(args.output / 'commands.txt'))
+            self.assertEqual(controls['RT_STATE_LOG'], str(args.output / 'state.txt'))
+            self.assertEqual(controls['RT_CMD_REPLAY'], str(args.output / 'replay.txt'))
+            self.assertEqual((args.output / 'replay.txt').read_bytes(), replay.read_bytes())
+            report = json.loads((args.output / 'report.json').read_text())
+            self.assertEqual(report['category'], 'blocked_missing_audio_hook_or_no_requests')
+            args.output = root / 'empty'
+            def empty_trace(argv, directory, timeout, controls):
+                Path(controls['RT_AUDIO_LOG']).touch()
+            with patch.object(audio, 'private_output', side_effect=lambda p: p), \
+                    patch.object(audio, 'execute', side_effect=empty_trace):
+                self.assertEqual(audio.probe(args), 1)
+            report = json.loads((args.output / 'report.json').read_text())
+            self.assertEqual(report['category'], 'blocked_missing_audio_hook_or_no_requests')
+
     def test_cli_verdicts_and_exclusive_output(self):
         private = ROOT / 'work/parity'
         private.mkdir(parents=True, exist_ok=True)
@@ -235,6 +288,17 @@ class AudioParityTests(unittest.TestCase):
             original = output.read_bytes()
             self.assertEqual(run().returncode, 2)
             self.assertEqual(output.read_bytes(), original)
+            output.unlink()
+            partial = capture(capture()['events'][:-1])
+            a.write_text(json.dumps(partial))
+            b.write_text(a.read_text())
+            command.append('--require-all-classes')
+            self.assertEqual(run().returncode, 1)
+            self.assertEqual(json.loads(output.read_text())['unobserved_classes'], ['production'])
+            output.unlink()
+            a.write_text(json.dumps(capture()))
+            b.write_text(a.read_text())
+            self.assertEqual(run().returncode, 0)
             output.unlink()
             changed = capture()
             changed['events'][0]['sound'] += 1

@@ -10,6 +10,7 @@
 #include "engine/ui/frontend.hpp"
 #include "engine/app/engine.hpp"
 #include "engine/app/menu_script.hpp"
+#include "engine/sim/savegame.hpp"
 
 using namespace aztec::engine;
 static int failures = 0;
@@ -21,6 +22,7 @@ int main(int argc, char** argv) {
   const std::filesystem::path output = argc > 1 ? argv[1] : temp.path() / "captures";
   std::filesystem::create_directories(output);
   const auto root = temp.path();
+  CHECK(SDL_setenv("AZTEC_USER_DIR", (root / "profile").string().c_str(), 1) == 0);
   std::filesystem::create_directory(root / "Maps");
   std::filesystem::create_directory(root / "Res");
   for (const char* name : {"Pal", "Units", "Tiles0", "Tiles1", "common", "fnts", "light"})
@@ -60,9 +62,11 @@ int main(int argc, char** argv) {
   CHECK(briefing.find("Objectives\nReach the exit") != std::string::npos);
   CHECK(mission_briefing(data, "missing").find("No briefing") == 0);
   CampaignProgress progress;
+  CHECK(progress.unlocked(1) && !progress.unlocked(2) && !progress.unlocked(0) && !progress.unlocked(16));
   progress.record("mission_1", false); CHECK(!progress.won(1));
   progress.record("mission_1", true); progress.record("MISSION_15.MP", true);
   progress.record("custom", true); CHECK(progress.completed == 16385);
+  CHECK(progress.unlocked(2) && !progress.unlocked(3) && progress.unlocked(15));
   CHECK(!progress.won(0) && !progress.won(16));
   const auto path = (root / "engine_campaign.txt").string();
   CHECK(progress.save(path));
@@ -80,6 +84,18 @@ int main(int argc, char** argv) {
   for (int n = 1; n <= 15; ++n) progress.record("mission_" + std::to_string(n), true);
   CHECK(progress.completed == 32767 && progress.save(path));
   CHECK(loaded.load(path) && loaded.completed == 32767);
+  CHECK(loaded.unlocked(15));
+
+  Options preferences;
+  preferences.speech_volume = 0.25f; preferences.edge_scroll = false; preferences.subtitles = false;
+  const auto preferences_path = (root / "preferences.txt").string();
+  CHECK(save_frontend_options(preferences_path, preferences));
+  Options restored; CHECK(load_frontend_options(preferences_path, restored));
+  CHECK(restored.speech_volume == 0.25f && !restored.edge_scroll && !restored.subtitles);
+  write(preferences_path, "QUETZAL_OPTIONS_1\n0 1 1 1 900 800 1001 1 1\n");
+  CHECK(!load_frontend_options(preferences_path, restored) && restored.speech_volume == 0.25f);
+  CHECK(!save_frontend_options((root / "missing/preferences.txt").string(), preferences));
+  CHECK(save_frontend_options(user_file("frontend-options.txt"), preferences));
 
   auto parse = [&](std::vector<std::string> args, Options& options) {
     std::vector<char*> argv;
@@ -88,8 +104,10 @@ int main(int argc, char** argv) {
     return parse_options(int(argv.size()), argv.data(), options, error, usage);
   };
   Options parsed;
+  CHECK(parse({"engine"}, parsed) && parsed.speech_volume == 0.25f && !parsed.edge_scroll);
   CHECK(parse({"engine", "--volume", "0.5", "--speech-volume", "0.2", "--no-subtitles", "--no-acknowledgement"}, parsed));
   CHECK(parsed.sfx_volume == 0.5f && parsed.music_volume == 0.5f && parsed.speech_volume == 0.2f && !parsed.subtitles && !parsed.acknowledgement);
+  std::filesystem::remove(user_file("frontend-options.txt"));
   for (const char* bad : {"nan", "inf", "-1", "2", "", "0.5junk"}) {
     Options invalid;
     CHECK(!parse({"engine", "--speech-volume", bad}, invalid));
@@ -126,6 +144,21 @@ int main(int argc, char** argv) {
     SDL_Renderer* renderer = SDL_CreateSoftwareRenderer(surface); CHECK(renderer);
     {
       Font font; CHECK(font.init(renderer));
+      SaveLoadMenu slots; slots.show(true);
+      Input slot_click; auto slot_rect = SaveLoadMenu::row(1, w, h, sc);
+      slot_click.mx = slot_rect.x + 1; slot_click.my = slot_rect.y + 1; slot_click.pressed[SDL_BUTTON_LEFT] = true;
+      CHECK(slots.update(slot_click, w, h, sc) == -1 && slots.selected == 1 && !slots.confirming);
+      Input confirm; confirm.key_hit[SDL_SCANCODE_RETURN] = true;
+      CHECK(slots.update(confirm, w, h, sc) == -1 && slots.confirming && slots.open);
+      slots.draw(renderer, font, w, h, sc);
+      Input cancel; cancel.key_hit[SDL_SCANCODE_ESCAPE] = true;
+      CHECK(slots.update(cancel, w, h, sc) == -1 && !slots.confirming && slots.open);
+      CHECK(slots.update(confirm, w, h, sc) == -1 && slots.confirming);
+      CHECK(slots.update(confirm, w, h, sc) == 1 && !slots.open);
+      slots.show(false);
+      CHECK(slots.update(slot_click, w, h, sc) == -1 && slots.selected == -1);
+      CHECK(slots.update(confirm, w, h, sc) == -1 && !slots.confirming);
+      CHECK(slots.update(cancel, w, h, sc) == -1 && !slots.open);
       auto capture = [&](const std::string& name) {
         std::vector<uint8_t> pixels(size_t(w) * h * 4);
         CHECK(SDL_RenderReadPixels(renderer, nullptr, SDL_PIXELFORMAT_RGBA32, pixels.data(), w * 4) == 0);
@@ -198,6 +231,20 @@ int main(int argc, char** argv) {
   options.script = (root / "controls.txt").string(); options.audio = false; options.light = false;
   options.window.width = 800; options.window.height = 600; options.window.software = true; options.window.vsync = false;
   CHECK(run_engine(options) == 0);
+  write(root / "save-controls.txt",
+      "key Escape\nexpect tick == 0\nclick 400 270\nclick 400 250\nkey Return\nexpect tick == 0\n"
+      "key Escape\nexpect tick == 0\nkey Return\nkey Return\nexpect tick == 0\n"
+      "key Escape\nclick 400 310\nclick 400 250\nkey Return\nkey Return\nexpect tick == 0\nquit\n");
+  options.script = (root / "save-controls.txt").string();
+  options.ui_trace = (root / "save-ui.jsonl").string();
+  CHECK(run_engine(options) == 0);
+  SaveData saved; CHECK(read_save(SaveLoadMenu::slot_path(1), saved) && saved.tick == 0);
+  CHECK(!std::filesystem::exists(SaveLoadMenu::slot_path(0)));
+  options.resume_save = SaveLoadMenu::slot_path(1);
+  write(root / "resume-controls.txt", "expect tick == 0\nquit\n");
+  options.script = (root / "resume-controls.txt").string();
+  CHECK(run_engine(options) == 0);
+  options.resume_save.clear(); options.ui_trace.clear();
   // Drive the actual front-end without assets or the legacy screen-walk shortcut.
   options.script.clear(); options.menu = true; options.menu_session = false;
   options.menu_script = (root / "menus.txt").string();
@@ -223,6 +270,20 @@ int main(int argc, char** argv) {
   write(options.menu_script, "0 move 310 250\n0 down\n1 up\n2 move 100 110\n2 down\n3 up\n4 keydown Return\n");
   CHECK(run_engine(options) == 0); // choosing a mission ends automation before simulation
   CHECK(read(options.menu_trace).find("\"mission\":\"mission_1\"") != std::string::npos);
+  // Locked mission 2 must remain on the campaign screen until mission 1 is won.
+  write(options.menu_script, "0 move 310 250\n0 down\n1 up\n2 move 100 160\n2 down\n3 up\n4 close\n");
+  CHECK(run_engine(options) == 0);
+  CHECK(read(options.menu_trace).find("[Locked]") != std::string::npos);
+  CHECK(read(options.menu_trace).find("\"next_screen\":\"briefing\"") == std::string::npos);
+  CampaignProgress unlock; unlock.record("mission_1", true);
+  CHECK(unlock.save(user_file("Saves/engine_campaign.txt")));
+  CHECK(run_engine(options) == 0);
+  CHECK(read(options.menu_trace).find("\"next_screen\":\"briefing\"") != std::string::npos);
+  // Main-menu loading uses the same slot selection and explicit confirmation.
+  write(options.menu_script, "0 move 310 470\n0 down\n1 up\n2 move 310 250\n2 down\n3 up\n"
+      "4 keydown Return\n5 keyup Return\n6 keydown Return\n");
+  CHECK(run_engine(options) == 0);
+  CHECK(read(options.menu_trace).find("load-confirmation") != std::string::npos);
   write(options.menu_script, "0 shot " + (root / "missing/capture.png").string() + "\n");
   CHECK(run_engine(options) == 1); // capture failures must reach the caller
   write(options.menu_script, "0 invalid\n");

@@ -17,6 +17,7 @@
 #include "engine/ui/cursor.hpp"
 #include "engine/ui/campaign.hpp"
 #include "engine/app/playtest.hpp"
+#include "engine/sim/savegame.hpp"
 
 namespace fs = std::filesystem;
 
@@ -58,9 +59,9 @@ class Screen {
   bool run(FrontendResult& out, const std::string& open_briefing);
 
  private:
-  enum class Mode { Main, Campaign, Custom, Briefing, Options, Audio, Modifications };
+  enum class Mode { Main, Campaign, Custom, Briefing, Options, Audio, Modifications, Load };
   static const char* mode_name(Mode mode) {
-    static const char* names[] = {"main", "campaign", "custom", "briefing", "options", "audio", "modifications"};
+    static const char* names[] = {"main", "campaign", "custom", "briefing", "options", "audio", "modifications", "load"};
     return names[int(mode)];
   }
 
@@ -126,6 +127,8 @@ class Screen {
   CampaignProgress progress_;
   AudioOptions audio_options_;
   ModificationOptions modification_options_;
+  SaveLoadMenu slots_;
+  std::string resume_save_;
   // briefing
   std::string brief_spec_, brief_text_, brief_avi_;
   bool brief_campaign_ = false;
@@ -144,6 +147,7 @@ class Screen {
   std::vector<ObservedButton> observed_buttons_;
   int frame_ = 0;
   Mode rendered_mode_ = Mode::Main;
+  const char* rendered_load_id_ = "load-empty";
   bool failed_ = false;
 };
 
@@ -218,6 +222,7 @@ void Screen::frame_begin() {
   }
   observed_buttons_.clear();
   rendered_mode_ = mode_;
+  rendered_load_id_ = slots_.screen_id();
   win_.output_size(ow_, oh_);
   L_.fit(ow_, oh_);
   mx_ = int((in_.mx - L_.ox) / L_.s);
@@ -239,7 +244,7 @@ static bool save_png(SDL_Renderer* r, const std::string& path) {
 }
 
 void Screen::frame_end() {
-  if (const char* dir = std::getenv("AZTEC_MENU_SHOT")) {
+  if (const char* dir = std::getenv("AZTEC_MENU_SHOT"); dir && *dir) {
     static int frames_in_mode = 0, step = 0;
     if (++frames_in_mode == 4) {
       static const char* names[] = {"main", "campaign", "custom", "briefing", "options"};
@@ -268,7 +273,7 @@ void Screen::frame_end() {
   }
   if (trace_.is_open()) {
     trace_ << "{\"schema\":1,\"contract\":\"engine-menu-raw-v1\",\"frame\":" << frame_
-           << ",\"phase\":\"after_input_before_present\",\"rendered_screen\":\"" << mode_name(rendered_mode_)
+           << ",\"phase\":\"after_input_before_present\",\"rendered_screen\":\"" << (rendered_mode_ == Mode::Load ? rendered_load_id_ : mode_name(rendered_mode_))
            << "\",\"next_screen\":\"" << mode_name(mode_) << "\",\"mouse\":[" << in_.mx << ',' << in_.my
            << "],\"left_down\":" << (in_.buttons[SDL_BUTTON_LEFT] ? "true" : "false")
            << ",\"pressed\":" << (in_.pressed[SDL_BUTTON_LEFT] ? "true" : "false")
@@ -305,7 +310,7 @@ void Screen::frame_end() {
 
 bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
   std::string error;
-  if (const char* path = std::getenv("AZTEC_UI_SCRIPT")) {
+  if (const char* path = std::getenv("AZTEC_UI_SCRIPT"); path && *path) {
     if (!capture_script_.load(path, error)) {
       std::fprintf(stderr, "%s\n", error.c_str());
       out.quit = true;
@@ -331,6 +336,9 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
         text(400, 70, "AZTEC EMPIRE", 4, {255, 225, 140, 255}, true);
         Button bs[4] = {{300, 240, 200, 40, "Campaign"}, {300, 295, 200, 40, "Custom map"}, {300, 350, 200, 40, "Options"}, {300, 405, 200, 40, "Quit"}};
         for (Button& b : bs) draw_button(b);
+        Button load{300, 460, 200, 40, "Load game"}; draw_button(load);
+        if (!opts_.frontend_notice.empty()) text(400, 530, opts_.frontend_notice, 1, gold, true);
+        if (clicked(load)) { mode_ = Mode::Load; slots_.show(false); }
         if (clicked(bs[0])) mode_ = Mode::Campaign;
         if (clicked(bs[1])) { mode_ = Mode::Custom; custom_page_ = 0; }
         if (clicked(bs[2])) mode_ = Mode::Options;
@@ -343,12 +351,26 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
         for (size_t i = 0; i < campaign_.size(); i++) {
           int col = int(i) / 8, row = int(i) % 8;
           Button b{col ? 430 : 90, 100 + row * 52, 290, 44, (progress_.won(campaign_number(campaign_[i].spec)) ? "[Done] " : "") + std::to_string(campaign_number(campaign_[i].spec)) + ". " + campaign_[i].title};
-          draw_button(b);
-          if (clicked(b)) enter_briefing(campaign_[i].spec);
+          const bool unlocked = progress_.unlocked(campaign_number(campaign_[i].spec));
+          if (!unlocked) b.text = "[Locked] " + b.text;
+          draw_button(b, unlocked);
+          if (unlocked && clicked(b)) enter_briefing(campaign_[i].spec);
         }
         Button back{90, 535, 150, 36, "Back"};
         draw_button(back);
         if (clicked(back) || in_.hit(SDL_SCANCODE_ESCAPE)) mode_ = Mode::Main;
+        break;
+      }
+      case Mode::Load: {
+        slots_.draw(win_.renderer(), font_, ow_, oh_, std::max(1, int(L_.s)));
+        const int slot = slots_.update(in_, ow_, oh_, std::max(1, int(L_.s)));
+        if (slot >= 0) {
+          SaveData save;
+          resume_save_ = SaveLoadMenu::slot_path(slot);
+          if (read_save(resume_save_, save)) chosen_ = save.mission;
+          else { resume_save_.clear(); slots_.show(false); }
+        }
+        if (!slots_.open && chosen_.empty()) mode_ = Mode::Main;
         break;
       }
       case Mode::Custom: {
@@ -429,6 +451,11 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
         if (clicked(b2)) opts_.edge_scroll = !opts_.edge_scroll;
         if (clicked(b3)) opts_.fog = !opts_.fog;
         if (clicked(b4)) opts_.light = !opts_.light;
+        if (clicked(b1) || clicked(b2) || clicked(b3) || clicked(b4)) {
+          opts_.window.mode = win_.mode();
+          if (!save_frontend_options(user_file("frontend-options.txt"), opts_))
+            std::fprintf(stderr, "Cannot persist front-end options\n");
+        }
         if (clicked(back) || in_.hit(SDL_SCANCODE_ESCAPE)) mode_ = Mode::Main;
         break;
       }
@@ -439,6 +466,7 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
   out.quit = quit_ && chosen_.empty();
   out.failed = failed_;
   out.mission = chosen_;
+  out.resume_save = resume_save_;
   return !out.quit;
 }
 
@@ -467,6 +495,8 @@ void AudioOptions::update(const Input& in, Options& o, int w, int h, int sc) {
     } else if (i == 3) o.acknowledgement = !o.acknowledgement;
     else if (i == 4) o.subtitles = !o.subtitles;
     else open = false;
+    if (i < 5 && !save_frontend_options(user_file("frontend-options.txt"), o))
+      std::fprintf(stderr, "Cannot persist audio options\n");
   }
 }
 void AudioOptions::draw(SDL_Renderer* r, const Font& font, const Options& o, int w, int h, int sc) const {
