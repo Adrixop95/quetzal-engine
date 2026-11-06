@@ -55,7 +55,7 @@ int main(int argc, char** argv) {
   g_mem = calloc(0x700000, 1);
   if (!g_mem) return 2;
   pool_fixture(0x4cc3d0, 0x600000, 0x100, 133, 63, 0x610000);
-  pool_fixture(0x5156f8, 0x620000, 0x200, 1, 1, 0x610008);
+  pool_fixture(0x5156f8, 0x620000, 0x200, 2, 2, 0x610008);
   GU32(0x4dd2f4) = 0x630000;
   GU32(0x640008) = 0x630000; GU32(0x640108) = 0x63069c;
   GU32(0x4933f8 + 3 * 8) = 6;
@@ -80,8 +80,15 @@ int main(int argc, char** argv) {
   GU32(0x604008 + 0x24) = 100; GU32(0x604008 + 0x28) = 200;
   GU32(0x604008 + 0x38) = 300;
   GU32(0x620008 + 8) = 0x630000;
-  GU32(0x620008 + 0xf8) = 0x650000;
-  GU32(0x650004) = 0x651000; GU32(0x650010) = 50;
+  // Two embedded rings; the second town proves an invalid first record is local.
+  const uint32_t q = 0x620008 + 0xf8;
+  GU32(q) = 0x48ff84; GU32(q + 4) = 0x651000; GU32(q + 0x10) = 50;
+  GU32(0x620208 + 8) = 0x63069c;
+  GU32(q + 0x200) = 0x48ff84; GU32(q + 0x204) = 0x652000; GU32(q + 0x210) = 50;
+  GU32(q + 0x20c) = 1; GU32(q + 0x214) = 1; GU32(0x652000) = 0x600308;
+  // Plausible image addresses at the vtable must never become queue metadata.
+  GU32(0x48ff88) = 0x411d90; GU32(0x48ff8c) = 0x411f90;
+  GU32(0x48ff94) = 0x411dd0; GU32(0x48ff98) = 0x411d40;
   GU32(0x630000 + 0x698) = 123;
   const char* test_case = getenv("L0_TEST_CASE");
   if (test_case && !strcmp(test_case, "inactive")) GU8(0x600108 + 0x5c) = 0;
@@ -93,8 +100,28 @@ int main(int argc, char** argv) {
   if (test_case && !strcmp(test_case, "cycle")) GU32(0x604000) = 0x604000;
   if (test_case && !strcmp(test_case, "active_count")) GU32(0x4cc3e8) = 62;
   if (test_case && !strcmp(test_case, "queue")) {
-    GU32(0x650008) = 49; GU32(0x650014) = 2;
+    GU32(q + 8) = 49; GU32(q + 0xc) = 1; GU32(q + 0x14) = 2;
     GU32(0x651000 + 49 * 4) = 0x600108; GU32(0x651000) = 0x600208;
+  }
+  if (test_case && !strcmp(test_case, "invalid_queue")) GU32(q + 0x14) = 51;
+  if (test_case && !strcmp(test_case, "queue_vtable")) GU32(q) = 0;
+  if (test_case && !strcmp(test_case, "queue_data")) GU32(q + 4) = 0xfffffff0;
+  if (test_case && !strcmp(test_case, "queue_head")) GU32(q + 8) = 50;
+  if (test_case && !strcmp(test_case, "queue_tail")) GU32(q + 0xc) = 50;
+  if (test_case && !strcmp(test_case, "queue_capacity")) GU32(q + 0x10) = 0;
+  if (test_case && !strcmp(test_case, "queue_null")) GU32(q + 0x14) = 1;
+  if (test_case && !strcmp(test_case, "town_pool")) GU32(0x515710) = 3;
+  if (test_case && !strcmp(test_case, "town_chain")) GU32(0x620004) = 0;
+  if (test_case && !strcmp(test_case, "short_town")) {
+    pool_fixture(0x5156f8, 0x620000, 0x100, 1, 1, 0x610008);
+  }
+  if (test_case && !strcmp(test_case, "invalid_order")) {
+    GU8(0x600108 + 0x5c) = 0;
+    GU32(0x600108 + 0x50) = 90;
+  }
+  if (test_case && !strcmp(test_case, "order_tactic")) {
+    GU8(0x600108 + 0x5c) = 0;
+    GU32(0x600108 + 0x30) = 0xfffffff0;
   }
   if (test_case && !strcmp(test_case, "classes")) {
     const unsigned types[] = {0, 30, 10, 7, 83, 33, 3, 17};

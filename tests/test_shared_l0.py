@@ -222,6 +222,12 @@ class SharedControls(unittest.TestCase):
                 self.assertEqual(d["pool"]["inactive_object_filtered"], 1)
             elif case == "queue":
                 self.assertEqual(d["queues"][0]["queued_handles"], [0x600100, 0x600200])
+                self.assertEqual(d["queues"][0]["raw"], dict(queue=0x620100, vtable=0x48ff84,
+                                 data=0x651000, head=49, tail=1, capacity=50, count=2,
+                                 queued_objects=[0x600108, 0x600208]))
+                self.assertEqual(d["queues"][1]["owner"], 1)
+                self.assertEqual(d["queues"][1]["queued_handles"], [0x600300])
+                self.assertNotIn("diagnostics.queues", b["samples"][0]["unavailable"])
                 self.assertIsNone(b["samples"][0]["queues"])
                 self.assertTrue("queues" in b["samples"][0]["unavailable"])
             elif case == "sentinel_live":
@@ -233,6 +239,61 @@ class SharedControls(unittest.TestCase):
                 for i, kind in enumerate((0, 30, 10, 7, 83, 33, 3, 17)):
                     obj = next(o for o in b["samples"][0]["objects"].values() if o["type"] == kind)
                     self.assertEqual(obj["x"], (72 + i * 48) * 256 + (0 if i in (2, 7) else 64))
+
+    def test_optional_probe_failures_keep_both_samples_and_other_records(self):
+        cases = {
+            "invalid_queue": ("queues", "bounds", "count", 51),
+            "queue_vtable": ("queues", "vtable", "vtable", 0),
+            "queue_data": ("queues", "data span", "data", 0xfffffff0),
+            "queue_head": ("queues", "bounds", "head", 50),
+            "queue_tail": ("queues", "bounds", "tail", 50),
+            "queue_capacity": ("queues", "bounds", "capacity", 0),
+            "queue_null": ("queues", "queued object", "queued_objects", [0]),
+            "town_pool": ("queues", "pool metadata", "count", 3),
+            "town_chain": ("queues", "active pool chain", "base", 0x620000),
+            "short_town": ("queues", "Short", "stride", 0x100),
+            "invalid_order": ("orders", "type or kind", "type", 90),
+            "order_tactic": ("orders", "tactic span", "tactic", 0xfffffff0),
+        }
+        for case, (probe, reason, field, value) in cases.items():
+            with self.subTest(case=case):
+                run = self.root / case / "reference"
+                run.mkdir(parents=True)
+                schedule, native = run / "schedule", run / "native.jsonl"
+                l0.write_schedule(self.s, schedule)
+                result = subprocess.run([str(OBSERVER), str(schedule), str(native), str(run)],
+                                        env=dict(os.environ, L0_TEST_CASE=case), capture_output=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                b = l0.bundle(self.s, native, "reference", run.parent / "reference.json")
+                self.assertEqual([r["tick"] for r in b["samples"]], [1, 3])
+                for row in b["samples"]:
+                    self.assertEqual(row["money"]["0"], 123)
+                    self.assertEqual(len(row["objects"]), 62 if probe == "orders" else 63)
+                    self.assertTrue(f"diagnostics.{probe}" in row["unavailable"])
+                    records = row["diagnostics"][probe]
+                    bad = records[1 if probe == "orders" else 0]
+                    self.assertTrue(reason in bad["unavailable"])
+                    self.assertEqual(bad["raw"][field], value)
+                    self.assertNotIn("queued_handles", bad)
+                    invalid = copy.deepcopy(b)
+                    invalid["samples"][0]["unavailable"].remove(f"diagnostics.{probe}")
+                    with self.assertRaises(ValueError):
+                        l0.validate_bundle(invalid, run.parent)
+                    invalid = copy.deepcopy(b)
+                    del invalid["samples"][0]["diagnostics"][probe][1 if probe == "orders" else 0]["raw"]
+                    with self.assertRaises(ValueError):
+                        l0.validate_bundle(invalid, run.parent)
+                    if probe == "queues" and case not in ("town_pool", "town_chain", "short_town"):
+                        self.assertEqual(records[1]["owner"], 1)
+                        self.assertEqual(records[1]["queued_handles"], [0x600300])
+                        self.assertNotIn("unavailable", records[1])
+                    if probe == "orders":
+                        self.assertNotIn("unavailable", records[2])
+                    # Normalized fields stay unavailable even when raw probes succeed.
+                    self.assertTrue("orders" in row["unavailable"])
+                    self.assertTrue("queues" in row["unavailable"])
+                    self.assertNotIn("diagnostics.orders" if probe == "queues" else "diagnostics.queues",
+                                     row["unavailable"])
 
     def test_headless_schema_schedule_and_repeatable_frames(self):
         fixture = legacy.ParityTests()

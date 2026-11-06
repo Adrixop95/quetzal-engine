@@ -437,6 +437,108 @@ to resolve by matching the nearest unit. See the schema and outstanding work in
 Do not update public parity passes from these probes. Update
 `docs/parity_matrix.md` with counts only after selecting and reviewing the
 returned reports. Never commit the captures, private JSON or game-derived data.
+### L0 queue observer correction (2026-11-06): needs live run
+
+The supplied 2026-11-05 mission-1 failure treated `town+0xf8` as a pointer
+and followed `0x48ff84` into the image. Read-only inspection of the existing
+private `work/decomp/all.c` and `work/classes.md` establishes an **embedded**
+ring at `town+0xf8`. Town constructors `0x4594f0` and `0x4597d0` construct
+that ring in place with capacity `0x32`; ring constructor `0x4113c0` sets its
+vtable to `0x48ff84`. Relative to the embedded ring, data is `+4`, head is
+`+8`, tail is `+0xc`, capacity is `+0x10`, and count is `+0x14`.
+The indexed reader `0x411440` and index helper `0x411470` establish logical
+head-first access through four-byte object pointers with capacity wraparound.
+Admission `0x45cec0`, cancellation `0x45cfd0`, and the save reader in
+`tools/savegame/savereader.py` cross-check this interpretation. These are layout
+facts, not copied executable code. The earlier production behavior findings
+in `engine_rules_status.md` establish queue ownership/capacity but did not
+establish the observer's extra pointer indirection.
+
+The corrected probe reads the ring in place. Each failed optional record has
+an `unavailable` reason and a `raw` object containing the values used in its
+validation. A failed queue has no `queued_handles`; it is not an empty queue.
+Raw queue records include the embedded address, vtable, data pointer, head,
+tail, capacity, count and any object pointers read. Invalid town-pool metadata
+or chains produce one pool-level unavailable record, since town identities
+cannot safely be enumerated. Short town records fail individually. Invalid
+optional order types/kinds or tactic spans also fail individually. Guest spans
+are checked for null, alignment and overflow against the runtime's reserved
+4 GiB guest mapping. These checks do not prove arbitrary guest pointers refer
+to live allocations. Base object-pool failures still stop observation.
+
+Sample `unavailable` additionally includes `diagnostics.queues` or
+`diagnostics.orders` exactly when that raw probe contains a failed record;
+the bundle validator checks this agreement. Existing normalized `orders`,
+`queues`, `view` and `frame_phase` limitations remain declared. Successfully
+reading raw queue handles does not finish normalized production semantics.
+Synthetic checks cover a wrapped ring beside a second owner's nonempty ring,
+invalid queue bounds/vtable/data/null entries, malformed town pools/records,
+and invalid optional order records, preserving both ticks 1 and 3.
+
+**Live acceptance is pending.** No real mission-1 first-tick completion or
+owner-0/1 town/queue counts were measured in this sandbox. Task 81's observer
+implementation is present, while its live completion remains outstanding.
+Rebuild and run this exact first-tick control on the unrestricted host from
+this worktree (use fresh output paths if these already exist):
+
+```sh
+cmake -S . -B build_l0_reference -DCMAKE_BUILD_TYPE=Release \
+  -DAZTEC_GEN_DIR=/home/adrox/aztec-re/work/gen
+cmake --build build_l0_reference --target aztec_recomp --parallel 2
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR=
+cmake --build build --parallel 2
+python3 - <<'PYSCENARIO'
+import json
+from pathlib import Path
+scenario = json.loads(Path("tests/parity/private_l0.json").read_text())
+scenario["observe"]["ticks"] = [1]
+directory = Path("work/parity/l0-queue-scenarios")
+directory.mkdir(parents=True, exist_ok=True)
+(directory / "private_l0.json").write_text(json.dumps(scenario) + "\n")
+PYSCENARIO
+for repetition in 1 2; do
+  python3 -I tools/parity_run.py private_l0 --flat-output \
+    --scenarios-dir "$PWD/work/parity/l0-queue-scenarios" \
+    --game /home/adrox/aztec-re/game \
+    --runtime "$PWD/build_l0_reference/aztec_recomp" \
+    --engine "$PWD/build/aztec_engine" --timeout 120 \
+    --output "$PWD/work/parity/l0-queue-fix-$repetition"
+  # A blocked contract is expected; retain runners.json and all failure logs.
+done
+python3 - <<'PYCOUNTS'
+import json
+from pathlib import Path
+for repetition in (1, 2):
+    directory = Path(f"work/parity/l0-queue-fix-{repetition}")
+    rows = [json.loads(line) for line in
+            (directory / "reference/observations.jsonl").read_text().splitlines()]
+    samples = [row for row in rows if "tick" in row]
+    assert len(samples) == 1 and samples[0]["tick"] == 1, "Incomplete first-tick sample"
+    sample = samples[0]
+    records = sample["diagnostics"]["queues"]
+    print(directory, "tick", sample["tick"], "objects", len(sample["objects"]))
+    for owner in (0, 1):
+        towns = [r for r in records if r.get("owner") == owner]
+        available = [r for r in towns if "unavailable" not in r]
+        print("owner", owner, "towns", len(towns), "available_towns", len(available),
+              "unavailable_towns", len(towns) - len(available),
+              "queue_entries", sum(len(r["queued_handles"]) for r in available))
+    failures = [r for r in records if "unavailable" in r]
+    print("queue_failures", json.dumps(failures))
+    print("unavailable", sample["unavailable"])
+    assert not failures, "Queue probe still unavailable; return raw diagnostics"
+PYCOUNTS
+```
+
+`parity_run.py` creates separate private game directories using read-only asset
+symlinks and copied mutable files, launches with dummy SDL video/audio inside
+`unshare -rn`, and records argv/environment and process status. Keep isolation
+intact. Return `runners.json` to establish normal reference process completion,
+not just a JSON line written before a later crash. Return both native streams,
+count output, bundles, diagnostics and logs privately. Then rerun the original
+1/6/12 schedule twice using the preceding full run sheet. The first-tick control
+and synthetic checks do not establish live parity; current status: **needs live run**.
+
 ### First live findings follow-up (2026-11-05): needs live run
 
 The orchestrator's first mission-1 run sampled ticks 1, 6 and 12 and reported

@@ -13,36 +13,59 @@ static int l0_pool_index(const L0Pool* p, uint32_t node) {
          (node - p->base) % p->stride == 0;
 }
 
-static L0Pool l0_pool_read(uint32_t address) {
+// The runtime reserves the entire 4 GiB guest space read/write. Reject null,
+// unaligned and wrapping spans before an optional probe follows a guest pointer.
+static int l0_span(uint32_t address, uint32_t bytes) {
+  return address >= 0x10000 && address % 4 == 0 && bytes <= UINT32_MAX - address;
+}
+
+static const char* l0_pool_try_read(uint32_t address, L0Pool* result) {
   L0Pool p = {GU32(address + 4), GU32(address + 0x10), 0,
               GU32(address + 0x18), GU32(address + 0x24), NULL};
   uint32_t bytes = GU32(address + 0x1c);
-  if (!p.base || p.stride < 8 || p.stride > 0x1000 || bytes > UINT32_MAX - p.base ||
-      !(p.capacity = bytes / p.stride) || p.capacity > 100000 || p.count > p.capacity || !p.sentinel)
-    rt_fatal("Invalid L0 pool metadata");
+  if (!p.base || p.stride < 8 || p.stride > 0x1000 || !l0_span(p.base, bytes) || bytes % p.stride ||
+      !(p.capacity = bytes / p.stride) || p.capacity > 100000 || p.count > p.capacity || !l0_span(p.sentinel, 8))
+    return "Invalid L0 pool metadata";
   p.nodes = calloc(p.count ? p.count : 1, sizeof *p.nodes);
   uint8_t* seen = calloc(p.capacity, 1);
-  if (!p.nodes || !seen) rt_fatal("Cannot allocate L0 pool audit");
+  const char* error = NULL;
+  if (!p.nodes || !seen) { error = "Cannot allocate L0 pool audit"; goto finish; }
   uint32_t node = GU32(p.sentinel), previous = p.sentinel;
   for (uint32_t i = 0; i < p.count; ++i) {
-    if (!l0_pool_index(&p, node) || seen[(node - p.base) / p.stride] || GU32(node + 4) != previous)
-      rt_fatal("Invalid L0 active pool chain");
+    if (!l0_pool_index(&p, node) || seen[(node - p.base) / p.stride] || GU32(node + 4) != previous) {
+      error = "Invalid L0 active pool chain";
+      goto finish;
+    }
     seen[(node - p.base) / p.stride] = 1;
     p.nodes[i] = node;
     previous = node;
     node = GU32(node);
   }
-  if (node != p.sentinel || GU32(p.sentinel + 4) != previous)
-    rt_fatal("L0 active pool count differs");
+  if (node != p.sentinel || GU32(p.sentinel + 4) != previous) {
+    error = "L0 active pool count differs";
+    goto finish;
+  }
   // The allocator's free chain, not retained payload bytes, identifies free slots.
   node = GU32(address + 8);
   for (uint32_t i = p.count; i < p.capacity; ++i) {
-    if (!l0_pool_index(&p, node) || seen[(node - p.base) / p.stride])
-      rt_fatal("Invalid L0 free pool chain");
+    if (!l0_pool_index(&p, node) || seen[(node - p.base) / p.stride]) {
+      error = "Invalid L0 free pool chain";
+      goto finish;
+    }
     seen[(node - p.base) / p.stride] = 1;
     node = GU32(node);
   }
-  if (node) rt_fatal("L0 free pool count differs");
+  if (node) error = "L0 free pool count differs";
+finish:
   free(seen);
+  if (error) { free(p.nodes); return error; }
+  *result = p;
+  return NULL;
+}
+
+static L0Pool l0_pool_read(uint32_t address) {
+  L0Pool p = {0};
+  const char* error = l0_pool_try_read(address, &p);
+  if (error) rt_fatal("%s", error);
   return p;
 }
