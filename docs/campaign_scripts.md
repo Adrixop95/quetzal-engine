@@ -214,3 +214,29 @@ per-site JSON/findings, malformed histories, disabled objectives and observation
 hash neutrality. These establish diagnostic contracts, not transport parity.
 The exact isolated live run sheet is in [EXPERIMENTS.md](EXPERIMENTS.md#campaign-transport-and-objective-run-sheet-needs-live-run).
 Live reference execution was explicitly denied for this task and was not attempted.
+
+## Task 86 vessel evidence preparation (2026-11-06): needs live run
+
+The read-only audit still confirms all 19 sites above (12 BoatActivate, three
+SubmarineGo, four JohnkaEnable). None is closed or evidenced as never firing.
+Task 71's diagnostics are present. Aligned reference vessel identity, cargo and
+dispatch/completion observations, water movement and command contracts remain
+incomplete dependencies. No engine behaviour was changed without the required
+original measurement repeated across two runs.
+
+**S:** `transport_measure` has synthetic comparison controls for activation,
+boarding, unloading, routes, arrival, speed, turning, shore handling, stuck
+behaviour and completion. It rejects missing/tampered captures, shared repetition
+files, mismatched provenance and incomplete/nonrepeatable samples. It inventories
+all 19 pending sites. These are evidence-tool tests, not transport implementation
+or original behaviour regressions. **P:** the [task-86 run sheet](EXPERIMENTS.md#v05v12-vessel-run-sheet-task-86-needs-live-run)
+collects two independent isolated recordings and specifies per-class controls
+and a private normalization contract. **M:** none; live execution was not attempted.
+The aligned observer/normalizer and successful normal-input routes must still be
+supplied before those recordings can establish transport rules.
+
+Validation: Release build passed; CTest passed 48 entries and skipped six
+(five private-data checks and restricted UDP processes). The new comparator's
+nine synthetic tests passed, as did pre-commit for tracked/new files and
+`git diff --check`. The run-sheet Bash/Python blocks passed syntax checks only;
+no reference process was launched. Changes remain uncommitted in the worktree.

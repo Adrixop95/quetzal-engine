@@ -787,6 +787,166 @@ routes, paired engine replay, mid-mission save continuation and aligned referenc
 outcomes before promoting V12/V19 evidence. When a site is not observed, keep its
 status **needs live run** until a reachable route or an evidenced original
 nonexecution explanation exists. Do not infer that the original never fires it.
+## V05/V12 vessel run sheet (task 86): needs live run
+
+Task 86 adds **S** comparison controls, **P** live recipes and **no M** transport
+measurements. The sandbox reference prohibition applies here too. Task 71's
+diagnostics are present; V02 aligned identity/dispatch/cargo observations and
+V05/V10 water movement/command contracts remain incomplete. Engine behaviour is
+unchanged until an original measurement repeated in two runs confirms a
+divergence. All 19 sites remain open, including those dormant in engine runs.
+
+List the complete per-site checklist without reading private data:
+
+```sh
+python3 -I tools/transport_measure.py plan
+python3 -I tests/test_transport_measure.py
+```
+
+The previous record/replay pair checks replay, not independent repeatability.
+Use the following **two independent recordings per mission** on the orchestrator
+host. Supply normal-input routes at `work/vessel-routes/mission_N.rt` for missions
+2/7/9/15 first; each starts after briefing entry. Missing routes deliberately
+stop preparation. Do not substitute passive timeouts, cheats or memory writes.
+Navigation uses the historical 800x600 coordinates; retain screenshots proving
+entry, since locked missions and slow menu transitions can invalidate a run.
+These commands collect evidence; they cannot by themselves identify cargo or
+script dispatch. Keep runtime version, input routes, captures and all modified
+test maps private.
+
+```sh
+vessel_probe=$(mktemp -d "$PWD/work/vessel-reference.XXXXXX")
+export vessel_probe
+python3 - <<'PY'
+import importlib.util
+import os
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location('playthrough', 'tools/playthrough.py')
+harness = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(harness)
+source = Path('/home/adrox/aztec-re/game')
+maps, available = harness.discover(source)
+output = Path(os.environ['vessel_probe'])
+routes = {m: Path(f'work/vessel-routes/mission_{m}.rt').read_text()
+          for m in (2, 7, 9, 15)}
+for mission, route in routes.items():
+    assert mission in available and route.strip(), f'missing route: {mission}'
+    commands = ['wait 6000', 'click 140 239', 'wait 800', 'click 160 543', 'wait 5000']
+    if mission >= 10:
+        commands += ['click 645 421', 'wait 800']
+    row = mission - 1 if mission < 10 else mission - 10
+    commands += [f'click 150 {257 + 20 * row}', 'wait 800', 'shot',
+                 'click 140 544', 'wait 3000', 'click 700 430', 'wait 7000', 'shot']
+    commands += route.splitlines() + ['shot', 'quit']
+    for repetition in (1, 2):
+        run = output / f'mission_{mission}' / f'run_{repetition}'
+        run.mkdir(parents=True)
+        harness.private_game(source, maps, run / 'game')
+        (run / 'input.rt').write_text('\n'.join(commands) + '\n')
+PY
+sha256sum /home/adrox/aztec-re/build/aztec_recomp > "$vessel_probe/runtime.sha256"
+python3 -I tools/transport_measure.py plan > "$vessel_probe/plan.json"
+for mission in 2 7 9 15; do
+  for repetition in 1 2; do
+    vessel_run="$vessel_probe/mission_$mission/run_$repetition"
+    test -s "$vessel_run/input.rt" || break
+    sha256sum "$vessel_run/input.rt" > "$vessel_run/input.sha256"
+    (
+      cd "$vessel_run/game" || exit 1
+      timeout -s KILL 900 unshare -rn env -u RT_CMD_REPLAY \
+        SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+        RT_NO_GRAB=1 RT_NO_VIDEO=1 RT_RESOLUTION=800x600 \
+        RT_SCRIPT="$vessel_run/input.rt" RT_DUMP_DIR="$vessel_run" \
+        RT_UNIT_LOG="$vessel_run/units.log" RT_UNIT_EVERY=1 \
+        RT_STATE_LOG="$vessel_run/state.txt" RT_CMD_LOG="$vessel_run/commands.txt" \
+        sh -ec '
+          ip link set lo up
+          ip addr add 192.168.1.125/24 dev lo
+          exec /home/adrox/aztec-re/build/aztec_recomp "$1/Aztec.exe"
+        ' sh "$vessel_run/game"
+    ) > "$vessel_run/stdout.log" 2> "$vessel_run/stderr.log"
+    printf '%s\n' "$?" > "$vessel_run/exit-status.txt"
+  done
+done
+```
+
+Reject nonzero exits, empty logs, wrong-menu captures and unequal mission entry
+state before normalizing anything. Record/replay remains a separate control as
+in the task-71 sheet. Do not use replay as the second independent recording.
+The supplied unit log reads a generic object pool and raw offsets: it does not
+provide audited vessel/cargo membership or transport-script start/finish events.
+Do not interpret missing rows as unloading or death. A reference observer adapter
+must establish those identities and align simulation ticks before these classes
+can receive measurements. No transport observer adapter or automatic raw-log
+normalizer is supplied by task 86; this is an explicit dependency, not a working
+live measurement pipeline.
+
+Run matched isolated controls on private copies of the maps, twice per control.
+Copy any map or script symlink to an ordinary private file before editing it.
+Retain hashes and the exact data changes, and keep acceptance scripts intact.
+Use this matrix for Boat, Submarine and Johnka separately where applicable:
+
+| Class | Required observations and controls |
+| --- | --- |
+| activation | Vessel source/section/scenario/side identity, initial Up/Enabled, dispatch/enable tick, first phase/motion; inactive, delayed and repeated activation controls |
+| boarding | Candidate eligibility, stable identities, positions, arrival times and membership at each tick; permute source order and distance, test below/at/above observed capacity, simultaneous candidates, foreign side and empty load |
+| unloading | Ordered membership transitions and pixel landing coordinates; empty/occupied landing, more passengers than free landing tiles and moving blockers |
+| route | Every position/waypoint/phase from start to finish; symmetric alternative water channels, blocked channel and off-map approach |
+| arrival | First arrival, opening, boarding, departure and enabled/idle transitions on the same simulation clock; vary travel distance separately from animation length |
+| speed | Pixel displacement per simulation tick in straight unobstructed water; both directions and chosen game speeds; never use render frames as ticks |
+| turning | Body orientation and position through both turn directions, reversal and repeated activation while turning |
+| shore | Pixel position and phase at each shoreline boundary; concave shore, narrow channel, occupied landing and off-map start |
+| stuck | Position/order/phase through a fixed blocked interval, then after removing the blocker; unreachable destination and persistent blocker controls |
+| completion | Script start and finish, vessel enabled/idle state, final passenger identities/ownership, repeat dispatch and objective condition transitions |
+
+Normalize observations into separate private JSON files, one case/site/run per
+file. Schema 1 requires `source` (`reference` or `engine`), distinct `run_id`,
+`case`, a `site` ID from `plan`, `binary_sha256`, `input_sha256`, `observer`,
+`alignment`, `artifacts` and `observations`. Hash strings use lowercase SHA-256.
+`input_sha256` hashes a shared canonical case specification (map/script/route
+hashes and game speed); it must describe equivalent engine/reference inputs.
+`observer` identifies the audited observer/normalization revision; both reference
+runs must use the same revision. `alignment` documents the common tick origin,
+position units and stable identity mapping. Never align each event independently
+or discard a delay. Reference runtime hashes must agree across repetitions.
+
+Each artifact is `{"path":"units.log","sha256":"<actual hash>"}`, relative to
+the JSON file or absolute; the tool checks actual nonempty bytes. Include every
+capture used to derive samples, not merely a token log. Repetitions must use
+distinct capture files and run IDs. Provenance validation cannot prove that an
+operator ran independent processes or interpreted raw fields correctly.
+Each observation class contains a nonempty ordered list of
+`{"tick":12,"value":{"cargo":["passenger-A","passenger-B"]}}` samples.
+This is an invented schema example, not a capacity observation. Use explicit
+fields/units from the matrix above; retain passenger/position list order. Omit
+unmeasured classes. Do not fill unknown values with guessed defaults. A dormant
+site is unmeasured; an empty list never proves original nonexecution.
+
+After the observer and normalizer exist, compare a site/case using exact commands
+such as these (the private JSON filenames below are the normalizer's outputs):
+
+```sh
+python3 -I tools/transport_measure.py compare \
+  --reference "$vessel_probe/mission_2/run_1/boat-case.json" \
+  --repeat "$vessel_probe/mission_2/run_2/boat-case.json" \
+  --engine "$vessel_probe/mission_2/engine/boat-case.json" \
+  > "$vessel_probe/mission_2/boat-comparison.json"
+# For one isolated behaviour control, add e.g. --class boarding.
+```
+
+Exit 0 means only that every requested class has identical recorded samples;
+exit 1 retains missing/nonrepeatable evidence or confirmed sample divergence;
+exit 2 rejects malformed provenance/captures. Reference-only comparison stays
+`needs live run` even if samples repeat, because no engine comparison exists.
+Default comparison requires all ten classes; a selected-class pass does not close
+the other classes. The comparator checks supplied JSON values, not semantic
+completeness, observer correctness, successful campaign routes or nonexecution.
+Only an audited two-run divergence permits an engine behaviour correction.
+Then add synthetic engine regressions using independent fixtures for the measured
+class, repeat build/CTest/pre-commit, and run all 19 original sites with the
+objective/replay/save controls. Do not promote V05/V12 on these tool tests alone.
+
 ## V07 projectile run sheet (needs live run)
 
 The task-74 tooling adds **P** placement specifications and **S** synthetic
