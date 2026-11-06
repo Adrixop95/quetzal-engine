@@ -1232,6 +1232,159 @@ click, repeated placement and any measured rotation input, including feedback,
 cursor and ghost. Keep exact overlay pixel differences separate from tolerant
 visual diagnostics and from semantic validity. All maps, logs, bundles and
 captures remain private under ignored `work/`; commit none of them.
+## Construction flow run sheet (needs live run)
+
+Task 67 status: **needs live run** (2026-11-06). Task 66's partial placement
+implementation is present, but its reference acceptance is open. Task 64 has no
+audited construction command, creation-identity, worker or stage adapter in this
+checkout. Live reference execution is denied in this sandbox; no new reference
+process was launched and no construction measurements were obtained. The
+supplied runtime and local derived source are not evidence of observed timing.
+
+**S:** `engine_unit` adds economy/military/defence controls for paused work,
+retained damage through resume, replay continuation at every remaining tick,
+completion with no second payment, retained footprint and no stale refund.
+Existing mine tests cover all races and serial-placeholder tests cover waiting
+sites, payment and cancellation. `construction_compare` tests strict complete
+capture validation, semantic/pixel differences and reference instability.
+**P:** `tests/parity/construction.json` lists every Building/Defence type and
+eight construction-flow variants. These are proposed input recipes, not measured
+routes. Placeholder sprite, worker assignment/travel, phase timing, cost/refund
+schedule and completion sound/selection/rally remain unmeasured. The engine uses
+its existing town timer; no worker rule or new duration was guessed, and optional
+parallel construction remains off. No behavior fix can be justified by these
+synthetic checks alone.
+
+On a host allowing the required isolation, prepare a fresh private game for each
+type/variant/repetition. This example prepares one case; choose a new output
+directory for every case. Run from the worktree root:
+
+```sh
+python3 - <<'PY'
+from pathlib import Path
+import shutil
+
+source = Path('/home/adrox/aztec-re/game')
+root = Path('work/parity/construction-live')
+root.mkdir(parents=True, exist_ok=False)
+for label in ('reference', 'repeat', 'clone'):
+    game = root / label / 'game'
+    (game / 'Maps').mkdir(parents=True)
+    (game / 'Saves').mkdir()
+    for name in ('Aztec.exe', 'Res', 'Video', 'Music', 'Campaign'):
+        if (source / name).exists():
+            (game / name).symlink_to(source / name)
+    for item in source.iterdir():
+        if item.is_file() and item.suffix.lower() in ('.ini', '.plr'):
+            shutil.copy2(item, game / item.name)
+    for item in (source / 'Maps').iterdir():
+        if item.is_file() and item.stem.lower() == 'mission_14':
+            shutil.copy2(item, game / 'Maps' / item.name)
+PY
+for label in reference repeat clone; do
+  python3 tools/make_testmaps.py --game "work/parity/construction-live/$label/game"
+done
+```
+
+The generator preserves private terrain and writes a layout manifest. Resolve
+the case's owning town, legal site and card route from that manifest. Showcase
+structures start completed, so remove the matching preplaced type from the
+controlled town in all copies (or establish another matched town); otherwise
+uniqueness checks can reject the construction. Record those private map changes
+and their digests. Keep town level, prerequisites, speed, cash, visibility,
+resource values, AI, camera and initial selection identical. Establish actual
+outpost/upgrade UI reachability before attempting a placement route. A worker
+interruption case must first establish whether the worker is an independent
+object, an overlay or another mechanism; do not invent an engine worker type.
+
+Author separately audited routes as absolute paths
+`work/parity/construction-live/{reference,repeat,clone}/input.txt`.
+Reference `RT_SCRIPT` uses milliseconds, while clone `--script` waits count
+frames. These scripts can collect launch/UI diagnostics only. Task 64 must
+supply equivalent simulation-tick commands and observers before the output can
+be converted to `construction-v1`; do not relabel raw frames or hashes as aligned
+state. The supplied prebuilt runtime may lack newer observer hooks. Rebuild it
+privately if needed; keep generated source out of the repository.
+
+After routes exist, the reference diagnostic launch is:
+
+```sh
+construction_probe="$PWD/work/parity/construction-live"
+for label in reference repeat; do
+  test -s "$construction_probe/$label/input.txt" || exit 1
+  (
+    cd "$construction_probe/$label/game" || exit 1
+    timeout -s KILL 180 unshare -rn env \
+      SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+      RT_NO_GRAB=1 RT_NO_VIDEO=1 RT_RESOLUTION=800x600 \
+      RT_SCRIPT="$construction_probe/$label/input.txt" \
+      RT_DUMP_DIR="$construction_probe/$label" \
+      RT_CMD_LOG="$construction_probe/$label/commands.txt" \
+      RT_STATE_LOG="$construction_probe/$label/state.txt" \
+      RT_UNIT_LOG="$construction_probe/$label/units.txt" RT_UNIT_EVERY=1 \
+      sh -ec '
+        ip link set lo up
+        ip addr add 192.168.1.125/24 dev lo
+        exec /home/adrox/aztec-re/build/aztec_recomp "$1/Aztec.exe"
+      ' sh "$construction_probe/$label/game"
+  ) > "$construction_probe/$label/stdout.log" 2> "$construction_probe/$label/stderr.log" || exit 1
+done
+test -s "$construction_probe/clone/input.txt" || exit 1
+timeout -s KILL 180 unshare -rn env \
+  SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+  AZTEC_USER_DIR="$construction_probe/clone/profile" \
+  build/aztec_engine --game "$construction_probe/clone/game" \
+  --mod parallel_construction=off --size 800x600 --software --no-audio \
+  --script "$construction_probe/clone/input.txt" \
+  --ui-trace "$construction_probe/clone/ui.jsonl" \
+  --capture-dir "$construction_probe/clone/frames" --capture-every 1 ztest_all
+```
+
+Namespace or interface failure is a failed experiment; never rerun without
+isolation. `RT_UNIT_LOG` does not supply all construction/worker/queue fields,
+and raw clone UI traces do not contain the normalized construction contract.
+The clone diagnostic command disables audio output; use separately audited
+audio request observers for completion sound IDs. Neither sound silence nor a
+missing log establishes an absent completion event.
+
+Collect record/replay controls and two independent reference repeats before
+interpreting a clone difference. For each catalogue type/variant, measure:
+
+1. Accepted placement tick, placeholder/body/overlay sprite identity and exact
+   occupied mask before work, including the initial interval without a body.
+2. Assigned worker identity/state/position every tick through walking, start,
+   interruption, reassignment and resume. Observe actual stage boundaries, HP
+   and damage separately from nominal elapsed progress.
+3. Balance and ordered queue before/after acceptance, start, every stage,
+   cancellation, interruption and completion. Check cancellation while waiting,
+   while active, while paused and after destruction; record refund rounding and
+   repeated cancellation without assuming the clone's existing 8.8 formula.
+4. Completion event tick and sound ID, selected identities, rally state, queue
+   removal/next-item start, then first active/harvest tick. Retain a sample after
+   the final event. Repeat all reachable speed branches and use measured
+   durations to extend observation horizons; timeout is not completion.
+
+After audited adapters produce three full `construction-v1` bundles, following
+[the contract](../tests/parity/README.md#construction-flow-task-67-needs-live-run),
+compare them in a fresh private output:
+
+```sh
+python3 -I tools/construction_compare.py \
+  --reference work/parity/construction-live/reference/construction.json \
+  --repeat work/parity/construction-live/repeat/construction.json \
+  --clone work/parity/construction-live/clone/construction.json \
+  --output work/parity/construction-live/comparison.json
+```
+
+Exit 0 means equality within the declared observations; 1 is a clone difference
+or unstable reference; 2 is an input/alignment/coverage error. Missing fields or
+frames cannot pass. First resolve repeat instability, then fix engine behavior
+from measured tick/state/event differences and add asset-free boundary tests.
+Keep overlay exact differences separate from tolerant visual metrics. Promote
+V08 P to M only with reviewed reference measurements, and retain **needs live
+run** for unobserved classes/variants. All maps, logs, normalization definitions,
+numeric captures and images stay in ignored `work/`; none belong in git.
+
 ## L1 task 65 run sheet (needs live run)
 
 Task 64 (`64-shared-runner-observer`) is still in the queue in this checkout.

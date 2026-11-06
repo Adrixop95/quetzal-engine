@@ -347,6 +347,9 @@ set_tests_properties(ui_screenshots PROPERTIES LABELS "unit" TIMEOUT 30
 
 # L1 specifications and L8 event-window comparisons use synthetic inputs in CI.
 if(Python3_Interpreter_FOUND)
+  add_test(NAME construction_compare COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_construction_compare.py)
+  set_tests_properties(construction_compare PROPERTIES LABELS "unit;parity" TIMEOUT 20)
   add_test(NAME placement_compare COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_placement_compare.py)
   set_tests_properties(placement_compare PROPERTIES LABELS "unit;parity" TIMEOUT 20)

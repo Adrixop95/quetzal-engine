@@ -1,5 +1,62 @@
 # L1 rule scenario specifications
 
+## Construction flow (task 67, needs live run)
+
+`construction.json` is a P catalogue on `ztest_all`, covering every public
+Building/Defence type in the same eight classes as placement. Its eight variants
+are semantic input recipes, not executable screen scripts. Task 66 is partial;
+task 64 has no construction input, creation-identity or stage/worker observer.
+No measured timing or reference expectation is included. Parallel construction
+is explicitly off. See the [live run sheet](../../docs/EXPERIMENTS.md#construction-flow-run-sheet-needs-live-run).
+
+`tools/construction_compare.py` accepts three complete private `construction-v1`
+JSON bundles: two reference repeats and one clone capture. Each bundle contains
+`schema: 1`, `contract`, `origin` (`reference` or `clone`), `alignment`, and
+`samples`. Alignment has exactly `scenario`, `map_sha256`, `controls_sha256`,
+`normalization_sha256`, `building_type`, `camera` ([x,y,zoom]), `resolution`
+([width,height]), `overlay_region` ([x,y,width,height]), `first_tick`, `last_tick`
+and `phase: "before_commands"`. Digests cover the actual private map, controlled
+setup/input and audited field/identity normalization. All three alignments must
+match. Capture every tick of the declared horizon, including before placement
+and after completion, with `tick`, `state`, `overlay` (relative frame path) and
+`unavailable` (an empty array). Unknown fields block comparison.
+
+The `state` keys and normalized values are:
+
+| Key | Required value |
+| --- | --- |
+| `site` | null before creation/after removal, or an object with integer `id`, `hp`, `hp_max`, `stage`, `progress` (0..1000), `sprite`, `overlay_sprite`, `alive` (0/1), `x`, `y`, and `footprint` (unique [tile_x,tile_y] pairs in y/x order) |
+| `workers` | Canonical identity keys mapped to integer `state`, `x`, `y`, `site` (0 means unassigned); empty only for observed absence |
+| `money` | Relevant side-number keys mapped to integer balances; cannot be empty |
+| `queue` | Complete ordered entries with integer `id`, `type`, `remaining`, `total`, `paid`, `started`, `paused`, `site`; flags are 0/1 |
+| `selection` | Ordered canonical integer object identities |
+| `rally` | null for observed absence, otherwise [x,y] in world pixels |
+| `sounds` | Ordered logical sound IDs emitted during the preceding tick interval |
+| `completion` | Ordered canonical object identities completed during that interval |
+
+Positions use integer world pixels. Site/queue/worker identities must follow
+creation causes, never native handles or nearest-object matching. Stage/worker
+codes, sprite identities (including -1 for observed absence), progress/timer
+units and logical sound mapping need an audited normalization document before
+an adapter emits these fields. Do not estimate progress or stage from HP alone.
+The digest binds that document; validation cannot prove its correctness. A null
+site/rally and empty workers/events mean observed absence, not missing support.
+Events at tick t are read at the before-command boundary t+1; retain an extra
+sample after completion. This avoids assigning a guessed completion tick from
+presentation frames. Renderer/UI/audio observations also need that clock audit.
+
+The comparator validates all ticks and full RGB frames before comparing, refuses
+unavailable fields and alignment differences, compares the reference repeats
+first, and reports the first semantic difference or exact overlay pixel count.
+PNG and P6 RGB frames are supported; assets/captures remain private. Semantic
+fields precede pixels within each tick. Tolerant screenshots remain separate
+diagnostics. A comparison result alone does not establish an audited observer
+or full construction parity. `construction_compare` CTest uses invented data;
+`engine_unit` separately covers damage, pause/resume, replay continuation,
+completion payment and footprint retention with no game data.
+
+## General L1 rules
+
 Task 42's `tools/parity_run.py` provides the L0 harness. The `l1_*.json`
 files follow the top-level contract in `docs/PARITY_TEST_PLAN.md`; nested keys
 remain provisional until audited L1 setup, command and observer adapters exist.
