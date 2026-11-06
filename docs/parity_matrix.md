@@ -444,3 +444,39 @@ position fields. Equal movement counts would not establish equal coordinates.
 | 2 | 12 | — | — | — | — |
 | 3 | 6 | — | — | — | — |
 | 3 | 12 | — | — | — | — |
+
+## All-mission initial-state extension (V02/V04): needs live run
+
+P: fifteen shared L0 specifications, ticks 1/6/12. S: invented-map shared-runner
+coverage and repeat/table controls. No new M observations, completed live
+comparisons or engine fixes. Task 83 is present but its live acceptance, movement
+and logical-order follow-up remain partial. This does not change historical
+scenario totals. The supplied mission-1 HP-only result above remains separate
+from the pending full-domain sweep below. A dash means unknown, never zero.
+
+| Mission | Ticks | Objects compared before | Objects compared after | Divergences before | Divergences after |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 1 | 1/6/12 | — | — | — | — |
+| 2 | 1/6/12 | — | — | — | — |
+| 3 | 1/6/12 | — | — | — | — |
+| 4 | 1/6/12 | — | — | — | — |
+| 5 | 1/6/12 | — | — | — | — |
+| 6 | 1/6/12 | — | — | — | — |
+| 7 | 1/6/12 | — | — | — | — |
+| 8 | 1/6/12 | — | — | — | — |
+| 9 | 1/6/12 | — | — | — | — |
+| 10 | 1/6/12 | — | — | — | — |
+| 11 | 1/6/12 | — | — | — | — |
+| 12 | 1/6/12 | — | — | — | — |
+| 13 | 1/6/12 | — | — | — | — |
+| 14 | 1/6/12 | — | — | — | — |
+| 15 | 1/6/12 | — | — | — | — |
+
+The [run sheet](EXPERIMENTS.md#all-mission-initial-state-run-sheet-v02v04-needs-live-run)
+generates one private table per mission with each tick/domain and separate
+before/after counts. Only stable, aligned observations receive counts. Technology
+and population lack audited shared observers; reference orders remain partial.
+Available-field counts are diagnostics, not full-domain divergences. Repeated
+HP/position/order domains across missions do not establish a common modifier,
+script or initialization cause. Engine fixes require two original measurements
+and a resolved control/normalization audit.

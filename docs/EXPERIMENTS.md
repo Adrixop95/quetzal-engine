@@ -2236,3 +2236,128 @@ Status: **needs live run**. HP loader correction and pool/diagnostic regressions
 are implemented; repeated reference confirmation, movement reproduction,
 normalized orders/production semantics and mission-2/3 divergence results remain
 open. This is not the first verified matching game output yet.
+
+## All-mission initial-state run sheet (V02/V04): needs live run
+
+This extends the task-83 startup probe to all fifteen campaign missions, with
+one shared-runner specification per mission and before-command samples at ticks
+1, 6 and 12. Missions 2/3 already existed; missions 4–15 are new P specifications.
+Task 83's pool/HP changes are in this checkout, but its repeated live acceptance,
+early movement explanation and full logical order normalization remain partial.
+No original measurement was collected for this extension. No engine behavior
+was changed: a repeated original measurement is required before fixing any
+handicap/difficulty, section override, start-script or initialization hypothesis.
+
+Run the following **outside the sandbox**, from this worktree. Rebuild the
+reference observer as in the shared L0 run sheet; the external prebuilt runtime
+may predate it. Build outputs stay here; private generated inputs are read only.
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR= -DGAME_DIR=
+cmake --build build --parallel 2
+ctest --test-dir build -R 'shared_l0|parity_scenarios' --output-on-failure
+cmake -S . -B build_l0_reference -DCMAKE_BUILD_TYPE=Release \
+  -DAZTEC_GEN_DIR=/home/adrox/aztec-re/work/gen
+cmake --build build_l0_reference --target aztec_recomp --parallel 2
+```
+
+Collect two independent runs with unchanged maps, profiles, difficulty, handicap,
+modifications, seed and script/input settings. Retain their hashes, observer/build
+revision and control audit privately. Requested scenario/view equality alone
+does not prove these controls. In particular audit startup settings and anchor
+identity: owner/type/initial-position anchors cannot explain missing objects or
+ownership/position differences at tick 1. Such cases stay unmatched; do not use
+nearest-object matching. Audit both pages of the campaign navigation and any
+profile unlock requirement. A menu launch failure is not a mission comparison.
+
+```sh
+initial_probe="$PWD/work/parity/l0-initial-$(date -u +%Y%m%dT%H%M%S)"
+mkdir -p "$initial_probe"
+initial_ids="private_l0"
+for mission in $(seq 2 15); do
+  initial_ids="$initial_ids private_l0_mission_$mission"
+done
+for repetition in 1 2; do
+  python3 -I tools/parity_run.py $initial_ids \
+    --game /home/adrox/aztec-re/game \
+    --runtime "$PWD/build_l0_reference/aztec_recomp" \
+    --engine "$PWD/build/aztec_engine" --timeout 120 \
+    --output "$initial_probe/before-$repetition"
+  initial_status=$?
+  if [ "$initial_status" -ne 0 ] && [ "$initial_status" -ne 1 ]; then
+    exit "$initial_status"
+  fi
+done
+python3 -I tools/parity_initial.py \
+  --before "$initial_probe/before-1" "$initial_probe/before-2" \
+  --output "$initial_probe/before-tables"
+```
+
+The shared runner creates a separate private game copy for **each** process:
+read-only asset/executable symlinks, copied Maps/profile/settings, private Saves
+and clone user directory. Both launches use `SDL_VIDEODRIVER=dummy`,
+`SDL_AUDIODRIVER=dummy`, a hard timeout and `unshare -rn`; the reference configures
+namespace loopback. Keep failures and nonzero contract verdicts. Never bypass
+namespaces, run directly against the external installation or alter the input
+maps to make a comparison pass. The loop deliberately retains status 1 for
+failed/blocked probes; inspect each `runners.json` and process log.
+
+`parity_initial.py` writes `mission_N.json` and one `mission_N.md` divergence table
+for each mission plus `report.json`. It validates complete bundles, mission/view
+and tick alignment, then uses task 83's full repeat review (including raw
+diagnostics and frame bytes). Unstable runs produce no counts. Missing captures
+and malformed bundles stay explicit. Each tick reports common objects, presence,
+type, owner, primary HP, position components, complete logical orders and money.
+Position fractions and orders declared unavailable are excluded from counts.
+Presence differences are counted once per missing/extra identity; they are not
+also counted as differences in every object field. `observed_divergences` sums
+only available field instances, with x/y separate and orders as whole records.
+It is not a count of divergent objects or a complete-contract divergence count.
+
+**Remaining observer dependencies:** shared-l0-v2 does not expose audited runtime
+technology or population, so both domains remain null in every table. Do not
+substitute placed-object counts for population or map settings for active tech.
+Reference logical orders, normalized production queues, UI and rendering also
+remain incomplete as described above. Native execution/queue diagnostics can
+explain a candidate but cannot stand in for normalized orders. Thus even zero
+observed divergences leaves total `divergences: null` and **needs live run**.
+Technology/population observers and their normalization audit require follow-up;
+this tool deliberately does not invent offsets, bonuses or population rules.
+
+Return both run trees, tables, all logs, native JSONL, canonical bundles,
+schedules, invocation controls, frames and private setup/hash audit to the
+orchestrator. Review repeated differences across missions by domain using
+`report.json: divergence_domains`; these are leads, not established shared causes.
+Confirm the original value twice and resolve setup/identity/phase blockers before
+an engine fix. Isolate difficulty/handicap versus section overrides and scripts
+with separate controlled original repeats; retain the original campaign probe.
+
+After an authorized measured fix, preserve the before trees, rerun the exact
+collection loop with fresh `after-1` and `after-2` output paths, then compare:
+
+```sh
+for repetition in 1 2; do
+  python3 -I tools/parity_run.py $initial_ids \
+    --game /home/adrox/aztec-re/game \
+    --runtime "$PWD/build_l0_reference/aztec_recomp" \
+    --engine "$PWD/build/aztec_engine" --timeout 120 \
+    --output "$initial_probe/after-$repetition"
+  initial_status=$?
+  if [ "$initial_status" -ne 0 ] && [ "$initial_status" -ne 1 ]; then
+    exit "$initial_status"
+  fi
+done
+python3 -I tools/parity_initial.py \
+  --before "$initial_probe/before-1" "$initial_probe/before-2" \
+  --after "$initial_probe/after-1" "$initial_probe/after-2" \
+  --output "$initial_probe/after-tables"
+```
+
+`before_after_aligned` must be true before claiming any reduction: the tool
+requires unchanged reference bundles and frame bytes as well as internal repeats.
+An observer revision or changed reference settings needs a new baseline. Missing
+before/after data stays unknown. With neither input option, the tool generates
+fifteen empty pending tables for handoff. It returns 1 for this pending protocol,
+2 for CLI/output errors and never declares a full campaign pass. No captures,
+private numeric bundles or derived expectations may be committed. Public tables
+contain reviewed counts only; P/S tooling is not M original-game evidence.

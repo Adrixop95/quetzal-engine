@@ -385,3 +385,20 @@ difference. Keep matching full captures for review. Both complete bundles and al
 images are validated before the first differing tick/field or exact pixel count
 is reported. Digest equality records a claimed alignment, not proof that an
 adapter obeyed it; synthetic equality never establishes reference parity.
+
+## All-mission L0 initialization (V02/V04, needs live run)
+
+`private_l0.json` selects mission 1; `private_l0_mission_2.json` through
+`private_l0_mission_15.json` select missions 2–15 using the same shared-l0-v2
+runner, exact comparison and ticks 1/6/12. These P specifications contain no
+measured expectations. The synthetic shared-runner control exercises all fifteen
+IDs with invented maps, including second-page reference navigation, private game
+copies and complete sample schedules. It does not establish campaign parity.
+
+`tools/parity_initial.py --before RUN REPEAT --after RUN REPEAT --output DIR`
+validates repeated captures and emits one private divergence table per mission.
+Either pair can be omitted to leave its counts unknown. Technology/population
+have no shared observer; logical reference orders remain incomplete. Reports
+explicitly retain these gaps and never promote missing values to matches.
+See the [all-mission run sheet](../../docs/EXPERIMENTS.md#all-mission-initial-state-run-sheet-v02v04-needs-live-run)
+for exact capture commands, before/after controls and remaining dependencies.
