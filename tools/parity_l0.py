@@ -24,6 +24,19 @@ def validate_diagnostics(row):
             and p["live_objects"] == len(row["objects"]), "invalid pool accounting")
     require(isinstance(d["orders"], list) and len(d["orders"]) == p["allocated"]
             and isinstance(d["queues"], list), "invalid raw order/queue probes")
+    for probe in ("orders", "queues"):
+        failed = False
+        for record in d[probe]:
+            require(isinstance(record, dict), "invalid diagnostic record")
+            if "unavailable" in record:
+                failed = True
+                require(isinstance(record["unavailable"], str) and record["unavailable"]
+                        and isinstance(record.get("raw"), dict) and record["raw"],
+                        "unavailable probe needs a reason and raw values")
+                if probe == "queues":
+                    require("queued_handles" not in record, "failed queue probe has usable handles")
+        require((f"diagnostics.{probe}" in row["unavailable"]) == failed,
+                "inaccurate diagnostic availability")
 
 
 def require(ok, message):

@@ -34,11 +34,22 @@ static int kind_of(uint32_t object) {
   return kind;
 }
 
-static void order_probe(uint32_t node) {
-  uint32_t o = node + 8, tactic = GU32(o + 0x30);
-  int kind = kind_of(o);
-  fprintf(output, "{\"handle\":%u,\"type\":%u,\"owner\":%d,\"kind\":%d,\"alive\":%s,\"tactic\":%u,\"tile\":[%d,%d]",
-          node, GU32(o + 0x50), owner_of(tactic, GU32(0x4dd2f4)), kind, GU8(o + 0x5c) ? "true" : "false", tactic,
+// Optional diagnostics must not prevent the base state from being recorded.
+static int order_probe(uint32_t node, uint32_t stride) {
+  uint32_t o = node + 8, tactic = GU32(o + 0x30), type = GU32(o + 0x50);
+  int kind = type < 90 ? (int)GU32(0x4933f8 + type * 8) : -1;
+  const char* error = NULL;
+  if (kind < 0 || kind > 11) error = "Invalid L0 order object type or kind";
+  else if (tactic && !l0_span(tactic, 0x44)) error = "Invalid L0 order tactic span";
+  else if (kind == 0 && stride < 8 + 0x94) error = "Short L0 order unit record";
+  fprintf(output, "{\"handle\":%u,\"raw\":{\"type\":%u,\"kind\":%d,\"tactic\":%u}",
+          node, type, kind, tactic);
+  if (error) {
+    fprintf(output, ",\"unavailable\":\"%s\"}", error);
+    return 1;
+  }
+  fprintf(output, ",\"type\":%u,\"owner\":%d,\"kind\":%d,\"alive\":%s,\"tactic\":%u,\"tile\":[%d,%d]",
+          type, owner_of(tactic, GU32(0x4dd2f4)), kind, GU8(o + 0x5c) ? "true" : "false", tactic,
           (int32_t)GU32(o + 0x44), (int32_t)GU32(o + 0x48));
   if (kind == 0) {
     uint32_t target = GU32(o + 0x90);
@@ -53,31 +64,66 @@ static void order_probe(uint32_t node) {
             (int32_t)GU32(tactic + 0x10), (int32_t)GU32(tactic + 0x14),
             GU32(tactic + 0x3c), GU32(tactic + 0x40));
   fputc('}', output);
+  return 0;
 }
 
-static void queue_probe(void) {
-  L0Pool towns = l0_pool_read(0x5156f8);
+static int queue_probe(void) {
+  L0Pool towns = {0};
+  const char* pool_error = l0_pool_try_read(0x5156f8, &towns);
+  if (pool_error) {
+    fprintf(output, "[{\"unavailable\":\"%s\",\"raw\":{\"pool\":%u,\"base\":%u,\"free_head\":%u,\"stride\":%u,\"count\":%u,\"bytes\":%u,\"sentinel\":%u}}]",
+            pool_error, 0x5156f8, GU32(0x5156fc), GU32(0x515700), GU32(0x515708),
+            GU32(0x515710), GU32(0x515714), GU32(0x51571c));
+    return 1;
+  }
+  int unavailable = 0;
   fputs("[", output);
   for (uint32_t i = 0; i < towns.count; ++i) {
-    uint32_t town = towns.nodes[i] + 8, q = GU32(town + 0xf8);
-    if (!q) rt_fatal("Missing L0 town queue");
-    uint32_t data = GU32(q + 4), head = GU32(q + 8), capacity = GU32(q + 0x10), count = GU32(q + 0x14);
-    if (!capacity || capacity > 100000 || count > capacity || head >= capacity || !data)
-      rt_fatal("Invalid L0 town queue");
-    fprintf(output, "%s{\"town_handle\":%u,\"hall_handle\":%u,\"owner\":%d,\"production_object_handle\":%u,\"staged_handle\":%u,\"production_words\":[%u,%u,%u],\"queued_handles\":[",
-            i ? "," : "", towns.nodes[i], GU32(town + 0xf0) ? GU32(town + 0xf0) - 8 : 0,
+    uint32_t town = towns.nodes[i] + 8;
+    fprintf(output, "%s{\"town_handle\":%u", i ? "," : "", towns.nodes[i]);
+    if (towns.stride < 8 + 0x16c) {
+      fprintf(output, ",\"unavailable\":\"Short L0 town record\",\"raw\":{\"stride\":%u}}", towns.stride);
+      unavailable = 1;
+      continue;
+    }
+    // Embedded ring object, not a pointer; see the inspection note in EXPERIMENTS.md.
+    uint32_t q = town + 0xf8, vt = GU32(q);
+    uint32_t data = GU32(q + 4), head = GU32(q + 8), tail = GU32(q + 0xc);
+    uint32_t capacity = GU32(q + 0x10), count = GU32(q + 0x14);
+    const char* error = NULL;
+    if (vt != 0x48ff84) error = "Invalid L0 town queue vtable";
+    else if (capacity != 50 || count > capacity || head >= capacity || tail >= capacity)
+      error = "Invalid L0 town queue bounds";
+    else if (!l0_span(data, capacity * 4)) error = "Invalid L0 town queue data span";
+    fprintf(output, ",\"hall_handle\":%u,\"owner\":%d,\"production_object_handle\":%u,\"staged_handle\":%u,\"production_words\":[%u,%u,%u],\"raw\":{\"queue\":%u,\"vtable\":%u,\"data\":%u,\"head\":%u,\"tail\":%u,\"capacity\":%u,\"count\":%u,\"queued_objects\":[",
+            GU32(town + 0xf0) ? GU32(town + 0xf0) - 8 : 0,
             owner_of(town, GU32(0x4dd2f4)), GU32(town + 0x114) ? GU32(town + 0x114) - 8 : 0,
             GU32(town + 0x168) ? GU32(town + 0x168) - 8 : 0,
-            GU32(town + 0x118), GU32(town + 0x11c), GU32(town + 0x120));
-    for (uint32_t j = 0; j < count; ++j) {
-      uint32_t object = GU32(data + ((head + j) % capacity) * 4);
-      if (!object) rt_fatal("Null L0 queued object");
-      fprintf(output, "%s%u", j ? "," : "", object - 8);
+            GU32(town + 0x118), GU32(town + 0x11c), GU32(town + 0x120),
+            q, vt, data, head, tail, capacity, count);
+    uint32_t objects[50], read_count = 0;
+    if (!error) {
+      for (uint32_t j = 0; j < count; ++j) {
+        uint32_t object = GU32(data + ((head + j) % capacity) * 4);
+        objects[read_count++] = object;
+        fprintf(output, "%s%u", j ? "," : "", object);
+        if (!l0_span(object, 4)) error = "Invalid L0 queued object";
+      }
     }
+    fputs("]}", output);
+    if (error) {
+      fprintf(output, ",\"unavailable\":\"%s\"}", error);
+      unavailable = 1;
+      continue;
+    }
+    fputs(",\"queued_handles\":[", output);
+    for (uint32_t j = 0; j < read_count; ++j)
+      fprintf(output, "%s%u", j ? "," : "", objects[j] - 8);
     fputs("]}", output);
   }
   fputc(']', output);
   free(towns.nodes);
+  return unavailable;
 }
 
 uint32_t rt_l0_clock(uint32_t wall_ms) {
@@ -183,18 +229,21 @@ void rt_l0_observe(uint32_t tick) {
   else fputs("null", output);
   fprintf(output, ",\"diagnostics\":{\"pool\":{\"capacity\":%u,\"allocated\":%u,\"free_slot_filtered\":%u,\"inactive_object_filtered\":%u,\"live_objects\":%u},\"orders\":[",
           pool.capacity, pool.count, pool.capacity - pool.count, inactive, live);
+  int orders_unavailable = 0;
   for (uint32_t i = 0; i < pool.count; ++i) {
     if (i) fputc(',', output);
-    order_probe(pool.nodes[i]);
+    orders_unavailable |= order_probe(pool.nodes[i], pool.stride);
   }
   fputs("],\"queues\":", output);
-  queue_probe();
+  int queues_unavailable = queue_probe();
   fprintf(output, ",\"camera\":[%d,%d],\"viewport\":[%u,%u],\"local_side_selector\":%u,\"frame_phase\":\"%s\"},",
           (int32_t)GU32(0x4dd330), (int32_t)GU32(0x4dd334), GU32(0x4dd340), GU32(0x4dd344), GU32(0x4cc38c),
           have_frame ? "raw_primary_present" : "unavailable");
   // A unit step/anchor is not the logical command destination. Raw presents may be partial.
-  fprintf(output, "\"unavailable\":[\"orders\",\"queues\",\"view\",\"frame_phase\"%s%s]}\n",
-          fractions_known ? "" : ",\"position_fraction\"", have_frame ? "" : ",\"frame\"");
+  fprintf(output, "\"unavailable\":[\"orders\",\"queues\",\"view\",\"frame_phase\"%s%s%s%s]}\n",
+          fractions_known ? "" : ",\"position_fraction\"", have_frame ? "" : ",\"frame\"",
+          orders_unavailable ? ",\"diagnostics.orders\"" : "",
+          queues_unavailable ? ",\"diagnostics.queues\"" : "");
   free(pool.nodes);
   if (fflush(output) || ferror(output)) rt_fatal("L0 observation write failed");
   ++schedule.next;
