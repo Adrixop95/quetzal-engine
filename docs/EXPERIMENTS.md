@@ -2236,3 +2236,122 @@ Status: **needs live run**. HP loader correction and pool/diagnostic regressions
 are implemented; repeated reference confirmation, movement reproduction,
 normalized orders/production semantics and mission-2/3 divergence results remain
 open. This is not the first verified matching game output yet.
+
+## V16 original-save continuation and missions 1-3: needs live run
+
+Task 94 status: **needs live run**. Task 72's structural importer is present;
+task 83's repeated startup/divergence evidence and the audited reference
+save-load observer remain incomplete. No new live measurements were collected
+in this sandbox. Do not change simulation behavior from synthetic results.
+
+Run the independent synthetic controls first on Linux:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR= -DGAME_DIR=
+cmake --build build --parallel 2
+ctest --test-dir build -R 'savegame|save_import$|save_resume_controls|engine_save|campaign_save_processes|campaign_ui' --output-on-failure
+```
+
+On Windows, after configuring SDL2 as in SETUP.md, run the same generated checks
+in a fresh native build. These commands do not read an original installation:
+
+```powershell
+cmake -S . -B build_msvc -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows -DAZTEC_GEN_DIR= -DGAME_DIR=
+cmake --build build_msvc --config Release --parallel 2
+ctest --test-dir build_msvc -C Release -R 'savegame|save_import$|save_resume_controls|engine_save|campaign_save_processes|campaign_ui' --output-on-failure
+```
+
+Return the compiler/version, build log and CTest output for both platforms.
+Linux success does not imply Windows success. `campaign_save_processes` uses
+invented missions 1-3 and dummy SDL; it is not a campaign parity verdict.
+
+For original saves, first finish the audited observer prerequisite described in
+[the tick-zero sheet](#original-save-tick-zero-run-sheet). Extend its interface
+with `--ticks N` to emit schema 2 from the **actual loaded runtime**, after exactly
+N completed updates before the next commands. At N=0 it must stop at load
+completion. Respect the explicit unsupported fields in [savegame.md](savegame.md#v16-continuation-controls-2026-11-06).
+Do not implement the adapter by copying the parser or clone output. The supplied
+reference runtime alone does not provide this adapter. Missing observer or tick
+mapping is a blocker; do not substitute millisecond waits or raw hash equality.
+
+On the namespace-capable Linux host, select one authentic mid-mission save for
+each of missions 1-3, with active orders/queues/research and script timers where
+available. Stage ordinary private copies at the following paths (adjust source
+profile/slot filenames to the actual locally selected saves):
+
+```sh
+mkdir -p work/save-resume/inputs
+cp /home/adrox/aztec-re/game/Saves/single1.sav work/save-resume/inputs/mission_1.sav
+cp /home/adrox/aztec-re/game/Saves/single2.sav work/save-resume/inputs/mission_2.sav
+cp /home/adrox/aztec-re/game/Saves/single3.sav work/save-resume/inputs/mission_3.sav
+```
+
+Slot numbers do not establish mission identity. Verify saved map names locally
+and record the selected mission/save provenance privately. Do not overwrite
+staged files for later attempts. After the audited adapter is available at
+`work/save-resume/reference-observer`, collect four fresh processes for every
+save/boundary (two reference, two clone):
+
+```sh
+resume_probe="$PWD/work/save-resume/v16-$(date -u +%Y%m%dT%H%M%S)"
+mkdir -p "$resume_probe"
+for mission in 1 2 3; do
+  for ticks in 0 1 12 120; do
+    resume_case="$resume_probe/mission_$mission-ticks_$ticks"
+    python3 -I tools/savegame/compare_resume.py run \
+      --game /home/adrox/aztec-re/game \
+      --save "$PWD/work/save-resume/inputs/mission_$mission.sav" \
+      --runtime /home/adrox/aztec-re/build/aztec_recomp \
+      --reference-adapter "$PWD/work/save-resume/reference-observer" \
+      --clone "$PWD/build/aztec_save_probe" --rules "$PWD/docs/data" \
+      --ticks "$ticks" --timeout 120 --output "$resume_case"
+    printf '%s\n' "$?" > "$resume_case/gate-exit-status.txt"
+  done
+done
+```
+
+Each runner process uses a separate private installation with immutable resource
+symlinks, copied mutable state and an ordinary private save file. It launches
+under `timeout -s KILL 120 unshare -rn` with dummy SDL video/audio; only reference
+processes configure namespace loopback/address. Keep all of this isolation.
+Namespace or adapter failure is a failed observation. Current results always
+exit nonzero: supported-field agreement is `incomplete`, never full parity.
+If the adapter is missing, omit `--reference-adapter` to record `needs live run`
+without launching either implementation. Do not reuse an output directory.
+
+Recheck an individual case offline, preserving repeatability requirements:
+
+```sh
+python3 -I tools/savegame/compare_resume.py compare \
+  "$resume_probe/mission_1-ticks_120/reference/snapshot.json" \
+  "$resume_probe/mission_1-ticks_120/clone/snapshot.json" \
+  --repeat-reference "$resume_probe/mission_1-ticks_120/reference-repeat/snapshot.json" \
+  --repeat-clone "$resume_probe/mission_1-ticks_120/clone-repeat/snapshot.json"
+```
+
+Return both repeats, all process logs/commands, result JSON, input SHA-256 and
+observer/runtime revision privately. For each missing class return the normalized
+observed values and mapping rationale, not executable-derived code. Changes to
+engine behavior require the same original divergence in two successful runs.
+Births currently fail the clone observer's identity check; provide an audited
+spawn mapping before extending that scope. Unsupported script/queue execution
+is expected diagnostic information, not a reason to erase those domains.
+
+For actual fresh-session campaign completion, use the existing
+[V19 route sheet](#v19-scripted-route-run-sheet-needs-live-run) with authored
+player routes for missions 1-3, save ticks before the observed finish, and
+`--missions 1 2 3` on the `tools/playthrough.py` commands. The route runner checks
+fresh-process AZS3 continuation through the terminal tick; empty or passive
+plans are not winning routes. Keep the complete paired tick transcripts.
+Normal graphical progression needs a separate live session: play each mission,
+save mid-mission, exit, select that slot through the front-end, finish and restart
+to inspect the next unlock/profile. Repeat defeat/retry and camera restoration.
+Automation intentionally suppresses progress writes, so its victory cannot
+establish this acceptance. Native Windows real-data isolation and interactive
+acceptance remain operator work; this Linux-only namespace/reference workflow
+must not be described as a native Windows run.
+
+Publish only aggregate evidence labels. Keep original saves, captures, logs,
+normalized streams and generated fixture outputs in ignored private directories.
+V16 remains **needs live run** until the unresolved semantic mappings, actual
+missions and native platform acceptance have observations.

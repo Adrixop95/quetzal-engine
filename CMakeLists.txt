@@ -234,6 +234,9 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME save_resume_controls COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_SOURCE_DIR}/tests/test_save_resume.py $<TARGET_FILE:test_save_import> $<TARGET_FILE:aztec_save_probe>)
   set_tests_properties(save_resume_controls PROPERTIES LABELS "unit;parity" TIMEOUT 20)
+  add_test(NAME campaign_save_processes COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_SOURCE_DIR}/tests/test_campaign_save_processes.py $<TARGET_FILE:aztec_engine>)
+  set_tests_properties(campaign_save_processes PROPERTIES LABELS "unit" TIMEOUT 45)
 endif()
 add_test(NAME save_import_private COMMAND test_save_import --private ${CMAKE_SOURCE_DIR}/game)
 set_tests_properties(save_import_private PROPERTIES SKIP_RETURN_CODE 77 LABELS "game-data")
