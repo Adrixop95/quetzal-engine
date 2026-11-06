@@ -286,6 +286,46 @@ def compare(reference, clone):
     return result
 
 
+def scalar_counts(reference, clone):
+    """Count comparable scalar fields only; missing domains never become matches."""
+    fields = ("type", "owner", "x", "y", "hp")
+    rows = []
+    for left, right in zip(reference["samples"], clone["samples"]):
+        common = set(left["objects"]) & set(right["objects"])
+        differences = {field: sum(left["objects"][i][field] != right["objects"][i][field]
+                                  for i in common) for field in fields}
+        money = sum(left["money"][side] != right["money"][side] for side in left["money"])
+        rows.append(dict(tick=left["tick"], objects_compared=len(common),
+                         reference_only=len(set(left["objects"]) - common),
+                         clone_only=len(set(right["objects"]) - common),
+                         fields_compared=len(common) * len(fields) + len(left["money"]),
+                         divergences=sum(differences.values()) + money,
+                         hp_divergences=differences["hp"],
+                         position_divergences=differences["x"] + differences["y"]))
+    return rows
+
+
+def diagnostic_counts(bundle):
+    """Owner counts for live reruns; a failed queue is unknown, never empty."""
+    result = []
+    for sample in bundle["samples"]:
+        diagnostics = sample.get("diagnostics")
+        if diagnostics is None:
+            continue
+        pool_failed = any("owner" not in r for r in diagnostics["queues"])
+        for owner in (0, 1):
+            orders = [r for r in diagnostics["orders"] if r.get("owner") == owner and r.get("alive")]
+            queues = [r for r in diagnostics["queues"] if r.get("owner") == owner]
+            failed = pool_failed or any("unavailable" in r for r in queues)
+            result.append(dict(tick=sample["tick"], owner=owner,
+                               objects=sum(o["owner"] == owner for o in sample["objects"].values()),
+                               decoded_unit_states=sum("execution_kind" in r and r["execution_kind"] != "unknown"
+                                                       for r in orders),
+                               towns=None if pool_failed else len(queues),
+                               queue_entries=None if failed else sum(len(r["queued_handles"]) for r in queues)))
+    return result
+
+
 def review_repeats(reference, clone, repeat_reference, repeat_clone):
     """Retain leads only after each program reproduces its entire observation stream."""
     bundles = []
@@ -319,6 +359,8 @@ def review_repeats(reference, clone, repeat_reference, repeat_clone):
         movement.append(row)
     return dict(category="repeated_observations", status="needs live run", comparison=verdict,
                 initial_counts=dict(reference=len(initial_a), clone=len(initial_b), common=len(common)),
+                scalar_scope=["type", "owner", "x", "y", "hp", "money"],
+                scalar_counts=scalar_counts(a, b), reference_diagnostic_counts=diagnostic_counts(a),
                 hp_candidates=[dict(type=k[0], reference=k[1], engine=k[2], object_ids=v, confirmed=False)
                                for k, v in sorted(hp.items())], movement=movement,
                 limitations=["HP candidates require matched difficulty/map settings and completed observation contracts.",
