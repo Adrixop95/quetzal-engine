@@ -1,0 +1,8 @@
+Task: reproduce the early money drain of the computer players and the payment schedule of the original (roadmap V08, V11).
+Live evidence (2026-11-06, shared L0 runner, ticks 1, 6, 12, repeated runs equal): money is identical at tick 1 in missions 1 to 3, but afterwards the original spends continuously while the clone does not. Mission 3: side 1 has 700, original 572 at tick 6 and 443 at tick 12 (about 25.7 per tick), clone 701 and 701; side 2 has 1000, original 833 at tick 12, clone 1000. Mission 2: side 2 has 500, original 433 at tick 12, clone 500. Player 0 stays unchanged in all three. So the computer sides start paying for something within the first ticks (production, construction or a research queue), and the payment looks gradual rather than lump-sum.
+Requirements:
+1. Using the reference diagnostics (queues and orders, task 83) identify what each side is paying for in the first 12 ticks, whether the cost is deducted gradually (per tick fraction) or in steps, and how the clock works for training, construction and research. Extend the schedule to ticks 1, 2, 3, 4, 5, 6, 9, 12, 18, 24, 36, 60.
+2. Implement the payment model in src/engine production, construction and the AI planner so that money per side matches the original at every sampled tick for missions 1 to 3, including the moment the computer sides start their first purchase.
+3. Add synthetic regression tests (generated fixtures, no game data) and report the money series before and after.
+Also resolve one extra object: in mission 2 the clone reports 105 objects and the original 104, the extra one belongs to owner 0 with type -1 at tick 1; find out what it is (a virtual or automatic object) and make the two programs agree on whether it is part of the world.
+$SB
