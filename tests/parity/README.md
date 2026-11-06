@@ -55,6 +55,58 @@ or full construction parity. `construction_compare` CTest uses invented data;
 `engine_unit` separately covers damage, pause/resume, replay continuation,
 completion payment and footprint retention with no game data.
 
+## Economy and town service (V08/V09, needs live run)
+
+`town.json` extends tasks 66/67 on `ztest_all` with five P case families:
+resource clock/activation, training in two towns, payment/cancellation, service
+and hall/build-tree completion through saves. Variants are semantic recipes;
+task 64's audited input/observer adapters are still missing. No executable route
+or original timing is implied. Continue to use `placement-v1` and
+`construction-v1` for placement, worker travel/stages, sound, selection and rally.
+The [town run sheet](../../docs/EXPERIMENTS.md#economy-and-town-service-run-sheet-needs-live-run)
+supplies diagnostic launches and the subsequent comparison commands.
+
+`tools/town_compare.py` requires three private JSON bundles with exactly `schema:
+1`, `contract: "town-v1"`, `origin`, `alignment`, `samples`. Origins are reference,
+reference, clone. Alignment contains exactly `scenario` (a case ID in `town.json`),
+`map_sha256`, `controls_sha256`, `normalization_sha256`, `first_tick`, `last_tick`,
+`phase: "before_commands"`. Digests bind actual map bytes, setup/commands/variant
+and audited units/identities/event normalization. Include the controlled variant,
+save boundary and uninterrupted versus loaded branch in the controls digest.
+All alignments must match; all ticks of the declared horizon must be present.
+Each sample has exactly `tick`, `state`, `unavailable: []`. Missing support must
+be declared unavailable and blocks comparison; empty collections mean observed
+absence. The entire capture is validated before an early difference is returned.
+
+State has exactly these fields (all numbers are integers, flags are 0/1):
+
+| Field | Contract |
+| --- | --- |
+| `clock` | Day phase in 0..7199; audit the reference conversion and phase |
+| `money` | Nonempty side-number string keys (0..7) to balances |
+| `towns` | Positive canonical identity string keys to `{side,hall,level,mode,marked,tree}`; hall is canonical object ID or 0 for observed absence; mode is 0/1/2; marked is ordered unique positive object IDs; tree is ordered unique currently enabled recipe type IDs |
+| `objects` | Positive canonical identity string keys to `{type,side,town,x,y,hp,hp_max,alive,protected,active}`; positions are integer world pixels; town is canonical town ID or 0 for no town |
+| `queue` | Complete ordered `{id,town,type,remaining,total,paid,started,paused,site}` entries; canonical queue IDs are unique; town references a captured town; site is canonical object ID or 0; times are simulation ticks |
+| `events` | Ordered `{kind,town,object,value}` events from the preceding tick interval; town references a captured town, object is canonical object ID or 0 |
+
+Event kinds are `accepted`, `rejected`, `debit`, `refund`, `activation`, `harvest`,
+`service`, `spawn`, `completion`, `upgrade`, `save`, `load`. Value means requested
+type for acceptance/rejection; positive cash amount for debit/refund/harvest;
+work supplied for service; resulting type for spawn/completion/upgrade; snapshot
+tick for save/load; active flag for activation. Retain separate target HP samples
+and service events rather than guessing work from HP. Audit event ordering,
+protection meaning, activation and native save support before normalization.
+Use creation causes, never native pointers, for identities. Events during tick T
+appear in sample T+1; include a sample after the final event. Save/load captures
+must use matched observation horizons without renumbering the resumed tick.
+
+Equality covers declared observations only. The comparator cannot prove command
+acceptance, sufficient horizon, observer correctness or scenario execution. The
+synthetic tests deliberately perturb each behavior class and ordered events;
+they supply no live expectation or new M evidence. Reference instability takes
+priority over a clone verdict. Keep raw logs, normalized captures, saves, audio
+and images under ignored `work/`.
+
 ## General L1 rules
 
 Task 42's `tools/parity_run.py` provides the L0 harness. The `l1_*.json`

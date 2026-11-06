@@ -2086,3 +2086,147 @@ counts and English route specifications. Keep saves, command logs, observations,
 assets, screenshots and other captured data under ignored `work/`. Update L7
 paired counts only after reviewing actual `ID-reference/diff.json` results;
 pending routes and synthetic oracle fixtures add no live parity results.
+
+## Economy and town service run sheet (needs live run)
+
+V08/V09 follow-up, 2026-11-06: **S** for asset-free engine continuation and
+comparison checks; **P** for the five `tests/parity/town.json` families and their
+variants. No live reference was launched in this sandbox and no new repeated
+measurements justify an engine behavior change. Task 64's semantic input/reference
+observer adapters and task 66 placement acceptance remain incomplete. This work
+completes the independent comparison/test portion only. Parallel construction
+remains a default-off modification. Status: **needs live run**.
+
+Use the task 66 placement catalogue and task 67 construction catalogue/run sheet
+above for all building classes, placeholder, worker travel, stages, payment,
+cancel/refund and completion sound/selection/rally. The town catalogue adds clock,
+training/spawn, service/protection and upgrade/build-tree/save observations.
+Run every selected variant separately with the same race, level, speed, resource
+mask, cash, prerequisites, hall identity, initial HP and controlled AI/fog state.
+Showcase objects are initially complete: establish a matched legal setup rather
+than assuming the generated map directly executes a construction scenario.
+
+The following exact preparation commands create independent diagnostic copies
+for one case. Repeat with a fresh output path for each variant, race, speed and
+save boundary. No command below executes a high-level catalogue recipe by itself.
+Run from the worktree root on the orchestrator's namespace-capable host:
+
+```sh
+export town_probe="$PWD/work/parity/town-resource-clock-live"
+python3 - <<'PY'
+import os
+from pathlib import Path
+import shutil
+
+source = Path('/home/adrox/aztec-re/game')
+root = Path(os.environ['town_probe'])
+root.mkdir(parents=True, exist_ok=False)
+for label in ('reference', 'repeat', 'replay', 'clone'):
+    game = root / label / 'game'
+    (game / 'Maps').mkdir(parents=True)
+    (game / 'Saves').mkdir()
+    for name in ('Aztec.exe', 'Res', 'Video', 'Music', 'Campaign'):
+        if (source / name).exists():
+            (game / name).symlink_to(source / name)
+    for item in source.iterdir():
+        if item.is_file() and item.suffix.lower() in ('.ini', '.plr'):
+            shutil.copy2(item, game / item.name)
+    for item in (source / 'Maps').iterdir():
+        if item.is_file() and item.stem.lower() == 'mission_14':
+            shutil.copy2(item, game / 'Maps' / item.name)
+PY
+for label in reference repeat replay clone; do
+  python3 -I tools/make_testmaps.py --game "$town_probe/$label/game" || exit 1
+done
+```
+
+Resolve case inputs from each generated layout manifest and audit identical
+private map/setup changes. Supply the audited reference navigation/input route
+as `$town_probe/reference/input.txt` and the clone route as
+`$town_probe/clone/input.txt`. Millisecond `RT_SCRIPT` and frame-based clone
+scripts are diagnostic controls; they cannot establish tick alignment. Task 64
+must provide measured command translation, tick phase and semantic observers.
+Do not manufacture `town-v1` from raw HP deltas or engine output. The supplied
+runtime may require a private rebuild for observer hooks.
+
+These diagnostic commands preserve isolation and record/repeat/replay separately:
+
+```sh
+test -s "$town_probe/reference/input.txt" || exit 1
+for label in reference repeat replay; do
+  town_replay_env=()
+  if [ "$label" = replay ]; then
+    test -s "$town_probe/reference/commands.txt" || exit 1
+    town_replay_env=("RT_CMD_REPLAY=$town_probe/reference/commands.txt")
+  fi
+  (
+    cd "$town_probe/$label/game" || exit 1
+    timeout -s KILL 1500 unshare -rn env -u RT_CMD_REPLAY \
+      SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+      RT_NO_GRAB=1 RT_NO_VIDEO=1 RT_RESOLUTION=800x600 \
+      RT_SCRIPT="$town_probe/reference/input.txt" RT_DUMP_DIR="$town_probe/$label" \
+      RT_CMD_LOG="$town_probe/$label/commands.txt" \
+      RT_STATE_LOG="$town_probe/$label/state.txt" \
+      RT_UNIT_LOG="$town_probe/$label/units.txt" RT_UNIT_EVERY=1 \
+      "${town_replay_env[@]}" sh -ec '
+        ip link set lo up
+        ip addr add 192.168.1.125/24 dev lo
+        exec /home/adrox/aztec-re/build/aztec_recomp "$1/Aztec.exe"
+      ' sh "$town_probe/$label/game"
+  ) > "$town_probe/$label/stdout.log" 2> "$town_probe/$label/stderr.log" || exit 1
+done
+test -s "$town_probe/clone/input.txt" || exit 1
+timeout -s KILL 1500 unshare -rn env \
+  SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+  AZTEC_USER_DIR="$town_probe/clone/profile" \
+  build/aztec_engine --game "$town_probe/clone/game" --rules-dir "$PWD/docs/data" \
+  --mod parallel_construction=off --size 800x600 --software --no-audio \
+  --script "$town_probe/clone/input.txt" --ui-trace "$town_probe/clone/ui.jsonl" \
+  --capture-dir "$town_probe/clone/frames" --capture-every 1 ztest_all \
+  > "$town_probe/clone/stdout.log" 2> "$town_probe/clone/stderr.log"
+```
+
+A namespace/interface failure fails the experiment. Never bypass isolation.
+Set route duration and timeout to cover at least two relevant harvest/service
+periods and one sample after completion; 1500 seconds is a process limit, not a
+measured duration. Check command readback and reference repeatability first.
+Capture actual audio request IDs with an audited hook for the construction
+contract; dummy audio and `--no-audio` do not prove absence of a sound request.
+
+For service, observe generated work separately from the target HP transitions,
+including protected targets that consume work, capped/zero shares, town-local
+supply and unused-credit disposal. For hall/tree cases, use independently loaded
+branches at paused, precompletion and postcompletion boundaries. Observe hall
+identity, type, HP and the enabled build tree on every tick; require the same
+result on uninterrupted and loaded branches in both implementations. Engine
+command-log saves and reference simulation saves use separate formats; each
+implementation loads its own saves. Audited reference save/load routes and
+resumed observations remain dependencies; missing support blocks that variant.
+
+After audited adapters produce complete bundles using
+[the town contract](../tests/parity/README.md#economy-and-town-service-v08v09-needs-live-run),
+run these exact comparisons in fresh private outputs:
+
+```sh
+python3 -I tools/town_compare.py \
+  --reference "$town_probe/reference/town.json" \
+  --repeat "$town_probe/replay/town.json" \
+  --clone "$town_probe/clone/town.json" --output "$town_probe/replay-comparison.json"
+python3 -I tools/town_compare.py \
+  --reference "$town_probe/reference/town.json" \
+  --repeat "$town_probe/repeat/town.json" \
+  --clone "$town_probe/clone/town.json" --output "$town_probe/comparison-before.json"
+```
+
+Exit 0 means equal declared observations; 1 means a clone divergence or unstable
+reference; 2 means invalid, missing or unaligned input. The first comparison
+also checks replay stability, but never substitutes for the independent repeat.
+For construction observations use `tools/construction_compare.py` as above;
+that contract retains worker, sound, selection, rally and exact overlay checks.
+Return the private normalization audit, command readback, full reference repeat
+and clone-before bundles plus comparison outputs to the orchestrator. Fix only
+divergences confirmed by both original runs, then add an asset-free regression
+and repeat the matched clone as `comparison-after.json`. No reference/clone
+values are currently measured. Keep all logs, saves, numeric observations,
+frames and game-derived material in ignored `work/`; publish only reviewed
+factual expectations and evidence labels. V08/V09 remain P / **needs live run**.
