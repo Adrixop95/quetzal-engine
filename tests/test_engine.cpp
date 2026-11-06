@@ -13,6 +13,7 @@
 #include "engine/ui/names.hpp"
 #include "engine/ui/commands_ui.hpp"
 #include "engine/ui/selection_ui.hpp"
+#include "engine/ui/hud.hpp"
 #include "core/text.hpp"
 #include "engine/assets/anim_provider.hpp"
 #include "engine/audio/audio_system.hpp"
@@ -262,6 +263,31 @@ static void test_sight() {
     combat.submit(select); duel.begin_tick(); combat.tick(duel);
     CHECK(duel.side_state[0].selected_ids == std::vector<uint32_t>{1});
     CHECK(duel.side_state[0].selected_tactic == 7);
+    // Synthetic consumer contract: owned command groups remain selectable in
+    // darkness; visible foreign members never enter an owned control group.
+    Command group; group.type = Pct::CreateGroup; group.a = 2; group.ids = {1, 2};
+    combat.submit(group); duel.begin_tick(); combat.tick(duel);
+    group.type = Pct::SelectGroup; group.ids.clear();
+    combat.submit(group); duel.begin_tick(); combat.tick(duel);
+    CHECK(duel.side_state[0].groups[2] == std::vector<uint32_t>{1});
+    CHECK(duel.side_state[0].selected_ids == std::vector<uint32_t>{1});
+    Camera camera; camera.set_world(duel.width_px(), duel.height_px());
+    camera.set_view(duel.width_px(), duel.height_px());
+    SelectionUi selection;
+    auto click = [&](const Object& object) {
+      Input input; input.mx = object.cur_x >> 8; input.my = object.cur_y >> 8;
+      input.pressed[SDL_BUTTON_LEFT] = input.buttons[SDL_BUTTON_LEFT] = true;
+      selection.update(input, duel, camera, 1, true);
+      input.pressed[SDL_BUTTON_LEFT] = input.buttons[SDL_BUTTON_LEFT] = false;
+      input.released[SDL_BUTTON_LEFT] = true;
+      selection.update(input, duel, camera, 1, true);
+    };
+    const Object& victim = duel.objects[1];
+    CHECK((pick_object(duel, float(victim.cur_x >> 8), float(victim.cur_y >> 8), 1, 8) != nullptr) == (ambient == 33));
+    click(duel.objects[0]); CHECK(duel.selection.ids == std::vector<uint32_t>{1});
+    click(victim); CHECK(duel.selection.ids.empty());
+    // Local mouse selection does not rewrite deterministic command selection.
+    CHECK(duel.side_state[0].selected_ids == std::vector<uint32_t>{1});
   }
   // Clean checkouts have no private masks. Their combat remains functional,
   // using the bounded placeholder instead of silently disabling acquisition.

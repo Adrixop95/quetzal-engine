@@ -1,0 +1,122 @@
+{
+  "schema": 1,
+  "id": "groups-tactics-difficulty",
+  "evidence": "P",
+  "status": "needs live run",
+  "map": {
+    "kind": "campaign-derived",
+    "mission": "ztest_battle",
+    "template": "mission_14",
+    "generator": "tools/make_testmaps.py"
+  },
+  "first_tick": 1,
+  "last_tick": 240,
+  "phase": "before_commands",
+  "modes": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "controls": [
+    "Two independent original runs per fully specified control and a clone run.",
+    "Freeze actual placements, terrain, native object identity mapping, diplomacy, fog/daylight, private RNG state, cash, technology, town speed and global settings.",
+    "Disable unrelated AI/mission triggers by an audited route; preserve the tested computer-player flag.",
+    "Use identical tick schedules, not millisecond script delays. Capture command readback plus resulting selection/order state.",
+    "Cross each case with every actual global difficulty choice; include baseline map Difficulty and independent 0/100 map-key controls.",
+    "One-variable sweeps and population counts are candidate probes, not measured bounds or caps."
+  ],
+  "cases": [
+    {
+      "id": "idle-in-range",
+      "recipe": "Two armed enemies idle inside measured weapon range; no commands through tick 240."
+    },
+    {
+      "id": "moving",
+      "recipe": "At tick 12 move the source past an idle visible enemy; observe interruption and resume through tick 240."
+    },
+    {
+      "id": "under-attack",
+      "recipe": "At tick 12 command the enemy to fire once at the source; keep the source idle."
+    },
+    {
+      "id": "target-moving",
+      "recipe": "At tick 12 move the current victim across the sight boundary; observe loss and reacquisition."
+    },
+    {
+      "id": "group-bounds",
+      "recipe": "Repeat compact and stretched tactics; sweep enemy position by one pixel across every edge and corner of the observed group bounds."
+    },
+    {
+      "id": "mode-distance",
+      "recipe": "Sweep member and enemy displacement around inspected candidate distances 4, 6 and 8 tiles; distinguish origin, bounds, sight and weapon reach."
+    },
+    {
+      "id": "scan-phase",
+      "recipe": "Reveal an eligible enemy separately at each tick 12 through 47; repeat initial object insertion order and private RNG setup."
+    },
+    {
+      "id": "assignment",
+      "recipe": "Two attackers and three victims: swap victim insertion order, distance, HP and allied incoming damage independently; record all assignments."
+    },
+    {
+      "id": "building-target",
+      "recipe": "Repeat idle and explicit attack with ordinary building, defence and mobile controls at equal measured separation."
+    },
+    {
+      "id": "group-create-add-recall",
+      "recipe": "At ticks 12/24/36 create group 2, add a different tactic and recall; at tick 48 move using command selection."
+    },
+    {
+      "id": "group-replace-death",
+      "recipe": "At tick 12 replace group 2; kill one member at tick 24, change another owner at tick 36 and recall at tick 48."
+    },
+    {
+      "id": "selection-side-local",
+      "recipe": "At tick 12 select tactic 7 with owned and foreign tactics sharing that number; repeat empty selection and modifiers independently."
+    },
+    {
+      "id": "follow-moving",
+      "recipe": "At tick 12 follow another owned tactic, at tick 24 move its leaders; observe anchor, distance and replanning through tick 240."
+    },
+    {
+      "id": "follow-chain-cycle",
+      "recipe": "At ticks 12/24/36 request A follows B, B follows C and C follows A; repeat self-follow and invalid/foreign leaders."
+    },
+    {
+      "id": "follow-combat-loss",
+      "recipe": "At tick 12 follow, at tick 24 provoke combat, at tick 48 remove leader; repeat stop and move cancellation independently."
+    },
+    {
+      "id": "mode-attachment",
+      "recipe": "At tick 12 set mode on one member; compare attached and distant tactics, negative IDs, later joins and births."
+    },
+    {
+      "id": "fog-selection",
+      "recipe": "Repeat click, drag, group recall and tactic selection with owned/foreign objects in unseen, explored-only, raw brightness 32 and 33 and fractional-above-32 cells."
+    },
+    {
+      "id": "fog-departure",
+      "recipe": "At tick 12 move or kill the scout; compare target retention, explicit attack eligibility and mouse picking at the next boundary."
+    },
+    {
+      "id": "population",
+      "recipe": "Use separate initial counts 49/50/51, 79/80/81, 99/100/101 and 109/110/111; at tick 12 request one birth with prerequisites/cash/space controlled for human and computer sides."
+    },
+    {
+      "id": "map-difficulty",
+      "recipe": "Paired maps differ only in Side Difficulty 0 versus 100; repeat both owners with identical global settings and packets."
+    },
+    {
+      "id": "global-difficulty",
+      "recipe": "Enumerate actual global difficulty choices in the original UI; repeat each with identical map, owner, inputs and seed. Do not substitute the map Difficulty key."
+    }
+  ],
+  "blockers": [
+    "No original reference run is permitted in this sandbox.",
+    "Task 73 shared fog consumer is present; aligned reference picking, brightness and selection packet observer remain unaudited.",
+    "V02/task 64 input adapter cannot yet realize these group/follow/mode/global-settings schedules. Headless --orders currently supports move and attack-move only.",
+    "An audited reference tactic graph, origin/bounds, scan-event, assignment and selection observer is required; RT_UNIT_LOG does not provide these.",
+    "Scan intervals can vary: nonidentical reference repeats block exact comparison; align RNG state or design repeated event distributions before inferring cadence."
+  ]
+}

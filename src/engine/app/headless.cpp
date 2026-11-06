@@ -18,6 +18,7 @@
 #include "core/script.hpp"
 #include "engine/sim/game_sim.hpp"
 #include "engine/sim/combat_trace.hpp"
+#include "engine/sim/tactic_trace.hpp"
 #include "engine/sim/savegame.hpp"
 
 namespace aztec::engine {
@@ -203,7 +204,7 @@ void audit(const Script& script, const World& w, Report& report) {
 int run_headless(int argc, char** argv) {
   Report report;
   std::string game = "game", rules_dir = default_rules_dir(), orders_path, output, observations_path, combat_path, ai_path, hashes_path, save_path, resume_path;
-  std::string l0_schedule, l0_output, l0_frames;
+  std::string l0_schedule, l0_output, l0_frames, tactic_path;
   int max_ticks = 43200, interval = 120, save_tick = 0;
   bool auto_orders = true, order_observations = false;
   Modifications modifications;
@@ -232,13 +233,14 @@ int run_headless(int argc, char** argv) {
       else if (a == "--order-observations") order_observations = true;
       else if (a == "--combat-trace") combat_path = value();
       else if (a == "--ai-trace") ai_path = value();
+      else if (a == "--tactic-trace") tactic_path = value();
       else if (a == "--tick-hashes") hashes_path = value();
       else if (a == "--save-at") save_tick = number(value(), 1);
       else if (a == "--save") save_path = value();
       else if (a == "--resume") resume_path = value();
       else if (a == "--no-auto-orders") auto_orders = false;
       else if (a == "--help") {
-        std::puts("usage: aztec_engine --headless [--settings FILE] --game DIR --rules-dir DIR [--mod parallel_construction=on|off] [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE [--order-observations]] [--combat-trace FILE] [--ai-trace FILE] [--tick-hashes FILE] [--l0-schedule FILE --l0-output FILE --l0-frames DIR] [--save-at N --save FILE] [--resume FILE] MISSION");
+        std::puts("usage: aztec_engine --headless [--settings FILE] --game DIR --rules-dir DIR [--mod parallel_construction=on|off] [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE [--order-observations]] [--combat-trace FILE] [--ai-trace FILE] [--tactic-trace FILE] [--tick-hashes FILE] [--l0-schedule FILE --l0-output FILE --l0-frames DIR] [--save-at N --save FILE] [--resume FILE] MISSION");
         return 0;
       } else if (a.empty() || a[0] == '-' || mission_given) throw std::runtime_error("unexpected argument: " + a);
       else { report.mission = a; mission_given = true; }
@@ -293,6 +295,14 @@ int run_headless(int argc, char** argv) {
       if (!session) throw std::runtime_error(error);
     }
     GameSim& sim = *session;
+    std::ofstream tactic_trace;
+    if (!tactic_path.empty()) {
+      if (!resume_path.empty()) throw std::runtime_error("tactic traces require a fresh run");
+      tactic_trace.open(tactic_path);
+      if (!tactic_trace) throw std::runtime_error("cannot open tactic trace");
+      tactic_trace << "{\"schema\":1,\"contract\":\"engine-tactics-v1\",\"origin\":\"engine\","
+                      "\"phase\":\"before_commands\",\"position_scale\":256,\"first_tick\":1,\"last_tick\":" << max_ticks << "}\n";
+    }
     std::ofstream ai_trace;
     if (!ai_path.empty()) {
       if (!resume_path.empty()) throw std::runtime_error("AI traces require a fresh run");
@@ -357,6 +367,10 @@ int run_headless(int argc, char** argv) {
     struct Position { Fixed x = 0, y = 0; uint64_t since = 0; };
     std::map<uint32_t, Position> positions;
     for (int64_t tick = int64_t(sim.tick_count()) + 1; tick <= max_ticks && world.outcome == kRunning; ++tick) {
+      if (tactic_trace.is_open()) {
+        write_tactic_snapshot(tactic_trace, uint64_t(tick), world, *rules);
+        if (!tactic_trace) throw std::runtime_error("cannot write tactic snapshot");
+      }
       if (!l0_schedule.empty()) parity.observe(uint32_t(tick), world);
       if (observations.is_open()) {
         observations << "{\"tick\":" << tick << ",\"objects\":{";
@@ -431,6 +445,11 @@ int run_headless(int argc, char** argv) {
       ai_trace << "{\"event\":\"end\",\"tick\":" << sim.tick_count() << "}\n";
       ai_trace.close();
       if (!ai_trace) throw std::runtime_error("cannot finish AI trace");
+    }
+    if (tactic_trace.is_open()) {
+      tactic_trace << "{\"event\":\"end\",\"tick\":" << sim.tick_count() << "}\n";
+      tactic_trace.close();
+      if (!tactic_trace) throw std::runtime_error("cannot finish tactic trace");
     }
     if (combat.is_open()) {
       combat << "{\"event\":\"end\",\"tick\":" << sim.tick_count() << "}\n";
