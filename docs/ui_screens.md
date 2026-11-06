@@ -326,3 +326,53 @@ not catalogue repeatability or reference pixel parity. The reference launch is
 blocked by namespace loopback permissions. Construction, selection, queues and
 burning/death input recipes and remaining adapter dependencies are recorded in
 [the provisional scenario](../tests/parity/testmaps.json).
+
+## Campaign UI follow-up (task 77, needs live run)
+
+Evidence labels here are **SYN** (invented-data regression), **P** (provisional
+clone policy/route) and **LIVE-PENDING** (no reference observation). These labels
+do not change any historical capture counts or claim a pixel comparison.
+
+- **SYN/P:** the existing completion profile now gates campaign buttons. Mission
+  1 and completed missions are available; winning a mission unlocks its immediate
+  successor. All fifteen IDs are bounded. Missing map files are not fabricated.
+  Direct CLI mission selection remains useful for diagnostics. This sequential
+  policy is independent implementation, not a measured original unlock rule.
+- **SYN:** pause save/load now opens a three-slot selector, then confirmation.
+  Escape cancels confirmation before closing selection. Unreadable slots cannot
+  be selected for load. Saving retains the completed-tick/pending-command and
+  content fingerprint checks. Main-menu Load uses the same selector and validates
+  the replay before resuming. These are engine AZS replay saves, not original
+  `.sav` interoperability. The implicit per-user engine profile remains separate
+  from original player files; there is no original player-selector implementation.
+- **SYN:** display mode, edge scrolling, fog, lighting, effects/music/speech
+  volumes, acknowledgements and subtitles persist in `frontend-options.txt` in
+  the engine user directory. Parsing stages bounded settings before applying
+  them; CLI overrides the stored defaults. Failed writes report errors. Tests
+  use separate profiles and never modify the installation.
+- **SYN:** `campaign_ui` exercises real mission-loop save/load, tick isolation,
+  startup replay, locked-button refusal and unlocking after profile reload.
+  Existing briefing/objective/outcome tests remain in place. `ui_capture` drives
+  [campaign-ui.json](../tests/parity/ui/campaign-ui.json) with invented resources
+  twice and compares traces. It adds main-menu Load/cancel to the existing
+  campaign/briefing/options route. Slot confirmation and outcome routes are
+  covered separately by mission-loop scripts; this is not whole-graph coverage.
+- **LIVE-PENDING:** task 64 scaffolding exists, but its audited reference front-end
+  screen observer and complete task-60 menu graph are unavailable. Original
+  profile/new-game/difficulty, campaign-map selected state, options categories,
+  credits, exit confirmation, multiplayer entries and all-mission outcome routes
+  remain open. No unseen original transition is inferred from clone behavior.
+
+`tools/ui_sequence.py` compares *observed* screen-ID order and reports the first
+missing/different transition with both frame indices. Repeated presentations of
+one screen are collapsed; timing, pixels, emitted sounds and simulation state
+are outside that comparison. It accepts contiguous raw clone menu/gameplay
+traces and an audited adapter's `reference-ui-raw-v1` JSONL records containing
+`frame`, `phase: after_input_before_present` and normalized `screen`. That
+reference adapter is still a dependency, not supplied by this task. Both declared
+frame horizons must match; empty, truncated and wrong-origin streams fail.
+Scenario labels or capture filenames must never supply the observed reference
+IDs. Gameplay traces now include actual modal/outcome screen IDs.
+
+Status: **needs live run**. No reference process or private game-data run was
+attempted in the Codex sandbox. See the task-77 run sheet in EXPERIMENTS.md.

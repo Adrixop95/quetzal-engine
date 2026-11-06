@@ -18,14 +18,14 @@ static void put(Bytes& b, size_t pos, uint32_t v) { write_le(b.data() + pos, v);
 static void write(const std::filesystem::path& path, const Bytes& b) {
   std::ofstream f(path, std::ios::binary); f.write(reinterpret_cast<const char*>(b.data()), b.size());
 }
-static Bytes wav() {
-  Bytes b(48);
-  std::memcpy(b.data(), "RIFF", 4); put(b, 4, 40);
+static Bytes wav(int frames = 1) {
+  Bytes b(44 + frames * 4);
+  std::memcpy(b.data(), "RIFF", 4); put(b, 4, uint32_t(b.size() - 8));
   std::memcpy(b.data() + 8, "WAVEfmt ", 8); put(b, 16, 16);
   b[20] = 1; b[22] = 2; put(b, 24, 44100); put(b, 28, 176400);
   b[32] = 4; b[34] = 16;
-  std::memcpy(b.data() + 36, "data", 4); put(b, 40, 4);
-  b[44] = 100; b[46] = 100;
+  std::memcpy(b.data() + 36, "data", 4); put(b, 40, frames * 4);
+  for (int i = 0; i < frames; ++i) { b[44 + i * 4] = 100; b[46 + i * 4] = 100; }
   return b;
 }
 static Bytes archive(const std::vector<std::pair<int, std::vector<Bytes>>>& groups) {
@@ -64,9 +64,9 @@ int main(int argc, char** argv) {
   std::filesystem::create_directory(root / "Res");
   std::filesystem::create_directory(root / "Music");
   Bytes set(4); put(set, 0, 1);
-  write(root / "Res/Snd.xbe", archive({{0x460, {wav()}}, {0x3e8, {set, set, set}},
+  write(root / "Res/Snd.xbe", archive({{0x460, {wav(), Bytes{}, wav(8)}}, {0x3e8, {set, set, set}},
       {0x6, {Bytes{'R', 'e', 'a', 'd', 'y', 0}, Bytes{'N', 'o', ' ', 'W', 'A', 'V', 0}}}}));
-  write(root / "Music/music.xbe", archive({{0x460, {wav(), wav()}}}));
+  write(root / "Music/music.xbe", archive({{0x460, {wav(), wav(), wav(8)}}}));
   std::vector<Bytes> animations(200);
   animations[3] = animation();   // Footman anim 4
   animations[13] = animation();  // Headtruck body anim 14
@@ -227,7 +227,8 @@ int main(int argc, char** argv) {
   audio.stop_effects();
   // Explicit trigger context supports future selection/order/UI dispatchers;
   // these direct calls do not claim those app dispatchers exist.
-  for (auto trigger : {AudioEvent::Trigger::Selection, AudioEvent::Trigger::Orders, AudioEvent::Trigger::UI}) {
+  for (auto trigger : {AudioEvent::Trigger::Selection, AudioEvent::Trigger::Orders,
+                       AudioEvent::Trigger::Production, AudioEvent::Trigger::UI}) {
     audio.event_trigger = trigger; audio.event_tick = 200;
     CHECK(audio.play_sound(1) == 1);
     CHECK(events.back().trigger == trigger && events.back().tick == 200);
@@ -296,6 +297,27 @@ int main(int argc, char** argv) {
   audio.stop_effects(); CHECK(audio.subtitle().empty() && audio.mixer().active_voices() == 0);
   audio.set_volumes(-1, 2, std::numeric_limits<float>::quiet_NaN());
   CHECK(audio.mixer().sfx_volume == 0 && audio.mixer().music_volume == 1 && audio.mixer().speech_volume == 0);
+  // Live controls change active voices, independently, without new playback requests.
+  audio.set_volumes(1, 1, 1); events.clear();
+  audio.event_trigger = AudioEvent::Trigger::Ambient;
+  audio.loop_at(1001, 1, 0, 0, 0, 0);
+  CHECK(audio.play_speech(3) == 3);
+  audio.start_music(3, 0, 0);
+  const auto live_events = events.size();
+  audio.mixer().mix(samples, 1); CHECK(samples[0] == 300 && samples[1] == 300);
+  audio.set_volumes(0, 0, 0);
+  audio.mixer().mix(samples, 1); CHECK(samples[0] == 0 && samples[1] == 0);
+  CHECK(audio.mixer().active_voices() == 2 && audio.mixer().music_playing());
+  audio.set_volumes(0.5f, 0, 0);
+  audio.mixer().mix(samples, 1); CHECK(samples[0] == 50 && samples[1] == 50);
+  audio.set_volumes(0, 0.25f, 0);
+  audio.mixer().mix(samples, 1); CHECK(samples[0] == 25 && samples[1] == 25);
+  audio.set_volumes(0, 0, 0.75f);
+  audio.mixer().mix(samples, 1); CHECK(samples[0] == 75 && samples[1] == 75);
+  audio.set_volumes(1, 1, 1);
+  audio.mixer().mix(samples, 1); CHECK(samples[0] == 300 && samples[1] == 300);
+  CHECK(events.size() == live_events && audio.current_track() == 3);
+  audio.stop_music(); audio.stop_effects();
   // Identical commands and seed must yield identical complete state hashes at every tick.
   // Exercise real movement and commands with dispatch disabled, muted and audible, changing views and mix cadence.
   auto rules = std::make_shared<RulesData>(); rules->init_defaults();

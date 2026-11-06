@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "evidence": "P",
+  "horizon": 14400,
+  "repeats": 5,
+  "tv_limit": 0.2,
+  "reference_audit": null,
+  "hz": 12,
+  "setup": {
+    "status": "requires task 64 audited setup and reference adapter",
+    "sides": [
+      {
+        "id": 0,
+        "computer": false
+      },
+      {
+        "id": 1,
+        "computer": true
+      }
+    ],
+    "race": 0,
+    "town_level": 1,
+    "starting_cash": 12000,
+    "seed": 1,
+    "visibility": "identical audited initial fog and daylight on both implementations",
+    "map_size": [
+      64,
+      64
+    ],
+    "towns": [
+      [
+        0,
+        12,
+        12
+      ],
+      [
+        1,
+        48,
+        48
+      ]
+    ],
+    "player_policy": "no autonomous player commands; only declared provocations",
+    "scripts": "no campaign tactics; audited setup/input actions only"
+  },
+  "id": "l8_passive",
+  "map": "zai_passive",
+  "input": [],
+  "groups": [
+    {
+      "id": "build_choice_placement",
+      "event": "build_order",
+      "side": 1,
+      "town": 1,
+      "start": 1,
+      "end": 14400
+    },
+    {
+      "id": "paid_production",
+      "event": "production",
+      "side": 1,
+      "town": 1,
+      "start": 1,
+      "end": 14400
+    },
+    {
+      "id": "offensive_composition_launch",
+      "event": "launch",
+      "side": 1,
+      "town": 1,
+      "start": 1,
+      "end": 14400
+    },
+    {
+      "id": "expansion",
+      "event": "expansion",
+      "side": 1,
+      "town": 1,
+      "start": 1,
+      "end": 14400
+    }
+  ]
+}

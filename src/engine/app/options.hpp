@@ -20,6 +20,8 @@ struct Options {
   std::string modifications_file;
   std::string game_dir = "game";
   std::string original_save;        // --load-original FILE
+  std::string resume_save;          // internal front-end engine replay selection
+  std::string frontend_notice;      // last front-end load failure
   std::string mission = "1";
   bool mission_given = false;      // a mission was named on the command line
   bool menu_session = false;       // the front-end is in use: Esc opens the pause menu instead of quitting
@@ -65,6 +67,8 @@ struct Options {
 
 // Returns false (with message in `err`) on bad arguments; sets `show_usage` for --help.
 bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& show_usage);
+bool load_frontend_options(const std::string& path, Options& out);
+bool save_frontend_options(const std::string& path, const Options& options);
 const char* usage_text();
 
 }  // namespace aztec::engine

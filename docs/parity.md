@@ -560,12 +560,13 @@ private format, exit codes and remaining integration contract.
 ## L6 audio event comparison (2026-10-29)
 
 `tools/audio_parity.py` supplies the audio-specific comparison independently of
-task 42's shared scenario harness, which is absent from this checkout. It compares
+task 64's shared fixed-tick observer/input contract, which is absent from this checkout. It compares
 the **global request sequence**, including interleaved trigger classes. Sound ID,
 kind and trigger must match at each sequence index; ticks may differ by at most
 one. It reports the first divergent index and every difference, with counts and
-coverage for `selection`, `orders`, `combat`, `building`, `ui`, `music` and
-`ambient`. Unobserved classes remain `unobserved`; two empty streams return
+coverage for `selection`, `orders`, `combat`, `building`, `ui`, `music`,
+`ambient` and `production`. `building` covers construction/structure requests;
+`production` separately covers production announcements. Unobserved classes remain `unobserved`; two empty streams return
 `no_events`, never a pass. Index comparison is deliberately conservative: one
 insertion can produce subsequent `identity_or_order` differences. Those counts
 are divergent sequence positions, not independent root causes.
@@ -611,10 +612,14 @@ installation copy and fail-closed `timeout ... unshare -rn` setup, with both SDL
 dummy drivers. Missing game/runtime inputs return 77 and a skip report. Failed
 isolation or runtime exit returns 1; there is no fallback outside isolation.
 Successful raw capture also returns 1 (`captured_unmapped`), because it alone is
-not a parity verdict. An absent trace reports
+not a parity verdict. An absent or empty trace reports
 `blocked_missing_audio_hook_or_no_requests`. Every probe report marks each class
 unmeasured. The script, game copy, invocation, process log and event trace remain
 under this worktree's ignored `work/parity/`.
+The probe also requests `commands.txt` and `state.txt` from the runtime. With
+`--replay FILE`, it copies the private recording to `replay.txt` and enables
+`RT_CMD_REPLAY`; `commands.txt` then contains injected packet readback. Their
+presence/completeness and record/replay stability require separate auditing.
 
 An audited private manifest must bind each raw file by `raw_sha256`, explicitly
 state `tick_offset`, and provide a header with `schema:1`, `scenario`, `contract`,
@@ -655,6 +660,11 @@ comparison, including tail records after an early difference. CLI output files
 are created exclusively under `work/parity/`. Compare returns 0 for equal
 nonempty observed events, 1 for differences/no events and 2 for invalid input.
 Equality covers only the declared capture and observed classes.
+Reports include `coverage_complete` and `unobserved_classes`, counting a class
+as covered only when both sides contain it. `compare --require-all-classes`
+returns 1 for partial coverage even when the observed sequence matches. This
+gate covers eight trigger classes, not all missions, mute/acknowledgement variants,
+or original playback behavior. See the [L6 run sheet](EXPERIMENTS.md#l6-live-audio-run-sheet-task-76-needs-live-run).
 
 ### Evidence and remaining dependencies
 
@@ -677,12 +687,13 @@ comparison or trigger-coverage claim follows from either run.
 | Orders | Acknowledgement dispatcher missing | unmeasured |
 | Combat | Animation requests; generic effects need causal annotations | unmeasured |
 | Building | Animation frame/header requests; speech announcements incomplete | unmeasured |
+| Production | Explicit trigger label; announcement dispatcher missing | unmeasured |
 | UI | Direct-WAV API can label requests; application dispatch missing | unmeasured |
 | Music | Track start/stop requests and caller tick | unmeasured |
 | Ambient | Mobile animation/loop requests | unmeasured |
 
 The independent pieces are implemented and synthetically checked. Full L6
-acceptance remains open: task 42's shared scenario/input runners, audited
+acceptance remains open: task 64's shared fixed-tick observer/input contract, audited
 reference resource/trigger and clock mapping, streamed music transition
 instrumentation, and successful isolated paired captures are still needed.
 No V/M gameplay label is promoted. `audio_events`, `audio_trace` and

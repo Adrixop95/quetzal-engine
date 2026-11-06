@@ -24,6 +24,7 @@
 #include "engine/assets/sprite_provider.hpp"
 #include "engine/platform/clock.hpp"
 #include "engine/app/playtest.hpp"
+#include "engine/app/ui_trace.hpp"
 #include "engine/sim/game_sim.hpp"
 #include "engine/sim/combat_trace.hpp"
 #include <sstream>
@@ -1321,6 +1322,26 @@ static void test_building_placement() {
   }
   ui.cancel_mode();
   if (barracks_index >= 0) click(boxes.production[size_t(barracks_index)]);
+  // The diagnostic query, overlay and click must agree at cell boundaries,
+  // including negative world coordinates and fractional camera offsets.
+  const auto hash_before = sim.state_hash(w);
+  for (float zoom : {0.5f, 1.f, 2.f}) {
+    cam.zoom = zoom; cam.x = 0.5f; cam.y = 0.5f;
+    for (int screen : {-2, 0, 23, 24, 47, 48, 95, 96}) {
+      const auto preview = ui.placement_preview(w, cam, screen, screen);
+      const int expected = int(std::floor((screen / zoom + 0.5f) / kTilePx));
+      CHECK(preview.x == expected && preview.y == expected);
+      CHECK(preview.valid == sim.can_place(w, 0, 14, expected, expected));
+      const auto cells = sim.placement_cells(w, 0, 14, expected, expected);
+      CHECK(preview.cells.size() == cells.size());
+      for (size_t i = 0; i < cells.size() && i < preview.cells.size(); ++i) {
+        CHECK(preview.cells[i].x == cells[i].x && preview.cells[i].y == cells[i].y);
+        CHECK(bool(preview.cells[i].blocked) == bool(cells[i].blocked));
+      }
+    }
+  }
+  CHECK(sim.state_hash(w) == hash_before && sim.pending_commands().empty());
+  cam.zoom = 1; cam.x = cam.y = 0;
   // One blocked cell must leave the other occupied tiles green.
   w.passability.v[12 * 40 + 12] = 0; sim.init(w);
   SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, 796, 700, 32, SDL_PIXELFORMAT_ARGB8888);
@@ -1398,12 +1419,32 @@ static void test_mine_construction_flow() {
       CHECK(ui.placing() == type);
     };
     choose_mine();
+    const auto preview = ui.placement_preview(w, cam, 12 * 48 + 24, 12 * 48 + 24);
+    CHECK(preview.valid && preview.x == 12 && preview.y == 12 && !preview.cells.empty());
+    for (const auto& cell : preview.cells) CHECK(!cell.blocked);
+    Input hover; hover.mx = 12 * 48 + 24; hover.my = 12 * 48 + 24;
+    for (bool overlay_drawn : {false, true}) {
+      std::ostringstream trace;
+      trace_ui(trace, 1, w, cam, 0, hover, ui, &sim, 0, panel, 1, true,
+               !overlay_drawn, CursorKind::Arrow, true, 0, "", "", overlay_drawn,
+               overlay_drawn ? "gameplay" : "pause-menu");
+      CHECK(trace.str().find("\"placement\":{\"cell\":[12,12],\"valid\":true") != std::string::npos);
+      CHECK(trace.str().find(overlay_drawn ? "\"overlay_drawn\":true" : "\"overlay_drawn\":false") != std::string::npos);
+      CHECK(trace.str().find(overlay_drawn ? "\"screen\":\"gameplay\"" : "\"screen\":\"pause-menu\"") != std::string::npos);
+      CHECK(trace.str().find("\"blocked\":null") != std::string::npos);
+    }
     Input target; target.mx = 20 * 48 + 24; target.my = 12 * 48 + 24; target.pressed[SDL_BUTTON_LEFT] = true;
     CHECK(ui.update(target, w, cam, 1, mm, true, panel));
     CHECK(ui.placing() == type && sim.pending_commands().empty()); // invalid click keeps mode
     Input cancel; cancel.key_hit[SDL_SCANCODE_ESCAPE] = true;
     ui.update(cancel, w, cam, 1, mm, true, panel);
     CHECK(!ui.wants_left_click() && sim.pending_commands().empty());
+    CHECK(ui.placement_preview(w, cam, 12 * 48, 12 * 48).cells.empty());
+    std::ostringstream idle_trace;
+    trace_ui(idle_trace, 2, w, cam, 0, hover, ui, &sim, 0, panel, 1, true,
+             false, CursorKind::Arrow, true, 0, "", "", false);
+    CHECK(idle_trace.str().find("\"placement\":null") != std::string::npos);
+    CHECK(idle_trace.str().find("\"screen\":\"gameplay\"") != std::string::npos);
     choose_mine();
     Input right; right.pressed[SDL_BUTTON_RIGHT] = true; right.buttons[SDL_BUTTON_RIGHT] = true;
     ui.update(right, w, cam, 1, mm, true, panel);

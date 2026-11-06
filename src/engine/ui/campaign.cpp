@@ -9,6 +9,8 @@
 #include "core/text.hpp"
 #include "core/visfile.hpp"
 #include "engine/assets/mission.hpp"
+#include "engine/app/options.hpp"
+#include "engine/sim/savegame.hpp"
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -50,6 +52,9 @@ std::string mission_briefing(const GameData& data, const std::string& spec) {
 }
 
 bool CampaignProgress::won(int n) const { return n >= 1 && n <= 15 && (completed & (1u << (n - 1))); }
+bool CampaignProgress::unlocked(int n) const {
+  return n >= 1 && n <= 15 && (n == 1 || won(n) || won(n - 1));
+}
 void CampaignProgress::record(const std::string& spec, bool victory) {
   const int n = campaign_number(spec);
   if (victory && n) completed |= uint16_t(1u << (n - 1));
@@ -87,6 +92,68 @@ bool CampaignProgress::save(const std::string& path) const {
   if (!ok) std::filesystem::remove(temporary, ec);
   std::filesystem::remove(staging, ec);
   return ok;
+}
+
+std::string SaveLoadMenu::slot_path(int slot) {
+  return slot >= 0 && slot < 3 ? user_file("Saves/engine_slot" + std::to_string(slot + 1) + ".azs") : "";
+}
+SDL_Rect SaveLoadMenu::row(int i, int w, int h, int sc) {
+  const int width = std::min(w - 16, 420 * sc);
+  return {(w - width) / 2, h / 2 - 100 * sc + i * 48 * sc, width, 36 * sc};
+}
+void SaveLoadMenu::show(bool save) {
+  saving = save; open = true; confirming = false; selected = -1;
+  for (int i = 0; i < 3; ++i) {
+    SaveData data;
+    labels_[i] = read_save(slot_path(i), data) ? data.mission + " / tick " + std::to_string(data.tick) : "Empty or unreadable";
+  }
+}
+const char* SaveLoadMenu::screen_id() const {
+  return saving ? (confirming ? "save-confirmation" : selected < 0 ? "save-empty" : "save-selected")
+                : (confirming ? "load-confirmation" : selected < 0 ? "load-empty" : "load-selected");
+}
+int SaveLoadMenu::update(const Input& in, int w, int h, int sc) {
+  if (!open) return -1;
+  if (in.hit(SDL_SCANCODE_ESCAPE)) {
+    if (confirming) confirming = false;
+    else open = false;
+    return -1;
+  }
+  auto clicked = [&](int i) {
+    auto rect = row(i, w, h, sc); const SDL_Point point{in.mx, in.my};
+    return in.pressed[SDL_BUTTON_LEFT] && SDL_PointInRect(&point, &rect);
+  };
+  if (clicked(4)) { if (confirming) confirming = false; else open = false; return -1; }
+  if (!confirming) for (int i = 0; i < 3; ++i) if (clicked(i)) {
+    SaveData save;
+    if (saving || read_save(slot_path(i), save)) selected = i;
+    return -1;
+  }
+  if (selected >= 0 && (clicked(3) || (in.hit(SDL_SCANCODE_RETURN) && !in.alt))) {
+    if (!confirming) confirming = true;
+    else { open = false; return selected; }
+  }
+  return -1;
+}
+void SaveLoadMenu::draw(SDL_Renderer* r, const Font& font, int w, int h, int sc) const {
+  if (!open) return;
+  SDL_SetRenderDrawColor(r, 20, 18, 14, 255); SDL_RenderClear(r);
+  auto top = row(0, w, h, sc);
+  const std::string title = std::string(saving ? "Save game" : "Load game") +
+      (confirming ? " / slot " + std::to_string(selected + 1) : "");
+  font.draw(r, top.x, top.y - 48 * sc, title, 2 * sc, {255, 230, 150, 255});
+  for (int i = 0; i < 5; ++i) {
+    if (confirming && i < 3) continue;
+    auto rect = row(i, w, h, sc);
+    std::string label;
+    if (i < 3) {
+      label = (selected == i ? "> " : "") + std::string("Slot ") + std::to_string(i + 1) + ": " +
+          labels_[i];
+    } else if (i == 3) label = confirming ? (saving ? "Confirm save / overwrite" : "Confirm load") : "Continue";
+    else label = "Cancel";
+    SDL_SetRenderDrawColor(r, 55, 42, 25, 255); SDL_RenderFillRect(r, &rect);
+    font.draw(r, rect.x + 8 * sc, rect.y + 8 * sc, label, sc, {245, 230, 200, 255});
+  }
 }
 
 void TextOverlay::update(const Input& in) {

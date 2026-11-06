@@ -6,7 +6,13 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <SDL.h>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
 
 namespace aztec::engine {
 
@@ -75,6 +81,49 @@ bool save_modifications(const std::string& path, Modifications options) {
   return bool(out);
 }
 
+bool load_frontend_options(const std::string& path, Options& out) {
+  std::ifstream file(path, std::ios::binary);
+  char bytes[256]; file.read(bytes, sizeof bytes);
+  if (file.bad() || file.gcount() == sizeof bytes) return false;
+  std::istringstream in(std::string(bytes, size_t(file.gcount())));
+  std::string magic, extra;
+  int mode, edge, fog, light, sfx, music, speech, acknowledgement, subtitles;
+  if (!(in >> magic >> mode >> edge >> fog >> light >> sfx >> music >> speech >> acknowledgement >> subtitles) ||
+      magic != "QUETZAL_OPTIONS_1" || (in >> extra) || mode < 0 || mode > 2) return false;
+  for (int value : {edge, fog, light, acknowledgement, subtitles}) if (value < 0 || value > 1) return false;
+  for (int value : {sfx, music, speech}) if (value < 0 || value > 1000) return false;
+  out.window.mode = DisplayMode(mode); out.edge_scroll = edge; out.fog = fog; out.light = light;
+  out.sfx_volume = sfx / 1000.f; out.music_volume = music / 1000.f; out.speech_volume = speech / 1000.f;
+  out.acknowledgement = acknowledgement; out.subtitles = subtitles;
+  return true;
+}
+bool save_frontend_options(const std::string& path, const Options& o) {
+  if (path.empty() || int(o.window.mode) < 0 || int(o.window.mode) > 2) return false;
+  for (float volume : {o.sfx_volume, o.music_volume, o.speech_volume})
+    if (!std::isfinite(volume) || volume < 0 || volume > 1) return false;
+  // A private staging directory avoids following an existing temporary symlink.
+  const auto staging = path + ".pending";
+  std::error_code ec;
+  if (!std::filesystem::create_directory(staging, ec)) return false;
+  const auto temporary = staging + "/settings";
+  std::ofstream file(temporary, std::ios::binary);
+  file << "QUETZAL_OPTIONS_1\n" << int(o.window.mode) << ' ' << int(o.edge_scroll) << ' '
+       << int(o.fog) << ' ' << int(o.light) << ' ' << std::lround(o.sfx_volume * 1000) << ' '
+       << std::lround(o.music_volume * 1000) << ' ' << std::lround(o.speech_volume * 1000) << ' '
+       << int(o.acknowledgement) << ' ' << int(o.subtitles) << '\n';
+  file.close();
+  bool ok = !file.fail();
+  if (ok) {
+#ifdef _WIN32
+    ok = MoveFileExW(std::filesystem::path(temporary).c_str(), std::filesystem::path(path).c_str(), MOVEFILE_REPLACE_EXISTING) != 0;
+#else
+    std::filesystem::rename(temporary, path, ec); ok = !ec;
+#endif
+  }
+  std::filesystem::remove(temporary, ec); std::filesystem::remove(staging, ec);
+  return ok;
+}
+
 std::string default_rules_dir() {
   char* base = SDL_GetBasePath();
   if (base) {
@@ -129,6 +178,7 @@ const char* usage_text() {
 
 bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& usage) {
   usage = false;
+  load_frontend_options(user_file("frontend-options.txt"), o);
   o.rules_dir = default_rules_dir();
   o.modifications_file = default_modifications_file();
   // Select the file before applying command-line overrides, regardless of order.

@@ -443,3 +443,67 @@ process check skip. The final benchmark-tool assertions also pass separately.
 All pre-commit hooks pass using a private copy of the local cache; initial hook
 environment fetching failed because remote DNS was unavailable. Git metadata
 was left untouched and changes remain uncommitted.
+
+## 11. L3 trace comparison preparation (2026-11-05, needs live run)
+
+Task 64 (`64-shared-runner-observer`) is not implemented in this checkout.
+`parity_run.py` still rejects L3 setup/input and lacks the audited shared
+reference identity and observation contract. No paired movement run was made
+in this task. The following work is independent of that prerequisite; it does
+not close V05 or justify changing pathfinding, speeds, footprints or radii.
+
+`tools/zpath_trace.py PLAN REFERENCE_JSONL CLONE_JSONL --output REPORT_JSON`
+consumes the existing normalized `parity_report.py` stream format. It validates
+both entire streams before comparing, including contiguous ticks, identical
+headers and field coverage. The plan names the expected contract and mission,
+position scale 256, explicit one-to-one reference/clone identities, fixed-point
+pixel goals and per-unit order ticks. A producer must audit these mappings;
+renaming a reference header to `engine-index-v1` is not normalization. Missing,
+dead or type/side-changing selected units invalidate a movement-only experiment.
+All selected units must exist throughout the declared horizon. Combat, spawning,
+boarding and identity reuse need a separate lifecycle contract.
+
+Metrics use the before-command boundary: an order at tick T first affects the
+sample at T+1. Distance accumulation starts at the tick-T position and ends at
+first arrival in the declared goal disk. Arrival ticks are absolute; the plan's
+order tick supplies elapsed time. A missing arrival is null, never zero. The
+reported path ratio is **clone traveled distance / reference traveled distance**
+for that individual unit through its own first arrival. This differs from the
+legacy group-centre optimal-route ratio in section 5. If either unit has not
+arrived or reference distance is zero, the ratio is null. Extra travel against
+a zero-distance reference is a path-length failure.
+
+The route-shape diagnostic measures Euclidean separation at each aligned tick,
+including the parked tail, and reports the maximum. It detects a changed route
+or changed progress along that route; it is not a time-independent geometric
+curve distance. Idle means displacement strictly below the declared pixel
+threshold per tick. An extra stall is a consecutive clone idle interval reaching
+the declared tick threshold while the reference has no equally long idle run
+ending at that tick. Idle metrics stop at arrival. Arrival timing, extra stalls,
+path length and route shape produce cause **classes**, not proven algorithmic
+root causes. The first event is ordered by tick, unit name, then cause class;
+arrival failure becomes observable at earlier-arrival + tolerance + 1, and
+path ratio is evaluated when both arrivals are known.
+
+The external run sheet uses provisional engineering gates: arrival difference
+at most **12 ticks**, clone/reference path ratio at most **1.25**, aligned
+separation at most **48 pixels**, idle displacement below **0.5 pixels**, and
+an extra-stall threshold of **120 ticks**. The goal disk remains **288 pixels**
+for legacy comparisons. These are proposed acceptance tolerances, not measured
+reference variability. Record both reference repeats before freezing or revising
+them. Narrow-gap, exact-destination, boat and flight controls must explicitly
+choose a suitable arrival disk; do not hide failures by widening it afterward.
+Any event fails the comparison. Without an event, any missing arrival returns
+`incomplete`; matching unreachable traces therefore provide diagnostics without
+an arrival-quality pass. Exit status is zero only for `within_tolerance`.
+
+Fourteen synthetic trace regressions cover exact metrics, route divergence,
+inclusive arrival tolerance, extra stalls, censored unreachable goals, arrival
+freezing, path ratio, delayed orders, malformed tails, identity mappings and
+invalid phases/tolerances. They run inside the existing `zpath_tools` CTest.
+The engine path implementation is unchanged. A fresh before/after benchmark
+comparison confirms identical hashes and every non-timing metric across all
+48 configurations (1490 ticks per order); only wall-clock timing is excluded.
+Boats/Johnka, Bird speed, radii/footprint and WaveSearch parity remain open pending
+paired measurements; the archive's 14 usable runs cannot supply this aligned
+per-tick contract.
