@@ -18,9 +18,52 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    # Documentation-only pull requests (Markdown files and the task prompts under tasks/) need no
+    # build or test run. The heavy jobs below are skipped, which counts as passing for the required
+    # checks. Lint (pre-commit) always runs in its own workflow.
+    name: Detect code changes
+    runs-on: ubuntu-24.04
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check whether anything besides Markdown and tasks/ changed
+        id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          code=true
+          files=""
+          if [ "$EVENT" = "pull_request" ]; then
+            files=$(git diff --name-only "$BASE_SHA...$HEAD_SHA" || true)
+          elif [ "$EVENT" = "push" ] && [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            files=$(git diff --name-only "$BEFORE_SHA" "$AFTER_SHA" || true)
+          fi
+          if [ -n "$files" ]; then
+            code=false
+            while IFS= read -r f; do
+              case "$f" in
+                tasks/*|*.md) ;;
+                *) code=true ;;
+              esac
+            done <<< "$files"
+          fi
+          echo "Changed files:"; echo "$files"
+          echo "Code changes: $code"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   sanitizers:
     name: ASan and UBSan synthetic tests
     runs-on: ubuntu-24.04
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     env:
       ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
       UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
@@ -42,6 +85,8 @@ jobs:
 
   build:
     runs-on: ubuntu-24.04
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@v4
       - name: Install build dependencies
@@ -82,6 +127,8 @@ jobs:
             compiler: AppleClang
             shell: bash
     runs-on: ${{ matrix.os }}
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     defaults:
       run:
         shell: ${{ matrix.shell }}
