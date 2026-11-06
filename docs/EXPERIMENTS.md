@@ -2246,3 +2246,153 @@ counts and English route specifications. Keep saves, command logs, observations,
 assets, screenshots and other captured data under ignored `work/`. Update L7
 paired counts only after reviewing actual `ID-reference/diff.json` results;
 pending routes and synthetic oracle fixtures add no live parity results.
+
+## L0 pool and mission startup follow-up (2026-11-06): needs live run
+
+Task 82's embedded-ring correction and optional-probe failure handling are
+present in this checkout. Its live acceptance is still pending. The supplied
+orchestrator run removed the pool divisibility check temporarily and completed
+mission 1 at ticks 1/6/12: 63 common live objects, equal money, nine initial HP
+differences, and movement counts 33 versus 15 at tick 6. This is supplied evidence,
+not a new repeated measurement. No reference or private-data process was launched
+in this sandbox. Do not mark the mission as matching the original yet.
+
+Read-only inspection of the private allocator establishes the layout:
+
+| Pool offset | Meaning |
+| --- | --- |
+| `+4` | Reserved storage base |
+| `+8` | Free-chain head, not an end pointer |
+| `+0xc` | Requested allocation size including list links |
+| `+0x10` | Allocation stride rounded to eight bytes |
+| `+0x14` | Requested reservation slot count |
+| `+0x18` | Allocated slot count |
+| `+0x1c` | Committed bytes, increased by the OS page size |
+| `+0x20` | Number of active lists |
+| `+0x24` | Active-list sentinel storage |
+
+Constructor `0x473c40` establishes the storage fields; list constructor
+`0x473e00` adds eight link bytes and sentinel storage. Growth at `0x473bb0`
+commits another page and exposes only complete strides. Allocation/free at
+`0x473d80`/`0x473dc0` maintain the free head and allocated count. Consequently,
+capacity is committed bytes divided by stride, rounded down. The remainder
+cannot contain a valid slot. The observer retains the full doubly linked active
+chain and disjoint free-chain/count audits, plus alignment and overflow checks.
+Synthetic controls cover the reported byte-size/stride combination, 63 live
+objects, all complete free slots, and rejection of a pointer into the partial
+tail. These are format facts and independently written tests; no derived code
+has been copied into the repository.
+
+The initial HP cause is a loader mismatch, not evidence for a side handicap.
+Mission unit loader `0x430930` scans three integers separated by two characters
+(five conversions), then constructs the specified type. It never consumes the
+fourth integer as health. Marine constructor `0x433190` initializes primary HP
+from descriptor d1 and secondary HP from d4. The existing descriptor data gives
+12000 for type 6 and 13000 for type 32, explaining both reported differences.
+The clone now leaves mission-placement health to descriptor initialization;
+the parser still retains the fourth integer for map inspection. Explicit spawn
+health and saved health keep their existing semantics. Asset-free regressions
+cover both owners, town/team placement, omitted/negative/below/above-descriptor
+metadata, explicit instance health and saved secondary health. The previous
+all-type initialization test now checks descriptor health instead of preserving
+its invented fourth-field value. The live nine-to-zero HP result is **pending**.
+
+Movement remains unresolved. Inspection of mission 1's script finds scheduled
+attacks and attacked-group reactions, without a direct immediate startup move
+action. This does not rule out an early reaction, tactic formation movement or
+an observation-phase difference. Do not add an invented idle walk or a
+mission-specific position correction. Marine Think (`0x433db0`) establishes
+execution states 0 inactive, 1 idle, 2 walk, 3 attack, 4 death, 5 idle animation;
+current-step destination at `+0x74/+0x78` is in pixels and walking velocity at
+`+0x98/+0x9c` is in pixel/256 per tick. The observer now decodes these states and
+records the actual step destination, replacing the misleading tile-centre
+value. Candidate attack, firing and pursuit targets are separate handles at
+`+0x90/+0x94/+0x8c`. The existing tactic state/mode, anchor and route diagnostics
+remain available. Synthetic tests deliberately give the tile and step different
+values and retain distinct targets and signed velocity.
+
+The embedded town ring additionally reports `queued_types` in the same logical
+order as `queued_handles`, after validating each object's type-field span and
+type range. Failed records retain raw pointers and have no usable handles/types.
+These improvements decode native execution and waiting-ring entries; they do
+**not** complete normalized logical orders or production remaining/total/payment
+semantics. Those domains remain declared unavailable in the shared contract.
+Other mobile classes still need an order-layout audit. No movement engine fix,
+full order/queue parity or measured owner queue count is claimed.
+
+Build the independent engine and the updated reference observer from this
+worktree. The supplied external runtime predates these changes unless rebuilt:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR= -DGAME_DIR=
+cmake --build build --parallel 2
+cmake -S . -B build_l0_reference -DCMAKE_BUILD_TYPE=Release \
+  -DAZTEC_GEN_DIR=/home/adrox/aztec-re/work/gen
+cmake --build build_l0_reference --target aztec_recomp --parallel 2
+```
+
+On the namespace-capable orchestrator host, run both repeats of all three
+scenarios. Use a fresh `startup_probe` for each attempt, preserve nonzero
+contract verdicts and inspect `runners.json` for process failures. The runner
+creates separate private game directories (immutable asset symlinks, copied
+mutable files), uses dummy SDL video/audio, and launches inside `unshare -rn`
+with the required reference loopback setup. Never bypass a failed namespace.
+
+```sh
+startup_probe="$PWD/work/parity/l0-startup-$(date -u +%Y%m%dT%H%M%S)"
+mkdir -p "$startup_probe"
+for scenario in private_l0 private_l0_mission_2 private_l0_mission_3; do
+  for repetition in 1 2; do
+    python3 -I tools/parity_run.py "$scenario" --flat-output \
+      --game /home/adrox/aztec-re/game \
+      --runtime "$PWD/build_l0_reference/aztec_recomp" \
+      --engine "$PWD/build/aztec_engine" --timeout 120 \
+      --output "$startup_probe/$scenario-$repetition"
+  done
+  python3 -I tools/parity_l0.py \
+    "$startup_probe/$scenario-1/reference.json" \
+    "$startup_probe/$scenario-1/clone.json" \
+    --repeat-reference "$startup_probe/$scenario-2/reference.json" \
+    --repeat-clone "$startup_probe/$scenario-2/clone.json" \
+    --output "$startup_probe/$scenario-review.json"
+done
+```
+
+Each review reports per-tick scalar counts (common objects, compared fields,
+HP/position/all scalar divergences and unmatched identities), plus reference
+owner-0/1 live object, decoded-unit-state, town and waiting-queue-entry counts.
+Scalar scope is exactly type/owner/x/y/HP plus four side balances, excluding
+unavailable orders, queues and UI. Failed town enumeration or a failed owner
+queue yields null counts, never zero. Reviews first require repeated bundles
+and frame bytes to match within each program; `run_nondeterminism` blocks the
+counts. Raw handles and all numeric streams/reports remain private.
+
+For the first changed movement step, generate dense private versions of each
+scenario with ticks 1 through 12 (do not edit the tracked passive scenarios):
+
+```sh
+python3 - <<'PYDENSE'
+import json
+from pathlib import Path
+root = Path('work/parity/l0-startup-dense-scenarios')
+root.mkdir(parents=True, exist_ok=False)
+for name in ('private_l0', 'private_l0_mission_2', 'private_l0_mission_3'):
+    scenario = json.loads(Path(f'tests/parity/{name}.json').read_text())
+    scenario['observe']['ticks'] = list(range(1, 13))
+    (root / f'{name}.json').write_text(json.dumps(scenario, indent=2) + '\n')
+PYDENSE
+```
+
+Repeat the loop above with a fresh `startup_probe` and append
+`--scenarios-dir "$PWD/work/parity/l0-startup-dense-scenarios"` to each runner
+invocation. Return both repeats, native order/queue diagnostics, process logs and
+reviews privately. Confirm the first changing execution state/step against tactic
+state, mission actions and spawn ordering before implementing movement changes.
+Preserve the clone-before captures separately, then rerun the identical schedules
+after each fix. Populate the matrix only from reviewed comparisons; use null for
+unmeasured after-values and missions 2/3 until those captures exist.
+
+Status: **needs live run**. HP loader correction and pool/diagnostic regressions
+are implemented; repeated reference confirmation, movement reproduction,
+normalized orders/production semantics and mission-2/3 divergence results remain
+open. This is not the first verified matching game output yet.
