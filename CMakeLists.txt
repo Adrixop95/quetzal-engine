@@ -353,6 +353,9 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME parity_ai COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_ai.py)
   set_tests_properties(parity_ai PROPERTIES LABELS "unit;parity" TIMEOUT 20)
+  add_test(NAME ai_measure COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ai_measure.py $<TARGET_FILE:aztec_engine>)
+  set_tests_properties(ai_measure PROPERTIES LABELS "unit;parity" TIMEOUT 30)
   add_test(NAME projectile_measure COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_projectile_measure.py $<TARGET_FILE:aztec_engine>)
   set_tests_properties(projectile_measure PROPERTIES LABELS "unit;parity" TIMEOUT 30)

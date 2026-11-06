@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <memory>
+#include <sstream>
 #include <string>
 #include "engine/ai/planner.hpp"
 #include "engine/sim/game_sim.hpp"
@@ -159,6 +160,8 @@ static void sparse_towns(std::shared_ptr<const RulesData> rules) {
 
   w.mission.sides[1].only_comp = false;
   GameSim sim(rules); sim.init(w);
+  std::vector<std::pair<uint64_t, AiEvent>> events;
+  sim.set_ai_observer([&](uint64_t tick, const AiEvent& e) { events.emplace_back(tick, e); });
   w.ai_towns[0].phase = 7; w.ai_towns[0].spent = 20000;
   w.begin_tick(); sim.tick(w);
   CHECK(w.side_state[0].queue.size() == 1);
@@ -166,10 +169,16 @@ static void sparse_towns(std::shared_ptr<const RulesData> rules) {
   auto& q = w.side_state[0].queue.front();
   CHECK(q.type == 12 && q.town == 0);
   CHECK(w.ai_towns[0].spent == 20000 && q.paid == 0);
+  CHECK(events.size() == 1 && events[0].first == 1);
+  CHECK(std::string(events[0].second.kind) == "build_order");
+  CHECK(events[0].second.town == 0 && events[0].second.composition[12] == 1);
+  CHECK(events[0].second.x == q.tile_x && events[0].second.y == q.tile_y);
   auto phase = w.ai_towns[0].phase;
   w.begin_tick(); sim.tick(w);
   CHECK(w.ai_towns[0].phase == phase); // queued construction suspends the planner
   CHECK(w.ai_towns[0].spent > 20000 && w.ai_towns[1].spent == 0);
+  CHECK(events.size() == 2 && events[1].first == 2);
+  CHECK(std::string(events[1].second.kind) == "production");
   q.remaining = 1;
   w.begin_tick(); sim.tick(w);
   CHECK(w.side_state[0].queue.empty());
@@ -186,6 +195,36 @@ static void sparse_towns(std::shared_ptr<const RulesData> rules) {
   auto hash = sim.state_hash(w);
   ++w.ai_towns[0].spent; CHECK(sim.state_hash(w) != hash); --w.ai_towns[0].spent;
   ++w.mission.towns[0].type; CHECK(sim.state_hash(w) != hash);
+}
+// Diagnostics must observe decisions without changing viewing-side or replay state.
+static void observation(std::shared_ptr<const RulesData> rules) {
+  auto a = world();
+  a.mission.sides[1].only_comp = false;
+  object(a, 0, 0, 0, 10, 8);
+  object(a, 0, 0, 0, 11, 8, 7); // Script-owned troops do not join a planner launch.
+  auto b = a;
+  GameSim plain(rules), traced(rules); plain.init(a); traced.init(b);
+  a.ai_towns[0].phase = b.ai_towns[0].phase = 2;
+  a.ai_towns[0].known_towns = b.ai_towns[0].known_towns = {1};
+  a.ai_towns[0].elapsed = b.ai_towns[0].elapsed = 1;
+  std::vector<AiEvent> events;
+  std::ostringstream json;
+  traced.set_ai_observer([&](uint64_t tick, const AiEvent& event) {
+    events.push_back(event); write_ai_event(json, tick, event);
+  });
+  a.begin_tick(); b.begin_tick(); plain.tick(a); traced.tick(b);
+  CHECK(plain.state_hash(a) == traced.state_hash(b));
+  CHECK(events.size() == 1 && std::string(events[0].kind) == "launch");
+  CHECK(events[0].composition[0] == 1 && events[0].x == -1);
+  CHECK(json.str().find("\"composition\":[[0,1]]") != std::string::npos);
+  // A visible attack redirects exactly the autonomous troop while production is busy.
+  object(a, 0, 1, 1, 10, 9); object(b, 0, 1, 1, 10, 9);
+  a.objects[0].last_hit_by = b.objects[0].last_hit_by = 5;
+  a.side_state[0].queue.push_back({0, 100, 100, 0, 0});
+  b.side_state[0].queue.push_back({0, 100, 100, 0, 0});
+  a.begin_tick(); b.begin_tick(); plain.tick(a); traced.tick(b);
+  CHECK(plain.state_hash(a) == traced.state_hash(b));
+  CHECK(std::string(events.back().kind) == "defence" && events.back().composition[0] == 1);
 }
 // Two towns sharing cash select their own speeds before pricing their orders.
 static void town_orders(std::shared_ptr<const RulesData> rules) {
@@ -357,6 +396,6 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
 }
 int main(int argc, char** argv) {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
-  if (argc > 1 && std::string(argv[1]) == "--smoke") smoke(rules); else { unit(*rules); reinforcements(*rules); initialization(rules); sparse_towns(rules); town_orders(rules); scripted(rules); }
+  if (argc > 1 && std::string(argv[1]) == "--smoke") smoke(rules); else { unit(*rules); reinforcements(*rules); initialization(rules); sparse_towns(rules); observation(rules); town_orders(rules); scripted(rules); }
   return failures ? 1 : 0;
 }

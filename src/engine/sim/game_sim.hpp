@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include "engine/sim/commands.hpp"
+#include "engine/sim/ai_trace.hpp"
 #include "engine/sim/modifications.hpp"
 #include "engine/sim/path/mover.hpp"
 #include "engine/sim/rules.hpp"
@@ -55,6 +56,10 @@ class GameSim : public Simulation {
   // Synchronous, read-only diagnostics. Events occur inside the tick, before death handling.
   using CombatObserver = std::function<void(uint64_t, const char*, const Effect&, uint32_t, int, int)>;
   void set_combat_observer(CombatObserver observer) { combat_observer_ = std::move(observer); }
+  // Accepted planner commands and computer-town production payment starts.
+  // Town identity is the mission vector index, not TownDef::index.
+  using AiObserver = std::function<void(uint64_t, const AiEvent&)>;
+  void set_ai_observer(AiObserver observer) { ai_observer_ = std::move(observer); }
 
   // Queries for the UI.
   std::vector<MenuItem> menu(const World& w, int side, int town = -1) const;
@@ -87,6 +92,7 @@ class GameSim : public Simulation {
 
  private:
   CombatObserver combat_observer_;
+  AiObserver ai_observer_;
   uint64_t next_trace_id_ = 0;
   void trace_combat(const char* event, const Effect& e, uint32_t victim = 0, int before = 0, int after = 0) const {
     if (combat_observer_) combat_observer_(tick_, event, e, victim, before, after);
