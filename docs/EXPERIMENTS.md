@@ -858,6 +858,70 @@ inputs local; publish only evidence labels and a factual result summary. A
 matching supported-field snapshot or retained opaque block is not complete
 resume, and tick-zero equality alone is not continuation parity.
 
+## V14 campaign UI run sheet (task 77, needs live run)
+
+Run these commands from this worktree root on a namespace-capable host, never
+inside the restricted Codex sandbox. All captures, profiles and traces remain
+private. Do not bypass `unshare -rn` after a namespace failure.
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR=
+cmake --build build --parallel 2
+ctest --test-dir build -R 'campaign_ui|ui_capture|frontend_capture_controls' --output-on-failure
+python3 -I tools/ui_capture.py frontend \
+  --scenario tests/parity/ui/campaign-ui.json \
+  --game /home/adrox/aztec-re/game \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --clone "$PWD/build/aztec_engine" \
+  --output "$PWD/work/parity/ui/campaign77-live-01" --timeout 60
+```
+
+The runner creates separate private game copies for the reference and both
+clone repetitions, symlinks immutable assets, copies mutable installation files,
+sets dummy SDL video/audio and executes through `timeout -s KILL` and
+`unshare -rn`. Clone captures now have separate `AZTEC_USER_DIR` profiles and
+clear inherited front-end automation variables. Reference loopback/address setup
+fails closed. Keep the nonzero exit status: this front-end runner deliberately
+reports exploratory, unaligned evidence, even if every capture succeeds.
+The scenario retains the previously documented reference startup/campaign/
+briefing probe. Its labels are requested capture points, not observed screen IDs.
+The extended clone route has 44 frames; it does not pretend to be an equivalent
+44-frame reference route.
+
+Before sequence comparison, finish/audit the task-64 reference UI adapter and
+measure the original menu graph through normal inputs. It must emit one actual
+screen observation per presentation, with normalized IDs from the documented
+`reference-ui-raw-v1` contract in ui_screens.md. No environment switch in this
+checkout currently supplies that stream. Do not rename a clone trace or fill it
+from the scenario's expected labels. Extend the reference input route to walk the
+same states and record its declared horizon before launch. In particular, the
+current reference startup probe is insufficient for the extended clone route.
+
+After that adapter produces `reference/screens.jsonl`, compare a complete route
+as follows (44 is the candidate horizon only when the audited reference route
+has explicitly been scheduled for 44 presentations):
+
+```sh
+python3 -I tools/ui_sequence.py \
+  --reference work/parity/ui/campaign77-live-01/reference/screens.jsonl \
+  --clone work/parity/ui/campaign77-live-01/clone-1/trace.jsonl \
+  --reference-frames 44 --clone-frames 44 \
+  --output work/parity/ui/campaign77-live-01/sequence
+```
+
+With the current missing observer this produces status `needs live run` and exits
+1. Screen-order equality alone is not L4/L5 acceptance. Repeat with fresh output
+folders and independently captured reference traces; require both reference
+repeats to agree. Capture normal winning and losing command routes for each of
+15 missions, then cover objective review, defeat/retry, return, next briefing,
+final ending, profile reopen, locked/unlocked selection, empty/occupied/corrupt
+slots, overwrite/load confirmation/cancel and settings after process restart.
+Use a fresh private profile for each initial-state control. Original new-game,
+difficulty, player selection, campaign-map, options categories, credits, quit
+confirmation and multiplayer graph routes still need observation and adapters.
+Do not force a simulation outcome as evidence of a normally reachable mission
+completion. No live result, unlock policy, graph completeness or pixel score is
+claimed by the synthetic regressions.
 ## L6 live audio run sheet (task 76, needs live run)
 
 **Evidence: synthetic only; status: needs live run.** Do not execute this sheet

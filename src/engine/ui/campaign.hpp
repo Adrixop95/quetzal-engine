@@ -1,6 +1,7 @@
 // Engine campaign presentation and completion records, independent of simulation.
 #pragma once
 #include <cstdint>
+#include <array>
 #include <string>
 #include "engine/assets/game_data.hpp"
 #include "engine/platform/input.hpp"
@@ -15,9 +16,28 @@ std::string mission_briefing(const GameData& data, const std::string& spec);
 struct CampaignProgress {
   uint16_t completed = 0;
   bool won(int mission) const;
+  bool unlocked(int mission) const;
   void record(const std::string& spec, bool victory);
   bool load(const std::string& path);
   bool save(const std::string& path) const;
+};
+
+// Engine replay slots. Selection and confirmation never perform disk writes.
+class SaveLoadMenu {
+ public:
+  bool open = false;
+  bool saving = false;
+  bool confirming = false;
+  int selected = -1;
+  static std::string slot_path(int slot);
+  static SDL_Rect row(int index, int width, int height, int scale);
+  void show(bool save);
+  // Returns a slot index only after confirmation; -1 means no operation.
+  int update(const Input& in, int width, int height, int scale);
+  void draw(SDL_Renderer* r, const Font& font, int width, int height, int scale) const;
+  const char* screen_id() const;
+ private:
+  std::array<std::string, 3> labels_;
 };
 
 class TextOverlay {
