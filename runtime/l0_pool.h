@@ -23,7 +23,10 @@ static const char* l0_pool_try_read(uint32_t address, L0Pool* result) {
   L0Pool p = {GU32(address + 4), GU32(address + 0x10), 0,
               GU32(address + 0x18), GU32(address + 0x24), NULL};
   uint32_t bytes = GU32(address + 0x1c);
-  if (!p.base || p.stride < 8 || p.stride > 0x1000 || !l0_span(p.base, bytes) || bytes % p.stride ||
+  // +0x1c is committed storage, grown in OS pages, not a slot-aligned end.
+  // Only complete strides are usable; the trailing bytes never enter either chain.
+  // +8 is the free-list head. See the allocator layout audit in EXPERIMENTS.md.
+  if (!p.base || p.stride < 8 || p.stride > 0x1000 || p.stride % 8 || !l0_span(p.base, bytes) ||
       !(p.capacity = bytes / p.stride) || p.capacity > 100000 || p.count > p.capacity || !l0_span(p.sentinel, 8))
     return "Invalid L0 pool metadata";
   p.nodes = calloc(p.count ? p.count : 1, sizeof *p.nodes);
