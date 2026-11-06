@@ -2394,6 +2394,61 @@ static void test_default_construction_placeholders() {
   CHECK(toggled->state_hash(fresh) == sim.state_hash(w));
 }
 
+// S: interrupted construction retains damage, payment and its site through resume.
+// Durations here are engine offers, not measured original-game expectations.
+static void test_construction_resume_completion() {
+  auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  for (int type : {12, 14, 17}) {
+    World initial = production_world();
+    production_object(initial, 11, 0, 5, 5); initial.objects.back().town_hall = true;
+    if (type == 17) production_object(initial, 14, 0, 9, 5);
+    initial.side_state.resize(8); initial.side_state[0].money = 10000;
+    World w = initial; GameSim sim(rules); sim.init(w);
+    Command place; place.type = Pct::PlaceBuilding; place.a = type; place.b = place.c = 15; place.ids = {1};
+    sim.submit(place); production_steps(sim, w, 1);
+    CHECK(w.side_state[0].queue.size() == 1);
+    if (w.side_state[0].queue.empty()) continue;
+    const auto first = w.side_state[0].queue.front();
+    const auto id = first.object;
+    CHECK(id && first.started && first.paid > 0 && first.total > 10);
+    production_steps(sim, w, first.total / 2);
+    Command pause; pause.type = Pct::PauseBuild; pause.a = 1; pause.ids = {1};
+    sim.submit(pause); production_steps(sim, w, 1);
+    const Object frozen = *w.find(id);
+    const int remaining = w.side_state[0].queue.front().remaining;
+    const int cash = w.side_state[0].money;
+    production_steps(sim, w, 7);
+    CHECK(w.find(id)->hp == frozen.hp && w.find(id)->progress == frozen.progress);
+    CHECK(w.find(id)->build_elapsed == frozen.build_elapsed && !w.find(id)->harvest_ready);
+    CHECK(w.side_state[0].queue.front().remaining == remaining && w.side_state[0].money == cash);
+    CHECK(!sim.can_place(w, 0, type, 15, 15));
+    World restored = initial;
+    auto replay = GameSim::replay(restored, rules, sim.log(), sim.tick_count());
+    CHECK(replay->state_hash(restored) == sim.state_hash(w));
+    // Controlled external damage isolates construction from combat and regeneration.
+    // Apply it to both continuations; it is deliberately outside the command log.
+    constexpr int damage = 7;
+    w.find_mut(id)->hp -= damage; restored.find_mut(id)->hp -= damage;
+    pause.a = 0; sim.submit(pause); replay->submit(pause);
+    for (int tick = 1; tick <= remaining; ++tick) {
+      production_steps(sim, w, 1); production_steps(*replay, restored, 1);
+      CHECK(sim.state_hash(w) == replay->state_hash(restored));
+      CHECK(w.side_state[0].money == cash && !w.find(id)->harvest_ready);
+      if (tick < remaining) CHECK(w.find(id)->progress < 1000 && !w.side_state[0].queue.empty());
+    }
+    CHECK(w.side_state[0].queue.empty() && w.find(id)->progress == 1000);
+    CHECK(w.find(id)->hp == w.find(id)->hp_max - damage && w.find(id)->anim_state == int(data::AnimState::Idle));
+    CHECK(!sim.can_place(w, 0, type, 15, 15)); // completed site keeps its blocker
+    production_steps(sim, w, 1);
+    CHECK(w.find(id)->harvest_ready);
+    // Completion removed the queue entry; stale cancellation must not refund it.
+    Command cancel; cancel.type = Pct::QueueKill; sim.submit(cancel);
+    const int after_completion = w.side_state[0].money;
+    production_steps(sim, w, 1);
+    CHECK(w.side_state[0].money == after_completion && w.find(id)->alive && !w.find(id)->removed);
+  }
+}
+
 // Buildings progress independently while each town trains units in FIFO order.
 static void test_mixed_production_queue() {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
@@ -2939,6 +2994,7 @@ int main(int argc, char** argv) {
     test_town_service();
     test_parallel_town_production();
     test_default_construction_placeholders();
+    test_construction_resume_completion();
     test_mixed_production_queue();
     test_projectiles();
     test_object_initialization();
