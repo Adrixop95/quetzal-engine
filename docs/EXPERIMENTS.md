@@ -2086,3 +2086,145 @@ counts and English route specifications. Keep saves, command logs, observations,
 assets, screenshots and other captured data under ignored `work/`. Update L7
 paired counts only after reviewing actual `ID-reference/diff.json` results;
 pending routes and synthetic oracle fixtures add no live parity results.
+
+## V07 all-weapon run sheet, task 87 (needs live run)
+
+**P:** `tools/weapon_measure.py` inventories the existing public metadata for all
+90 types and all 60 weapon IDs. It records direct owners, payload/composite
+children, reachable owners, missing tables and IDs requiring a dispatch audit.
+These are candidate bindings from the current engine, not newly verified
+reference mappings. Ordinary Building descriptors have no weapon binding;
+Boat/Johnka/Camera bindings remain unresolved. Do not infer immunity or an absent
+attack from these entries. No new numeric data was extracted from private files.
+
+**S:** synthetic tests check all bindings, every descriptor attacker/victim pair,
+structure placement, primary-HP overrides and the repeated-reference comparison
+gate. There are 4,290 proposed cases: 39 descriptor attackers against 87 positive-HP
+descriptor victim types, plus the 18 task-74 controls and reload, range boundary,
+composite schedule, target death and corpse removal for each attacker. Testing
+all victim types preserves distinct physical armor and overlapping categories;
+it does not certify the engine's category mappings. The seven task-74 family
+names alone do not cover every dispatch class.
+
+**M:** none from this task. No reference was launched in the sandbox. Task 64's
+audited setup/command/reference observer is absent; task 74's placement generator
+and engine trace diagnostics are present. No combat behavior or unresolved engine
+mapping was changed. Keep unknown families disabled until two independent
+reference runs confirm a divergence. The table reports this task's evidence,
+not a rejection of historical inspected descriptor arithmetic.
+
+| Existing dispatch class | Measured | Matching | Fixed |
+| --- | --- | --- | --- |
+| 0 ball | No | Unmeasured | No |
+| 1 arrow | No | Unmeasured | No |
+| 2 direct | No | Unmeasured | No |
+| 3 axe | No | Unmeasured | No |
+| 4 | No | Unmeasured | No |
+| 5 | No | Unmeasured | No |
+| 6 | No | Unmeasured | No |
+| 7 flame/blast | No | Unmeasured | No |
+| 8 wrapper | No | Unmeasured | No |
+| 9 payload | No | Unmeasured | No |
+| 10 | No | Unmeasured | No |
+| 11 unresolved | No | Unmeasured | No |
+| 12 composite | No | Unmeasured | No |
+| 13 direct | No | Unmeasured | No |
+| 14 sentinel (ID 0) | N/A | N/A | No |
+
+Run from the worktree root. Planning needs no installation or executable:
+
+```sh
+python3 -I tools/weapon_measure.py plan --output work/parity/v07-all-plan
+```
+
+Keep its `inventory.json`, `scenarios.json`, `coverage.md` and blank
+`measurement-form.json` private. Null values mean unmeasured. Unowned weapon IDs
+remain listed; measure them through a verified parent launch or document their
+unreachable/unused status after a live dispatch audit. Never invent an owner or
+launch arbitrary weapon IDs with memory pokes as a normal gameplay comparison.
+
+The following exact commands prepare and launch one candidate on a namespace-
+capable host. Substitute another ID from `scenarios.json`, with a fresh output
+for each attempt. `prepare` uses the task-74 ztest_battle generator, places both
+attacking and defending structures through Town sections, and supplies primary
+HP from the current engine bindings. Requested positions may relocate; audit
+actual `.layout.json` and `pending.json` before collecting a rule measurement.
+
+```sh
+python3 -I tools/weapon_measure.py prepare --id type27_clear_middle \
+  --game /home/adrox/aztec-re/game --output work/parity/v07-all/type27-clear-middle
+weapon_case="$PWD/work/parity/v07-all/type27-clear-middle"
+build/aztec_map_viewer --maps "$weapon_case/game/Maps" --dump ztest_battle \
+  > "$weapon_case/map-dump.txt"
+export ZSTAT_GAME_DIR="$weapon_case/game"
+export ZSTAT_RUNTIME=/home/adrox/aztec-re/build/aztec_recomp
+export RT_UNIT_EVERY=1 TMO=120
+mkdir "$weapon_case/record"
+RT_CMD_LOG="$weapon_case/record/commands.txt" \
+RT_STATE_LOG="$weapon_case/record/state.txt" \
+  sh tools/zstat_run.sh ztest_battle "$weapon_case/record" 65000
+for repetition in 1 2; do
+  replay_dir="$weapon_case/replay-$repetition"
+  mkdir "$replay_dir"
+  RT_CMD_REPLAY="$weapon_case/record/commands.txt" \
+  RT_CMD_LOG="$replay_dir/commands.txt" RT_STATE_LOG="$replay_dir/state.txt" \
+    sh tools/zstat_run.sh ztest_battle "$replay_dir" 65000
+done
+timeout -s KILL 100 unshare -rn env \
+  SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+  AZTEC_USER_DIR="$weapon_case/clone-profile" \
+  "$PWD/build/aztec_engine" --headless --game "$weapon_case/game" \
+  --rules-dir "$PWD/docs/data" --no-auto-orders --max-ticks 720 \
+  --combat-trace "$weapon_case/clone-combat.jsonl" \
+  --observations "$weapon_case/clone-objects.jsonl" \
+  --tick-hashes "$weapon_case/clone-hashes.txt" ztest_battle
+python3 -I tools/projectile_measure.py summarize \
+  --trace "$weapon_case/clone-combat.jsonl" --output "$weapon_case/clone-samples"
+```
+
+These are launch diagnostics, not controlled attack commands or a normalized
+combat observer. `zstat_run.sh` makes independent writable copies, sets dummy
+SDL, and uses `timeout -s KILL ... unshare -rn` with loopback/address setup.
+Namespace, setup, runtime or horizon failures remain failures. Never bypass
+isolation. The supplied reference unit log cannot observe projectile, burn,
+interception, secondary HP or corpse lifecycle fully. There is no reference
+combat environment switch or audited adapter invocation to add to these commands
+yet; do not relabel an engine trace or populate observations from expectations.
+
+Before measurement, resolve task 64 and each candidate's pending controls. Use
+a normal accepted attack with readback at the same simulation tick. For damage,
+isolate one shot per victim/category; for reload, allow at least three launches
+without moving or retargeting. For range, bracket actual accepted launches in
+pixels with matched footprint/visibility controls. Sweep splash offsets from the
+task-74 protocol, then radius minus one/radius/radius plus one separately for
+every victim, relation and combined category. Measure both composite child
+launches and impacts independently, through source/target death and interruption.
+Track HP, secondary HP, armor, ground/render/air height, interception events,
+burn start/end and damage ticks, death, corpse creation and removal. Extend
+horizons until flight/burn/corpse completion and a damage-free tail are observed;
+720 ticks or no damage alone establishes none of those durations. Retain native
+ordered events to disambiguate multiple events within one tick.
+
+After audited adapters produce the three complete `weapon-v1` bundles described
+in [the contract](../tests/parity/README.md#v07-all-weapon-comparison-task-87), run:
+
+```sh
+python3 -I tools/weapon_measure.py compare \
+  --reference work/parity/v07-all/type27-clear-middle/reference.json \
+  --repeat work/parity/v07-all/type27-clear-middle/reference-repeat.json \
+  --clone work/parity/v07-all/type27-clear-middle/clone-before.json \
+  --output work/parity/v07-all/type27-clear-middle/comparison-before.json
+```
+
+Exit 0 is equality within the declared observations, 1 is a difference or unstable
+reference, and 2 is an invalid/incomplete input. `repeatable_difference` permits
+review of a candidate correction only after the observer/setup audit. It does not
+authorize a rule inferred from clone behavior. Retain clone-before, make only a
+confirmed correction, add synthetic boundary/replay tests, and rerun with
+`clone-after.json` and a fresh `comparison-after.json`. Fill each metric's private
+form from the actual samples, citing both repeated reference captures and the
+adapter audit. Publish only reviewed factual expectations and aggregate counts;
+keep maps, captures, raw numeric records and executable-derived inputs private.
+Update V07 P to M only for the classes and controls actually measured.
+
+Status: **needs live run**.

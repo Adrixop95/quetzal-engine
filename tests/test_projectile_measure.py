@@ -106,6 +106,17 @@ class ProjectileControls(unittest.TestCase):
             measure.prepare(measure.scenarios()[0], source, output)
         with self.assertRaises(ValueError):
             measure.prepare(measure.scenarios()[0], source, ROOT / 'docs/invalid')
+        building_case = dict(measure.scenarios()[0], source_type=17, target_type=14,
+                             source_hp=12345, target_hp=23456)
+        buildings = self.root / 'buildings'
+        measure.prepare(building_case, source, buildings)
+        pending = json.loads((buildings / 'pending.json').read_text())
+        self.assertEqual([(p['type'], p['hp']) for p in pending['placements']],
+                         [(17, 12345), (14, 23456)])
+        ini = measure.maps.read_ini(buildings / 'game/Maps/ztest_battle.mp')
+        self.assertEqual(ini['Town0']['Units'], '1')
+        self.assertEqual(ini['Town1']['Units'], '1')
+        self.assertFalse(any(s.startswith('Team') for s in ini.sections()))
 
     def test_protocol_covers_families_and_controls(self):
         cases = measure.scenarios()
