@@ -109,6 +109,16 @@ def asset(manifest, name):
     return image_file(path)
 
 
+def validate_regions(regions):
+    require(isinstance(regions, dict) and set(regions) == set(REGIONS), "all six regions required")
+    for tolerance in regions.values():
+        require(isinstance(tolerance, dict) and set(tolerance) == {"channel", "max_bad_fraction", "max_mae"}, "invalid region thresholds")
+        require(type(tolerance["channel"]) is int and 0 <= tolerance["channel"] <= 255, "invalid channel tolerance")
+        for key, maximum in (("max_bad_fraction", 1), ("max_mae", 255)):
+            v = tolerance[key]
+            require(type(v) in (int, float) and math.isfinite(v) and 0 <= v <= maximum, "invalid metric threshold")
+
+
 def validate_spec(spec):
     require(spec.get("schema") == 1 and spec.get("evidence") in ("P", "M", "V")
             and isinstance(spec.get("id"), str) and spec["id"], "invalid scenario")
@@ -122,13 +132,7 @@ def validate_spec(spec):
     require(isinstance(alignment["camera"], list) and len(alignment["camera"]) == 3
             and all(type(v) in (int, float) and math.isfinite(v) for v in alignment["camera"])
             and alignment["camera"][2] > 0, "invalid camera")
-    require(isinstance(spec.get("regions"), dict) and set(spec["regions"]) == set(REGIONS), "all six regions required")
-    for tolerance in spec["regions"].values():
-        require(isinstance(tolerance, dict) and set(tolerance) == {"channel", "max_bad_fraction", "max_mae"}, "invalid region thresholds")
-        require(type(tolerance["channel"]) is int and 0 <= tolerance["channel"] <= 255, "invalid channel tolerance")
-        for key, maximum in (("max_bad_fraction", 1), ("max_mae", 255)):
-            v = tolerance[key]
-            require(type(v) in (int, float) and math.isfinite(v) and 0 <= v <= maximum, "invalid metric threshold")
+    validate_regions(spec.get("regions"))
     samples = spec.get("observe")
     require(isinstance(samples, list) and samples, "observation points required")
     last = -1
@@ -180,6 +184,26 @@ def validate_bundle(path, spec):
     return bundle["contract"], decoded
 
 
+def region_metrics(ap, bp, left_mask, right_mask, tolerance):
+    """Score the union of two structural masks; keep exact and tolerant errors separate."""
+    mask_difference = sum(x != y for x, y in zip(left_mask, right_mask, strict=True))
+    exact, bad, total, error = 0, 0, 0, 0
+    # Union ensures that missing/shifted structure cannot hide pixel error.
+    for i, (x, y) in enumerate(zip(left_mask, right_mask, strict=True)):
+        if not (x or y):
+            continue
+        delta = [abs(ap[3 * i + c] - bp[3 * i + c]) for c in range(3)]
+        total += 1
+        exact += max(delta) != 0
+        bad += max(delta) > tolerance["channel"]
+        error += sum(delta)
+    mae, fraction = error / (3 * total), bad / total
+    passed = (mask_difference == 0 and mae <= tolerance["max_mae"]
+              and fraction <= tolerance["max_bad_fraction"])
+    return dict(passed=passed, pixels=total, mask_difference=mask_difference,
+                exact_mismatch_fraction=exact / total, bad_fraction=fraction, mae=mae)
+
+
 def compare(spec_path, reference, clone):
     spec = load(spec_path)
     validate_spec(spec)
@@ -191,23 +215,9 @@ def compare(spec_path, reference, clone):
     for (a, ap, am), (b, bp, bm) in zip(left, right, strict=True):
         metrics = {}
         for region in REGIONS:
-            mask_difference = sum(x != y for x, y in zip(am[region], bm[region], strict=True))
-            exact, bad, total, error = 0, 0, 0, 0
-            tolerance = spec["regions"][region]
-            # Union ensures that missing/shifted structure cannot hide pixel error.
-            for i, (x, y) in enumerate(zip(am[region], bm[region], strict=True)):
-                if not (x or y):
-                    continue
-                delta = [abs(ap[3 * i + c] - bp[3 * i + c]) for c in range(3)]
-                total += 1
-                exact += max(delta) != 0
-                bad += max(delta) > tolerance["channel"]
-                error += sum(delta)
-            mae, fraction = error / (3 * total), bad / total
-            passed = (mask_difference == 0 and mae <= tolerance["max_mae"]
-                      and fraction <= tolerance["max_bad_fraction"])
-            metrics[region] = dict(passed=passed, pixels=total, mask_difference=mask_difference,
-                                   exact_mismatch_fraction=exact / total, bad_fraction=fraction, mae=mae)
+            metrics[region] = region_metrics(ap, bp, am[region], bm[region], spec["regions"][region])
+            passed = metrics[region]["passed"]
+            mask_difference = metrics[region]["mask_difference"]
             if not passed and first is None:
                 first = dict(tick=a["tick"], step=a["step"], category="visual_structure" if mask_difference else "visual_pixels", field=region)
         fields = [field for field in sorted(STATE) if not identical(a["state"][field], b["state"][field])]
