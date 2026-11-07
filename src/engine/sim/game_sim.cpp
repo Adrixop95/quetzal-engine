@@ -91,7 +91,7 @@ void GameSim::init(World& w) {
   // Imported saves retain their recorded fog instead of restarting intelligence.
   if (!w.original_save) {
     for (const auto& side : w.mission.sides)
-      if (side.only_comp && !side.neutral && side.index >= 0 && side.index < int(w.visibility.sides.size()))
+      if (side.only_comp && side.index >= 0 && side.index < int(w.visibility.sides.size()))
         std::fill(w.visibility.sides[side.index].v.begin(), w.visibility.sides[side.index].v.end(), uint8_t(w.visibility_brightness ? 128 : 24));
   }
   w.town_state.clear();
@@ -693,7 +693,9 @@ std::vector<MenuItem> GameSim::menu(const World& w, int side, int town) const {
     m.type = it.type; m.construct = it.construct;
     m.place = r.structure && upgrade_level(t.race, it.type) < 0;
     m.price = production_value(r.price, t.type, speed, computer, hostile_all, false);
-    m.time = production_value(r.time, t.type, speed, computer, hostile_all, true);
+    const int nominal = std::max(1, production_value(r.time, t.type, speed, computer, hostile_all, true));
+    m.work_rate = r.hp_max / nominal;
+    m.time = m.work_rate > 0 ? int((int64_t(r.hp_max) + m.work_rate - 1) / m.work_rate) : nominal;
     const char* why = "";
     m.enabled = menu_ok(w, side, it, ti, &why);
     m.why_not = why;
@@ -800,6 +802,7 @@ void GameSim::economy(World& w) {
       const Object* hall = town_hall(w, q.town);
       // A missing producer suspends production rather than spawning at the side start.
       if (!hall || hall->side != int(s) || hall->progress < 1000) { ++i; continue; }
+      const bool starting = !q.started;
       if (!q.started) {
         const auto& town = w.mission.towns[size_t(q.town)];
         const char* why = "";
@@ -815,29 +818,34 @@ void GameSim::economy(World& w) {
         }
         q.started = true;
         q.paid = offer.price;
+        // Production advances by an integer fraction of the target's maximum
+        // health each tick. Truncation can extend the nominal duration.
+        q.work_rate = offer.work_rate;
         q.total = q.remaining = std::max(1, offer.time);
         ss.money -= q.paid;
         if (q.town < int(w.ai_towns.size())) w.ai_towns[q.town].spent += q.paid;
         if (auto* object = w.find_mut(q.object)) object->build_total = q.total;
         if (ai_observer_ && std::any_of(w.mission.sides.begin(), w.mission.sides.end(),
-            [s](const auto& side) { return side.index == int(s) && side.only_comp && !side.neutral; })) {
+            [s](const auto& side) { return side.index == int(s) && side.only_comp; })) {
           AiEvent event; event.kind = "production"; event.side = int(s); event.town = q.town;
           event.x = q.tile_x; event.y = q.tile_y; event.composition.at(size_t(q.type)) = 1;
           ai_observer_(tick_, event);
         }
       }
       if (q.paused) { ++i; continue; }
-      if (q.remaining > 0) --q.remaining;
+      if (q.remaining > 0 && q.work_rate > 0) --q.remaining;
       if (auto* o = w.find_mut(q.object)) {
-        const int old_hp = std::max(1, int(int64_t(o->hp_max) * o->build_elapsed / q.total));
+        // Buildings use their actual health as the work clock. Damage delays
+        // completion; it never causes another payment for the accepted item.
+        o->hp = int(std::min(int64_t(o->hp_max), int64_t(o->hp) + q.work_rate));
+        if (q.work_rate > 0)
+          q.remaining = int((int64_t(o->hp_max - o->hp) + q.work_rate - 1) / q.work_rate);
         o->build_elapsed = q.total - q.remaining;
-        o->progress = std::min(1000, int(int64_t(o->build_elapsed) * 1000 / q.total));
-        const int new_hp = std::max(1, int(int64_t(o->hp_max) * o->build_elapsed / q.total));
-        o->hp = std::min(o->hp_max, o->hp + new_hp - old_hp);
+        o->progress = q.remaining == 0 ? 1000 : std::min(999, int(int64_t(o->hp) * 1000 / std::max(1, o->hp_max)));
         if (q.remaining == 0) { o->set_anim(kAnimIdle); o->body_tick = -1; }
       }
       bool finished = false;
-      if (q.remaining <= 0) {
+      if (q.remaining <= 0 && !starting) {
         if (q.object) { finished = true; completed.push_back(q.object); }
         else if (rules_->type(q.type).structure) finished = finish_structure(w, int(s), q);
         else {
@@ -864,8 +872,13 @@ void GameSim::economy(World& w) {
                   finished = birth(x * kTilePx + kTilePx / 2, y * kTilePx + kTilePx / 2);
         }
       }
-      if (finished) ss.queue.erase(ss.queue.begin() + i);
-      else ++i;
+      if (finished) {
+        const int town = q.town;
+        ss.queue.erase(ss.queue.begin() + i);
+        // Completing the current object frees this town's lane immediately.
+        if (!construction)
+          advanced.erase(std::remove(advanced.begin(), advanced.end(), town), advanced.end());
+      } else ++i;
     }
   }
   std::fill(w.repair_credits.begin(), w.repair_credits.end(), 0);
@@ -1500,7 +1513,7 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(s.selected_ids.size()); for (uint32_t id : s.selected_ids) mix(id);
     mix(uint32_t(s.money)); mix(s.queue.size());
     for (const QueueItem& q : s.queue) { mix(uint32_t(q.type)); mix(uint32_t(q.remaining)); mix(uint32_t(q.total)); mix(uint32_t(q.town)); mix(uint32_t(q.paid));
-      mix(q.started); mix(q.paused); mix(uint32_t(q.tile_x)); mix(uint32_t(q.tile_y)); mix(q.object); }
+      mix(q.started); mix(q.paused); mix(uint32_t(q.tile_x)); mix(uint32_t(q.tile_y)); mix(q.object); mix(uint32_t(q.work_rate)); }
     for (const auto& g : s.groups) { mix(g.size()); for (uint32_t id : g) mix(id); }
   }
   mix(w.visibility_brightness);

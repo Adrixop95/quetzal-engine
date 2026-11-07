@@ -63,7 +63,7 @@ and `engine` checks pass with the complete private map copy under dummy SDL in
 | Command order inside a tick: ascending side, then submission order | P | original: per-side queues in `0x4577b0` (order not verified) |
 | Descriptor primary/max and secondary HP | V fields / engine checks | All nine descriptor families loaded; mission/spawn maxima never depend on other instances. Positive mission HP is preserved. Original-save +0x3c is secondary HP; maximum comes from rules at simulation initialization. See V04 below |
 | Descriptor regeneration | V inspected thresholds/countdown/overshoot / P facility producer | Marine, Truck, Zeppelin, Bird, Headtruck, Spider and Cannon recover below natural thresholds, or full HP while the hashed service countdown is positive. Pre-add check permits overshoot; countdown expires after the update. Facility coverage/refresh and exact tick alignment remain open |
-| Scripted object health and placement identity | V zero maximum getters / engine identity checks | Boat, Johnka and Camera maximum getters return zero; Submarine remains an unsupported marker. Town membership uses section numbers, including sparse IDs; team scenario/tactic, defence and vessel provenance remain distinct. Live reference identity still depends on V02 |
+| Scripted object health and placement identity | V zero maximum getters / engine identity checks | Boat, Johnka and Camera maximum getters return zero; Submarine records remain available to inspectors but do not create physical world objects; their scenario actions remain unsupported. Town membership uses section numbers, including sparse IDs; team scenario/tactic, defence and vessel provenance remain distinct. Live reference identity still depends on V02 |
 | Descriptor movement speed | V getters / synthetic integration | Marine d5, Headtruck/Spider d7, Zeppelin/Truck d5 in px/tick, converted to 24.8. Historical averages no longer override established descriptor speeds |
 | Measured speed fallback | M | `speed_measured.csv` (mean mid-run speed), used only without a verified speed getter; these averages include steering/sampling effects |
 | Bird speed and transport routes | P / unresolved | Bird and unknown speeds default to 8 px/tick. Boats and Johnka remain stationary; neither receives a ground agent. Scripted transport routes are unimplemented |
@@ -365,7 +365,7 @@ does not close the missing reference observer, movement/combat/economy or tactic
 dependencies described below.
 
 ## Computer player (`ai/planner.*`, `sim/ai.cpp` adapter)
-Controlled sides have `OnlyComp=1` and are not neutral. The pure planner reads
+Controlled sides have `OnlyComp=1`, including neutral computer sides. The pure planner reads
 world state and validated purchase/placement offers, returning its next state and
 commands. It does not read the viewing side, wall clock or global RNG. Internal
 commands are regenerated during replay rather than added to the player command log.
@@ -1521,14 +1521,16 @@ speed selection at start, active/waiting capacity, UI admission and cancellation
 beyond slot eight, new-state hash sensitivity and command-log replay. Existing
 upgrade save/replay and AI checks cover the new payment timing.
 
-**Limits:** the engine still uses countdown completion; the reference increments
-structure HP or mobile training work. Exact start/completion ticks, damage during
-construction, hall-upgrade HP transitions, automatic placement and spawn locations
-remain unresolved. Refund quantization follows the inspected rule using the
-engine's countdown progress; this is not live timing/HP parity. A completed item
-leaves its successor to the next engine tick. Shared-cash town arbitration retains
-stable storage order pending measurements. No normalized reference observer or
-successful record/replay control is available in this checkout.
+**Updated by task 96:** production freezes the truncated integer work increment
+at payment; training uses its quantized duration and explicit construction advances
+actual HP, so damage delays completion. A completed item can start its successor
+in the same update. Refunds still use the engine queue's progress fraction;
+hall-upgrade HP transitions, exact campaign start ticks, automatic placement and
+spawn locations remain unresolved. Shared-cash town arbitration retains stable
+storage order pending measurements. See [the partial early-spending audit](early_payment.md)
+for the observed lump payments, all twelve money samples, the corrected submarine
+controller count, and the still-missing side-plan requests. Native diagnostics do
+not establish full normalized production or live campaign money parity.
 
 The isolated reference attempt used the supplied read-only runtime, a private game
 copy, dummy SDL drivers and `unshare -rn` through `tools/zstat_run.sh`. It failed

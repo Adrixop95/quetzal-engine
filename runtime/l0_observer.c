@@ -72,6 +72,20 @@ static int order_probe(uint32_t node, uint32_t stride) {
   return 0;
 }
 
+// Read only timer storage; never call guest getters while observing a tick.
+static void production_probe(uint32_t town) {
+  uint32_t object = GU32(town + 0x114);
+  fputs(",\"production\":", output);
+  if (!object) { fputs("null", output); return; }
+  if (!l0_span(object, 0x54) || GU32(object + 0x50) >= 90) {
+    fputs("{\"unavailable\":\"Invalid L0 production object\"}", output);
+    return;
+  }
+  fprintf(output, "{\"type\":%u,\"work_per_tick\":%u,\"price\":%u,\"accumulated_work\":%u,\"paused\":%s}",
+          GU32(object + 0x50), GU32(town + 0x118), GU32(town + 0x11c),
+          GU32(town + 0x120), GU8(town + 0x124) ? "true" : "false");
+}
+
 static int queue_probe(void) {
   L0Pool towns = {0};
   const char* pool_error = l0_pool_try_read(0x5156f8, &towns);
@@ -117,6 +131,11 @@ static int queue_probe(void) {
       }
     }
     fputs("]}", output);
+    production_probe(town);
+    if (towns.stride >= 8 + 0x190)
+      fprintf(output, ",\"planner\":{\"development\":%d,\"science_timer\":%d,\"phase\":%d,\"speed\":%d}",
+              (int32_t)GU32(town + 0x178), (int32_t)GU32(town + 0x17c),
+              (int32_t)GU32(town + 0x180), (int32_t)GU32(town + 0x158));
     if (error) {
       fprintf(output, ",\"unavailable\":\"%s\"}", error);
       unavailable = 1;

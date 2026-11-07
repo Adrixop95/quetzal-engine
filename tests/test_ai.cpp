@@ -1,4 +1,7 @@
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include "temp_dir.hpp"
 #include <memory>
 #include <sstream>
 #include <string>
@@ -126,6 +129,27 @@ static void reinforcements(const RulesData& rules) {
   CHECK(!issued(ai::step(w, rules, 0, s, {}), Pct::Attack));
 }
 // Initialization must provide both planner state and town-command hall identities.
+static void neutral_computer(std::shared_ptr<const RulesData> rules) {
+  auto initial = world();
+  initial.mission.sides[0].neutral = true;
+  initial.relation[0][1] = initial.relation[1][0] = kNeutral;
+  initial.mission.sides[1].only_comp = false;
+  initial.objects[0].town_hall = initial.objects[1].town_hall = true;
+  World w = initial;
+  GameSim sim(rules); sim.init(w);
+  for (int tick = 1; tick <= 12; ++tick) {
+    w.begin_tick(); sim.tick(w);
+    if (tick == 5) {
+      CHECK(w.side_state[0].queue.size() == 1);
+      CHECK(w.side_state[0].money == 12000); // enqueue does not charge
+    }
+    if (tick >= 6) CHECK(w.side_state[0].money == 11840);
+    CHECK(w.side_state[1].money == 12000);
+  }
+  auto replay = GameSim::replay(initial, rules, sim.log(), sim.tick_count());
+  CHECK(replay->state_hash(initial) == sim.state_hash(w));
+}
+
 static void initialization(std::shared_ptr<const RulesData> rules) {
   auto w = world();
   w.mission.start_time = -1;
@@ -278,6 +302,26 @@ static void scripted(std::shared_ptr<const RulesData> rules) {
   CHECK(sa.script().unsupported() == 0);
 }
 static void smoke(std::shared_ptr<const RulesData> rules) {
+  // Use ranged recruits in this synthetic pressure soak so melee crowding at
+  // durable halls cannot end opposition after production timing changes.
+  // Keep the footman's price, nominal time and build-tree slot, but use the
+  // rifleman's combat descriptor. This fixture does not measure campaign balance.
+  TempDir directory;
+  for (const auto& file : std::filesystem::directory_iterator(AZTEC_TEST_RULES_DIR))
+    if (file.is_regular_file() && file.path().extension() == ".csv")
+      std::filesystem::copy_file(file.path(), directory.path() / file.path().filename());
+  std::ifstream types(directory.path() / "types.csv");
+  std::ostringstream table;
+  const std::string footman = "0,FOOTMAN,Marine,3,";
+  for (std::string line; std::getline(types, line);) {
+    if (line.starts_with(footman)) line.replace(0, footman.size(), "0,FOOTMAN,Marine,9,");
+    table << line << '\n';
+  }
+  types.close();
+  std::ofstream(directory.path() / "types.csv") << table.str();
+  auto synthetic = std::make_shared<RulesData>();
+  CHECK(synthetic->load_dir(directory.path().string()));
+  rules = synthetic;
   auto initial = world();
   // Hold technology constant so this pressure/replay soak does not also assert
   // campaign balance across changing building masks and formation geometry.
@@ -290,7 +334,7 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
   initial.resources.v.assign(1600, 130);
   // Synthetic durable halls keep both producers alive through the full soak.
   // These HP values exercise sustained opposition, not campaign balance.
-  for (auto& o : initial.objects) { o.hp = 1000000; o.town_hall = true; }
+  for (auto& o : initial.objects) { o.hp = 10000000; o.town_hall = true; }
   auto a = initial, b = initial; b.local_side = 1;
   GameSim sa(rules), sb(rules);
   CHECK(sa.attach_script(AZTEC_AI_ECONOMY_SCRIPT)); CHECK(sb.attach_script(AZTEC_AI_ECONOMY_SCRIPT));
@@ -378,7 +422,7 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
   for (int side = 0; side < 2; ++side) {
     CHECK(a.objects[size_t(side)].alive && side_waves[size_t(side)] > 0);
     CHECK(a.ai_towns[size_t(side)].spent > 0 && a.ai_towns[size_t(side)].harvested > 0);
-    // Only footmen are enabled in this synthetic scenario. Count actual released
+    // Only the synthetic type-0 recruits are enabled. Count actual released
     // members, so phase transitions alone cannot masquerade as an attack wave.
     CHECK(wave_composition[size_t(side)][0] > 0);
     for (size_t type = 1; type < 90; ++type) CHECK(wave_composition[size_t(side)][type] == 0);
@@ -396,6 +440,6 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
 }
 int main(int argc, char** argv) {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
-  if (argc > 1 && std::string(argv[1]) == "--smoke") smoke(rules); else { unit(*rules); reinforcements(*rules); initialization(rules); sparse_towns(rules); observation(rules); town_orders(rules); scripted(rules); }
+  if (argc > 1 && std::string(argv[1]) == "--smoke") smoke(rules); else { unit(*rules); reinforcements(*rules); initialization(rules); neutral_computer(rules); sparse_towns(rules); observation(rules); town_orders(rules); scripted(rules); }
   return failures ? 1 : 0;
 }

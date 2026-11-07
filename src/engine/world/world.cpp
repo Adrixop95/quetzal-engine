@@ -6,6 +6,9 @@ void place_mission_objects(World& w) {
   w.objects.clear();
   uint32_t next_id = 1;
   for (const PlacedObject& p : w.mission.objects) {
+    // Submarines are scenario controllers in a separate reference pool.
+    // Retain their parsed records for inspection without creating world objects.
+    if (p.source == ObjectSource::Submarine) continue;
     Object o;
     o.id = next_id++;
     o.type = p.type;
