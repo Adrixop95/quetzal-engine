@@ -315,6 +315,9 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME parity_visual_ui COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_visual.py $<TARGET_FILE:aztec_engine>)
   set_tests_properties(parity_visual_ui PROPERTIES LABELS "unit" TIMEOUT 40)
+  add_test(NAME render_compare COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_render_compare.py)
+  set_tests_properties(render_compare PROPERTIES LABELS "unit;parity" TIMEOUT 40)
   add_test(NAME ui_capture COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ui_capture.py $<TARGET_FILE:aztec_engine>)
   set_tests_properties(ui_capture PROPERTIES LABELS "unit;parity" TIMEOUT 30)
