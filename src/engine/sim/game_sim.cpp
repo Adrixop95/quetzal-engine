@@ -743,21 +743,43 @@ std::vector<PlacementCell> GameSim::placement_cells(const World& w, int side, in
   else if (std::max(std::abs(tx - px(hall->cur_x) / kTilePx),
                     std::abs(ty - px(hall->cur_y) / kTilePx)) > 16) global = "too far from town hall";
   const bool mine = type == 13 || type == 48 || type == 66;
+  const bool strict = !modifications_.relaxed_placement;
+  // P: value 1 is treated as clearance until task 66 measures its exact role.
+  // Keep navigation occupancy (value 2) separate from placement requirements.
+  auto required = [strict](const TypeRules& rule, int cx, int cy, int x, int y) {
+    if (strict && rule.has_footprint_mask) {
+      const int dx = x - cx + 3, dy = y - cy + 3;
+      if (dx >= 0 && dx < 7 && dy >= 0 && dy < 7 && rule.footprint_mask[dy * 7 + dx] == 1) return true;
+    }
+    return occupies(rule, cx, cy, x, y);
+  };
   int x0, y0, x1, y1; footprint(r, tx, ty, x0, y0, x1, y1);
+  if (strict && r.has_footprint_mask) {
+    for (int i = 0; i < 49; ++i) if (r.footprint_mask[i] == 1) {
+      x0 = std::min(x0, tx + i % 7 - 3); x1 = std::max(x1, tx + i % 7 - 3);
+      y0 = std::min(y0, ty + i / 7 - 3); y1 = std::max(y1, ty + i / 7 - 3);
+    }
+  }
   // Reject pathological fallback descriptors without allocating an unbounded preview.
   if (int64_t(x1) - x0 > 7 || int64_t(y1) - y0 > 7) return {{tx, ty, "invalid footprint"}};
   bool deposit = false;
   std::vector<PlacementCell> cells;
   for (int y = y0; y <= y1; ++y) for (int x = x0; x <= x1; ++x) {
-    if (!occupies(r, tx, ty, x, y)) continue;
-    const bool mineral = mine && w.resources.in(x, y) && (w.resources.at(x, y) >> 8) > 0;
+    if (!required(r, tx, ty, x, y)) continue;
+    const bool body = occupies(r, tx, ty, x, y);
+    const bool resource = w.resources.in(x, y) && (w.resources.at(x, y) >> 8) > 0;
+    const bool mineral = mine && body && resource;
     deposit |= mineral;
     const char* reason = nullptr;
     if (!nav_.in_bounds(x, y)) reason = "outside map";
     else {
       // P: mineral-bearing rock may host mines; ordinary structures need clear terrain.
-      if (nav_.terrain(x, y) < 2 && !mineral) reason = "terrain blocked";
+      if (nav_.terrain(x, y) < 2 && (!mineral || (strict && nav_.terrain(x, y) == 1))) reason = "terrain blocked";
       else if ((!reservation || !reservation->object) && nav_.blocked(x, y, path::MoveClass::Large) && nav_.terrain(x, y) >= 2) reason = "occupied";
+      // P: conservatively reject map overlays, including objects on open .dat
+      // cells. Overlay-specific exceptions still need original-game controls.
+      else if (strict && size_t(y) * w.terrain.w + x < w.terrain.cells.size() && w.terrain.overlay(x, y)) reason = "map object";
+      else if (strict && resource && !mine) reason = "mineral resource";
       // A known terrain/navigation rejection needs no further collision scans.
       if (reason) { cells.push_back({x, y, reason}); continue; }
       // Query structure masks as well: deposits must never bypass a dynamic blocker.
@@ -767,7 +789,9 @@ std::vector<PlacementCell> GameSim::placement_cells(const World& w, int side, in
         if (other.structure) {
           // In-place upgrades temporarily remove the old hall's navigation footprint.
           if (&object == hall && upgrade_level(w.mission.towns[size_t(town)].race, type) >= 0) continue;
-          if (occupies(other, px(object.cur_x) / kTilePx, px(object.cur_y) / kTilePx, x, y)) reason = "occupied";
+          const int ox = px(object.cur_x) / kTilePx, oy = px(object.cur_y) / kTilePx;
+          // Clearance rings may overlap each other, but never a building body.
+          if (occupies(other, ox, oy, x, y) || (body && required(other, ox, oy, x, y))) reason = "occupied";
         } else if (!other.flier) {
           const int64_t ox = px(object.cur_x), oy = px(object.cur_y);
           const int64_t cx = std::clamp(ox, int64_t(x) * kTilePx, int64_t(x + 1) * kTilePx);
@@ -779,7 +803,8 @@ std::vector<PlacementCell> GameSim::placement_cells(const World& w, int side, in
       }
       if (!reason) for (const auto& state : w.side_state) for (const auto& q : state.queue) {
         if (&q == reservation || q.tile_x < 0 || q.started) continue;
-        if (occupies(rules_->type(q.type), q.tile_x, q.tile_y, x, y)) reason = "reserved";
+        const auto& queued = rules_->type(q.type);
+        if (occupies(queued, q.tile_x, q.tile_y, x, y) || (body && required(queued, q.tile_x, q.tile_y, x, y))) reason = "reserved";
       }
     }
     cells.push_back({x, y, reason ? reason : global});

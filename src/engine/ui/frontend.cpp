@@ -518,7 +518,7 @@ void AudioOptions::draw(SDL_Renderer* r, const Font& font, const Options& o, int
 }
 
 SDL_Rect ModificationOptions::row(int i, int w, int h, int sc) {
-  return {(w - std::min(w - 16, 600 * sc)) / 2, h / 2 + i * 50 * sc,
+  return {(w - std::min(w - 16, 600 * sc)) / 2, h / 2 - 75 * sc + i * 50 * sc,
           std::min(w - 16, 600 * sc), 36 * sc};
 }
 void ModificationOptions::update(const Input& in, Options& options, int w, int h, int sc) {
@@ -526,9 +526,14 @@ void ModificationOptions::update(const Input& in, Options& options, int w, int h
   if (in.hit(SDL_SCANCODE_ESCAPE)) open = false;
   if (!in.pressed[SDL_BUTTON_LEFT]) return;
   SDL_Point point{in.mx, in.my};
-  auto toggle = row(0, w, h, sc), back = row(2, w, h, sc);
+  auto toggle = row(0, w, h, sc), relaxed = row(2, w, h, sc), back = row(4, w, h, sc);
   if (SDL_PointInRect(&point, &toggle)) {
     options.modifications.parallel_construction = !options.modifications.parallel_construction;
+    if (!save_modifications(options.modifications_file, options.modifications))
+      std::fprintf(stderr, "Cannot persist game modifications\n");
+  }
+  if (SDL_PointInRect(&point, &relaxed)) {
+    options.modifications.relaxed_placement = !options.modifications.relaxed_placement;
     if (!save_modifications(options.modifications_file, options.modifications))
       std::fprintf(stderr, "Cannot persist game modifications\n");
   }
@@ -543,7 +548,12 @@ void ModificationOptions::draw(SDL_Renderer* r, const Font& font, const Options&
   font.draw(r, rect.x + 8 * sc, rect.y + 8 * sc,
       std::string("Parallel construction: ") + (options.modifications.parallel_construction ? "on" : "off"), 2 * sc, {245, 230, 200, 255});
   font.draw(r, rect.x, rect.y + 45 * sc, "Buildings progress together; units train one at a time.", sc, {245, 230, 200, 255});
-  auto back = row(2, w, h, sc);
+  auto relaxed = row(2, w, h, sc);
+  SDL_SetRenderDrawColor(r, 55, 42, 25, 255); SDL_RenderFillRect(r, &relaxed);
+  font.draw(r, relaxed.x + 8 * sc, relaxed.y + 8 * sc,
+      std::string("Relaxed placement: ") + (options.modifications.relaxed_placement ? "on" : "off"), 2 * sc, {245, 230, 200, 255});
+  font.draw(r, relaxed.x, relaxed.y + 45 * sc, "Allow map objects and ignore building clearance.", sc, {245, 230, 200, 255});
+  auto back = row(4, w, h, sc);
   font.draw(r, back.x, back.y, "Back", 2 * sc, {245, 230, 200, 255});
 }
 
