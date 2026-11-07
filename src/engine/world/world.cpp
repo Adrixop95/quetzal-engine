@@ -17,7 +17,11 @@ void place_mission_objects(World& w) {
     // inspection, but placement initializes health from the type descriptor.
     o.facing = 6;  // south
     if (p.source == ObjectSource::Team) o.tactic = p.scenario_id;
-    if (p.source == ObjectSource::Town && !p.defence) o.town = p.group;
+    if (p.source == ObjectSource::Town && !p.defence) {
+      o.town = p.group;
+      for (const auto& town : w.mission.towns)
+        if (town.index == p.group) o.tactic = town.scenario_id;
+    }
     o.scenario = p.scenario_id;
     o.anim_variant = o.id * 2654435761u >> 8;
     o.teleport(tile_center_fixed(p.x), tile_center_fixed(p.y));
@@ -49,6 +53,7 @@ void place_mission_objects(World& w) {
     o.town_hall = true;
     o.side = t.side;
     o.scenario = t.scenario_id;
+    o.tactic = t.scenario_id;
     o.teleport(tile_center_fixed(t.x), tile_center_fixed(t.y));
     w.objects.push_back(o);
   }

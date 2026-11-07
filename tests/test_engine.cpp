@@ -562,7 +562,9 @@ static void test_commands_ui() {
   Object unit; unit.id = 1; unit.type = 0; unit.town = 0; unit.teleport(to_fixed(200), to_fixed(200));
   Object town; town.id = 2; town.type = 11; town.town = 0; town.town_hall = true; town.teleport(to_fixed(600), to_fixed(600));
   Object enemy; enemy.id = 3; enemy.type = 0; enemy.side = 1; enemy.teleport(to_fixed(700), to_fixed(600));
-  w.objects = {unit, town, enemy};
+  // Keep this UI fixture's hall defended while testing command submission.
+  Object defender = unit; defender.id = 4; defender.teleport(to_fixed(600), to_fixed(650));
+  w.objects = {unit, town, enemy, defender};
   GameSim sim(rules, Modifications::faithful()); sim.init(w);
   w.side_state[0].money = 2000;
   w.selection.ids = {1};
@@ -3175,11 +3177,15 @@ static void test_campaign_initialization(const std::string& dir) {
     GameSim sim(rules, Modifications::faithful()); sim.init(w);
     size_t placed = 0;
     for (const auto& p : w.mission.objects) {
-      if (p.source == ObjectSource::Submarine) continue;
-      const auto& o = w.objects[placed++];
+      const auto& o = w.objects[placed];
+      placed += 1 + p.passengers.size();
       CHECK(o.side == p.side && o.source == p.source && o.scenario == p.scenario_id);
       CHECK(o.town == (p.source == ObjectSource::Town && !p.defence ? p.group : -1));
-      CHECK(o.tactic == (p.source == ObjectSource::Team ? p.scenario_id : -1));
+      int tactic = p.source == ObjectSource::Team ? p.scenario_id : -1;
+      if (p.source == ObjectSource::Town && !p.defence)
+        for (const auto& town : w.mission.towns) if (town.index == p.group) tactic = town.scenario_id;
+      CHECK(o.tactic == tactic);
+      if (p.source == ObjectSource::Submarine) continue;
       const auto& r = rules->type(o.type);
       CHECK(r.hp_src == Src::Verified && o.hp_max == r.hp_max && o.secondary_hp == r.secondary_hp);
       CHECK(o.hp == r.hp_max);
@@ -3334,7 +3340,8 @@ static void test_object_initialization() {
     CHECK(o.id == uint32_t(id + 1) && o.type == id && o.side == p.side);
     CHECK(o.source == p.source && o.scenario == 42 && o.defence == p.defence);
     CHECK(o.town == (p.source == ObjectSource::Town && !p.defence ? p.group : -1));
-    CHECK(o.tactic == (p.source == ObjectSource::Team ? 42 : -1));
+    CHECK(o.tactic == ((p.source == ObjectSource::Team ||
+        (p.source == ObjectSource::Town && !p.defence)) ? 42 : -1));
     CHECK(o.hp == r.hp_max && o.hp_max == r.hp_max && o.secondary_hp == r.secondary_hp);
     CHECK(o.cur_x == tile_center_fixed(p.x) && o.cur_y == tile_center_fixed(p.y));
   }

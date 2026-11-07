@@ -1,7 +1,7 @@
 // Executes a mission trigger script (Maps/<name>.scn, parsed by core/script.*) inside the simulation.
 // Semantics that the original does not document are marked in docs/engine_rules_status.md:
 //   * every trigger is evaluated each tick; all conditions true => actions run; triggers disable themselves with trigger(N).disable
-//   * triggers that some other trigger enables are initially disabled
+//   * triggers start enabled; startup actions can disable them
 //   * localTime = simulation ticks since mission start; timers count up from 0 (running) unless set / stopped / killed
 #pragma once
 #include <map>

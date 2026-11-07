@@ -133,14 +133,15 @@ void GameSim::init(World& w) {
     }
   }
   if (!w.original_save) {
-    // Placement ids follow mission records (submarine controllers are skipped).
+    // Placement ids include submarine controllers and each vessel's passengers.
     // Keep the source group, including teams without a script ScenarioID.
     struct StartupGroup { path::Cell anchor; std::vector<uint32_t> agents; };
     std::map<std::pair<int, int>, StartupGroup> groups;
     uint32_t id = 0;
     for (const PlacedObject& p : w.mission.objects) {
-      if (p.source == ObjectSource::Submarine) continue;
-      Object* o = w.find_mut(++id);
+      const auto placed_id = id + 1;
+      id += uint32_t(1 + p.passengers.size());
+      Object* o = w.find_mut(placed_id);
       if (!o || o->type != p.type || o->side != p.side ||
           !o->alive || o->removed || p.defence ||
           (p.source != ObjectSource::Team && p.source != ObjectSource::Town)) continue;
@@ -240,6 +241,7 @@ bool GameSim::finish_structure(World& w, int side, const QueueItem& item) {
     if (!automatic_site(w, side, item.type, x, y, item.town)) return false;
     uint32_t id = spawn(w, item.type, side, x * kTilePx + kTilePx / 2, y * kTilePx + kTilePx / 2, 0, false);
     w.find_mut(id)->town = town.index;
+    w.find_mut(id)->tactic = town.scenario_id;
     return true;
   };
   int limit = std::max(w.terrain.w, w.terrain.h);
@@ -620,6 +622,7 @@ void GameSim::apply(World& w, const Command& c) {
                          c.c * kTilePx + kTilePx / 2, 0, true);
         auto* object = w.find_mut(q.object);
         object->town = w.mission.towns[size_t(ti)].index;
+        object->tactic = w.mission.towns[size_t(ti)].scenario_id;
         object->build_total = q.total;
       }
       ss->queue.push_back(q);
@@ -979,6 +982,7 @@ void GameSim::economy(World& w) {
             if (unit.mobile && nav_.disc_hits({to_fixed(x), to_fixed(y)}, unit.radius_px * 256, move_class)) return false;
             uint32_t id = spawn(w, q.type, int(s), x, y, 0, false);
             w.find_mut(id)->town = w.mission.towns[size_t(q.town)].index;
+            w.find_mut(id)->tactic = w.mission.towns[size_t(q.town)].scenario_id;
             ++spawn_counter_; return true;
           };
           const int slot = int(spawn_counter_ % 5);
@@ -1505,6 +1509,7 @@ void GameSim::tick(World& w) {
   run_orders(w);
   maintain_town_marks(w);
   service_towns(w);
+  capture_towns(w);
   // Ownership may change during hypnosis; cooperation follows current sides.
   if (modifications_.unit_unstick) for (const auto& object : w.objects)
     if (object.mover >= 0) mover_->agents_mut()[size_t(object.mover)].team = object.side;
@@ -1553,6 +1558,66 @@ void GameSim::script_stop(World& w, const std::vector<uint32_t>& ids) {
     o->follow_tactic = -1;
     if (o->mover >= 0) mover_->stop(uint32_t(o->mover));
   }
+}
+
+void GameSim::capture_towns(World& w) {
+  // V: the reference checks nearby ground attackers and nearby friendly defenders.
+  // G: deterministic nearest attacker, two-tile capture and four-tile defence
+  // radii; exact eligibility, scan ordering and expanded alert radius need a live probe.
+  for (size_t i = 0; i < w.mission.towns.size(); ++i) {
+    const auto* hall = town_hall(w, int(i));
+    if (!hall || hall->progress < 1000) continue;
+    const int owner = hall->side;
+    uint32_t candidate = 0;
+    int64_t nearest = int64_t(2 * kTilePx) * (2 * kTilePx) + 1;
+    bool defended = false;
+    for (const auto& object : w.objects) {
+      if (!object.alive || object.removed || object.type < 0) continue;
+      const auto& type = rules_->type(object.type);
+      if (!type.mobile || type.flier || is_transport(object.type)) continue;
+      const auto distance = d2(*hall, object);
+      if ((object.side == owner || w.relation[owner][object.side] == kFriend) &&
+          distance <= int64_t(4 * kTilePx) * (4 * kTilePx))
+        defended = true;
+      if (w.hostile(owner, object.side) && distance < nearest) {
+        nearest = distance;
+        candidate = object.id;
+      }
+    }
+    if (candidate && !defended) transfer_town(w, int(i), w.find(candidate)->side);
+  }
+}
+
+void GameSim::transfer_town(World& w, int town, int recipient) {
+  if (town < 0 || town >= int(w.mission.towns.size()) || recipient < 0 ||
+      recipient >= int(w.side_state.size())) return;
+  auto& definition = w.mission.towns[size_t(town)];
+  const int previous = definition.side;
+  if (previous == recipient) return;
+  // G: cancel/refund the donor's pending production before transferring the town.
+  if (previous >= 0 && previous < int(w.side_state.size())) {
+    auto& state = w.side_state[size_t(previous)];
+    for (size_t i = state.queue.size(); i > 0; --i)
+      if (state.queue[i - 1].town == town) cancel_production(w, state, i - 1);
+  }
+  std::vector<uint32_t> members;
+  for (const auto& object : w.objects)
+    if (object.alive && object.side == previous && object.town == definition.index)
+      members.push_back(object.id);
+  script_stop(w, members);
+  for (auto id : members) {
+    auto* object = w.find_mut(id);
+    object->side = recipient;
+    if (object->mover >= 0) mover_->agents_mut()[size_t(object->mover)].team = recipient;
+  }
+  definition.side = recipient;
+  if (size_t(town) < w.town_state.size()) {
+    auto& state = w.town_state[size_t(town)];
+    state.side = recipient;
+    state.marked.clear();
+    state.repair_mode = RepairMode::Off;
+  }
+  if (size_t(town) < w.ai_towns.size()) w.ai_towns[size_t(town)] = {};
 }
 
 void GameSim::script_kill(World& w, uint32_t id) {

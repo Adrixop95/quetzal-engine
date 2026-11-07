@@ -57,9 +57,9 @@ static void order_and_enablement() {
       "trigger(3) conditions always actions side(local).addMoney(1000) end "
       "trigger(4) conditions always actions side(local).addMoney(10000) end");
   r.tick(sim, w);
-  CHECK(w.side_state[2].money == 10110); // forward enable is immediate, backward enable waits
-  r.tick(sim, w); CHECK(w.side_state[2].money == 20111);
-  r.tick(sim, w); CHECK(w.side_state[2].money == 30111); // conditions are level-triggered
+  CHECK(w.side_state[2].money == 10111); // forward enable is immediate, backward enable waits
+  r.tick(sim, w); CHECK(w.side_state[2].money == 20112);
+  r.tick(sim, w); CHECK(w.side_state[2].money == 30112); // conditions are level-triggered
   CHECK(w.side_state[0].money == 0 && r.unsupported() == 0);
   r.init(w); const auto fresh = r.state_hash();
   r.tick(sim, w); CHECK(r.state_hash() != fresh); r.init(w); CHECK(r.state_hash() == fresh);
@@ -250,7 +250,7 @@ static void action_observation_contracts() {
         "trigger(9) conditions always actions trigger(8).enable trigger(9).disable end\n");
     auto observations = r.action_observations(w);
     CHECK(observations.size() == 5);
-    CHECK(!observations[2].enabled && observations[2].trace.executions == 0);
+    CHECK(observations[2].enabled && observations[2].trace.executions == 0);
     r.tick(sim, w); observations = r.action_observations(w);
     CHECK(observations[2].enabled && observations[2].trace.executions == 0);
     CHECK(!observations[0].false_condition_lines.empty());
@@ -322,7 +322,99 @@ static void replay() {
   CHECK(a.side_outcome[1] == kVictory && a.outcome == kRunning && first.script().unsupported() == 0);
 }
 
+static void campaign_gates() {
+  World w = world(); object(w, 0, 1, -1, 25, 25);
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+  // An enable action elsewhere must not suppress the initial watcher. Startup
+  // disables the countdown; eliminating the enemy then starts it through real actions.
+  auto r = runner(w,
+      "trigger(1) conditions side(1).units == 0 actions timer(7).set(0) trigger(2).enable trigger(1).disable end "
+      "trigger(2) conditions timer(7) == 3 actions side(local).victory end "
+      "trigger(3) conditions always actions trigger(2).disable trigger(3).disable end "
+      "trigger(4) conditions localTime == 100 actions trigger(1).enable end");
+  r.tick(sim, w); CHECK(w.outcome == kRunning && r.trigger_enabled(1) && !r.trigger_enabled(2));
+  sim.script_kill(w, 1);
+  r.tick(sim, w); CHECK(r.trigger_enabled(2) && w.outcome == kRunning);
+  r.tick(sim, w); r.tick(sim, w); CHECK(w.outcome == kRunning);
+  r.tick(sim, w); CHECK(w.outcome == kVictory && r.outcome_origin()->trigger == 2);
+  auto timer = runner(w, "trigger(0) conditions timer(8) == 3 actions side(0).addMoney(1) trigger(0).disable end");
+  timer.tick(sim, w); timer.tick(sim, w); CHECK(w.side_state[0].money == 0);
+  timer.tick(sim, w); CHECK(w.side_state[0].money == 1);
+}
+
+static void town_tactics_and_capture() {
+  World w = world();
+  w.mission.towns = {{0, 1, 15, 15, 1, 0, 52}};
+  PlacedObject member; member.source = ObjectSource::Town; member.group = 0;
+  member.type = 0; member.side = 1; member.x = 16; member.y = 15;
+  w.mission.objects.push_back(member);
+  place_mission_objects(w);
+  CHECK(w.objects[0].tactic == 52 && w.objects[1].tactic == 52);
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+  QueueItem queued; queued.type = 0; queued.town = 0; queued.total = queued.remaining = 10;
+  w.side_state[1].queue.push_back(queued);
+  auto r = runner(w,
+      "trigger(0) conditions side(1).tactic(52).valid != 1 actions side(local).defeat end "
+      "trigger(1) conditions localTime == 2 actions side(1).tactic(52).giftToSide(local) end");
+  r.tick(sim, w); CHECK(w.outcome == kRunning);
+  r.tick(sim, w); CHECK(w.mission.towns[0].side == 2 && w.town_state[0].side == 2);
+  CHECK(w.objects[0].side == 2 && w.objects[1].side == 2);
+  CHECK(w.side_state[1].queue.empty() && w.side_state[2].queue.empty());
+  CHECK(condition(r, w, "side(local).towns == 1") && condition(r, w, "side(1).towns == 0"));
+  CHECK(condition(r, w, "side(local).tactic(52).valid == 1"));
+  CHECK(w.town_state[0].hall == w.objects[1].id);
+  // Invalid and same-owner transfers leave state unchanged.
+  auto hash = sim.state_hash(w); sim.transfer_town(w, 0, -1); sim.transfer_town(w, 0, 2);
+  CHECK(sim.state_hash(w) == hash);
+  // A nearby defender prevents capture. Killing it lets an enemy ground unit capture.
+  object(w, 0, 1, -1, 14, 15); sim.init(w);
+  w.relation[2][2] = kEnemy; // Self-ownership defends even with a default relation table.
+  sim.tick(w); CHECK(w.mission.towns[0].side == 2);
+  sim.script_kill(w, 1); sim.tick(w); CHECK(w.mission.towns[0].side == 1);
+  CHECK(w.town_state[0].side == 1 && w.objects[1].side == 1);
+
+  // Scripted ownership changes reconstruct through ordinary command-log replay.
+  TempDir directory;
+  const auto path = directory.path() / "town-gift.scn";
+  std::ofstream(path) << "trigger(0) conditions localTime == 2 actions side(1).tactic(52).giftToSide(local) trigger(0).disable end";
+  World initial = world(); initial.mission = w.mission;
+  initial.mission.towns[0].side = 1;
+  place_mission_objects(initial);
+  auto data = rules(); World live = initial;
+  GameSim original(data, Modifications::faithful()); CHECK(original.attach_script(path.string())); original.init(live);
+  for (int i = 0; i < 3; ++i) { live.begin_tick(); original.tick(live); }
+  CHECK(live.mission.towns[0].side == 2);
+  World restored = initial;
+  auto replayed = GameSim::replay(restored, data, original.log(), original.tick_count(), path.string());
+  CHECK(replayed->state_hash(restored) == original.state_hash(live));
+}
+
+static void embarked_script_identity() {
+  World w = world(); object(w, 82, 2, 9, 5, 5); object(w, 84, 2, -1, 5, 5);
+  w.objects[0].removed = true; w.objects[0].carrier = 2; w.objects[1].cargo = {1};
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w); auto r = runner(w, "");
+  CHECK(condition(r, w, "side(local).unitsOfId(UGI_ABDULA) == 1"));
+  CHECK(condition(r, w, "side(local).tactic(9).valid == 1"));
+  CHECK(condition(r, w, "side(local).unitsOfUGIInRect(UGI_ABDULA,0,0,10,10) == 0"));
+  sim.script_kill(w, 2);
+  CHECK(condition(r, w, "side(local).unitsOfId(UGI_ABDULA) == 0"));
+}
+
+static void pending_path_is_not_idle() {
+  World w = world(); object(w, 0, 2, 7, 3, 4);
+  w.mission.paths = {{{8, 9}}};
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+  auto r = runner(w,
+      "trigger(0) conditions always actions side(local).tactic(7).setPath(0) trigger(0).disable end "
+      "trigger(1) conditions side(local).tactic(7).idle != 0 actions side(local).addMoney(1) trigger(1).disable end");
+  r.tick(sim, w); CHECK(w.side_state[2].money == 0);
+  w.objects[0].order = uint8_t(Order::Idle);
+  r.tick(sim, w); CHECK(w.side_state[2].money == 0);
+  r.tick(sim, w); CHECK(w.side_state[2].money == 1);
+}
+
 int main() {
+  campaign_gates(); town_tactics_and_capture(); embarked_script_identity(); pending_path_is_not_idle();
   source_locations(); order_and_enablement(); timers(); conditions_and_identity(); paths_and_gifts(); actions_and_outcomes(); defence_loading(); action_observation_contracts(); replay();
   std::puts("Synthetic script contracts passed.");
 }
