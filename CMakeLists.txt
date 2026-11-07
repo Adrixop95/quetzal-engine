@@ -416,5 +416,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_test(NAME shared_l0 COMMAND ${Python3_EXECUTABLE} -I
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_shared_l0.py $<TARGET_FILE:aztec_engine> $<TARGET_FILE:test_l0_observer>)
     set_tests_properties(shared_l0 PROPERTIES LABELS "unit;parity" TIMEOUT 30)
+    add_test(NAME production_measure COMMAND ${Python3_EXECUTABLE} -I
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_production_measure.py)
+    set_tests_properties(production_measure PROPERTIES LABELS "unit;parity" TIMEOUT 30)
   endif()
 endif()
