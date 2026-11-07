@@ -78,7 +78,8 @@ void Window::handle_event(const SDL_Event& e) {
     const bool down = e.type == SDL_KEYDOWN;
     if (e.key.keysym.scancode == SDL_SCANCODE_LALT) left_alt_ = down;
     if (e.key.keysym.scancode == SDL_SCANCODE_RALT) right_alt_ = down;
-    if (down && !e.key.repeat && focused_ && e.key.keysym.scancode == SDL_SCANCODE_F9)
+    if (down && !e.key.repeat && focused_ && e.key.keysym.scancode == SDL_SCANCODE_F9 &&
+        (e.key.keysym.mod & KMOD_CTRL))
       mouse_grab_enabled_ = !mouse_grab_enabled_;
   }
   if (e.type == SDL_QUIT) gameplay_active_ = false;

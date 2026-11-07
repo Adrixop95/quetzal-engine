@@ -135,7 +135,7 @@ def clone_probe(case, engine, directory, timeout):
     if not (directory / 'game').is_dir():
         raise ValueError('clone candidate was not prepared')
     observations = directory / 'observations.jsonl'
-    report.execute([engine, '--headless', '--game', directory / 'game',
+    report.execute([engine, '--headless', '--profile', 'faithful', '--game', directory / 'game',
                     '--rules-dir', ROOT / 'docs/data', '--no-auto-orders',
                     '--mod', 'parallel_construction=off', '--max-ticks', case['observe']['last_tick'],
                     '--report', directory / 'report.json', '--observations', observations, case['id']],

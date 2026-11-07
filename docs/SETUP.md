@@ -65,7 +65,8 @@ separate. `AZTEC_USER_DIR` overrides the user directory with an absolute path fo
 isolated profiles/tests; `--modifications-file` and headless `--save FILE` are
 explicit output overrides. A relative `AZTEC_USER_DIR` is rejected for storage.
 
-F9 toggles cursor confinement; Alt or focus loss releases it. F11 toggles desktop
+F9 opens game modifications; Ctrl+F9 toggles cursor confinement. Alt or focus
+loss releases confinement. F11 toggles desktop
 borderless mode; Alt+Enter toggles exclusive fullscreen. `--borderless` is useful
 on laptops with multiple displays. Audio starts through SDL and continues silently
 if no device is available; `--no-audio` disables it. Optional intro playback needs

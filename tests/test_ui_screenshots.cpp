@@ -138,7 +138,7 @@ static void run(const std::filesystem::path& output, bool original, int sc, int 
     CHECK(!matches(actual, wrong, width, {card, top, 50 * sc, 208 * sc}));
     CHECK(panel.contains(card, top)); CHECK(!panel.contains(card, top - 1));
     CHECK(panel.menu_rect().w == 60 * sc);
-    auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR)); GameSim sim(rules);
+    auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR)); GameSim sim(rules, Modifications::faithful());
     World world; world.terrain.w = 120; world.terrain.h = 90; world.terrain.cells.resize(120 * 90);
     Object unit; unit.id = 1; unit.type = 0; unit.hp = 100; world.objects.push_back(unit); world.selection.ids = {1};
     CommandsUi commands(&sim); StrBase strings;

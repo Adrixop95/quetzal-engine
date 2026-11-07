@@ -61,7 +61,7 @@ def private_game(source, maps, destination):
 def run_once(args, mission, game, directory, *, orders=None, save_tick=None, resume=None):
     directory.mkdir()
     report_path = directory / 'engine.json'
-    command = ['unshare', '-rn', str(args.engine), '--headless', '--game', str(game),
+    command = ['unshare', '-rn', str(args.engine), '--headless', '--profile', 'faithful', '--game', str(game),
                '--rules-dir', str(args.rules_dir), '--max-ticks', str(args.max_ticks),
                '--order-interval', str(args.order_interval), '--report', str(report_path)]
     hashes = directory / 'ticks.txt'

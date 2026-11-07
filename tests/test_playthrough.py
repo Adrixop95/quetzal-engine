@@ -42,12 +42,49 @@ class PlaythroughTests(unittest.TestCase):
         self.script.write_text('trigger(0) conditions localTime == 10 actions side(local).victory end\n')
 
     def run_engine(self, *extra, code=0):
-        result = subprocess.run([str(ENGINE), '--headless', '--game', str(self.game),
+        result = subprocess.run([str(ENGINE), '--headless', '--profile', 'faithful', '--game', str(self.game),
                                  '--rules-dir', str(ROOT / 'docs/data'), '--max-ticks', '20', *extra, '1'],
                                 env=dict(os.environ, SDL_VIDEODRIVER='invalid', SDL_AUDIODRIVER='invalid'),
                                 capture_output=True, text=True, timeout=8)
         self.assertEqual(result.returncode, code, result.stderr)
         return json.loads(result.stdout)
+
+    def test_profiles_overrides_and_enhanced_replay(self):
+        baseline = self.run_engine('--no-auto-orders')
+        overrides = [value for name in ('parallel_construction', 'parallel_training', 'relaxed_placement', 'unit_unstick')
+                     for value in ('--mod', name + '=off')]
+        self.assertEqual(baseline, self.run_engine('--no-auto-orders', *overrides, '--profile', 'enhanced'))
+        slot = Path(self.temp.name) / 'enhanced.azs'
+        enhanced = self.run_engine('--no-auto-orders', '--profile', 'enhanced',
+                                   '--mod', 'parallel_training=5', '--save-at', '5', '--save', str(slot))
+        resumed = self.run_engine('--no-auto-orders', '--resume', str(slot))
+        self.assertEqual(enhanced['state_hash'], resumed['state_hash'])
+        self.assertEqual(enhanced['status'], resumed['status'])
+        # Headless runs ignore interactive profile preferences.
+        profile = Path(self.temp.name) / 'personal-profile'
+        profile.mkdir()
+        (profile / 'modifications.ini').write_text('profile=enhanced\n')
+        with patch.dict(os.environ, AZTEC_USER_DIR=str(profile)):
+            self.assertEqual(baseline, self.run_engine('--no-auto-orders'))
+        self.run_engine('--profile', 'unknown', code=1)
+
+    def test_f9_menu_preferences_survive_engine_restart(self):
+        profile = Path(self.temp.name) / 'menu-profile'
+        script = Path(self.temp.name) / 'helpers.txt'
+        env = dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy', AZTEC_USER_DIR=str(profile))
+        for first in (True, False):
+            # F9, profile row, construction row, training row, unstick row.
+            actions = ('key F9\nclick 110 240\nclick 110 195\nclick 110 280\nclick 110 370\n'
+                       if first else 'key F9\nclick 110 195\n')
+            script.write_text(actions + 'key Escape\nkey Escape\nwait 1\nquit\n')
+            args = ['--profile', 'faithful'] if first else []
+            result = subprocess.run([str(ENGINE), *args, '--game', str(self.game), '--rules-dir', str(ROOT / 'docs/data'),
+                                     '--size', '800x600', '--software', '--no-audio', '--menu-session',
+                                     '--script', str(script), '1'], env=env, capture_output=True, text=True, timeout=8)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            entries = dict(line.split('=', 1) for line in (profile / 'modifications.ini').read_text().splitlines())
+            self.assertEqual(entries, dict(profile='enhanced', parallel_construction='off' if first else 'on',
+                                           parallel_training='4', unit_unstick='off'))
 
     def test_outcomes_and_determinism_without_sdl(self):
         a = self.run_engine()
@@ -215,7 +252,7 @@ class PlaythroughTests(unittest.TestCase):
         playtest = Path(self.temp.name) / 'resume.txt'
         playtest.write_text('key ctrl+L\nexpect tick == 6\nwait 8\n'
                             'expect outcome == 1\nexpect tick == 10\nquit\n')
-        result = subprocess.run([str(ENGINE), '--game', str(self.game),
+        result = subprocess.run([str(ENGINE), '--profile', 'faithful', '--game', str(self.game),
                                  '--rules-dir', str(ROOT / 'docs/data'), '--software',
                                  '--no-audio', '--script', str(playtest), '1'],
                                 env=dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy',

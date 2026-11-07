@@ -131,7 +131,7 @@ class TacticControls(unittest.TestCase):
         orders.write_text('1 move 0 10 5 1\n')
         def run(name, traced):
             hashes = self.root / f'{name}.hashes'
-            argv = [str(ENGINE), '--headless', '--game', str(game), '--rules-dir', str(ROOT / 'docs/data'),
+            argv = [str(ENGINE), '--headless', '--profile', 'faithful', '--game', str(game), '--rules-dir', str(ROOT / 'docs/data'),
                     '--no-auto-orders', '--orders', str(orders), '--max-ticks', '12', '--tick-hashes', str(hashes)]
             if traced:
                 argv += ['--tactic-trace', str(self.root / f'{name}.jsonl')]
