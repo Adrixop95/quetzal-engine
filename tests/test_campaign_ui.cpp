@@ -28,39 +28,50 @@ int main(int argc, char** argv) {
   for (const char* name : {"Pal", "Units", "Tiles0", "Tiles1", "common", "fnts", "light"})
     write(root / "Res" / (std::string(name) + ".xbe"), std::string(4, '\0'));
   Options mod_options; mod_options.modifications_file = (root / "modifications.ini").string();
-  CHECK(!mod_options.modifications.parallel_construction && !mod_options.modifications.relaxed_placement);
+  CHECK(!mod_options.modifications.parallel_construction && !mod_options.modifications.relaxed_placement && !mod_options.modifications.unit_unstick);
   ModificationOptions mod_menu; mod_menu.open = true;
   Input mod_click; auto mod_rect = ModificationOptions::row(0, 800, 600, 1);
   mod_click.mx = mod_rect.x + 2; mod_click.my = mod_rect.y + 2; mod_click.pressed[SDL_BUTTON_LEFT] = true;
   mod_menu.update(mod_click, mod_options, 800, 600, 1);
   CHECK(mod_options.modifications.parallel_construction);
   Modifications persisted; CHECK(load_modifications(mod_options.modifications_file, persisted));
-  CHECK(persisted.parallel_construction && !persisted.relaxed_placement);
+  CHECK(persisted.parallel_construction && !persisted.relaxed_placement && !persisted.unit_unstick);
   mod_rect = ModificationOptions::row(3, 800, 600, 1);
   mod_click.mx = mod_rect.x + 2; mod_click.my = mod_rect.y + 2;
   mod_menu.update(mod_click, mod_options, 800, 600, 1);
   CHECK(mod_options.modifications.relaxed_placement);
   CHECK(load_modifications(mod_options.modifications_file, persisted));
   CHECK(persisted.parallel_construction && persisted.relaxed_placement);
+  auto unstick_rect = ModificationOptions::row(4, 800, 600, 1);
+  mod_click.mx = unstick_rect.x + 2; mod_click.my = unstick_rect.y + 2;
+  mod_menu.update(mod_click, mod_options, 800, 600, 1);
+  CHECK(mod_options.modifications.unit_unstick);
+  CHECK(load_modifications(mod_options.modifications_file, persisted));
+  CHECK(persisted.parallel_construction && persisted.relaxed_placement && persisted.unit_unstick);
   write(root / "invalid-modifications.ini", "unknown=on\n");
   CHECK(!load_modifications((root / "invalid-modifications.ini").string(), persisted));
   CHECK(persisted.parallel_construction); // invalid settings leave the caller unchanged
   std::string mod_path = mod_options.modifications_file;
-  std::vector<std::string> args{"engine", "--mod", "parallel_construction=off", "--mod", "relaxed_placement=off", "--modifications-file", mod_path};
+  std::vector<std::string> args{"engine", "--mod", "parallel_construction=off", "--mod", "relaxed_placement=off", "--mod", "unit_unstick=off", "--modifications-file", mod_path};
   std::vector<char*> raw; for (auto& arg : args) raw.push_back(arg.data());
   Options parsed_mods; std::string parse_error; bool usage = false;
   CHECK(parse_options(int(raw.size()), raw.data(), parsed_mods, parse_error, usage));
-  CHECK(!parsed_mods.modifications.parallel_construction && !parsed_mods.modifications.relaxed_placement); // CLI overrides persisted on
-  CHECK(!persisted.set("relaxed_placement=yes"));
+  CHECK(!parsed_mods.modifications.parallel_construction && !parsed_mods.modifications.relaxed_placement && !parsed_mods.modifications.unit_unstick); // CLI overrides persisted on
+  CHECK(!persisted.set("relaxed_placement=yes") && !persisted.set("unit_unstick=yes"));
   CHECK(!persisted.set("unknown=on") && !persisted.set("parallel_construction=yes"));
   // Old settings containing only the original option keep the new helper off.
   write(root / "legacy-modifications.ini", "parallel_construction=on\n");
   CHECK(load_modifications((root / "legacy-modifications.ini").string(), persisted));
-  CHECK(persisted.parallel_construction && !persisted.relaxed_placement);
-  for (uint32_t bits = 0; bits < 36; ++bits) {
-    CHECK(Modifications::valid(bits) && Modifications::from_bits(bits).bits() == bits);
+  CHECK(persisted.parallel_construction && !persisted.relaxed_placement && !persisted.unit_unstick);
+  for (uint32_t bits = 0; bits < 128; ++bits) {
+    const bool valid = (bits & 63u) < 36;
+    CHECK(Modifications::valid(bits) == valid);
+    if (valid) CHECK(Modifications::from_bits(bits).bits() == bits);
   }
-  CHECK(!Modifications::valid(36));
+  CHECK(!Modifications::valid(128) && !Modifications::valid(0xffffffffu));
+  CHECK(Modifications::from_bits(2).relaxed_placement && !Modifications::from_bits(2).unit_unstick);
+  CHECK(Modifications::from_bits(64).unit_unstick && !Modifications::from_bits(64).relaxed_placement);
+  CHECK(Modifications::from_bits(64).parallel_training == 1);
   CHECK(persisted.parallel_training == 1);
   for (int value = 2; value <= 9; ++value) {
     const int setting = value % 9;
@@ -70,7 +81,7 @@ int main(int argc, char** argv) {
     CHECK(mod_options.modifications.parallel_training == setting);
     CHECK(load_modifications(mod_options.modifications_file, persisted));
     CHECK(persisted.parallel_training == setting);
-    CHECK(persisted.parallel_construction && persisted.relaxed_placement);
+    CHECK(persisted.parallel_construction && persisted.relaxed_placement && persisted.unit_unstick);
     CHECK(Modifications::valid(persisted.bits()));
     CHECK(Modifications::from_bits(persisted.bits()).parallel_training == setting);
   }
@@ -82,7 +93,18 @@ int main(int argc, char** argv) {
   args = {"engine", "--mod", "parallel_training=3", "--modifications-file", mod_path};
   raw.clear(); for (auto& arg : args) raw.push_back(arg.data());
   CHECK(parse_options(int(raw.size()), raw.data(), parsed_mods, parse_error, usage));
-  CHECK(parsed_mods.modifications.parallel_training == 3);
+  CHECK(parsed_mods.modifications.parallel_training == 3 && parsed_mods.modifications.unit_unstick);
+  auto profile_row = ModificationOptions::row(1, 800, 600, 1);
+  mod_click.mx = profile_row.x + 2; mod_click.my = profile_row.y + 2;
+  for (const auto preset : {Modifications::enhanced(), Modifications::faithful()}) {
+    mod_menu.update(mod_click, mod_options, 800, 600, 1);
+    CHECK(mod_options.modifications.profile == preset.profile);
+    CHECK(mod_options.modifications.bits() == preset.bits());
+    CHECK(mod_options.modifications.overrides == 0);
+    CHECK(load_modifications(mod_options.modifications_file, persisted));
+    CHECK(persisted.profile == preset.profile && persisted.bits() == preset.bits());
+    CHECK(persisted.overrides == 0);
+  }
   auto back_row = ModificationOptions::row(5, 800, 600, 1);
   mod_click.mx = back_row.x + 2; mod_click.my = back_row.y + 2;
   mod_menu.update(mod_click, mod_options, 800, 600, 1);

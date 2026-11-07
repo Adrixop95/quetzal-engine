@@ -10,8 +10,8 @@ inline i32 floor_div(i32 a, i32 b) { i32 q = a / b; return (a % b != 0 && (a < 0
 constexpr int kDa[13] = {0, 6, -6, 12, -12, 20, -20, 32, -32, 48, -48, 64, -64};
 }  // namespace
 
-u32 MoveSystem::add_agent(Vec2 pos, i32 radius, i32 speed, MoveClass cls) {
-  Agent a; a.id = (u32)agents_.size(); a.pos = a.prev_pos = a.win_start = pos; a.radius = radius; a.speed = speed; a.cls = cls;
+u32 MoveSystem::add_agent(Vec2 pos, i32 radius, i32 speed, MoveClass cls, u32 team) {
+  Agent a; a.team = team; a.id = (u32)agents_.size(); a.pos = a.prev_pos = a.win_start = pos; a.radius = radius; a.speed = speed; a.cls = cls;
   agents_.push_back(a);
   return a.id;
 }
@@ -27,6 +27,7 @@ void MoveSystem::ensure_field(Order& o, MoveClass c) {
 void MoveSystem::stop(u32 id) {
   Agent& a = agents_[id];
   if (a.order >= 0) { --orders_[a.order]->refs; a.order = -1; }
+  a.local_path.clear(); a.unstick_ticks = 0; a.unstick_best = 0;
   a.state = AgentState::Idle; a.vel = {0, 0};
   a.target = {}; a.target_until = 0; a.backoff_ticks = 0;
   a.formation = -1;
@@ -230,6 +231,7 @@ void MoveSystem::order_move(const u32* ids, int n, Vec2 goal) {
     a.formation = -1;
     if (a.order >= 0 && a.order != oi) --orders_[a.order]->refs;
     a.target = {}; a.target_until = 0; a.backoff_ticks = 0;   // drop steering cached for the previous order
+    a.local_path.clear(); a.unstick_ticks = 0; a.unstick_best = length(slots[i] - a.pos);
     a.order = oi; a.slot = slots[i]; a.state = AgentState::Moving; a.win_start = a.pos; a.win_ticks = 0; a.stuck_level = 0; a.ghost_ticks = a.squeeze_ticks = 0;
     ensure_field(o, a.cls);
   }
@@ -260,6 +262,17 @@ void MoveSystem::neighbours(const Agent& a, std::vector<u32>& out, i32 reach) co
 }
 
 Vec2 MoveSystem::preferred_velocity(Agent& a, const Order& o) {
+  if (cfg_.unit_unstick && !a.local_path.empty() && !free_segment(a, a.pos, a.local_path.front())) {
+    a.local_path.clear(); a.target_until = 0;
+  }
+  if (cfg_.unit_unstick && !a.local_path.empty()) {
+    Vec2 to = a.local_path.front() - a.pos;
+    if (length(to) <= a.speed) {
+      a.local_path.erase(a.local_path.begin());
+      return to;
+    }
+    return with_length(to, a.speed);
+  }
   Vec2 to = a.slot - a.pos; i32 dist = length(to);
   if (dist <= a.speed) return to;                                   // lands exactly on the slot
   if (tick_ < a.target_until && length(a.target - a.pos) > 2 * kTileFix) { Vec2 d0 = a.target - a.pos; return with_length(d0, a.speed); }
@@ -280,6 +293,10 @@ Vec2 MoveSystem::preferred_velocity(Agent& a, const Order& o) {
       target = best;
       if (tail_goal && grid_.segment_clear(a.pos, a.slot, a.radius * 9 / 10, a.cls)) target = a.slot;
     }
+  }
+  if (cfg_.unit_unstick && !free_segment(a, a.pos, target)) {
+    local_repath(a);
+    if (!a.local_path.empty()) target = a.local_path.front();
   }
   a.target = target; a.target_until = tick_ + 3 + (a.id & 3);
   Vec2 d = target - a.pos; if (d.x == 0 && d.y == 0) return {0, 0};
@@ -352,6 +369,141 @@ void MoveSystem::resolve_overlaps() {
   for (Agent& a : agents_) if (a.formation < 0 && grid_.disc_hits(a.pos, a.radius * 6 / 10, a.cls)) a.pos = a.prev_pos;   // never end inside a wall
 }
 
+void MoveSystem::set_unit_unstick(bool enabled) {
+  if (cfg_.unit_unstick == enabled) return;
+  cfg_.unit_unstick = enabled;
+  for (Agent& a : agents_) {
+    a.local_path.clear(); a.unstick_ticks = 0; a.unstick_best = length(a.slot - a.pos);
+    a.ghost_ticks = a.squeeze_ticks = a.backoff_ticks = a.stuck_level = 0;
+    a.target_until = 0;
+  }
+}
+
+bool MoveSystem::free_position(const Agent& a, Vec2 p, int ignore) const {
+  if (grid_.disc_hits(p, a.radius, a.cls)) return false;
+  for (const Agent& b : agents_) {
+    if (b.id == a.id || int(b.id) == ignore || b.radius <= 0) continue;
+    i64 r = (i64)a.radius + b.radius + kFix;
+    if (len2(b.pos - p) < r * r) return false;
+  }
+  return true;
+}
+
+bool MoveSystem::free_segment(const Agent& a, Vec2 p, Vec2 q) const {
+  if (!grid_.segment_clear(p, q, a.radius, a.cls)) return false;
+  Vec2 d = q - p; i64 dd = len2(d);
+  for (const Agent& b : agents_) {
+    if (b.id == a.id || b.radius <= 0) continue;
+    i64 t = dd ? std::clamp(dot(b.pos - p, d), i64(0), dd) : 0;
+    Vec2 closest = dd ? p + Vec2{(i32)((i64)d.x * t / dd), (i32)((i64)d.y * t / dd)} : p;
+    i64 r = (i64)a.radius + b.radius + kFix;
+    if (len2(b.pos - closest) < r * r) return false;
+  }
+  return true;
+}
+
+void MoveSystem::local_repath(Agent& a) {
+  // A fixed 9x9 occupancy-aware wave. It rejoins the shared field only at a
+  // lower cost, so an occupied short passage loses to an available detour.
+  constexpr int width = 9, middle = 4, count = width * width;
+  int sx = floor_div(a.pos.x, kTileFix), sy = floor_div(a.pos.y, kTileFix);
+  const FlowField& ff = orders_[a.order]->ff[(int)a.cls];
+  if (!grid_.in_bounds(sx, sy)) return;
+  int parent[count], depth[count];
+  std::fill_n(parent, count, -1); std::fill_n(depth, count, 0);
+  std::vector<int> queue{middle * width + middle}; parent[queue[0]] = queue[0];
+  int best = -1; u64 score = ~u64(0);
+  auto point = [&](int i) { return tile_center(sx + i % width - middle, sy + i / width - middle); };
+  for (size_t qi = 0; qi < queue.size(); ++qi) {
+    int cur = queue[qi], x = cur % width, y = cur / width;
+    Vec2 p = qi == 0 ? a.pos : point(cur);
+    u32 cost = ff.cost(sx + x - middle, sy + y - middle);
+    if (qi && cost < ff.cost(sx, sy)) {
+      u64 candidate = u64(cost) + depth[cur] * 10;
+      if (candidate < score || (candidate == score && depth[cur] > depth[best])) { score = candidate; best = cur; }
+    }
+    // Rotate stable neighbour order using only unit identity and simulation tick.
+    int seed = int((a.id * 37u + u32(tick_)) % 8);
+    static constexpr int dx[8] = {1, 1, 0, -1, -1, -1, 0, 1};
+    static constexpr int dy[8] = {0, 1, 1, 1, 0, -1, -1, -1};
+    for (int k = 0; k < 8; ++k) {
+      int dir = (k + seed) % 8, nx = x + dx[dir], ny = y + dy[dir];
+      if (nx < 0 || ny < 0 || nx >= width || ny >= width) continue;
+      int next = ny * width + nx;
+      if (parent[next] >= 0 || !free_position(a, point(next)) || !free_segment(a, p, point(next))) continue;
+      parent[next] = cur; depth[next] = depth[cur] + 1; queue.push_back(next);
+    }
+  }
+  a.local_path.clear();
+  if (best < 0) return;
+  for (int i = best; i != queue[0]; i = parent[i]) a.local_path.push_back(point(i));
+  std::reverse(a.local_path.begin(), a.local_path.end()); ++stats.repaths;
+}
+
+bool MoveSystem::cooperate(Agent& a) {
+  Vec2 forward = a.slot - a.pos;
+  for (Agent& b : agents_) {
+    if (b.id == a.id || b.team != a.team || b.radius <= 0 || b.hold || b.state == AgentState::Moving) continue;
+    Vec2 delta = b.pos - a.pos;
+    if (len2(delta) > (i64)kTileFix * kTileFix * 3 || dot(forward, delta) <= 0) continue;
+    // Prefer a side bay, leaving the blocker's order/state intact. The bay must
+    // be outside the moving unit's forward lane and reachable without walls.
+    int bx = floor_div(b.pos.x, kTileFix), by = floor_div(b.pos.y, kTileFix);
+    for (int k = 0; k < 8; ++k) {
+      int direction = (k + int((tick_ + b.id) % 8)) % 8;
+      static constexpr int dx[8] = {1, 1, 0, -1, -1, -1, 0, 1};
+      static constexpr int dy[8] = {0, 1, 1, 1, 0, -1, -1, -1};
+      Vec2 p = tile_center(bx + dx[direction], by + dy[direction]);
+      Vec2 side = p - b.pos;
+      if (abs_i((i32)(dot(with_length(forward, kFix), side) / kFix)) > kTileFix / 2) continue;
+      if (!free_position(b, p) || !free_segment(b, b.pos, p)) continue;
+      b.pos = b.prev_pos = p; b.vel = {}; b.slot = p; b.target_until = 0;
+      ++stats.sidesteps; return true;
+    }
+    // No bay in a one-tile passage: exchange centres atomically, checking both
+    // discs against terrain and every third unit. Hold and enemy units stay put.
+    if (!grid_.segment_clear(a.pos, b.pos, std::max(a.radius, b.radius), a.cls) ||
+        !grid_.segment_clear(b.pos, a.pos, b.radius, b.cls) ||
+        !free_position(a, b.pos, int(b.id)) || !free_position(b, a.pos, int(a.id))) continue;
+    std::swap(a.pos, b.pos); a.prev_pos = a.pos; b.prev_pos = b.pos;
+    a.vel = b.vel = {}; a.target_until = b.target_until = 0; b.slot = b.pos;
+    ++stats.swaps; return true;
+  }
+  return false;
+}
+
+void MoveSystem::recover(Agent& a) {
+  i32 distance = length(a.slot - a.pos);
+  // Best-ever distance prevents jitter and loops from resetting the timeout.
+  if (distance + kFix < a.unstick_best) { a.unstick_best = distance; a.unstick_ticks = 0; }
+  else ++a.unstick_ticks;
+  if (a.unstick_ticks && a.unstick_ticks % 12 == 0) {
+    ++stats.stuck_events;
+    if (cooperate(a)) a.local_path.clear();
+    local_repath(a);
+  }
+  if (a.unstick_ticks < 120) return;
+  // Emergency relocation is deliberately explicit enhanced behavior. Select
+  // the nearest free tile with strictly better field progress; otherwise the
+  // nearest free tile. The current tile is excluded. Full disc and occupancy
+  // checks apply, including enemies, holds and dynamic building footprints.
+  const FlowField& ff = orders_[a.order]->ff[(int)a.cls];
+  int sx = floor_div(a.pos.x, kTileFix), sy = floor_div(a.pos.y, kTileFix);
+  Vec2 best{}; i64 best_distance = -1; bool best_progress = false;
+  for (int y = 0; y < grid_.height(); ++y) for (int x = 0; x < grid_.width(); ++x) {
+    if ((x == sx && y == sy) || !ff.reachable(x, y)) continue;
+    Vec2 p = tile_center(x, y);
+    bool progress = !grid_.in_bounds(sx, sy) || ff.cost(x, y) < ff.cost(sx, sy);
+    i64 d = len2(p - a.pos);
+    if (best_distance >= 0 && ((!progress && best_progress) || (progress == best_progress && d >= best_distance))) continue;
+    if (!free_position(a, p)) continue;
+    best = p; best_distance = d; best_progress = progress;
+  }
+  if (best_distance < 0) return;  // No legal tile exists: retry when occupancy changes.
+  a.pos = a.prev_pos = best; a.vel = {}; a.target_until = 0; a.local_path.clear();
+  a.unstick_ticks = 0; a.unstick_best = length(a.slot - a.pos); ++stats.relocations;
+}
+
 void MoveSystem::tick() {
   ++tick_;
   tick_formations();
@@ -386,6 +538,7 @@ void MoveSystem::tick() {
     if (a.state != AgentState::Moving) continue;
     i32 dist = length(a.slot - a.pos);
     if (dist <= 2 * kFix) { a.state = AgentState::Arrived; a.vel = {0, 0}; continue; }
+    if (cfg_.unit_unstick) { recover(a); continue; }
     if (++a.win_ticks >= cfg_.stuck_window) {
       i32 moved = length(a.pos - a.win_start);
       if ((i64)moved * 4 < (i64)a.speed * a.win_ticks) {
@@ -410,8 +563,13 @@ u64 MoveSystem::state_hash() const {
   mix(tick_); mix(grid_.state_hash());
   mix(cfg_.avoid_horizon); mix(cfg_.overlap_iterations); mix(cfg_.wall_penalty);
   mix(cfg_.slot_gap); mix(cfg_.stuck_window);
+  if (cfg_.unit_unstick) mix(0x756e737469636bull);
   mix(agents_.size());
   for (const Agent& a : agents_) {
+    if (cfg_.unit_unstick) {
+      mix(a.team); mix(a.unstick_ticks); mix(a.unstick_best); mix(a.local_path.size());
+      for (Vec2 p : a.local_path) { mix((u32)p.x); mix((u32)p.y); }
+    }
     mix(a.id); mix((u32)a.pos.x); mix((u32)a.pos.y); mix((u32)a.vel.x); mix((u32)a.vel.y); mix((u32)a.prev_pos.x); mix((u32)a.prev_pos.y);
     mix((u32)a.radius); mix((u32)a.speed); mix((u64)a.cls); mix((u64)a.state); mix(a.hold); mix((u32)a.order);
     mix((u32)a.slot.x); mix((u32)a.slot.y); mix((u32)a.facing); mix((u32)a.heading);

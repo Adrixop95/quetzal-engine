@@ -11,6 +11,7 @@ struct Modifications {
   bool relaxed_placement = false;
   // Zero selects completed matching producers; one preserves serial training.
   int parallel_training = 1;
+  // Keep training in bits 2–5; recovery has its own bit 6.
   bool unit_unstick = false;
   PlayProfile profile = PlayProfile::Faithful;
   uint8_t overrides = 0; // preference metadata, excluded from simulation hashes

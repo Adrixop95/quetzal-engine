@@ -207,6 +207,78 @@ static void test_random_stress() {
   CHECK(settled * 100 >= total * 90);
 }
 
+static Vec2 centre(int x, int y) { return {x * kTileFix + kTileFix / 2, y * kTileFix + kTileFix / 2}; }
+
+static u64 run_unstick(const char* name, bool enabled) {
+  Course c; CHECK(make_course(name, 10, c));
+  NavGrid grid; grid.load_dat(c.w, c.h, c.dat.data());
+  MoverConfig config; config.unit_unstick = enabled;
+  MoveSystem mover(grid, config);
+  std::vector<std::vector<u32>> groups(c.groups.size());
+  for (const CourseUnit& unit : c.units)
+    groups[unit.group].push_back(mover.add_agent(centre(unit.x, unit.y), 18 * kFix, 9 * kFix, MoveClass::Small));
+  for (size_t i = 0; i < groups.size(); ++i) if (c.groups[i].order_tick >= 0)
+    mover.order_move(groups[i].data(), int(groups[i].size()), centre(c.groups[i].goal.x, c.groups[i].goal.y));
+  std::vector<int> arrivals(c.units.size(), -1);
+  for (int tick = 1; tick <= 1200; ++tick) {
+    mover.tick();
+    for (const Agent& a : mover.agents()) {
+      CHECK(!grid.disc_hits(a.pos, a.radius / 2, a.cls));
+      if (c.groups[c.units[a.id].group].order_tick >= 0 && arrivals[a.id] < 0 && length(a.pos - a.slot) <= 2 * kFix)
+        arrivals[a.id] = tick;
+    }
+  }
+  if (enabled) {
+    for (const Agent& a : mover.agents()) if (c.groups[c.units[a.id].group].order_tick >= 0) CHECK(arrivals[a.id] >= 0);
+    if (!strcmp(name, "unstick_forest")) CHECK(mover.stats.swaps >= 2);
+    if (!strcmp(name, "unstick_box")) CHECK(mover.stats.sidesteps > 0);
+  }
+  return mover.state_hash();
+}
+
+static void test_unstick_route_choice() {
+  for (bool occupied : {false, true}) {
+    NavGrid grid(24, 16); MoverConfig config; config.unit_unstick = true;
+    MoveSystem mover(grid, config);
+    u32 id = mover.add_agent(centre(5, 7), 18 * kFix, 9 * kFix, MoveClass::Small);
+    if (occupied) mover.add_agent(centre(7, 7), 18 * kFix, 9 * kFix, MoveClass::Small);
+    mover.order_move(&id, 1, centre(16, 7)); mover.tick();
+    const Agent& a = mover.agents()[id];
+    if (occupied) {
+      CHECK(mover.stats.repaths > 0);
+      CHECK(!a.local_path.empty());
+      CHECK(a.pos.y != centre(5, 7).y); // occupied straight passage chooses a side route
+    } else {
+      CHECK(a.local_path.empty());
+      CHECK(a.pos.y == centre(5, 7).y && a.pos.x > centre(5, 7).x);
+    }
+  }
+}
+
+static void test_unstick_relocation() {
+  NavGrid grid(20, 15);
+  MoveSystem mover(grid); mover.set_unit_unstick(true);
+  u32 id = mover.add_agent(centre(5, 7), 18 * kFix, 9 * kFix, MoveClass::Small);
+  for (int y = 6; y <= 8; ++y) for (int x = 4; x <= 6; ++x) if (x != 5 || y != 7) {
+    auto blocker = mover.add_agent(centre(x, y), 23 * kFix, 9 * kFix, MoveClass::Small, 1);
+    mover.agents_mut()[blocker].hold = true;
+  }
+  std::vector<Vec2> positions; for (const Agent& a : mover.agents()) positions.push_back(a.pos);
+  mover.order_move(&id, 1, centre(16, 7));
+  // A newly inserted footprint must be excluded from emergency destinations.
+  grid.add_block(7, 7, 1, 1, 1);
+  for (int tick = 0; tick < 600; ++tick) mover.tick();
+  CHECK(mover.stats.relocations > 0);
+  CHECK(mover.stats.swaps == 0 && mover.stats.sidesteps == 0);
+  CHECK(mover.agents()[id].state == AgentState::Arrived);
+  for (const Agent& a : mover.agents()) {
+    CHECK(!grid.disc_hits(a.pos, a.radius, a.cls));
+    if (a.id != id) CHECK(len2(a.pos - positions[a.id]) == 0);
+  }
+  mover.set_unit_unstick(false);
+  CHECK(mover.agents()[id].local_path.empty() && mover.agents()[id].unstick_ticks == 0);
+}
+
 int main() {
   test_math(); test_field_vs_astar(); test_no_corner_cut(); test_courses(); test_determinism(); test_unreachable_goal(); test_large_class(); test_dynamic_block();
   const u64 wall_run = run_goal_beside_wall();
@@ -215,6 +287,10 @@ int main() {
     const u64 disconnected = run_disconnected_group(reverse);
     CHECK(disconnected == run_disconnected_group(reverse));
   }
+  for (const char* name : {"unstick_column", "unstick_box", "unstick_forest", "unstick_stationary"})
+    for (bool enabled : {false, true}) CHECK(run_unstick(name, enabled) == run_unstick(name, enabled));
+  test_unstick_route_choice();
+  test_unstick_relocation();
   test_random_stress();
   printf("%d checks, %d failed\n", g_checks, g_fail);
   return g_fail ? 1 : 0;

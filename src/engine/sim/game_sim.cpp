@@ -73,7 +73,7 @@ void GameSim::attach_agent(Object& o) {
   const TypeRules& r = rules_->type(o.type);
   if (!r.mobile || r.flier || !mover_) { o.mover = -1; return; }
   o.mover = int32_t(mover_->add_agent({o.cur_x, o.cur_y}, r.radius_px * 256, std::max(256, r.speed),
-                                      r.large ? path::MoveClass::Large : path::MoveClass::Small));
+                                      r.large ? path::MoveClass::Large : path::MoveClass::Small, o.side));
 }
 
 void GameSim::init(World& w) {
@@ -110,6 +110,7 @@ void GameSim::init(World& w) {
   else
     nav_.reset(w.terrain.w, w.terrain.h);
   mover_ = std::make_unique<path::MoveSystem>(nav_);
+  mover_->set_unit_unstick(modifications_.unit_unstick);
   if (w.side_state.size() < 8) w.side_state.resize(8);
   paused_ = false;
   spawn_counter_ = 0;
@@ -541,7 +542,10 @@ void GameSim::apply(World& w, const Command& c) {
       }
       break;
     case Pct::SetModifications:
-      if (c.a >= 0 && Modifications::valid(uint32_t(c.a))) modifications_ = Modifications::from_bits(uint32_t(c.a));
+      if (c.a >= 0 && Modifications::valid(uint32_t(c.a))) {
+        modifications_ = Modifications::from_bits(uint32_t(c.a));
+        mover_->set_unit_unstick(modifications_.unit_unstick);
+      }
       break;
     case Pct::PauseBuild: {
       if (!ss || c.a < 0 || c.a > 2 || c.b < 0) break;
@@ -1474,6 +1478,9 @@ void GameSim::tick(World& w) {
   run_orders(w);
   maintain_town_marks(w);
   service_towns(w);
+  // Ownership may change during hypnosis; cooperation follows current sides.
+  if (modifications_.unit_unstick) for (const auto& object : w.objects)
+    if (object.mover >= 0) mover_->agents_mut()[size_t(object.mover)].team = object.side;
   mover_->tick();
   sync_movement(w);
   for (auto& o : w.objects) {
