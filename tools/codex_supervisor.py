@@ -425,6 +425,31 @@ def queue_step():
     """Skip blocked/waiting PRs; perform at most one code change or squash merge."""
     prs = open_prs()
     warmed = prewarm(prs) if PREWARM_DEPTH > 0 else set()
+    # A sync that conflicts takes Codex minutes. While one is pending, merge any pull request that is ready first so
+    # green pull requests are never held back behind it. Without a pending sync the normal oldest-first order applies.
+    views = {}
+    for num, head in prs:
+        if num in warmed or STATE.blocked(str(num)):
+            continue
+        try:
+            views[num] = gh_json(f"gh pr view {num} --json mergeStateStatus,mergeable")
+        except Exception as error:
+            log("PR", num, "view deferred:", error)
+    if any(v.get("mergeable") == "CONFLICTING" or v.get("mergeStateStatus") in ("BEHIND", "DIRTY") for v in views.values()):
+        for num, head in prs:
+            view = views.get(num)
+            if not view or view.get("mergeable") != "MERGEABLE" or view.get("mergeStateStatus") in ("BEHIND", "DIRTY"):
+                continue
+            try:
+                if ci_state(num)[0] != "passed":
+                    continue
+                result = run(f"gh pr merge {num} --squash --delete-branch")
+                log("PR", num, "merged" if not result.returncode else "merge deferred",
+                    (result.stdout + result.stderr).strip()[-150:])
+                if not result.returncode:
+                    return
+            except Exception as error:
+                log("PR", num, "ready check deferred:", error)
     for num, head in prs:
         if num in warmed:
             continue   # its CI restarts on the new head; look at it on the next pass

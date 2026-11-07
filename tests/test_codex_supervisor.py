@@ -134,6 +134,15 @@ class SupervisorTest(unittest.TestCase):
             self.assertEqual([c["bucket"] for c in checks], ["pass", "pass", "pending", "cancel", "skipping"])
             self.assertEqual(supervisor.ci_state(5), ("passed", []))   # only build and pre-commit gate the merge
 
+    def test_ready_pr_merges_before_a_long_sync_of_an_older_pr(self):
+        fake = FakeRunner("pass")
+        fake.behind = {105}
+        with patch.object(supervisor, "PREWARM_DEPTH", 0), \
+                patch.object(supervisor, "sync_with_develop", side_effect=AssertionError("sync must not run first")):
+            codex = self.queue(fake)
+        codex.assert_not_called()
+        self.assertIn("gh pr merge 126 --squash --delete-branch", fake.commands)
+
     def test_cancelled_rerun_skips_to_newer_pr_without_codex(self):
         fake = FakeRunner()
         codex = self.queue(fake)
