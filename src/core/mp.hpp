@@ -37,6 +37,7 @@ struct MpTown {
 struct MpTeam { int index = 0, side = 0, scenario_id = -1; std::vector<MpUnit> units; };
 struct MpVessel {            // [Boat#], [Johnka#], [Submarine#]
   int index = 0, side = 0, scenario_id = -1, x = 0, y = 0;
+  std::vector<MpUnit> units; // passengers placed by vessel sections
   bool up = false;           // Up=1
   bool enabled = false;      // Johnka: Enabled
   int editor_x = 0, editor_y = 0, end_position = 0;  // editor

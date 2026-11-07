@@ -203,8 +203,8 @@ static void actions_and_outcomes() {
       "trigger(0) conditions always actions boat(1).activate johnka(1).enable johnka(1).disable submarine(1).go "
       "side(local).buildCommand(UGI_FOOTMAN,1,2) side(local).moveCommand(1,2) side(local).cameraDeactivate(0) end");
   for (const auto& a : unsupported_script.triggers[0].actions)
-    CHECK(!ScriptRunner::supports(a.kind));
-  unsupported.tick(sim, w); CHECK(unsupported.unsupported() == 7);
+    CHECK(ScriptRunner::supports(a.kind) == (a.kind == ActKind::BoatActivate || a.kind == ActKind::JohnkaEnable || a.kind == ActKind::JohnkaDisable || a.kind == ActKind::SubmarineGo));
+  unsupported.tick(sim, w); CHECK(unsupported.unsupported() == 3);
   unsupported.init(w); CHECK(unsupported.unsupported() == 0);
   CHECK(!ScriptRunner::supports(static_cast<ActKind>(999)));
 }
@@ -241,8 +241,7 @@ static void defence_loading() {
 
 static void action_observation_contracts() {
   // Each unresolved grammar branch must remain visible both before and after dispatch.
-  for (const auto& method : {"boat(5).activate", "johnka(5).enable", "johnka(5).disable", "submarine(5).go",
-                            "side(local).buildCommand(UGI_FOOTMAN,1,2)", "side(local).moveCommand(1,2)",
+  for (const auto& method : {"side(local).buildCommand(UGI_FOOTMAN,1,2)", "side(local).moveCommand(1,2)",
                             "side(local).cameraDeactivate(0)"}) {
     World w = world(); GameSim sim(rules()); sim.init(w);
     auto r = runner(w,

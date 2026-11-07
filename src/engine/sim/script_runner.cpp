@@ -18,14 +18,14 @@ bool is_town_building(int t) {
 
 bool ScriptRunner::supports(ActKind kind) {
   switch (kind) {
-    case ActKind::BoatActivate:
-    case ActKind::JohnkaEnable:
-    case ActKind::JohnkaDisable:
-    case ActKind::SubmarineGo:
     case ActKind::SideBuildCommand:
     case ActKind::SideMoveCommand:
     case ActKind::SideCameraDeactivate:
       return false;
+    case ActKind::BoatActivate:
+    case ActKind::JohnkaEnable:
+    case ActKind::JohnkaDisable:
+    case ActKind::SubmarineGo:
     case ActKind::TriggerEnable:
     case ActKind::TriggerDisable:
     case ActKind::TimerSet:
@@ -231,6 +231,16 @@ bool ScriptRunner::eval(const World& w, const Condition& c) const {
 void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
   int side = resolve_side(w, a.side);
   switch (a.kind) {
+    case ActKind::BoatActivate:
+    case ActKind::JohnkaEnable:
+    case ActKind::JohnkaDisable:
+    case ActKind::SubmarineGo: {
+      ObjectSource source = a.kind == ActKind::BoatActivate ? ObjectSource::Boat :
+          a.kind == ActKind::SubmarineGo ? ObjectSource::Submarine : ObjectSource::Johnka;
+      if (!sim.activate_vessel(w, a.id, source, a.kind != ActKind::JohnkaDisable))
+        w.messages.push_back({"Vessel action: no living vessel for scenario " + std::to_string(a.id), 72});
+      break;
+    }
     case ActKind::TriggerEnable: enabled_[a.id] = true; break;
     case ActKind::TriggerDisable: enabled_[a.id] = false; break;
     case ActKind::TimerSet: timers_[a.id] = {true, a.a, true}; break;
@@ -308,7 +318,7 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
       }
       break;
     }
-    default:  // boat / johnka / submarine activation, build and move commands, camera deactivate: not implemented yet
+    default: // build/move commands and camera deactivate remain unsupported
       unsupported_++;
       break;
   }

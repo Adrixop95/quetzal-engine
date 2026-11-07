@@ -127,6 +127,7 @@ bool parse_mp(const Ini& ini, MpFile& m) {
         v.up = ini.get_int(sec, "Up") == 1; v.enabled = ini.get_int(sec, "Enabled") != 0;
         v.editor_x = ini.get_int(sec, "EditorX"); v.editor_y = ini.get_int(sec, "EditorY");
         v.end_position = ini.get_int(sec, "EndPosition");
+        read_units(ini, sec, v.units, budget);
         out.push_back(v);
       }
     };

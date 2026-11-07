@@ -7,7 +7,7 @@
 
 namespace aztec::path {
 
-enum class MoveClass : u8 { Small = 0, Large = 1 };   // original: wave class 1 (desc byte +0x2c != 0) / class 0
+enum class MoveClass : u8 { Small = 0, Large = 1, Water = 2 };   // Small/Large: original wave classes 1/0; Water: engine fallback
 
 class NavGrid {
  public:
@@ -26,6 +26,7 @@ class NavGrid {
     if (!in_bounds(x, y)) return true;
     size_t i = (size_t)y * w_ + x;
     if (dyn_[i]) return true;
+    if (c == MoveClass::Water) return terrain_[i] != 0; // G: DAT zero also includes walls
     return c == MoveClass::Small ? terrain_[i] < 1 : terrain_[i] < 2;
   }
   // Wall proximity: true when any 8-neighbour is blocked (used as a path cost penalty so routes keep off walls).

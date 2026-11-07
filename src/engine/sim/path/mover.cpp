@@ -49,7 +49,7 @@ void MoveSystem::order_formation(const u32* ids, int n, Cell anchor) {
 
 void MoveSystem::build_formation_fields(Formation& f) {
   const Cell anchor = f.anchor;
-  for (int cls = 0; cls < 2; ++cls) {
+  for (int cls = 0; cls < 3; ++cls) {
     std::vector<Cell> goals;
     for (int y = anchor.y - 1; y <= anchor.y + 1; ++y)
       for (int x = anchor.x - 1; x <= anchor.x + 1; ++x)
@@ -60,7 +60,7 @@ void MoveSystem::build_formation_fields(Formation& f) {
 }
 
 void MoveSystem::tick_formations() {
-  if (std::none_of(agents_.begin(), agents_.end(), [](const Agent& a) { return a.formation >= 0; })) return;
+  if (std::none_of(agents_.begin(), agents_.end(), [](const Agent& a) { return a.enabled && a.formation >= 0; })) return;
   for (Formation& f : formations_)
     if (f.fields[0].version() != grid_.version()) build_formation_fields(f);
   // Reserve both ends of an unfinished step. Counts also handle overlapping
@@ -74,6 +74,7 @@ void MoveSystem::tick_formations() {
   for (Cell c : formation_obstacles_)
     if (grid_.in_bounds(c.x, c.y)) ++occupied[size_t(c.y) * grid_.width() + c.x];
   for (const Agent& a : agents_) {
+    if (!a.enabled) continue;
     const bool stepping = a.formation >= 0 && (a.pos.x != a.step_goal.x || a.pos.y != a.step_goal.y);
     reserve(stepping ? a.step_from : a.pos, 1);
     if (stepping) reserve(a.step_goal, 1);
@@ -83,7 +84,7 @@ void MoveSystem::tick_formations() {
   // Stable reverse placement order approximates the original pool traversal.
   for (auto it = agents_.rbegin(); it != agents_.rend(); ++it) {
     Agent& a = *it;
-    if (a.formation < 0) continue;
+    if (!a.enabled || a.formation < 0) continue;
     a.prev_pos = a.pos; a.vel = {};
     const Formation& f = formations_[size_t(a.formation)];
     if (a.pos.x == a.step_goal.x && a.pos.y == a.step_goal.y) {
@@ -126,13 +127,23 @@ void MoveSystem::tick_formations() {
 
 void MoveSystem::order_move(const u32* ids, int n, Vec2 goal) {
   if (n <= 0) return;
+  // Different movement media must choose goals independently.
+  bool water = false, land = false;
+  for (int i = 0; i < n; ++i) (agents_[ids[i]].cls == MoveClass::Water ? water : land) = true;
+  if (water && land) {
+    std::vector<u32> ships, ground;
+    for (int i = 0; i < n; ++i) (agents_[ids[i]].cls == MoveClass::Water ? ships : ground).push_back(ids[i]);
+    order_move(ships.data(), int(ships.size()), goal);
+    order_move(ground.data(), int(ground.size()), goal);
+    return;
+  }
   int oi = -1;
   for (size_t i = 0; i < orders_.size(); ++i) if (orders_[i]->refs == 0) { oi = (int)i; break; }
   if (oi < 0) { orders_.push_back(std::make_unique<Order>()); oi = (int)orders_.size() - 1; }
   Order& o = *orders_[oi];
   o = Order{}; o.goal = goal; o.refs = n;
   int gx = floor_div(goal.x, kTileFix), gy = floor_div(goal.y, kTileFix);
-  MoveClass strict = MoveClass::Small; i32 maxr = 0;
+  MoveClass strict = water ? MoveClass::Water : MoveClass::Small; i32 maxr = 0;
   for (int i = 0; i < n; ++i) { Agent& a = agents_[ids[i]]; if (a.cls == MoveClass::Large) strict = MoveClass::Large; if (a.radius > maxr) maxr = a.radius; }
   bool relocated = false;
   if (!grid_.in_bounds(gx, gy)) { gx = std::min(std::max(gx, 0), grid_.width() - 1); gy = std::min(std::max(gy, 0), grid_.height() - 1); relocated = true; }
@@ -189,7 +200,7 @@ void MoveSystem::order_move(const u32* ids, int n, Vec2 goal) {
           seen[(size_t)ny * grid_.width() + nx] = 1; q.push_back({nx, ny});
         }
       }
-      o.goal_cell = bc; o.have[0] = o.have[1] = false; ensure_field(o, strict);
+      o.goal_cell = bc; o.have[0] = o.have[1] = o.have[2] = false; ensure_field(o, strict);
       goal = tile_center(bc.x, bc.y);
     }
   }
@@ -253,7 +264,7 @@ void MoveSystem::neighbours(const Agent& a, std::vector<u32>& out, i32 reach) co
       size_t c = (size_t)y * hw_ + x;
       for (u32 k = hstart_[c]; k < hstart_[c + 1]; ++k) {
         u32 j = hlist_[k]; if (j == a.id) continue;
-        if (len2(agents_[j].pos - a.pos) <= (i64)reach * reach) out.push_back(j);
+        if (agents_[j].enabled && len2(agents_[j].pos - a.pos) <= (i64)reach * reach) out.push_back(j);
       }
     }
   std::sort(out.begin(), out.end());
@@ -329,7 +340,7 @@ void MoveSystem::resolve_overlaps() {
     for (Agent& a : agents_) {
       neighbours(a, nb, 2 * (a.radius + 24 * kFix));
       for (u32 j : nb) {
-        if (j < a.id) continue;
+        if (j < a.id || !a.enabled || !agents_[j].enabled) continue;
         Agent& b = agents_[j];
         if (a.formation >= 0 || b.formation >= 0) continue;
         i32 ra = a.squeeze_ticks ? a.radius * 7 / 10 : a.radius, rb = b.squeeze_ticks ? b.radius * 7 / 10 : b.radius;
@@ -347,9 +358,9 @@ void MoveSystem::resolve_overlaps() {
         b.pos.x += (i32)((i64)n.x * ov / 4096 * sb / 256); b.pos.y += (i32)((i64)n.y * ov / 4096 * sb / 256);
       }
     }
-    for (Agent& a : agents_) if (a.formation < 0) grid_.push_out(a.pos, a.squeeze_ticks ? a.radius * 7 / 10 : a.radius, a.cls);
+    for (Agent& a : agents_) if (a.enabled && a.formation < 0) grid_.push_out(a.pos, a.squeeze_ticks ? a.radius * 7 / 10 : a.radius, a.cls);
   }
-  for (Agent& a : agents_) if (a.formation < 0 && grid_.disc_hits(a.pos, a.radius * 6 / 10, a.cls)) a.pos = a.prev_pos;   // never end inside a wall
+  for (Agent& a : agents_) if (a.enabled && a.formation < 0 && grid_.disc_hits(a.pos, a.radius * 6 / 10, a.cls)) a.pos = a.prev_pos;   // never end inside a wall
 }
 
 void MoveSystem::tick() {
@@ -359,7 +370,7 @@ void MoveSystem::tick() {
   std::vector<Vec2> nv(agents_.size());
   std::vector<u32> nb;
   for (Agent& a : agents_) {
-    if (a.formation >= 0) continue;
+    if (!a.enabled || a.formation >= 0) continue;
     a.prev_pos = a.pos;
     Vec2 pref{0, 0};
     if (a.state == AgentState::Moving && a.order >= 0) {
@@ -373,7 +384,7 @@ void MoveSystem::tick() {
     nv[a.id] = choose_velocity(a, pref, nb);
   }
   for (Agent& a : agents_) {
-    if (a.formation >= 0) continue;
+    if (!a.enabled || a.formation >= 0) continue;
     a.vel = nv[a.id]; a.pos = a.pos + a.vel;
     if (a.vel.x || a.vel.y) { a.heading = angle_of(a.vel.x, a.vel.y); a.facing = facing8(a.vel); ++a.moved_ticks; }
     if (a.ghost_ticks) --a.ghost_ticks;
@@ -382,7 +393,7 @@ void MoveSystem::tick() {
   resolve_overlaps();
   build_hash();
   for (Agent& a : agents_) {
-    if (a.formation >= 0) continue;
+    if (!a.enabled || a.formation >= 0) continue;
     if (a.state != AgentState::Moving) continue;
     i32 dist = length(a.slot - a.pos);
     if (dist <= 2 * kFix) { a.state = AgentState::Arrived; a.vel = {0, 0}; continue; }
@@ -413,7 +424,7 @@ u64 MoveSystem::state_hash() const {
   mix(agents_.size());
   for (const Agent& a : agents_) {
     mix(a.id); mix((u32)a.pos.x); mix((u32)a.pos.y); mix((u32)a.vel.x); mix((u32)a.vel.y); mix((u32)a.prev_pos.x); mix((u32)a.prev_pos.y);
-    mix((u32)a.radius); mix((u32)a.speed); mix((u64)a.cls); mix((u64)a.state); mix(a.hold); mix((u32)a.order);
+    mix((u32)a.radius); mix((u32)a.speed); mix((u64)a.cls); mix((u64)a.state); mix(a.hold); mix(a.enabled); mix((u32)a.order);
     mix((u32)a.slot.x); mix((u32)a.slot.y); mix((u32)a.facing); mix((u32)a.heading);
     mix((u32)a.win_start.x); mix((u32)a.win_start.y); mix((u32)a.win_ticks); mix((u32)a.stuck_level); mix((u32)a.squeeze_ticks); mix((u32)a.ghost_ticks); mix(a.moved_ticks);
     mix((u32)a.target.x); mix((u32)a.target.y); mix(a.target_until); mix((u32)a.backoff_ticks);
@@ -434,8 +445,8 @@ u64 MoveSystem::state_hash() const {
   }
   mix(orders_.size());
   for (const auto& o : orders_) {
-    mix((u32)o->refs); mix((u32)o->goal.x); mix((u32)o->goal.y); mix((u32)o->goal_cell.x); mix((u32)o->goal_cell.y); mix(o->have[0]); mix(o->have[1]);
-    for (int k = 0; k < 2; ++k) if (o->have[k]) mix(o->ff[k].state_hash());
+    mix((u32)o->refs); mix((u32)o->goal.x); mix((u32)o->goal.y); mix((u32)o->goal_cell.x); mix((u32)o->goal_cell.y); mix(o->have[0]); mix(o->have[1]); mix(o->have[2]);
+    for (int k = 0; k < 3; ++k) if (o->have[k]) mix(o->ff[k].state_hash());
   }
   return h;
 }

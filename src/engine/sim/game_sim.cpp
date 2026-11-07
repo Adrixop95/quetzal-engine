@@ -73,7 +73,7 @@ void GameSim::attach_agent(Object& o) {
   const TypeRules& r = rules_->type(o.type);
   if (!r.mobile || r.flier || !mover_) { o.mover = -1; return; }
   o.mover = int32_t(mover_->add_agent({o.cur_x, o.cur_y}, r.radius_px * 256, std::max(256, r.speed),
-                                      r.large ? path::MoveClass::Large : path::MoveClass::Small));
+                                      is_transport(o.type) ? path::MoveClass::Water : r.large ? path::MoveClass::Large : path::MoveClass::Small));
 }
 
 void GameSim::init(World& w) {
@@ -285,6 +285,11 @@ uint32_t GameSim::spawn(World& w, int type, int side, int pxx, int pyy, int hp, 
 
 void GameSim::kill(World& w, Object& o) {
   if (!o.alive) return;
+  const auto passengers = o.cargo;
+  o.cargo.clear();
+  for (auto id : passengers) if (auto* passenger = w.find_mut(id)) {
+    passenger->carrier = 0; kill(w, *passenger); passenger->removed = true;
+  }
   o.alive = false;
   o.hp = 0;
   o.order = uint8_t(Order::Idle);
@@ -311,6 +316,7 @@ void GameSim::kill(World& w, Object& o) {
   if (o.mover >= 0) {
     mover_->stop(uint32_t(o.mover));
     path::Agent& a = mover_->agents_mut()[size_t(o.mover)];
+    if (is_transport(o.type)) a.enabled = false;
     a.radius = 0;   // corpses do not block
     a.hold = true;
   }
@@ -354,7 +360,7 @@ void GameSim::apply(World& w, const Command& c) {
     std::vector<Object*> v;
     for (uint32_t id : command_ids) {
       Object* o = w.find_mut(id);
-      if (!o || o->removed || !o->alive || o->side != c.side || o->type < 0) continue;
+      if (!o || o->removed || !o->alive || o->side != c.side || o->type < 0 || (is_transport(o->type) && !o->vessel_enabled)) continue;
       const TypeRules& r = rules_->type(o->type);
       if (need_mobile && !(r.mobile || r.flier)) continue;
       if (std::find(v.begin(), v.end(), o) == v.end()) v.push_back(o);
@@ -374,6 +380,24 @@ void GameSim::apply(World& w, const Command& c) {
   switch (c.type) {
     case Pct::PauseOn: paused_ = true; break;
     case Pct::PauseOff: paused_ = false; break;
+    case Pct::Board: {
+      Object* vessel = w.find_mut(uint32_t(c.a));
+      if (!vessel || !vessel->alive || vessel->removed || !is_transport(vessel->type) ||
+          vessel->side != c.side || !vessel->vessel_enabled) break;
+      for (auto* o : own_ids(true)) {
+        const auto& r = rules_->type(o->type);
+        if (r.flier || is_transport(o->type) || o->carrier) continue;
+        script_stop(w, {o->id}); o->boarding = vessel->id;
+      }
+      break;
+    }
+    case Pct::Unload:
+      for (auto* o : own_ids(true)) if (is_transport(o->type)) {
+        script_stop(w, {o->id}); o->vessel_route = false;
+        unload(w, *o, c.c == 1 ? px(o->cur_x) / kTilePx : std::clamp(c.a, 0, w.width_px()-1) / kTilePx,
+                        c.c == 1 ? px(o->cur_y) / kTilePx : std::clamp(c.b, 0, w.height_px()-1) / kTilePx);
+      }
+      break;
     case Pct::Move:
     case Pct::AttackMove: {
       std::vector<Object*> v = own_ids(true);
@@ -381,6 +405,12 @@ void GameSim::apply(World& w, const Command& c) {
       // Coordinates come from untrusted command packets: clamp into the map before any fixed-point conversion.
       const int cx = std::clamp(c.a, 0, std::max(0, w.width_px() - 1)), cy = std::clamp(c.b, 0, std::max(0, w.height_px() - 1));
       for (Object* o : v) {
+        if (is_transport(o->type) && !nav_.blocked(cx / kTilePx, cy / kTilePx, path::MoveClass::Small)) {
+          script_stop(w, {o->id}); o->vessel_route = false;
+          unload(w, *o, cx / kTilePx, cy / kTilePx); continue;
+        }
+        if (is_transport(o->type)) script_stop(w, {o->id});
+        o->boarding = 0; o->vessel_route = false;
         o->order = uint8_t(c.type == Pct::Move ? Order::Move : Order::AttackMove);
         o->dest_x = cx; o->dest_y = cy; o->target = 0; o->resume = 0;
         o->follow_tactic = -1;
@@ -395,6 +425,7 @@ void GameSim::apply(World& w, const Command& c) {
           (w.visibility_brightness && !object_visible(w, c.side, *t))) break;
       for (Object* o : own_ids(true)) {
         if (o->id == t->id || !rules_->type(o->type).armed) continue;
+        o->boarding = 0;
         o->order = uint8_t(Order::Attack); o->target = t->id; o->resume = 0;
         o->follow_tactic = -1;
         if (o->attack_mode == AttackMode::Direct && o->mover >= 0) mover_->stop(uint32_t(o->mover));
@@ -428,11 +459,7 @@ void GameSim::apply(World& w, const Command& c) {
       break;
     }
     case Pct::Stop:
-      for (Object* o : own_ids(true)) {
-        o->order = uint8_t(Order::Idle); o->target = 0; o->resume = 0;
-        o->follow_tactic = -1;
-        if (o->mover >= 0) mover_->stop(uint32_t(o->mover));
-      }
+      for (Object* o : own_ids(true)) script_stop(w, {o->id});
       break;
     case Pct::Garrison:
     case Pct::RepairMode:
@@ -1111,7 +1138,7 @@ void GameSim::run_orders(World& w) {
     }
     if (o.order == uint8_t(Order::AttackMove) && ag && !moving) o.order = uint8_t(Order::Idle);
 
-    if (!r.armed) continue;
+    if (!r.armed || o.boarding || o.type == 84 || (o.type == 88 && !o.vessel_enabled)) continue;
     // Mode gates are independent of the provisional nearest-visible-enemy policy.
     const bool engage_moving = o.attack_mode == AttackMode::Aggressive || o.attack_mode == AttackMode::Balanced;
     if (o.order == uint8_t(Order::Idle) ||
@@ -1346,7 +1373,7 @@ void GameSim::sync_movement(World& w) {
   for (Object& o : w.objects) {
     if (o.removed || o.mover < 0) continue;
     const path::Agent& a = mover_->agents()[size_t(o.mover)];
-    if (!o.alive) { continue; }
+    if (!o.alive || !a.enabled) { continue; }
     o.cur_x = a.pos.x; o.cur_y = a.pos.y;
     bool mv = a.state == path::AgentState::Moving;
     if (mv) {
@@ -1476,6 +1503,7 @@ void GameSim::tick(World& w) {
   service_towns(w);
   mover_->tick();
   sync_movement(w);
+  transport_tick(w);
   for (auto& o : w.objects) {
     if (o.removed || !o.alive) continue;
     const bool moving = o.cur_x != o.prev_x || o.cur_y != o.prev_y;
@@ -1508,6 +1536,12 @@ void GameSim::script_stop(World& w, const std::vector<uint32_t>& ids) {
   for (uint32_t id : ids) {
     Object* o = w.find_mut(id);
     if (!o || o->removed || !o->alive) continue;
+    if (o->vessel_route && o->mover >= 0) {
+      auto& agent = mover_->agents_mut()[size_t(o->mover)];
+      agent.enabled = true; agent.pos = agent.prev_pos = {o->cur_x, o->cur_y};
+    }
+    o->vessel_route = false;
+    o->boarding = 0;
     o->order = uint8_t(Order::Idle); o->target = 0; o->resume = 0;
     o->follow_tactic = -1;
     if (o->mover >= 0) mover_->stop(uint32_t(o->mover));
@@ -1572,6 +1606,9 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(uint32_t(o.town)); mix(o.harvest_ready);
     for (const auto* h : {&o.gold_harvest, &o.repair_harvest}) { mix(h->accumulated); mix(h->last_clock); mix(h->cursor); }
     mix(o.id); mix(uint32_t(o.type)); mix(uint32_t(o.side)); mix(uint32_t(o.hp)); mix(uint32_t(o.cur_x)); mix(uint32_t(o.cur_y));
+    mix(o.carrier); mix(o.boarding); mix(o.vessel_enabled); mix(o.vessel_route); mix(o.vessel_arrived);
+    mix(o.landing_x); mix(o.landing_y); mix(o.cargo.size());
+    for (auto id : o.cargo) mix(id);
     mix(uint8_t(o.attack_mode)); mix(uint32_t(o.follow_tactic)); mix(o.order); mix(o.target); mix(uint32_t(o.cooldown)); mix(o.alive); mix(o.removed); mix(uint32_t(o.progress));
     mix(uint32_t(o.render_height)); mix(uint32_t(o.destruction_radius));
     mix(uint32_t(o.transport_phase)); mix(uint32_t(o.orientation)); mix(o.construction_overlay); mix(o.has_fired);

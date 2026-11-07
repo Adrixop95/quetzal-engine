@@ -63,6 +63,10 @@ bool parse_mission(const Ini& ini, const std::string& base_name, MissionDef& m) 
       PlacedObject o;
       o.x = b.x; o.y = b.y; o.side = b.side; o.source = src; o.group = b.index; o.scenario_id = b.scenario_id;
       o.type = src == ObjectSource::Boat ? 84 : src == ObjectSource::Johnka ? 88 : -1;
+      o.landing_x = b.editor_x; o.landing_y = b.editor_y;
+      o.vessel_enabled = src != ObjectSource::Johnka || b.enabled;
+      o.up = b.up; o.loaded = b.end_position != 0;
+      for (const auto& u : b.units) o.passengers.push_back({u.x, u.y, u.type});
       m.objects.push_back(o);
     }
   };

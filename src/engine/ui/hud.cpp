@@ -13,7 +13,7 @@ const Object* pick_object(const World& w, float wx, float wy, float alpha, float
   const Object* best = nullptr;
   float bd = radius * radius;
   for (const Object& o : w.objects) {
-    if (o.removed || !o.alive || !object_visible(w, w.local_side, o)) continue;
+    if (o.source == ObjectSource::Submarine || o.removed || !o.alive || !object_visible(w, w.local_side, o)) continue;
     Vec2f p = o.interpolated(alpha);
     float d = (p.x - wx) * (p.x - wx) + (p.y - wy) * (p.y - wy);
     if (d <= bd) { bd = d; best = &o; }
@@ -63,6 +63,11 @@ void draw_hud(SDL_Renderer* r, const Font& font, const World& w, const Camera& c
     std::snprintf(buf, sizeof buf, "OBJ %u  TYPE %d %s  SIDE %d  HP %d", o->id, o->type, ti ? ti->name : "-", o->side, o->hp);
     font.draw(r, x, y, buf, scale, {255, 230, 120, 255});
     y += lh;
+    if (is_transport(o->type)) {
+      std::string cargo = "CARGO " + std::to_string(o->cargo.size()) + "/" + std::to_string(kTransportCapacity) + "  IDS";
+      for (auto id : o->cargo) cargo += " " + std::to_string(id);
+      font.draw(r, x, y, cargo, scale, white); y += lh;
+    }
   }
   if (in.show_help) {
     const char* help[] = {"KEYS.INI SCROLL   EDGE SCROLL   MIDDLE/RIGHT DRAG PAN   WHEEL +/- ZOOM",
