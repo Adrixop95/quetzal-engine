@@ -118,7 +118,9 @@ The optional reference diagnostics now additionally expose active production
 `development`, `science_timer`, `phase`, `speed`. Invalid production pointers
 produce an unavailable diagnostic without calling guest methods. Older raw words
 remain available. These are native diagnostics, not a normalized queue contract.
-The three tracked private L0 scenarios now request the twelve ticks above.
+The tracked private L0 scenarios use the shared campaign schedule at ticks 1, 6
+and 12. For dense payment probes, use private scenario copies requesting the
+twelve ticks above.
 Rebuild the private reference runtime in this worktree as described in
 [EXPERIMENTS.md](EXPERIMENTS.md) and run both repeats per mission using the shared
 L0 runner. Retain

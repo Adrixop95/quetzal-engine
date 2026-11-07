@@ -36,7 +36,7 @@ class SharedControls(unittest.TestCase):
         for mission in (2, 3):
             scenario = legacy.harness.load_scenario(ROOT / f"tests/parity/private_l0_mission_{mission}.json")
             self.assertEqual(scenario["map"], dict(kind="campaign", mission=mission))
-            self.assertEqual(scenario["observe"]["ticks"], [1, 2, 3, 4, 5, 6, 9, 12, 18, 24, 36, 60])
+            self.assertEqual(scenario["observe"]["ticks"], [1, 6, 12])
             self.assertEqual(scenario["input"], [])
             l0.validate_scenario(scenario)
 
