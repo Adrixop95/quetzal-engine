@@ -267,6 +267,14 @@ add_test(NAME campaign_ui COMMAND test_campaign_ui ${CMAKE_CURRENT_BINARY_DIR}/c
 set_tests_properties(campaign_ui PROPERTIES LABELS "unit" TIMEOUT 30
   ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
 
+add_executable(test_campaign_flow tests/test_campaign_flow.cpp)
+target_link_libraries(test_campaign_flow PRIVATE aztec_engine_lib)
+aztec_warnings(test_campaign_flow)
+target_compile_definitions(test_campaign_flow PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data")
+add_test(NAME campaign_flow COMMAND test_campaign_flow)
+set_tests_properties(campaign_flow PROPERTIES LABELS "unit" TIMEOUT 30
+  ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+
 # Read-only campaign script inventory plus asset-independent trigger contracts.
 add_executable(aztec_script_audit tools/script_audit.cpp)
 target_link_libraries(aztec_script_audit PRIVATE aztec_engine_lib)

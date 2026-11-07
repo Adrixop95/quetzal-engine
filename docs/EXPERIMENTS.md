@@ -3173,6 +3173,19 @@ are implemented; repeated reference confirmation, movement reproduction,
 normalized orders/production semantics and mission-2/3 divergence results remain
 open. This is not the first verified matching game output yet.
 
+## All-mission campaign flow run sheet (task 92): needs live run
+
+**S:** `campaign_flow` exercises all fifteen invented mission numbers through
+briefing selection, modal objective review, normal scripted victory/defeat,
+retry/restart, successor briefing and the clone ending-screen return. Completion
+profile save/reopen is tested separately; scripted playtests deliberately cannot
+write campaign completion. **P:** real routes, unlock policy, original ending
+and automatic profile updates. **M:** none. See the
+[per-mission report](playthrough.md#all-mission-campaign-flow-task-92-needs-live-run).
+Task 86's measured transport dependency is incomplete; no gameplay fix is
+justified until two independent original runs confirm the divergence.
+
+Run the synthetic checks from the worktree root:
 ## V16 original-save continuation and missions 1-3: needs live run
 
 Task 94 status: **needs live run**. Task 72's structural importer is present;
@@ -3199,6 +3212,161 @@ may predate it. Build outputs stay here; private generated inputs are read only.
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR= -DGAME_DIR=
 cmake --build build --parallel 2
+ctest --test-dir build -R 'campaign_flow|campaign_ui|playthrough|ui_capture' --output-on-failure
+```
+
+The remaining commands are for the orchestrator on a namespace-capable host,
+**outside the Codex sandbox**. Never drop `unshare -rn` after a launch failure.
+Keep all specifications, recordings, profiles and reports under ignored `work/`.
+First author `work/campaign-flow-input/scenarios.json` using task 80's route
+contract: one `mission-N-win` and one `mission-N-lose` scenario for each N=1..15,
+with expected victory/defeat, normal move/attack-move steps, measured objective
+checkpoints and a save boundary strictly before the terminal outcome. More complex
+commands still require an audited input adapter. No successful real player route
+is supplied by this task; empty plans and passive timeouts are not completions.
+
+Run paired clone simulations, retaining missing-reference failures:
+
+```sh
+campaign_flow_stamp=$(date -u +%Y%m%dT%H%M%S)
+campaign_flow_clone="$PWD/work/campaign-flow-clone-$campaign_flow_stamp"
+python3 tools/playthrough.py --game /home/adrox/aztec-re/game \
+  --engine "$PWD/build/aztec_engine" --rules-dir "$PWD/docs/data" \
+  --routes "$PWD/work/campaign-flow-input/scenarios.json" --no-auto-orders \
+  --max-ticks 43200 --timeout 900 --require-reference --out "$campaign_flow_clone"
+campaign_flow_clone_status=$?
+if test -d "$campaign_flow_clone"; then
+  printf '%s\n' "$campaign_flow_clone_status" > "$campaign_flow_clone/gate-exit-status.txt"
+fi
+```
+
+For UI evidence, author private audited normal-input reference scripts
+`work/campaign-flow-input/mission_N-win.rt`, `mission_N-lose.rt` and
+`mission_N-retry.rt` for N=1..15. Each includes startup navigation, profile choice,
+briefing, objective review and its ordinary player route. Win observes the result,
+Continue and the next briefing (or mission-15 ending and return); lose observes
+defeat and return; retry observes defeat, Retry, reset mission state, then a normal
+successful route. Capture milestones with the existing `shot` command in those
+scripts and end with `quit`. Do not set outcomes, edit scripts or fabricate unlocks.
+Record each required initial profile's provenance and unlocked missions. If a
+mission is locked, obtain the state by normal prior completion and retain that
+route; a direct mission diagnostic is not a campaign-start observation.
+
+Also author `full-campaign.rt`: start with a fresh original profile, finish all
+fifteen missions in order, review objectives, reopen the profile after returning,
+and observe the final ending and return. Its two independent runs establish
+continuous progression separately from per-mission controls. Task 77's original
+profile selector, UI observer and full graph remain dependencies; unsupported
+navigation or locked missions must be reported as blockers, never bypassed.
+
+Prepare separate writable installations for every independent recording. This
+preflight refuses missing input scripts before creating output. It does not run
+any program or derive original observations:
+
+```sh
+export campaign_flow_reference="$PWD/work/campaign-flow-reference-$campaign_flow_stamp"
+python3 - <<'PY'
+import importlib.util
+import os
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location('playthrough', 'tools/playthrough.py')
+harness = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(harness)
+inputs = Path('work/campaign-flow-input')
+cases = [f'mission_{m}-{kind}' for m in range(1, 16)
+         for kind in ('win', 'lose', 'retry')] + ['full-campaign']
+missing = [str(inputs / f'{case}.rt') for case in cases
+           if not (inputs / f'{case}.rt').is_file()]
+if missing:
+    raise SystemExit('Missing audited input scripts: ' + ', '.join(missing))
+source = Path('/home/adrox/aztec-re/game')
+maps, _ = harness.discover(source)
+root = Path(os.environ['campaign_flow_reference'])
+root.mkdir()
+for case in cases:
+    directory = root / case
+    directory.mkdir()
+    (directory / 'input.rt').write_bytes((inputs / f'{case}.rt').read_bytes())
+    for repetition in (1, 2):
+        run = directory / f'repeat-{repetition}'
+        run.mkdir()
+        harness.private_game(source, maps, run / 'game')
+(root / 'cases.txt').write_text('\n'.join(cases) + '\n')
+PY
+```
+
+Run in Bash after successful preparation. These are two independent recordings,
+not a record/replay pair. Adjust the bounded timeout before launch if a reviewed
+route needs more than one hour (or the continuous campaign more than one day).
+The supplied scripts must set up their documented initial profiles through
+normal input; the private copy alone does not create that initial condition.
+
+```sh
+while IFS= read -r campaign_flow_case; do
+  campaign_flow_probe="$campaign_flow_reference/$campaign_flow_case"
+  campaign_flow_limit=3900
+  if test "$campaign_flow_case" = full-campaign; then campaign_flow_limit=86400; fi
+  for campaign_flow_repeat in 1 2; do
+    campaign_flow_run="$campaign_flow_probe/repeat-$campaign_flow_repeat"
+    (
+      cd "$campaign_flow_run/game" || exit 1
+      timeout -s KILL "$campaign_flow_limit" unshare -rn env \
+        -u RT_CMD_REPLAY -u RT_AUDIO_DUMP \
+        SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+        RT_NO_GRAB=1 RT_NO_VIDEO=1 RT_RESOLUTION=800x600 \
+        RT_SCRIPT="$campaign_flow_probe/input.rt" RT_DUMP_DIR="$campaign_flow_run" \
+        RT_CMD_LOG="$campaign_flow_run/commands.txt" \
+        RT_STATE_LOG="$campaign_flow_run/state.txt" \
+        RT_UNIT_LOG="$campaign_flow_run/units.log" RT_UNIT_EVERY=1 \
+        sh -ec '
+          ip link set lo up
+          ip addr add 192.168.1.125/24 dev lo
+          exec /home/adrox/aztec-re/build/aztec_recomp "$1/Aztec.exe"
+        ' sh "$campaign_flow_run/game"
+    ) > "$campaign_flow_run/stdout.log" 2> "$campaign_flow_run/stderr.log"
+    printf '%s\n' "$?" > "$campaign_flow_run/exit-status.txt"
+  done
+done < "$campaign_flow_reference/cases.txt"
+```
+
+Use task 77's exact `ui_capture.py frontend` command above for the currently
+supported paired menu route. Its requested screen labels are not observed screen
+IDs. The CLI menu-script driver exits at mission selection, and gameplay scripts
+restart from their beginning on Retry: neither is a general continuous live
+campaign driver. The synthetic test uses the in-process Options interface and a
+test-only initial simulation; do not use that outcome injection on original data.
+A continuous clone UI adapter and the task-64 reference screen/objective observer
+must be completed/audited before automating equivalent full-campaign routes.
+Keep these adapter gaps explicit rather than claiming that headless simulation
+reports verify briefing, profile writes or final-ending parity.
+
+For each actual run retain runtime/engine SHA-256, input specification digest,
+initial/final profile state, observed screen order, mission-start alignment,
+objective milestones, outcome/tick, retry reset state and successor mission.
+Review both independent reference observations and raw command readback. Only
+then normalize the two actual checkpoint timelines into the task-80 contract at
+`work/campaign-flow-input/reference/ID-1.json` and `ID-2.json`, bound to the clone
+route fingerprint. The normalizer/observer is a missing dependency, not an
+available environment switch. Do not fill observations from expected timings,
+clone reports, script source or filenames. After the audit, run the strict gate:
+
+```sh
+python3 tools/playthrough.py --game /home/adrox/aztec-re/game \
+  --engine "$PWD/build/aztec_engine" --rules-dir "$PWD/docs/data" \
+  --routes "$PWD/work/campaign-flow-input/scenarios.json" --no-auto-orders \
+  --max-ticks 43200 --timeout 900 --require-reference \
+  --reference-dir "$PWD/work/campaign-flow-input/reference" \
+  --out "$PWD/work/campaign-flow-paired-$(date -u +%Y%m%dT%H%M%S)"
+```
+
+Update each mission's report with measured win, lose, retry, progression and
+first divergence, blockers fixed with two-run evidence, remaining blockers with
+cause, and save continuation. Treat a nonzero process status, timeout, missing
+observation, unsupported transport site or unreachable route as unresolved.
+Checkpoint equality alone does not validate the UI/profile/ending sequence.
+Neither synthetic tests nor pending run sheets add live L7 counts. Current
+acceptance remains **0/15 verified routes; needs live run**.
 ctest --test-dir build -R 'savegame|save_import$|save_resume_controls|engine_save|campaign_save_processes|campaign_ui' --output-on-failure
 ```
 
