@@ -24,6 +24,9 @@ l0 = legacy.harness.l0
 walk_spec = importlib.util.spec_from_file_location("idle_walk_measure", ROOT / "tools/idle_walk_measure.py")
 idle_walk = importlib.util.module_from_spec(walk_spec)
 walk_spec.loader.exec_module(idle_walk)
+formation_spec = importlib.util.spec_from_file_location("formation_measure", ROOT / "tools/formation_measure.py")
+formation = importlib.util.module_from_spec(formation_spec)
+formation_spec.loader.exec_module(formation)
 spec = importlib.util.spec_from_file_location("parity_initial", ROOT / "tools/parity_initial.py")
 initial = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(initial)
@@ -106,6 +109,133 @@ class SharedControls(unittest.TestCase):
                 path.write_text("".join(json.dumps(row) + "\n" for row in invalid))
                 with self.assertRaises(ValueError):
                     idle_walk.summarize(path)
+
+    def formation_fixture(self, path, base):
+        # Generated trajectories test reporting only; they prescribe no game rule.
+        rows = [dict(schema=2, phase="before_commands", position_unit="pixel/256")]
+        for tick in range(1, 61):
+            objects, orders = [], []
+            for i in range(3):
+                x = (i * 48 + 24) * 256
+                if i == 0:
+                    x += min(max(tick - 1, 0), 6) * 2048
+                if i == 2:
+                    x += (tick - 1) * 100
+                walking = (i == 0 and tick < 7) or i == 2
+                objects.append(dict(handle=base + i, owner=0, type=27, x=x, y=24 * 256))
+                orders.append(dict(handle=base + i, kind=0, tactic=base + 100 if i < 2 else base + 200,
+                                   unit_state=2 if walking else 1, tactic_state=1, tactic_mode=3,
+                                   anchor_tile=[1, 1], tile=[1, 0], step_destination=[72, 24],
+                                   step_velocity=[2048 if i == 0 else 100, 0],
+                                   member=dict(pool_ordinal=i, pool_count=3)))
+            rows.append(dict(tick=tick, objects=objects, diagnostics=dict(orders=orders)))
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+        return rows
+
+    def test_formation_dense_scenarios_and_endpoints(self):
+        for mission in (1, 2, 3):
+            s = formation.scenario(mission, 120)
+            self.assertEqual(s["observe"]["ticks"], list(range(1, 121)))
+            self.assertEqual(s["input"], [])
+        a, b = self.root / "formation-a", self.root / "formation-b"
+        self.formation_fixture(a, 100)
+        self.formation_fixture(b, 1000)
+        report = formation.compare(a, b, 60)
+        self.assertTrue(report["repeatable"])
+        first, idle, censored = report["endpoints"]
+        self.assertEqual(first["first_walk_tick"], 1)
+        self.assertEqual(first["first_displacement_tick"], 2)
+        self.assertEqual(first["observed_idle_tail_tick"], 7)
+        self.assertEqual(first["endpoint_tile"], [1, 0])
+        self.assertEqual(first["endpoint_offset"], [0, -1])
+        self.assertIsNone(idle["first_walk_tick"])
+        self.assertEqual(idle["observed_idle_tail_tick"], 1)
+        self.assertIsNone(censored["observed_idle_tail_tick"])
+        self.assertIsNone(censored["endpoint_tile"])
+        self.assertEqual(first["group"], idle["group"])
+        self.assertNotEqual(first["group"], censored["group"])
+
+    def test_formation_full_tail_and_member_repeatability(self):
+        a, b = self.root / "formation-a", self.root / "formation-b"
+        self.formation_fixture(a, 100)
+        rows = self.formation_fixture(b, 1000)
+        for change in (lambda r: r[-1]["objects"][0].update(x=123),
+                       lambda r: r[35]["diagnostics"]["orders"][0]["member"].update(pool_ordinal=1),
+                       lambda r: r[45]["diagnostics"]["orders"][0].update(anchor_tile=[2, 1]),
+                       lambda r: r[55]["diagnostics"]["orders"][0].update(tactic=1200)):
+            altered = copy.deepcopy(rows)
+            change(altered)
+            b.write_text("".join(json.dumps(row) + "\n" for row in altered))
+            result = formation.compare(a, b, 60)
+            self.assertFalse(result["repeatable"])
+            self.assertEqual(result["endpoints"], [])
+
+    def test_formation_rejects_sparse_missing_and_same_file(self):
+        a, b = self.root / "formation-a", self.root / "formation-b"
+        self.formation_fixture(a, 100)
+        rows = self.formation_fixture(b, 1000)
+        with self.assertRaises(ValueError):
+            formation.compare(a, a, 60)
+        for change in (lambda r: r.pop(40), lambda r: r.pop(),
+                       lambda r: r[55]["objects"].pop(),
+                       lambda r: r[1]["diagnostics"]["orders"][0].pop("tactic")):
+            altered = copy.deepcopy(rows)
+            change(altered)
+            b.write_text("".join(json.dumps(row) + "\n" for row in altered))
+            with self.assertRaises(ValueError):
+                formation.compare(a, b, 60)
+
+    def test_formation_clone_comparison_and_repeat_gate(self):
+        a, b, c, d = [self.root / name for name in ("ref-a", "ref-b", "clone-a", "clone-b")]
+        for path, base in ((a, 100), (b, 1000), (c, 2000), (d, 3000)):
+            self.formation_fixture(path, base)
+        result = formation.compare(a, b, 60, c, d)
+        self.assertTrue(result["clone_repeatable_positions"])
+        self.assertTrue(all(r["tick_60_equal"] for r in result["clone_comparison"]))
+        for path in (c, d):
+            rows = [json.loads(line) for line in path.read_text().splitlines()]
+            for row in rows[2:]:
+                row["objects"][0]["x"] = rows[1]["objects"][0]["x"]
+            path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+        result = formation.compare(a, b, 60, c, d)
+        first = result["clone_comparison"][0]
+        self.assertEqual(first["first_position_difference_tick"], 2)
+        self.assertTrue(first["moved_reference"])
+        self.assertFalse(first["moved_clone"])
+        self.assertFalse(first["tick_60_equal"])
+        rows[-1]["objects"][0]["x"] += 1
+        d.write_text("".join(json.dumps(row) + "\n" for row in rows))
+        result = formation.compare(a, b, 60, c, d)
+        self.assertFalse(result["clone_repeatable_positions"])
+        self.assertNotIn("clone_comparison", result)
+
+    def test_formation_collection_preserves_failures_and_independent_runs(self):
+        args = formation.argparse.Namespace(output=self.root / "collection", game=self.root / "source-game",
+                                            runtime=self.root / "runtime", engine=self.root / "engine", last_tick=60)
+        with patch.object(formation.runner, "shared_runner", side_effect=RuntimeError("namespace denied")) as run:
+            formation.collect(args)
+        self.assertEqual(run.call_count, 12)
+        self.assertEqual(len({call.args[2] for call in run.call_args_list}), 12)
+        self.assertTrue(all(call.kwargs == dict(normalize=False) for call in run.call_args_list))
+        for mission in (1, 2, 3):
+            outcomes = json.loads((args.output / f"mission_{mission}/processes.json").read_text())
+            self.assertEqual(len(outcomes), 4)
+            self.assertTrue(all(row["status"] == "failed" for row in outcomes.values()))
+
+    def test_formation_cli_pending_status_and_exclusive_report(self):
+        a, b = self.root / "ref-a", self.root / "ref-b"
+        self.formation_fixture(a, 100)
+        self.formation_fixture(b, 1000)
+        output = self.root / "formation-review.json"
+        command = [sys.executable, "-I", str(ROOT / "tools/formation_measure.py"), "compare",
+                   str(a), str(b), "--last-tick", "60", "--output", str(output)]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(json.loads(output.read_text())["status"], "needs live run")
+        before = output.read_bytes()
+        result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(output.read_bytes(), before)
 
     def complete_bundle(self, name):
         directory = self.root / name
@@ -474,7 +604,8 @@ class SharedControls(unittest.TestCase):
                 self.assertEqual(record["formation_marked"], bool(state % 2))
                 self.assertEqual(record["idle_animation_timer"], -1)
                 self.assertEqual(record["descriptor_speed_px"], 8)
-                self.assertEqual(record["member"], dict(tile=[11, 13], active=True, route_pending=True,
+                self.assertEqual(record["member"], dict(pool_ordinal=state + 1, pool_count=7,
+                                                      tile=[11, 13], active=True, route_pending=True,
                                                       route_count=4, route_cursor=2, search_counter=7))
             missing = row["diagnostics"]["orders"][7]
             self.assertEqual(missing["member"]["unavailable"], "Missing L0 tactic member")

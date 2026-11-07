@@ -40,7 +40,7 @@ static void member_probe(uint32_t tactic, uint32_t object) {
   L0Pool members = {0};
   const char* error = l0_span(address, 0x28) ? l0_pool_try_read(address, &members) :
                                                            "Invalid L0 member pool span";
-  uint32_t record = 0;
+  uint32_t record = 0, ordinal = 0;
   if (!error && members.stride < 8 + 0x28) error = "Short L0 tactic member record";
   if (!error) {
     for (uint32_t i = 0; i < members.count; ++i) {
@@ -48,6 +48,7 @@ static void member_probe(uint32_t tactic, uint32_t object) {
       if (GU32(payload) != object) continue;
       if (record) { error = "Duplicate L0 tactic member"; break; }
       record = payload;
+      ordinal = i;
     }
     if (!record && !error) error = "Missing L0 tactic member";
   }
@@ -55,7 +56,8 @@ static void member_probe(uint32_t tactic, uint32_t object) {
     fprintf(output, ",\"member\":{\"unavailable\":\"%s\",\"raw\":{\"pool\":%u}}", error, address);
   else
     // Per-member tile and route bookkeeping are distinct from the tactic anchor.
-    fprintf(output, ",\"member\":{\"tile\":[%d,%d],\"active\":%s,\"route_pending\":%s,\"route_count\":%u,\"route_cursor\":%u,\"search_counter\":%u}",
+    fprintf(output, ",\"member\":{\"pool_ordinal\":%u,\"pool_count\":%u,\"tile\":[%d,%d],\"active\":%s,\"route_pending\":%s,\"route_count\":%u,\"route_cursor\":%u,\"search_counter\":%u}",
+            ordinal, members.count,
             (int32_t)GU32(record + 4), (int32_t)GU32(record + 8),
             GU8(record + 0x14) ? "true" : "false", GU8(record + 0x15) ? "true" : "false",
             GU32(record + 0x1c), GU32(record + 0x20), GU32(record + 0x24));

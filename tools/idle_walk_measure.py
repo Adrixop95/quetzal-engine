@@ -24,20 +24,22 @@ def prepare(directory):
         (directory / f"{scenario['id']}.json").write_text(json.dumps(scenario, indent=2) + "\n")
 
 
-def summarize(path):
+def summarize(path, expected_ticks=None):
+    expected = TICKS if expected_ticks is None else expected_ticks
     rows = [json_object(line) for line in path.read_text().splitlines()]
     require(rows and rows[0] == dict(schema=2, phase="before_commands", position_unit="pixel/256"),
             "invalid native observer header")
     rows = rows[1:]
     ticks = [row.get("tick") for row in rows]
     require(all(type(t) is int for t in ticks) and ticks == sorted(set(ticks))
-            and ticks[:24] == TICKS, "need every tick from 1 through 24")
+            and (ticks[:24] == TICKS if expected_ticks is None else ticks == expected),
+            "incomplete or wrong measurement schedule")
     cohort = {}
     identities = set()
     walking_counts = []
     new_counts = []
     seeds = []
-    for row in rows[:24]:
+    for row in rows[:len(expected)]:
         objects = {}
         for obj in row["objects"]:
             handle = obj["handle"]
@@ -93,7 +95,7 @@ def summarize(path):
         unit["first_observed_walk_tick"] = next((s["tick"] for s in unit["samples"] if s["unit_state"] == 2), None)
         if unit["first_observed_walk_tick"] is not None:
             first[unit["first_observed_walk_tick"]] += 1
-    return dict(schema=1, scope="initial_marine_cohort", ticks=TICKS, mission_seed=seeds,
+    return dict(schema=1, scope="initial_marine_cohort", ticks=expected, mission_seed=seeds,
                 walking_counts=walking_counts, additional_marine_counts=new_counts,
                 first_observed_walk_counts={str(t): first[t] for t in sorted(first)},
                 cohort=sorted(cohort.values(), key=lambda unit: unit["identity"]))
