@@ -2011,6 +2011,147 @@ static void test_resource_clock_save_boundary() {
   }
 }
 
+// Task 103: synthetic audit of mineral coverage, passive income and lifecycle.
+// Nearby marines are controls, not invented mine workers; no assignment API exists.
+static void test_mine_audit() {
+  auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  for (int type : {13, 48, 66}) {
+    const int full_event = type == 66 ? 24 : 16;
+    const int partial_event = 8;
+    World placement = production_world();
+    placement.passability = {40, 40, std::vector<uint8_t>(1600, 2)};
+    placement.resources.v.assign(1600, 0);
+    production_object(placement, 11, 0, 5, 5); placement.objects.back().town_hall = true;
+    // Move a single deposit through every body, clearance and ignored mask offset.
+    for (bool relaxed : {false, true}) for (int cell = 0; cell < 49; ++cell) {
+      World w = placement;
+      w.resources.v[(12 + cell / 7 - 3) * 40 + 12 + cell % 7 - 3] = 65 << 8;
+      GameSim sim(rules, {false, relaxed}); sim.init(w);
+      const bool covered = rules->type(type).footprint_mask[cell] == 2;
+      CHECK(sim.can_place(w, 0, type, 12, 12) == covered);
+    }
+    GameSim empty(rules); empty.init(placement);
+    CHECK(!empty.can_place(placement, 0, type, 12, 12));
+
+    for (int units : {0, 1, 4}) for (int warehouses : {0, 1, 2}) {
+      World fresh = production_world();
+      fresh.resources.v.assign(1600, 65 << 8);
+      production_object(fresh, type, 0, 12, 12);
+      for (int i = 0; i < units; ++i) production_object(fresh, 0, 0, 15 + i, 12);
+      for (int i = 0; i < warehouses; ++i) production_object(fresh, i ? 70 : 18, 0, 25 + i * 4, 25);
+      World w = fresh; GameSim sim(rules); sim.init(w);
+      const auto resources = w.resources.v;
+      for (int tick = 1; tick <= 600; ++tick) {
+        production_steps(sim, w, 1);
+        CHECK(w.side_state[0].money == (tick / 100) * full_event);
+      }
+      CHECK(w.resources.v == resources); // Current documented model has no consumption.
+      for (int i = 0; i < units; ++i) {
+        const auto* unit = w.find(uint32_t(2 + i));
+        CHECK(unit && unit->alive && !unit->removed && unit->order == uint8_t(Order::Idle));
+      }
+    }
+
+    // Position changes within a tile must sample the same resource cells.
+    for (int offset : {0, 1, 23, 47}) {
+      World w = production_world(); w.resources.v.assign(1600, 0);
+      production_object(w, type, 0, 12, 12);
+      w.objects[0].teleport(to_fixed(12 * 48 + offset), to_fixed(12 * 48 + offset));
+      // One of the contributing body cells, with the rest empty.
+      const auto& mask = rules->type(type).harvest.occupancy;
+      auto first = std::find(mask.begin(), mask.end(), 2) - mask.begin();
+      w.resources.v[(12 + int(first) / 7 - 3) * 40 + 12 + int(first) % 7 - 3] = 65 << 8;
+      GameSim sim(rules); sim.init(w);
+      production_steps(sim, w, 600);
+      CHECK(w.side_state[0].money == 6 * partial_event);
+    }
+
+    // An invalid preplaced mine is a zero-yield control, not an accepted placement.
+    World dry = production_world(); dry.resources.v.assign(1600, 0);
+    production_object(dry, type, 0, 12, 12);
+    GameSim ds(rules); ds.init(dry); production_steps(ds, dry, 600);
+    CHECK(dry.side_state[0].money == 0);
+
+    // Placement accepts any positive mineral byte, but fixed-point rate can be zero.
+    World trace = placement;
+    trace.resources.v.assign(1600, 1 << 8);
+    GameSim trace_placement(rules); trace_placement.init(trace);
+    CHECK(trace_placement.can_place(trace, 0, type, 12, 12));
+    World trace_income = production_world(); trace_income.resources.v.assign(1600, 1 << 8);
+    production_object(trace_income, type, 0, 12, 12);
+    GameSim trace_sim(rules); trace_sim.init(trace_income);
+    production_steps(trace_sim, trace_income, 600);
+    CHECK(trace_income.side_state[0].money == 0);
+
+    // Synthetic resource removal checks accumulated credit and future zero yield.
+    World depleted = production_world(); depleted.resources.v.assign(1600, 65 << 8);
+    production_object(depleted, type, 0, 12, 12);
+    production_object(depleted, 0, 0, 17, 12);
+    GameSim depletion(rules); depletion.init(depleted);
+    production_steps(depletion, depleted, 50);
+    depleted.resources.v.assign(1600, 0); // Test injection, not natural depletion.
+    production_steps(depletion, depleted, 550);
+    CHECK(depleted.side_state[0].money == full_event / 2);
+    CHECK(depleted.objects[1].alive && !depleted.objects[1].removed);
+    Command move; move.type = Pct::Move; move.ids = {2}; move.a = 20 * 48; move.b = 12 * 48;
+    depletion.submit(move); production_steps(depletion, depleted, 80);
+    CHECK(depleted.objects[1].cur_x > tile_center_fixed(17));
+
+    World fresh = production_world(); fresh.resources.v.assign(1600, 65 << 8);
+    production_object(fresh, type, 0, 12, 12);
+    production_object(fresh, 0, 0, 17, 12);
+    World w = fresh; GameSim sim(rules); sim.init(w);
+    production_steps(sim, w, 47);
+    SaveData save; save.mission = "synthetic-mine-audit"; save.tick = sim.tick_count();
+    save.hash = sim.state_hash(w); save.log = sim.log();
+    SaveData decoded; CHECK(deserialize_save(serialize_save(save), decoded));
+    World restored = fresh;
+    auto replay = GameSim::replay(restored, rules, decoded.log, decoded.tick);
+    CHECK(replay->state_hash(restored) == decoded.hash);
+    for (int tick = 48; tick <= 600; ++tick) {
+      production_steps(sim, w, 1); production_steps(*replay, restored, 1);
+      CHECK(sim.state_hash(w) == replay->state_hash(restored));
+      CHECK(w.side_state[0].money == (tick / 100) * full_event);
+    }
+    // Death discards pending income, releases the footprint and leaves units mobile.
+    production_steps(sim, w, 47);
+    sim.script_kill(w, 1);
+    const int money = w.side_state[0].money;
+    production_steps(sim, w, 600);
+    CHECK(!w.objects[0].alive && w.side_state[0].money == money);
+    CHECK(w.objects[1].alive && !w.objects[1].removed);
+    production_object(w, 11, 0, 5, 5); w.objects.back().town_hall = true;
+    CHECK(sim.can_place(w, 0, type, 12, 12));
+    move.ids = {2}; sim.submit(move); production_steps(sim, w, 80);
+    CHECK(w.objects[1].cur_x > tile_center_fixed(17));
+  }
+
+  // Deliberately injected overlapping mines share a cell; normal placement rejects overlap.
+  World shared = production_world(); shared.resources.v.assign(1600, 65 << 8);
+  production_object(shared, 13, 0, 12, 12);
+  production_object(shared, 13, 0, 13, 12);
+  production_object(shared, 11, 0, 5, 5); shared.objects.back().town_hall = true;
+  GameSim sharing(rules); sharing.init(shared);
+  CHECK(!sharing.can_place(shared, 0, 13, 12, 12));
+  const auto resources = shared.resources.v;
+  production_steps(sharing, shared, 600);
+  CHECK(shared.side_state[0].money == 192 + 120 && shared.resources.v == resources); // two hall payouts
+  sharing.script_kill(shared, 1);
+  production_steps(sharing, shared, 600);
+  CHECK(shared.side_state[0].money == 288 + 240);
+
+  // Separate the reported mission-2 +60/300 hall cadence from +16/100 mine income.
+  for (int start : {0, 100, 7150}) {
+    World hall = production_world(); hall.mission.start_time = start;
+    production_object(hall, 11, 0, 10, 10);
+    GameSim sim(rules); sim.init(hall); hall.side_state[0].money = 2000;
+    for (int tick = 1; tick <= 1500; ++tick) {
+      production_steps(sim, hall, 1);
+      CHECK(hall.side_state[0].money == 2000 + (tick / 300) * 60);
+    }
+  }
+}
+
 static void test_production() {
   auto rules = std::make_shared<RulesData>();
   CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
@@ -3540,6 +3681,7 @@ int main(int argc, char** argv) {
     test_automatic_placement_access();
     test_blocked_producer_exit();
     test_resource_clock_save_boundary();
+    test_mine_audit();
     test_production();
     test_town_production();
     test_town_service();
