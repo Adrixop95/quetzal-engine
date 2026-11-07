@@ -2564,6 +2564,192 @@ static void test_parallel_town_production() {
 
 }
 
+// Synthetic modification contracts; these expectations do not measure game parity.
+static void test_parallel_training() {
+  auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  auto initial_world = [] {
+    World w = production_world();
+    production_object(w, 11, 0, 5, 5); w.objects.back().town_hall = true;
+    w.side_state.resize(8); w.side_state[0].money = 10000;
+    return w;
+  };
+  auto enqueue = [](GameSim& sim, int count, int type = 0) {
+    Command buy; buy.type = Pct::Build; buy.a = type; buy.ids = {1};
+    for (int i = 0; i < count; ++i) sim.submit(buy);
+  };
+  auto running = [](const World& w, int type = -1) {
+    return std::count_if(w.side_state[0].queue.begin(), w.side_state[0].queue.end(),
+        [type](const auto& q) { return q.started && (type < 0 || q.type == type); });
+  };
+  // Compare complete hashes within this revision: unrelated state additions
+  // (such as formation obstacles) must not invalidate the training contract.
+  for (const char* setting : {"parallel_training=1", "parallel_training=off"}) {
+    auto w = initial_world(), explicit_world = w;
+    Modifications mods; CHECK(mods.set(setting));
+    GameSim sim(rules), explicit_sim(rules, mods);
+    sim.init(w); explicit_sim.init(explicit_world);
+    CHECK(mods.bits() == 0 && sim.state_hash(w) == explicit_sim.state_hash(explicit_world));
+    enqueue(sim, 6); enqueue(explicit_sim, 6);
+    for (int tick = 1; tick <= 120; ++tick) {
+      production_steps(sim, w, 1); production_steps(explicit_sim, explicit_world, 1);
+      CHECK(sim.state_hash(w) == explicit_sim.state_hash(explicit_world));
+      CHECK(running(w) == 1);
+      if (tick == 1 || tick == 50 || tick == 120) {
+        // Baseline serial production facts, independent of other world state:
+        // completion at tick 100 hands its slot to the next order that tick.
+        const auto& queue = w.side_state[0].queue;
+        CHECK(queue.size() == size_t(tick < 100 ? 6 : 5));
+        CHECK(w.side_state[0].money == (tick < 100 ? 9900 : 9800));
+        CHECK(w.objects.size() == size_t(tick < 100 ? 1 : 2));
+        CHECK(queue.front().remaining == (tick < 100 ? 100 - tick : 199 - tick));
+        CHECK(queue.front().paid == 100 && !queue.front().paused);
+        for (size_t i = 1; i < queue.size(); ++i)
+          CHECK(!queue[i].started && queue[i].paid == 0 && queue[i].remaining == 100);
+      }
+    }
+  }
+  for (int count = 1; count <= 8; ++count) {
+    auto initial = initial_world(), w = initial;
+    GameSim sim(rules, {false, false, count}); sim.init(w); enqueue(sim, 8);
+    production_steps(sim, w, 1);
+    CHECK(running(w) == count && w.side_state[0].money == 10000 - 100 * count);
+    for (int i = 0; i < 8; ++i) {
+      const auto& q = w.side_state[0].queue[size_t(i)];
+      CHECK(q.started == (i < count) && q.remaining == (i < count ? 99 : 100));
+    }
+    SaveData saved; saved.mission = "parallel-training"; saved.tick = sim.tick_count();
+    saved.hash = sim.state_hash(w); saved.log = sim.log(); saved.modifications = sim.initial_modifications();
+    SaveData loaded; CHECK(deserialize_save(serialize_save(saved), loaded));
+    CHECK(loaded.modifications.parallel_training == count);
+    auto restored = initial;
+    auto replay = GameSim::replay(restored, rules, loaded.log, loaded.tick, "", {}, loaded.modifications);
+    CHECK(replay->state_hash(restored) == saved.hash);
+    for (int tick = 2; tick <= 100; ++tick) {
+      production_steps(sim, w, 1); production_steps(*replay, restored, 1);
+      CHECK(sim.state_hash(w) == replay->state_hash(restored));
+    }
+    CHECK(w.objects.size() == size_t(1 + count)); // N times the serial first-cycle throughput
+    CHECK(w.side_state[0].queue.size() == size_t(8 - count));
+  }
+  // Each started unit owns its timer, payment, pause state and refund.
+  {
+    auto w = initial_world(); w.side_state[0].money = 250;
+    GameSim sim(rules, {false, false, 3}); sim.init(w); enqueue(sim, 5);
+    production_steps(sim, w, 1); CHECK(running(w) == 2 && w.side_state[0].money == 50);
+    Command pause; pause.type = Pct::PauseBuild; pause.ids = {1}; pause.a = 1; pause.b = 2;
+    sim.submit(pause); production_steps(sim, w, 9);
+    CHECK(w.side_state[0].queue[0].remaining == 90 && w.side_state[0].queue[1].remaining == 99);
+    const int refund = w.side_state[0].queue[1].refund();
+    Command cancel; cancel.type = Pct::QueueKill; cancel.a = 4;
+    sim.submit(cancel); production_steps(sim, w, 1); CHECK(w.side_state[0].money == 50);
+    cancel.a = 1; sim.submit(cancel); production_steps(sim, w, 1);
+    const auto& queue = w.side_state[0].queue;
+    CHECK(queue.size() == 3 && queue[1].started && !queue[2].started);
+    CHECK(queue[0].remaining == 88 && queue[1].remaining == 99);
+    CHECK(w.side_state[0].money == 50 + refund - queue[1].paid);
+  }
+  // Matching recipes share producer capacity; other producers have their own pool.
+  for (int buildings : {2, 3}) {
+    auto initial = initial_world();
+    for (int i = 0; i < buildings; ++i) production_object(initial, 14, 0, 12 + i * 4, 12);
+    production_object(initial, 15, 0, 12, 20);
+    production_object(initial, 22, 1, 28, 20); // side-wide technology, not another producer
+    auto w = initial; GameSim sim(rules, {false, false, 0}); sim.init(w);
+    enqueue(sim, 2, 1); enqueue(sim, 2, 2); enqueue(sim, 2, 6);
+    production_steps(sim, w, 1);
+    CHECK(running(w, 1) == 2 && running(w, 2) == buildings - 2 && running(w, 6) == 1);
+    CHECK(sim.modifications().bits() == 32);
+    // The modification permits purchasing extra production buildings.
+    bool repeatable = false;
+    for (const auto& offer : sim.menu(w, 0, 0)) if (offer.type == 14) repeatable = offer.enabled;
+    CHECK(repeatable);
+    SaveData saved; saved.mission = "per-building"; saved.tick = sim.tick_count();
+    saved.hash = sim.state_hash(w); saved.log = sim.log(); saved.modifications = sim.initial_modifications();
+    SaveData decoded; CHECK(deserialize_save(serialize_save(saved), decoded));
+    CHECK(decoded.modifications.parallel_training == 0);
+    auto restored = initial;
+    auto replay = GameSim::replay(restored, rules, decoded.log, decoded.tick, "", {}, decoded.modifications);
+    CHECK(replay->state_hash(restored) == sim.state_hash(w));
+    for (int i = 0; i < 200; ++i) {
+      production_steps(sim, w, 1); production_steps(*replay, restored, 1);
+      CHECK(replay->state_hash(restored) == sim.state_hash(w));
+    }
+  }
+  // Incomplete, removed, enemy and other-town buildings never add capacity.
+  {
+    auto w = initial_world();
+    for (int i = 0; i < 5; ++i) production_object(w, 14, i == 4 ? 1 : 0, 12 + i * 4, 12);
+    GameSim sim(rules, {false, false, 0}); sim.init(w);
+    w.objects[2].progress = 10; w.objects[2].build_total = 10000;
+    w.objects[3].removed = true; w.objects[4].side = 1;
+    enqueue(sim, 4, 1); production_steps(sim, w, 1); CHECK(running(w) == 1);
+  }
+  // Live toggles preserve paid work and are replayed, including a serial downshift.
+  {
+    auto initial = initial_world(), w = initial; GameSim sim(rules); sim.init(w); enqueue(sim, 5);
+    production_steps(sim, w, 1);
+    Command toggle; toggle.type = Pct::SetModifications; toggle.a = Modifications{false, false, 3}.bits();
+    sim.submit(toggle); production_steps(sim, w, 1); CHECK(running(w) == 3);
+    const int cash = w.side_state[0].money;
+    toggle.a = 0; sim.submit(toggle); production_steps(sim, w, 5);
+    CHECK(w.side_state[0].queue[0].remaining == 93 && w.side_state[0].queue[1].remaining == 99);
+    CHECK(w.side_state[0].money == cash);
+    auto restored = initial; auto replay = GameSim::replay(restored, rules, sim.log(), sim.tick_count());
+    CHECK(replay->state_hash(restored) == sim.state_hash(w));
+  }
+  // The same global switch governs computer purchases on either side.
+  for (int side : {0, 1}) for (int count : {1, 3}) {
+    auto initial = initial_world();
+    initial.mission.towns[0].side = side; initial.objects[0].side = side;
+    initial.mission.sides[size_t(side)].only_comp = true;
+    initial.side_state[size_t(side)].money = 10000;
+    auto w = initial; GameSim sim(rules, {false, false, count}); sim.init(w);
+    w.ai_towns[0].phase = 14; w.ai_towns[0].remaining = 5;
+    // AI orders are issued after economy and start on the following tick.
+    // Set the same synthetic planner state in the replay observer at tick one.
+    production_steps(sim, w, 2);
+    CHECK(w.side_state[size_t(side)].queue.size() == size_t(count));
+    CHECK(w.ai_towns[0].remaining == 5 - count);
+    for (const auto& q : w.side_state[size_t(side)].queue) CHECK(q.started && q.paid > 0);
+    auto restored = initial;
+    auto replay = GameSim::replay(restored, rules, sim.log(), sim.tick_count(), "",
+        [&restored](uint64_t tick, const World&, const GameSim&) {
+          if (tick == 1) { restored.ai_towns[0].phase = 14; restored.ai_towns[0].remaining = 5; }
+        }, {false, false, count});
+    CHECK(replay->state_hash(restored) == sim.state_hash(w));
+  }
+  // Shift-click operates on each running queue slot, even beyond the first.
+  {
+    auto w = initial_world(); GameSim sim(rules, {false, false, 3}); sim.init(w); enqueue(sim, 4);
+    production_steps(sim, w, 1);
+    CommandsUi ui(&sim); Camera camera; Minimap minimap;
+    SDL_Rect panel{796, 0, 204, 493}; auto layout = CommandsUi::layout(panel, 1);
+    Input click; click.mx = layout.queue[1].x + 1; click.my = layout.queue[1].y + 1;
+    click.shift = true; click.pressed[SDL_BUTTON_LEFT] = click.buttons[SDL_BUTTON_LEFT] = true;
+    ui.update(click, w, camera, 1, minimap, false, panel);
+    click.pressed[SDL_BUTTON_LEFT] = click.buttons[SDL_BUTTON_LEFT] = false;
+    click.released[SDL_BUTTON_LEFT] = true;
+    ui.update(click, w, camera, 1, minimap, false, panel);
+    production_steps(sim, w, 1);
+    CHECK(sim.log().back().cmd.type == Pct::PauseBuild && sim.log().back().cmd.b == 2);
+    CHECK(w.side_state[0].queue[1].paused && w.side_state[0].queue[1].remaining == 99);
+    CHECK(w.side_state[0].queue[0].remaining == 98 && w.side_state[0].queue[2].remaining == 98);
+    // A normal saved command log reconstructs the distinct timers and pause state.
+    auto restored = initial_world();
+    auto replay = GameSim::replay(restored, rules, sim.log(), sim.tick_count(), "", {}, {false, false, 3});
+    CHECK(replay->state_hash(restored) == sim.state_hash(w));
+  }
+  // Construction stays serial unless its own independent option is enabled.
+  for (bool construction : {false, true}) {
+    auto w = initial_world(); GameSim sim(rules, {construction, false, 2}); sim.init(w);
+    enqueue(sim, 2);
+    Command place; place.type = Pct::PlaceBuilding; place.a = 12; place.b = place.c = 15; place.ids = {1};
+    sim.submit(place); enqueue(sim, 1); production_steps(sim, w, 1);
+    CHECK(w.side_state[0].queue[2].started == construction);
+    CHECK(!w.side_state[0].queue[3].started);
+  }
+}
+
 // Default production stays serial, but every accepted placement is visible immediately.
 static void test_default_construction_placeholders() {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
@@ -3334,6 +3520,7 @@ int main(int argc, char** argv) {
     test_town_production();
     test_town_service();
     test_parallel_town_production();
+    test_parallel_training();
     test_default_construction_placeholders();
     test_construction_resume_completion();
     test_mixed_production_queue();

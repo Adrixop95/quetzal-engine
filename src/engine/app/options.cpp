@@ -78,6 +78,7 @@ bool save_modifications(const std::string& path, Modifications options) {
   std::ofstream out(path, std::ios::trunc);
   out << "parallel_construction=" << (options.parallel_construction ? "on" : "off") << "\n";
   out << "relaxed_placement=" << (options.relaxed_placement ? "on" : "off") << "\n";
+  out << "parallel_training=" << options.training_value() << "\n";
   out.close();
   return bool(out);
 }
@@ -140,7 +141,8 @@ const char* usage_text() {
   return "usage: aztec_engine [options] [MISSION]\n"
          "  aztec_engine --headless --help   bounded simulation-only campaign mode\n"
          "  MISSION            number (campaign mission_N), map name from game/Maps, or path to .mp (default 1)\n"
-         "  --mod NAME=on|off  clone-only option (parallel_construction, relaxed_placement; default off)\n"
+         "  --mod NAME=value  parallel_construction=on|off; relaxed_placement=on|off (default off)\n"
+         "                    parallel_training=1..8|per-building (default 1)\n"
          "  --modifications-file FILE  override persisted modification settings\n"
          "  --game DIR         game directory (overrides AZTEC_GAME, settings, ./game)\n"
          "  --settings FILE    game=DIR file (default per-user settings.ini)\n"

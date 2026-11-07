@@ -57,10 +57,36 @@ int main(int argc, char** argv) {
   write(root / "legacy-modifications.ini", "parallel_construction=on\n");
   CHECK(load_modifications((root / "legacy-modifications.ini").string(), persisted));
   CHECK(persisted.parallel_construction && !persisted.relaxed_placement);
-  for (uint32_t bits = 0; bits < 4; ++bits) {
+  for (uint32_t bits = 0; bits < 36; ++bits) {
     CHECK(Modifications::valid(bits) && Modifications::from_bits(bits).bits() == bits);
   }
-  CHECK(!Modifications::valid(4));
+  CHECK(!Modifications::valid(36));
+  CHECK(persisted.parallel_training == 1);
+  for (int value = 2; value <= 9; ++value) {
+    const int setting = value % 9;
+    auto training_row = ModificationOptions::row(4, 800, 600, 1);
+    mod_click.mx = training_row.x + 2; mod_click.my = training_row.y + 2;
+    mod_menu.update(mod_click, mod_options, 800, 600, 1);
+    CHECK(mod_options.modifications.parallel_training == setting);
+    CHECK(load_modifications(mod_options.modifications_file, persisted));
+    CHECK(persisted.parallel_training == setting);
+    CHECK(persisted.parallel_construction && persisted.relaxed_placement);
+    CHECK(Modifications::valid(persisted.bits()));
+    CHECK(Modifications::from_bits(persisted.bits()).parallel_training == setting);
+  }
+  CHECK(persisted.set("parallel_training=per building") && persisted.parallel_training == 0);
+  CHECK(persisted.set("parallel_training=per-building") && persisted.parallel_training == 0);
+  CHECK(persisted.set("parallel_training=off") && persisted.parallel_training == 1);
+  for (const char* invalid : {"0", "9", "-1", "2junk", "", "on", "01"})
+    CHECK(!persisted.set(std::string("parallel_training=") + invalid) && persisted.parallel_training == 1);
+  args = {"engine", "--mod", "parallel_training=3", "--modifications-file", mod_path};
+  raw.clear(); for (auto& arg : args) raw.push_back(arg.data());
+  CHECK(parse_options(int(raw.size()), raw.data(), parsed_mods, parse_error, usage));
+  CHECK(parsed_mods.modifications.parallel_training == 3);
+  auto back_row = ModificationOptions::row(6, 800, 600, 1);
+  mod_click.mx = back_row.x + 2; mod_click.my = back_row.y + 2;
+  mod_menu.update(mod_click, mod_options, 800, 600, 1);
+  CHECK(!mod_menu.open);
   GameData data; std::string error; CHECK(data.open(root.string(), error));
   CHECK(campaign_number("MISSION_15.MP") == 15);
   CHECK(campaign_number("/private/Maps/mission_4.mp") == 4);
