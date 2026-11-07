@@ -69,7 +69,7 @@ def analyze(directory, ticks=1490):
     for index, unit in enumerate(course['units']):
         ux, uy, group = unit[:3]
         typ = unit[3] if len(unit) > 3 else 0
-        if index not in matched:
+        if index not in matched or group < 0:
             continue
         obj = matched[index]
         gx, gy = goals[group]
@@ -107,7 +107,8 @@ def analyze(directory, ticks=1490):
                            revisits=len(tiles) - len(set(tiles)), latency=latency,
                            observed_ticks=max(0, last_frame - order + 1)))
     expected = course['n']
-    missing = expected - len(result)
+    # Idle blockers must be present, but receive no order/arrival metric.
+    missing = expected - len(result) + sum(unit[2] < 0 and i not in matched for i, unit in enumerate(course['units']))
     truncated = any(r['arrived'] is None and r['observed_ticks'] < ticks for r in result)
     status = 'missing_units' if missing else 'truncated' if truncated else 'ok'
     arrived = [r for r in result if r['arrived'] is not None]
@@ -126,7 +127,7 @@ def analyze(directory, ticks=1490):
         optimal = {}
         for unit in course['units']:
             group = unit[2]
-            if group not in optimal:
+            if group >= 0 and group not in optimal:
                 optimal[group] = generator.bfs_len(grid, tuple(unit[:2]), tuple(goals[group]))
         latency = [r['latency'] for r in result if r['latency'] is not None]
         summary.update(arrived=len(arrived), success=len(arrived) / expected,

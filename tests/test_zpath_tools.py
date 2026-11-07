@@ -306,6 +306,28 @@ class LogTests(unittest.TestCase):
         summary = self.analyze([self.row(1, 36, 42), self.row(5, 36, 42)])['summary']
         self.assertEqual(summary['status'], 'missing_units')
 
+    def test_idle_blockers_are_required_but_not_ordered(self):
+        grid, _, goal, _ = GENERATOR.course('unstick_stationary')
+        course = dict(name='unstick_stationary', n=1, fog='explored',
+                      grid=[''.join(map(str, row)) for row in grid],
+                      units=[[42, 30, 0, 0], [44, 30, -1, 0]],
+                      goals={'0': goal}, order_frames={'0': 2}, order_frame=2)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'course.json').write_text(json.dumps(course))
+            samples = [self.row(1, 42, 30), self.row(2, 66, 30)]
+            (root / 'pos.txt').write_text('\n'.join(samples) + '\n')
+            self.assertEqual(ANALYZER.analyze(root, 1)['summary']['status'], 'missing_units')
+            samples.append(self.row(1, 44, 30).replace('abc', 'def'))
+            samples.append(self.row(2, 44, 30).replace('abc', 'def'))
+            # Preserve frame ordering; a backwards frame denotes a new mission.
+            samples.sort(key=lambda row: int(row.split()[0]))
+            (root / 'pos.txt').write_text('\n'.join(samples) + '\n')
+            result = ANALYZER.analyze(root, 1)
+            self.assertEqual(result['summary']['status'], 'ok')
+            self.assertEqual(result['summary']['arrived'], 1)
+            self.assertEqual(len(result['units']), 1)
+
     def test_frame_reset_discards_previous_mission(self):
         summary = self.analyze([self.row(1, 36, 42), self.row(100, 36, 42),
                                 self.row(1), self.row(2, 80, 30)])['summary']
@@ -323,6 +345,30 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(result['lost'], 0)
         self.assertEqual(result['ticks'], 450)
         self.assertLess(result['makespan'], 450)
+
+    def test_unstick_courses_and_controls(self):
+        if not BENCHMARK:
+            self.skipTest('pass path_bench to check helper courses')
+        for enabled in ('off', 'on'):
+            command = [BENCHMARK, '--json', '--n', '10', '--ticks', '1200',
+                       '--unstick-scenarios', '--mod', 'unit_unstick=' + enabled]
+            rows = [json.loads(line) for line in subprocess.check_output(command, text=True).splitlines()]
+            repeat = [json.loads(line) for line in subprocess.check_output(command, text=True).splitlines()]
+            self.assertEqual(len(rows), 4)
+            for row, again in zip(rows, repeat):
+                row.pop('ms_per_tick'); again.pop('ms_per_tick')
+                self.assertEqual(row, again)
+                self.assertEqual(len(row['arrival_ticks']), row['n'])
+                if enabled == 'on':
+                    self.assertEqual(row['arrived'], row['n'])
+                    self.assertTrue(all(tick > 0 for tick in row['arrival_ticks']))
+        output = subprocess.check_output([BENCHMARK, '--describe', '--n', '10', '--unstick-scenarios'], text=True)
+        for line in output.splitlines():
+            description = json.loads(line)
+            grid, start, goal, _ = GENERATOR.course(description['name'])
+            self.assertEqual(description['grid'], [''.join(map(str, row)) for row in grid])
+            self.assertEqual(description['start'], list(start))
+            self.assertEqual(description['goal'], list(goal))
 
     def test_cpp_and_reference_generator_geometry(self):
         if not BENCHMARK:

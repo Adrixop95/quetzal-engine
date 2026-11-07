@@ -27,6 +27,29 @@ bool make_course(const std::string& name, int n, Course& c) {
   for (int x = 0; x < c.w; ++x) for (int y : {0, 1, c.h - 2, c.h - 1}) c.dat[(size_t)y * c.w + x] = 0;
   for (int y = 0; y < c.h; ++y) for (int x : {0, 1, c.w - 2, c.w - 1}) c.dat[(size_t)y * c.w + x] = 0;
   const int H = c.h; bool swap = false, park = false, mixed = false;
+  if (name.rfind("unstick_", 0) == 0) {
+    c.start = {38, 30}; c.goal = {66, 30};
+    c.groups = {{c.goal, 0}, {{38, 30}, -1}};
+    if (name == "unstick_column") {
+      rect(c, 44, 2, 46, H - 3); rect(c, 44, 30, 46, 30, 2);
+      c.groups[1] = {{30, 30}, 0};
+      for (int i = 0; i < n; ++i) {
+        int group = i >= n / 2, k = i - (group ? n / 2 : 0);
+        c.units.push_back({group ? 48 + k : 42 - k, 30, group, 0});
+      }
+    } else if (name == "unstick_box") {
+      c.units.push_back({38, 30, 0, 0});
+      for (int y = 29; y <= 31; ++y) for (int x = 37; x <= 39; ++x)
+        if (x != 38 || y != 30) c.units.push_back({x, y, 1, 0});
+    } else if (name == "unstick_forest") {
+      rect(c, 40, 2, 60, H - 3); rect(c, 40, 30, 60, 30, 1);
+      c.units = {{38, 30, 0, 0}, {45, 30, 1, 0}, {53, 30, 1, 0}};
+    } else if (name == "unstick_stationary") {
+      rect(c, 44, 2, 46, H - 3); rect(c, 44, 30, 46, 30, 2);
+      c.units = {{42, 30, 0, 0}, {44, 30, 1, 0}};
+    } else return false;
+    return true;
+  }
   if (name == "open") {}
   else if (name.rfind("gap", 0) == 0) { int w = name.size() > 3 ? std::stoi(name.substr(3)) : 1; rect(c, 44, 2, 46, H - 3); rect(c, 44, 30 - w / 2, 46, 30 - w / 2 + w - 1, 2); }
   else if (name.rfind("corr", 0) == 0) { int w = name.size() > 4 ? std::stoi(name.substr(4)) : 1; rect(c, 40, 2, 60, H - 3); rect(c, 40, 30 - w / 2, 60, 30 - w / 2 + w - 1, 2); }

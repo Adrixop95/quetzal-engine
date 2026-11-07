@@ -240,7 +240,7 @@ int run_headless(int argc, char** argv) {
       else if (a == "--resume") resume_path = value();
       else if (a == "--no-auto-orders") auto_orders = false;
       else if (a == "--help") {
-        std::puts("usage: aztec_engine --headless [--settings FILE] --game DIR --rules-dir DIR [--mod NAME=on|off (parallel_construction, relaxed_placement)] [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE [--order-observations]] [--combat-trace FILE] [--ai-trace FILE] [--tactic-trace FILE] [--tick-hashes FILE] [--l0-schedule FILE --l0-output FILE --l0-frames DIR] [--save-at N --save FILE] [--resume FILE] MISSION");
+        std::puts("usage: aztec_engine --headless [--settings FILE] --game DIR --rules-dir DIR [--mod NAME=on|off (parallel_construction, relaxed_placement, unit_unstick)] [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE [--order-observations]] [--combat-trace FILE] [--ai-trace FILE] [--tactic-trace FILE] [--tick-hashes FILE] [--l0-schedule FILE --l0-output FILE --l0-frames DIR] [--save-at N --save FILE] [--resume FILE] MISSION");
         return 0;
       } else if (a.empty() || a[0] == '-' || mission_given) throw std::runtime_error("unexpected argument: " + a);
       else { report.mission = a; mission_given = true; }
