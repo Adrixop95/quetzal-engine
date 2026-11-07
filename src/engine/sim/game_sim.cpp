@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <limits>
+#include <map>
 #include <stdexcept>
 
 #include "engine/world/type_info.hpp"
@@ -125,8 +126,34 @@ void GameSim::init(World& w) {
     }
     if (o.removed || !o.alive) continue;
     attach_agent(o);
+    if (o.mover < 0) mover_->block_formation_tile({px(o.cur_x) / kTilePx, px(o.cur_y) / kTilePx});
     if (r.structure) {
       block_footprint(r, px(o.cur_x) / kTilePx, px(o.cur_y) / kTilePx, +1);
+    }
+  }
+  if (!w.original_save) {
+    // Placement ids follow mission records (submarine controllers are skipped).
+    // Keep the source group, including teams without a script ScenarioID.
+    struct StartupGroup { path::Cell anchor; std::vector<uint32_t> agents; };
+    std::map<std::pair<int, int>, StartupGroup> groups;
+    uint32_t id = 0;
+    for (const PlacedObject& p : w.mission.objects) {
+      if (p.source == ObjectSource::Submarine) continue;
+      Object* o = w.find_mut(++id);
+      if (!o || o->type != p.type || o->side != p.side ||
+          !o->alive || o->removed || p.defence ||
+          (p.source != ObjectSource::Team && p.source != ObjectSource::Town)) continue;
+      auto key = std::make_pair(int(p.source), p.group);
+      auto [it, inserted] = groups.try_emplace(key, StartupGroup{{p.x, p.y}, {}});
+      if (inserted && p.source == ObjectSource::Town) {
+        for (const auto& town : w.mission.towns)
+          if (town.index == p.group) it->second.anchor = {town.x, town.y};
+      }
+      if (o->mover >= 0) it->second.agents.push_back(uint32_t(o->mover));
+    }
+    for (auto& [key, group] : groups) {
+      (void)key;
+      mover_->order_formation(group.agents.data(), int(group.agents.size()), group.anchor);
     }
   }
 }

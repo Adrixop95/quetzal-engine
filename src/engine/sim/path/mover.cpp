@@ -29,6 +29,99 @@ void MoveSystem::stop(u32 id) {
   if (a.order >= 0) { --orders_[a.order]->refs; a.order = -1; }
   a.state = AgentState::Idle; a.vel = {0, 0};
   a.target = {}; a.target_until = 0; a.backoff_ticks = 0;
+  a.formation = -1;
+}
+
+void MoveSystem::order_formation(const u32* ids, int n, Cell anchor) {
+  if (n <= 0 || !grid_.in_bounds(anchor.x, anchor.y)) return;
+  Formation f; f.anchor = anchor;
+  build_formation_fields(f);
+  formations_.push_back(std::move(f));
+  for (int i = 0; i < n; ++i) {
+    stop(ids[i]);
+    Agent& a = agents_[ids[i]];
+    a.formation = int(formations_.size()) - 1;
+    a.step_goal = a.pos;
+    a.step_from = a.pos;
+    a.state = AgentState::Moving;
+  }
+}
+
+void MoveSystem::build_formation_fields(Formation& f) {
+  const Cell anchor = f.anchor;
+  for (int cls = 0; cls < 2; ++cls) {
+    std::vector<Cell> goals;
+    for (int y = anchor.y - 1; y <= anchor.y + 1; ++y)
+      for (int x = anchor.x - 1; x <= anchor.x + 1; ++x)
+        if (!grid_.blocked(x, y, MoveClass(cls))) goals.push_back({x, y});
+    f.fields[cls].build(grid_, MoveClass(cls), goals.data(), int(goals.size()), 0);
+  }
+
+}
+
+void MoveSystem::tick_formations() {
+  if (std::none_of(agents_.begin(), agents_.end(), [](const Agent& a) { return a.formation >= 0; })) return;
+  for (Formation& f : formations_)
+    if (f.fields[0].version() != grid_.version()) build_formation_fields(f);
+  // Reserve both ends of an unfinished step. Counts also handle overlapping
+  // initial placements without releasing another unit's reservation.
+  std::vector<int> occupied(size_t(grid_.width()) * grid_.height());
+  auto cell = [&](Vec2 p) { return Cell{floor_div(p.x, kTileFix), floor_div(p.y, kTileFix)}; };
+  auto reserve = [&](Vec2 p, int delta) {
+    Cell c = cell(p);
+    if (grid_.in_bounds(c.x, c.y)) occupied[size_t(c.y) * grid_.width() + c.x] += delta;
+  };
+  for (Cell c : formation_obstacles_)
+    if (grid_.in_bounds(c.x, c.y)) ++occupied[size_t(c.y) * grid_.width() + c.x];
+  for (const Agent& a : agents_) {
+    const bool stepping = a.formation >= 0 && (a.pos.x != a.step_goal.x || a.pos.y != a.step_goal.y);
+    reserve(stepping ? a.step_from : a.pos, 1);
+    if (stepping) reserve(a.step_goal, 1);
+  }
+  constexpr int dx[8] = {0, 1, 1, 1, 0, -1, -1, -1};
+  constexpr int dy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
+  // Stable reverse placement order approximates the original pool traversal.
+  for (auto it = agents_.rbegin(); it != agents_.rend(); ++it) {
+    Agent& a = *it;
+    if (a.formation < 0) continue;
+    a.prev_pos = a.pos; a.vel = {};
+    const Formation& f = formations_[size_t(a.formation)];
+    if (a.pos.x == a.step_goal.x && a.pos.y == a.step_goal.y) {
+      Cell c = cell(a.pos);
+      const FlowField& field = f.fields[int(a.cls)];
+      u32 best = FlowField::kInf;
+      Cell next = c;
+      if (field.reachable(c.x, c.y) && field.cost(c.x, c.y) != 0) {
+        for (int d = 0; d < 8; ++d) {
+          int x = c.x + dx[d], y = c.y + dy[d];
+          if (grid_.blocked(x, y, a.cls) || !field.reachable(x, y) || occupied[size_t(y) * grid_.width() + x]) continue;
+          if (dx[d] && dy[d] && (grid_.blocked(x, c.y, a.cls) || grid_.blocked(c.x, y, a.cls))) continue;
+          u32 cost = field.cost(x, y);
+          if (cost >= field.cost(c.x, c.y)) continue;
+          cost += dx[d] && dy[d] ? 14 : 10;
+          if (cost < best) { best = cost; next = {x, y}; }
+        }
+      }
+      if (best == FlowField::kInf) {
+        if (field.reachable(c.x, c.y) && field.cost(c.x, c.y) != 0 && ++a.win_ticks < cfg_.stuck_window) continue;
+        a.formation = -1; a.state = AgentState::Arrived;
+        continue;
+      }
+      a.win_ticks = 0;
+      a.step_goal = tile_center(next.x, next.y);
+      a.step_from = a.pos;
+      a.slot = a.step_goal;
+      reserve(a.step_goal, 1);
+    }
+    // Tick one establishes the first reservation; displacement begins at two.
+    if (tick_ == 1) continue;
+    Vec2 delta = a.step_goal - a.pos;
+    a.vel = length(delta) <= a.speed ? delta : with_length(delta, a.speed);
+    a.pos = a.pos + a.vel;
+    if (a.vel.x || a.vel.y) {
+      a.heading = angle_of(a.vel.x, a.vel.y); a.facing = facing8(a.vel); ++a.moved_ticks;
+    }
+  }
 }
 
 void MoveSystem::order_move(const u32* ids, int n, Vec2 goal) {
@@ -134,6 +227,7 @@ void MoveSystem::order_move(const u32* ids, int n, Vec2 goal) {
   std::sort(slots.begin(), slots.end(), [&](Vec2 a, Vec2 b) { i64 pa = dot(a, dir), pb = dot(b, dir); if (pa != pb) return pa > pb; if (a.y != b.y) return a.y < b.y; return a.x < b.x; });
   for (int i = 0; i < n; ++i) {
     Agent& a = agents_[ord[i]];
+    a.formation = -1;
     if (a.order >= 0 && a.order != oi) --orders_[a.order]->refs;
     a.target = {}; a.target_until = 0; a.backoff_ticks = 0;   // drop steering cached for the previous order
     a.order = oi; a.slot = slots[i]; a.state = AgentState::Moving; a.win_start = a.pos; a.win_ticks = 0; a.stuck_level = 0; a.ghost_ticks = a.squeeze_ticks = 0;
@@ -237,6 +331,7 @@ void MoveSystem::resolve_overlaps() {
       for (u32 j : nb) {
         if (j < a.id) continue;
         Agent& b = agents_[j];
+        if (a.formation >= 0 || b.formation >= 0) continue;
         i32 ra = a.squeeze_ticks ? a.radius * 7 / 10 : a.radius, rb = b.squeeze_ticks ? b.radius * 7 / 10 : b.radius;
         Vec2 d = b.pos - a.pos; i64 dd = len2(d); i64 R = (i64)ra + rb;
         if (dd >= R * R) continue;
@@ -252,17 +347,19 @@ void MoveSystem::resolve_overlaps() {
         b.pos.x += (i32)((i64)n.x * ov / 4096 * sb / 256); b.pos.y += (i32)((i64)n.y * ov / 4096 * sb / 256);
       }
     }
-    for (Agent& a : agents_) grid_.push_out(a.pos, a.squeeze_ticks ? a.radius * 7 / 10 : a.radius, a.cls);
+    for (Agent& a : agents_) if (a.formation < 0) grid_.push_out(a.pos, a.squeeze_ticks ? a.radius * 7 / 10 : a.radius, a.cls);
   }
-  for (Agent& a : agents_) if (grid_.disc_hits(a.pos, a.radius * 6 / 10, a.cls)) a.pos = a.prev_pos;   // never end inside a wall
+  for (Agent& a : agents_) if (a.formation < 0 && grid_.disc_hits(a.pos, a.radius * 6 / 10, a.cls)) a.pos = a.prev_pos;   // never end inside a wall
 }
 
 void MoveSystem::tick() {
   ++tick_;
+  tick_formations();
   build_hash();
   std::vector<Vec2> nv(agents_.size());
   std::vector<u32> nb;
   for (Agent& a : agents_) {
+    if (a.formation >= 0) continue;
     a.prev_pos = a.pos;
     Vec2 pref{0, 0};
     if (a.state == AgentState::Moving && a.order >= 0) {
@@ -276,6 +373,7 @@ void MoveSystem::tick() {
     nv[a.id] = choose_velocity(a, pref, nb);
   }
   for (Agent& a : agents_) {
+    if (a.formation >= 0) continue;
     a.vel = nv[a.id]; a.pos = a.pos + a.vel;
     if (a.vel.x || a.vel.y) { a.heading = angle_of(a.vel.x, a.vel.y); a.facing = facing8(a.vel); ++a.moved_ticks; }
     if (a.ghost_ticks) --a.ghost_ticks;
@@ -284,6 +382,7 @@ void MoveSystem::tick() {
   resolve_overlaps();
   build_hash();
   for (Agent& a : agents_) {
+    if (a.formation >= 0) continue;
     if (a.state != AgentState::Moving) continue;
     i32 dist = length(a.slot - a.pos);
     if (dist <= 2 * kFix) { a.state = AgentState::Arrived; a.vel = {0, 0}; continue; }
@@ -318,6 +417,20 @@ u64 MoveSystem::state_hash() const {
     mix((u32)a.slot.x); mix((u32)a.slot.y); mix((u32)a.facing); mix((u32)a.heading);
     mix((u32)a.win_start.x); mix((u32)a.win_start.y); mix((u32)a.win_ticks); mix((u32)a.stuck_level); mix((u32)a.squeeze_ticks); mix((u32)a.ghost_ticks); mix(a.moved_ticks);
     mix((u32)a.target.x); mix((u32)a.target.y); mix(a.target_until); mix((u32)a.backoff_ticks);
+    if (!formations_.empty() || !formation_obstacles_.empty()) {
+      mix(u32(a.formation)); mix(u32(a.step_goal.x)); mix(u32(a.step_goal.y));
+      mix(u32(a.step_from.x)); mix(u32(a.step_from.y));
+    }
+  }
+  // Preserve the existing ordinary-movement digest when no formation was set up.
+  if (!formations_.empty() || !formation_obstacles_.empty()) {
+    mix(formation_obstacles_.size());
+    for (Cell c : formation_obstacles_) { mix(u32(c.x)); mix(u32(c.y)); }
+    mix(formations_.size());
+    for (const auto& f : formations_) {
+      mix(u32(f.anchor.x)); mix(u32(f.anchor.y));
+      for (const auto& field : f.fields) mix(field.state_hash());
+    }
   }
   mix(orders_.size());
   for (const auto& o : orders_) {

@@ -36,6 +36,9 @@ struct Agent {
   Vec2 win_start; int win_ticks = 0; int stuck_level = 0; int squeeze_ticks = 0; int ghost_ticks = 0;
   u32 moved_ticks = 0;
   Vec2 target; u64 target_until = 0; int backoff_ticks = 0;   // cached steering target (recomputed every few ticks)
+  int formation = -1;
+  Vec2 step_goal;              // reserved tile centre during startup approach
+  Vec2 step_from;
 };
 
 class MoveSystem {
@@ -44,6 +47,10 @@ class MoveSystem {
   u32 add_agent(Vec2 pos, i32 radius, i32 speed, MoveClass cls);   // returns index == id
   // Move the listed agents to `goal` (fixed px). They share one flow field and get distinct destination slots near the goal.
   void order_move(const u32* ids, int n, Vec2 goal);
+  // Startup settling uses tile centres and occupancy rather than destination slots.
+  // This is a measured-data candidate, not a recovered original formation rule.
+  void order_formation(const u32* ids, int n, Cell anchor);
+  void block_formation_tile(Cell tile) { formation_obstacles_.push_back(tile); }
   void stop(u32 id);
   void tick();
   const std::vector<Agent>& agents() const { return agents_; }
@@ -60,6 +67,11 @@ class MoveSystem {
   void build_hash();
   void neighbours(const Agent& a, std::vector<u32>& out, i32 reach) const;
   void resolve_overlaps();
+  void tick_formations();
+  struct Formation { Cell anchor; FlowField fields[2]; };
+  void build_formation_fields(Formation& f);
+  std::vector<Formation> formations_;
+  std::vector<Cell> formation_obstacles_;
   NavGrid& grid_;
   MoverConfig cfg_;
   std::vector<Agent> agents_;
