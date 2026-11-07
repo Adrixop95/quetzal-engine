@@ -126,7 +126,7 @@ static void test_movement_rules() {
     CHECK(w.objects[0].order == uint8_t(Order::Idle));
   }
 
-  // Air crosses impassable ground and overlapping objects; vessels have no ground agent.
+  // Air crosses impassable ground; vessels use separate water agents.
   World initial; initial.terrain.w = initial.terrain.h = 20; initial.terrain.cells.resize(400);
   initial.passability = {20, 20, std::vector<uint8_t>(400, 0)};
   for (int type : {7,7,84,88}) {
@@ -136,7 +136,7 @@ static void test_movement_rules() {
   for (Pct command : {Pct::Move, Pct::AttackMove}) {
     World w = initial;
     GameSim sim(rules, Modifications::faithful()); sim.init(w);
-    for (const auto& o : w.objects) CHECK(o.mover == -1);
+    for (const auto& o : w.objects) CHECK((o.mover >= 0) == is_transport(o.type));
     Command move; move.type = command; move.ids = {1,2,3,4}; move.a = 700; move.b = 600;
     sim.submit(move);
     for (int tick = 0; tick < 150; ++tick) {
@@ -151,7 +151,7 @@ static void test_movement_rules() {
     CHECK(w.objects[0].cur_x == to_fixed(700) && w.objects[0].cur_y == to_fixed(600));
     CHECK(w.objects[0].order == uint8_t(Order::Idle) && w.objects[0].anim_state == 0);
     for (int i : {2,3}) {
-      CHECK(w.objects[i].cur_x == initial.objects[i].cur_x && w.objects[i].cur_y == initial.objects[i].cur_y);
+      CHECK(w.objects[i].cur_x != initial.objects[i].cur_x || w.objects[i].cur_y != initial.objects[i].cur_y);
       CHECK(w.objects[i].order == uint8_t(Order::Idle));
     }
     World replayed = initial;
@@ -1152,7 +1152,7 @@ static void test_script_path_hash() {
   t.actions.push_back(a); s.triggers.push_back(t);
   ScriptRunner runner;
   runner.set(s); runner.init(w); runner.tick(sim, w);
-  CHECK(runner.unsupported() == 1);
+  CHECK(runner.unsupported() == 0);
   runner.init(w);
   CHECK(runner.unsupported() == 0);
 }
@@ -3065,15 +3065,15 @@ static void test_scenario_controllers() {
   CHECK(w.mission.objects.back().source == ObjectSource::Submarine);
   CHECK(w.mission.objects.back().scenario_id == 9);
   place_mission_objects(w);
-  CHECK(w.objects.size() == 4); // unit, two physical vessels, implicit hall
+  CHECK(w.objects.size() == 5); // unit, two physical vessels, submarine controller, implicit hall
   for (size_t i = 0; i < w.objects.size(); ++i) {
-    CHECK(w.objects[i].id == i + 1 && w.objects[i].type >= 0);
+    CHECK(w.objects[i].id == i + 1 && (w.objects[i].type >= 0 || w.objects[i].source == ObjectSource::Submarine));
     CHECK(w.find(uint32_t(i + 1)) == &w.objects[i]);
-    CHECK(w.objects[i].source != ObjectSource::Submarine);
   }
   CHECK(w.objects[1].type == 84 && w.objects[1].scenario == 7);
   CHECK(w.objects[2].type == 88 && w.objects[2].scenario == 8);
-  CHECK(w.objects[3].town_hall && w.objects[3].town == 0);
+  CHECK(w.objects[3].source == ObjectSource::Submarine && w.objects[3].scenario == 9);
+  CHECK(w.objects[4].town_hall && w.objects[4].town == 0);
 }
 
 // Invented prices, health and nominal time. No campaign or executable input.

@@ -151,11 +151,11 @@ void RulesData::init_defaults() {
     const TypeInfo* ti = type_info(t);
     r.kind = ti ? ti->kind : -1;
     r.structure = ti && ti->is_structure();
-    r.mobile = r.kind == 0 || r.kind == 1 || r.kind == 4 || r.kind == 6;
+    r.mobile = r.kind == 0 || r.kind == 1 || r.kind == 4 || r.kind == 6 || r.kind == 8 || r.kind == 10;
     r.nonorganic = r.structure || r.kind == 1 || r.kind == 4 || r.kind == 6 || r.kind == 9;
     r.flier = r.kind == 3 || r.kind == 5;
     r.armed = r.kind == 0 || r.kind == 1 || r.kind == 6 || r.kind == 7 || r.kind == 9 || r.kind == 10;
-    // Boats and Johnka use scripted routes, never the ground movement system.
+    // Player vessel movement is an engine fallback using a separate water class.
     r.large = r.kind == 1 || r.kind == 4 || r.kind == 6;
     if (r.large) r.class_src = Src::Verified;
     r.speed = 8 * 256;

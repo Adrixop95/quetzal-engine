@@ -1,0 +1,22 @@
+# Generated 16x16 river fixture: tests/test_transport_playtest.py.
+# 1000x768 window, no panel, camera centered at -116,0, zoom 1.
+wait 3
+click 236 168
+wait 3
+expect selection == 1
+rclick 380 360
+wait 3
+run 240
+expect units 0 == 1
+click 380 360
+wait 3
+expect selection == 1
+rclick 620 360
+wait 3
+run 180
+rclick 668 360
+wait 3
+run 2
+expect units 0 == 2
+print
+quit

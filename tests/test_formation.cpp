@@ -71,6 +71,48 @@ static void test_passability_and_reservations() {
   CHECK(crowded.agents()[3].pos == centre(8, 8));
 }
 
+static void test_disabled_agents() {
+  path::NavGrid grid(18, 18);
+  for (int y = 0; y < 18; ++y)
+    for (int x = 0; x < 18; ++x)
+      if (y != 9) grid.set_terrain(x, y, 0);
+  path::MoveSystem mover(grid);
+  auto follower = mover.add_agent(centre(3, 9), 14 * 256, 8 * 256, path::MoveClass::Small);
+  auto embarked = mover.add_agent(centre(6, 9), 14 * 256, 8 * 256, path::MoveClass::Small);
+  auto inactive = mover.add_agent(centre(7, 9), 14 * 256, 8 * 256, path::MoveClass::Small);
+  uint32_t ids[] = {follower, embarked};
+  mover.order_formation(ids, 2, {12, 9});
+  mover.order_move(&inactive, 1, centre(12, 9));
+  mover.agents_mut()[embarked].enabled = false;
+  mover.agents_mut()[inactive].enabled = false;
+  // Disabled agents retain their state and do not reserve the only passage.
+  for (int t = 0; t < 120; ++t) {
+    mover.tick();
+    CHECK(mover.agents()[embarked].pos == centre(6, 9));
+    CHECK(mover.agents()[inactive].pos == centre(7, 9));
+    CHECK(mover.agents()[embarked].win_ticks == 0);
+    CHECK(mover.agents()[inactive].win_ticks == 0);
+    CHECK(mover.agents()[embarked].moved_ticks == 0);
+    CHECK(mover.agents()[inactive].moved_ticks == 0);
+  }
+  CHECK(mover.agents()[follower].pos == centre(11, 9));
+  // Wall correction must also leave disabled agents untouched.
+  mover.agents_mut()[inactive].pos = centre(7, 8);
+  mover.tick();
+  CHECK(mover.agents()[inactive].pos == centre(7, 8));
+}
+
+static void test_water_formation() {
+  path::NavGrid grid(18, 18);
+  for (int x = 0; x < 18; ++x) grid.set_terrain(x, 9, 0);
+  path::MoveSystem mover(grid);
+  auto vessel = mover.add_agent(centre(3, 9), 14 * 256, 8 * 256, path::MoveClass::Water);
+  mover.order_formation(&vessel, 1, {12, 9});
+  for (int t = 0; t < 100; ++t) mover.tick();
+  CHECK(mover.agents()[vessel].pos == centre(11, 9));
+  CHECK(mover.agents()[vessel].state == path::AgentState::Arrived);
+}
+
 static World fixture() {
   World w;
   w.terrain.w = w.terrain.h = 18;
@@ -112,6 +154,8 @@ static void test_initialization_and_replay() {
 int main() {
   test_shared_mover();
   test_passability_and_reservations();
+  test_disabled_agents();
+  test_water_formation();
   test_initialization_and_replay();
   return failures ? 1 : 0;
 }

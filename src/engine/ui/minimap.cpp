@@ -100,7 +100,7 @@ void Minimap::draw(SDL_Renderer* r, const Camera& cam, float alpha, const Fog* f
   if (fog) fog->draw_minimap(r, rect_);
   float sx = float(rect_.w) / world_->width_px(), sy = float(rect_.h) / world_->height_px();
   for (const Object& o : world_->objects) {
-    if (!o.alive || o.removed) continue;
+    if (!o.alive || o.removed || o.source == ObjectSource::Submarine) continue;
     Vec2f p = o.interpolated(alpha);
     if (fog && fog->requested() && !object_visible(*world_, world_->local_side, o)) continue;
     SDL_Color c = side_color_rgb(world_->side_color(o.side));

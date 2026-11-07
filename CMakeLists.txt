@@ -62,7 +62,7 @@ add_library(aztec_engine_lib
   src/engine/assets/game_data.cpp src/engine/assets/mission.cpp src/engine/assets/anim_provider.cpp src/engine/assets/daylight.cpp
   src/engine/platform/input.cpp src/engine/platform/window.cpp
   src/engine/world/world.cpp src/engine/world/camera.cpp src/engine/world/type_info.cpp
-  src/engine/sim/simulation.cpp src/engine/sim/commands.cpp src/engine/sim/savegame.cpp src/engine/sim/rules.cpp src/engine/sim/game_sim.cpp src/engine/sim/script_runner.cpp src/engine/sim/ai.cpp src/engine/ai/planner.cpp
+  src/engine/sim/simulation.cpp src/engine/sim/commands.cpp src/engine/sim/savegame.cpp src/engine/sim/rules.cpp src/engine/sim/game_sim.cpp src/engine/sim/transport.cpp src/engine/sim/script_runner.cpp src/engine/sim/ai.cpp src/engine/ai/planner.cpp
   src/engine/render/atlas.cpp src/engine/render/sprite_store.cpp src/engine/render/font.cpp
   src/engine/render/png.cpp src/engine/render/fog.cpp src/engine/render/scene_renderer.cpp
   src/engine/ui/cursor.cpp src/engine/ui/panel.cpp src/engine/ui/names.cpp src/engine/ui/selection_ui.cpp src/engine/ui/commands_ui.cpp src/engine/ui/frontend.cpp src/engine/ui/campaign.cpp src/engine/ui/minimap.cpp src/engine/ui/hud.cpp
@@ -439,4 +439,15 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_production_measure.py)
     set_tests_properties(production_measure PROPERTIES LABELS "unit;parity" TIMEOUT 30)
   endif()
+endif()
+
+add_executable(test_transport tests/test_transport.cpp)
+target_link_libraries(test_transport PRIVATE aztec_engine_lib)
+aztec_warnings(test_transport)
+add_test(NAME transport COMMAND test_transport)
+set_tests_properties(transport PROPERTIES LABELS "unit")
+if(Python3_Interpreter_FOUND)
+  add_test(NAME transport_playtest COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_SOURCE_DIR}/tests/test_transport_playtest.py $<TARGET_FILE:aztec_engine>)
+  set_tests_properties(transport_playtest PROPERTIES LABELS "unit" TIMEOUT 60)
 endif()

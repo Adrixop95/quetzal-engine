@@ -16,6 +16,8 @@ enum class Pct : uint8_t {
   AddToGroup = 0x19, DestroyHere = 0x1a, Birth = 0x1b, Build = 0x1c, Garrison = 0x1d, RepairMode = 0x1e,
   AttackMode = 0x1f, BuildMode = 0x20, PauseBuild = 0x21, QueueKill = 0x22, SelectByNo = 0x23, FollowTeam = 0x24,
   Nothing = 0x25,
+  Board = 0x54, // ids = passengers, a = carrier ID
+  Unload = 0x55, // ids = vessels, a,b = target pixels; c = 1 chooses nearby land
   SetModifications = 0x53, // a = complete modification bitset; engine session command
   Stop = 0x50,        // ids
   PlaceBuilding = 0x52, // a = structure type; b,c = centre tile; optional town member ids[0]
@@ -23,6 +25,9 @@ enum class Pct : uint8_t {
 };
 
 // Field use per type:
+//   Board: ids = own land passengers, a = own vessel ID.
+//   Unload: ids = vessels, a,b = landing pixels; c=1 chooses nearby land.
+//   Move to land with a vessel also unloads within three tiles.
 //   Move/AttackMove: ids, a,b = world px.   Attack: ids, a = target object id.   Stop: ids.
 //   AttackMode: a = 0 direct / 1 defensive / 2 aggressive / 3 balanced; ids = owned mobile members.
 //     Also updates living mobile members of their nonnegative tactics on the same side.

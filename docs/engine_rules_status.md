@@ -63,10 +63,10 @@ and `engine` checks pass with the complete private map copy under dummy SDL in
 | Command order inside a tick: ascending side, then submission order | P | original: per-side queues in `0x4577b0` (order not verified) |
 | Descriptor primary/max and secondary HP | V fields / engine checks | All nine descriptor families loaded; mission/spawn maxima never depend on other instances. Positive mission HP is preserved. Original-save +0x3c is secondary HP; maximum comes from rules at simulation initialization. See V04 below |
 | Descriptor regeneration | V inspected thresholds/countdown/overshoot / P facility producer | Marine, Truck, Zeppelin, Bird, Headtruck, Spider and Cannon recover below natural thresholds, or full HP while the hashed service countdown is positive. Pre-add check permits overshoot; countdown expires after the update. Facility coverage/refresh and exact tick alignment remain open |
-| Scripted object health and placement identity | V zero maximum getters / engine identity checks | Boat, Johnka and Camera maximum getters return zero; Submarine records remain available to inspectors but do not create physical world objects; their scenario actions remain unsupported. Town membership uses section numbers, including sparse IDs; team scenario/tactic, defence and vessel provenance remain distinct. Live reference identity still depends on V02 |
+| Scripted object health and placement identity | V zero maximum getters / engine identity checks | Boat, Johnka and Camera maximum getters return zero; Submarine records create invisible scenario controllers, not combat units; their scenario actions now use the adapters in [transport_rules.md](transport_rules.md). Town membership uses section numbers, including sparse IDs; team scenario/tactic, defence and vessel provenance remain distinct. Live reference identity still depends on V02 |
 | Descriptor movement speed | V getters / synthetic integration | Marine d5, Headtruck/Spider d7, Zeppelin/Truck d5 in px/tick, converted to 24.8. Historical averages no longer override established descriptor speeds |
 | Measured speed fallback | M | `speed_measured.csv` (mean mid-run speed), used only without a verified speed getter; these averages include steering/sampling effects |
-| Bird speed and transport routes | P / unresolved | Bird and unknown speeds default to 8 px/tick. Boats and Johnka remain stationary; neither receives a ground agent. Scripted transport routes are unimplemented |
+| Bird speed and transport routes | G engine fallback / unresolved parity | Bird and unknown speeds default to 8 px/tick. Ferries and Johnka use separate water agents; ordered cargo, boarding/unloading and vessel script actions work by default. Scripted ferry entry and submarine animation dispatch are implemented; autonomous Johnka patrol and original timings remain open. See [transport_rules.md](transport_rules.md) |
 | Unit radius (collision disc) | P | 14 px, large 20 px |
 | Movement class small / large (`.dat` 1 = small only) | V code facts / synthetic integration | Marine d11 low byte selects small when nonzero; Spider/Truck/Headtruck use large. Bear is small; Knight/Bizon/Snowman/Elefant large. Missing Marine descriptors retain an explicitly provisional small fallback |
 | Air orders and ground collisions | engine / P reference integration | Aircraft use straight fixed-point movement without terrain/contact blocking, including engine attack-move orders. Ground agents retain continuous disc avoidance/pushing and flow fields. Reference tile reservations, vehicle turning, formation/path decisions and exact arrival timing remain unimplemented or unmeasured; see [V05 progress](rules_movement.md#8-v05-partial-integration-2026-10-28) |
@@ -654,8 +654,8 @@ may change.
 
 Larger engine gaps exposed by campaign exercising remain open:
 
-- Boat activation, johnka enable/disable, submarine dispatch, side build/move
-  script commands and camera deactivation reach unsupported action branches.
+- Side build/move script commands and camera deactivation reach unsupported
+  action branches. Vessel actions now have default-on engine adapters.
   The harness audits dormant branches as well as counting executed ones. Missions
   depending on them need script/transport implementation before completion can
   be assessed; camera-only diagnostics need not prevent gameplay progress.
@@ -844,9 +844,10 @@ formula is invented here.
 and turning toggles orientation once and finishes in Closed. Completion uses
 finite frame durations from the installed animation bank through the existing
 `SightData` resource bundle. Missing, holding or malformed sequences never imply
-completion. The transition resets the phase age to zero. V12 still lacks Boat,
-Johnka and submarine activation/travel adapters, so campaign scripts cannot yet
-initiate these phases. Johnka retains its existing orientation loop.
+completion. The transition resets the phase age to zero. Vessel action adapters
+now initiate ferry entry and submarine animation dispatch; see
+[transport_rules.md](transport_rules.md) for fallback phases and timing limits.
+Johnka retains its existing orientation loop.
 
 Synthetic tests cover both Boat orientations, exact duration boundaries, stable
 phases, missing resources, pause/resume, off-axis aim and flight direction,

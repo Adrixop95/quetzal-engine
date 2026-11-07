@@ -79,10 +79,11 @@ support classification.
 | TimerSet / TimerKill | 2 / 2 | Implemented |
 | CenterView / SideCameraActivate | 5 / 11 | Provisional jump; activation's second argument is ignored |
 | PrintString / PrintStringR | 1 / 1 | English text displayed; alternate-language variant omitted |
-| BoatActivate / SubmarineGo / JohnkaEnable | 12 / 3 / 4 | Unsupported |
+| BoatActivate / SubmarineGo / JohnkaEnable | 12 / 3 / 4 | Engine adapters implemented; timings/routes provisional; see [transport rules](transport_rules.md) |
 
 BuildCommand, MoveCommand, CameraDeactivate and JohnkaDisable have no sites in
-this installation's campaign. They remain unsupported grammar branches. Other
+this installation's campaign. JohnkaDisable is implemented; the other three remain
+unsupported grammar branches. Other
 parsed methods absent from the campaign still have synthetic condition/action
 controls; campaign absence must not be confused with custom-map support.
 
@@ -124,11 +125,12 @@ remain unresolved; the current jump request alone does not fulfill V12.
 
 V02's aligned reference observer, V05's water/transport movement, V10's command
 semantics and V11's validated AI behavior are not complete in this checkout.
-The independent inventory, engine consistency fixes and synthetic fixtures can
-precede those adapters. Boat/Johnka/submarine routes, boarding/unloading and
-activation phases must be measured before implementing those actions. Build and
-move command argument/selection rules also need evidence before an adapter to
-player commands is justified. Required actions remain unsupported explicitly.
+The independent engine now provides default-on boarding, unloading, water movement
+and vessel action adapters, including section passengers. Their fallback policies,
+all 19 handler controls and pending measurements are documented in
+[transport_rules.md](transport_rules.md). Ordinary campaign reachability and original
+activation timing remain unverified. Build/move command argument and selection
+rules still need evidence; those two actions remain unsupported.
 
 A control reference run used a private writable game copy, read-only resource
 symlinks, both SDL dummy drivers, a hard timeout and `unshare -rn` through

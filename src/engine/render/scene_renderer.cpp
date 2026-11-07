@@ -153,7 +153,7 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
   items.reserve(world_.objects.size() + 256);
   float pad = 96;
   for (const Object& o : world_.objects) {
-    if (o.removed) continue;
+    if (o.removed || o.source == ObjectSource::Submarine) continue;
     Vec2f p = o.interpolated(alpha);
     if (p.x < cam.x - pad || p.y < cam.y - pad || p.x > cam.x + cam.visible_w() + pad || p.y > cam.y + cam.visible_h() + pad) continue;
     if (!visible_in_fog(o, {o.cur_x / 256.f, o.cur_y / 256.f})) continue;

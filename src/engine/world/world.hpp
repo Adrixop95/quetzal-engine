@@ -58,6 +58,10 @@ struct Object {
   int32_t regen_service_ticks = 0; // positive selects full-HP regeneration, zero selects the natural threshold
   AttackMode attack_mode = AttackMode::Balanced;
   uint8_t order = 0;           // sim::Order
+  std::vector<uint32_t> cargo; // boarding order, stable object IDs
+  uint32_t carrier = 0, boarding = 0;
+  bool vessel_enabled = true, vessel_route = false, vessel_arrived = false;
+  int landing_x = 0, landing_y = 0;
   uint32_t target = 0;         // object id for attack orders (0 = none)
   int32_t dest_x = 0, dest_y = 0;  // order destination, world px
   int32_t cooldown = 0;        // ticks until the next shot
@@ -88,6 +92,9 @@ struct Object {
   void set_anim(uint16_t state) { if (state != anim_state) { anim_state = state; anim_tick = 0; } }
   void teleport(Fixed x, Fixed y) { prev_x = cur_x = x; prev_y = cur_y = y; }
 };
+
+inline constexpr size_t kTransportCapacity = 5; // V ferry limit; see docs/transport_rules.md
+inline bool is_transport(int type) { return type == 84 || type == 88; }
 
 inline constexpr int kProductionQueueCapacity = 50; // waiting items per town; active work is separate
 

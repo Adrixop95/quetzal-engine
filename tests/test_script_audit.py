@@ -28,11 +28,11 @@ class ScriptAudit(unittest.TestCase):
             self.assertEqual(result.stdout.count('\taction\tSideVictory\t1\timplemented'), 15)
             self.assertTrue('unsupported_action_sites=0' in result.stderr)
             (maps / 'MiSsIoN_3.ScN').write_text(
-                'trigger(0) conditions always actions boat(42).activate end\n', encoding='ascii')
+                'trigger(0) conditions always actions side(local).moveCommand(1,2) end\n', encoding='ascii')
             self.assertEqual(run().returncode, 0)
             result = run('--require-supported')
             self.assertEqual(result.returncode, 1)
-            self.assertTrue('mission_3: trigger 0 line 1: unsupported BoatActivate' in result.stderr)
+            self.assertTrue('mission_3: trigger 0 line 1: unsupported SideMoveCommand' in result.stderr)
             (maps / 'MiSsIoN_3.ScN').write_text('invalid', encoding='ascii')
             self.assertTrue('mission_3: parse failure' in run().stderr)
             self.assertEqual(run().returncode, 1)

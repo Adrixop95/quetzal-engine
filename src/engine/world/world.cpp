@@ -6,9 +6,7 @@ void place_mission_objects(World& w) {
   w.objects.clear();
   uint32_t next_id = 1;
   for (const PlacedObject& p : w.mission.objects) {
-    // Submarines are scenario controllers in a separate reference pool.
-    // Retain their parsed records for inspection without creating world objects.
-    if (p.source == ObjectSource::Submarine) continue;
+    // Submarines remain untyped route controllers, separate from combat units.
     Object o;
     o.id = next_id++;
     o.type = p.type;
@@ -23,7 +21,20 @@ void place_mission_objects(World& w) {
     o.scenario = p.scenario_id;
     o.anim_variant = o.id * 2654435761u >> 8;
     o.teleport(tile_center_fixed(p.x), tile_center_fixed(p.y));
+    o.vessel_enabled = p.vessel_enabled; o.orientation = p.up ? 1 : 0;
+    o.landing_x = p.landing_x; o.landing_y = p.landing_y;
+    const uint32_t vessel = o.id;
     w.objects.push_back(o);
+    for (const auto& unit : p.passengers) {
+      Object passenger;
+      passenger.id = next_id++; passenger.type = unit[2]; passenger.side = p.side;
+      passenger.teleport(tile_center_fixed(unit[0]), tile_center_fixed(unit[1]));
+      if (p.loaded && w.objects[vessel - 1].cargo.size() < kTransportCapacity) {
+        passenger.carrier = vessel; passenger.removed = true;
+        w.objects[vessel - 1].cargo.push_back(passenger.id);
+      }
+      w.objects.push_back(passenger);
+    }
   }
   // Each [Town#] section also places its town building ([Town#] Type 0 outpost, 1 village, 2 town, 3 fortress;
   // building type per race: docs/formats.md).

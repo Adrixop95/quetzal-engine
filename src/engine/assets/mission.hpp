@@ -31,6 +31,9 @@ struct PlacedObject {
   ObjectSource source = ObjectSource::Team;
   int group = 0;          // Town#/Team#/Boat# index
   int scenario_id = -1;   // Team ScenarioID (= tactic number), Defence id, Boat/Johnka/Submarine id; -1 otherwise
+  int landing_x = 0, landing_y = 0;
+  bool vessel_enabled = true, up = false, loaded = false;
+  std::vector<std::array<int, 3>> passengers; // tile x, tile y, type
   bool defence = false;   // placed from [SideN] Defence# (tower), not a unit line
 };
 

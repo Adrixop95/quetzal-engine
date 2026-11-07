@@ -32,6 +32,7 @@ struct Agent {
   i32 speed = 9 * kFix;         // fixed units per tick (original: px/tick * 256, e.g. footman 9)
   MoveClass cls = MoveClass::Small;
   AgentState state = AgentState::Idle;
+  bool enabled = true; // embarked agents retain stable indices but do not collide or move
   bool hold = false;            // immovable when idle (hold position)
   int order = -1;
   Vec2 slot;                    // destination point inside the order's goal area
@@ -66,7 +67,7 @@ class MoveSystem {
   struct Stats { u64 fields_built = 0, stuck_events = 0, repaths = 0, swaps = 0, sidesteps = 0, relocations = 0; } stats;
 
  private:
-  struct Order { FlowField ff[2]; bool have[2] = {false, false}; Vec2 goal; Cell goal_cell; int refs = 0; };
+  struct Order { FlowField ff[3]; bool have[3] = {false, false, false}; Vec2 goal; Cell goal_cell; int refs = 0; };
   void ensure_field(Order& o, MoveClass c);
   Vec2 preferred_velocity(Agent& a, const Order& o);
   Vec2 choose_velocity(const Agent& a, Vec2 pref, const std::vector<u32>& nb) const;
@@ -74,7 +75,7 @@ class MoveSystem {
   void neighbours(const Agent& a, std::vector<u32>& out, i32 reach) const;
   void resolve_overlaps();
   void tick_formations();
-  struct Formation { Cell anchor; FlowField fields[2]; };
+  struct Formation { Cell anchor; FlowField fields[3]; };
   void build_formation_fields(Formation& f);
   std::vector<Formation> formations_;
   std::vector<Cell> formation_obstacles_;

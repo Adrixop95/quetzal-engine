@@ -81,6 +81,7 @@ class GameSim : public Simulation {
   void script_stop(World& w, const std::vector<uint32_t>& ids);
   void script_kill(World& w, uint32_t id);
   // Debug/editor helper (not a lockstep command): moves an object and its movement agent instantly.
+  bool activate_vessel(World& w, int scenario, ObjectSource source, bool enabled = true);
   void teleport(World& w, uint32_t id, int px, int py);
 
   // Throws std::invalid_argument for unordered, zero-tick or out-of-horizon logs.
@@ -106,6 +107,8 @@ class GameSim : public Simulation {
   void service_towns(World& w);
   bool mark_eligible(const Object& o, const TownState& town) const;
   void run_orders(World& w);
+  void transport_tick(World& w);
+  void unload(World& w, Object& vessel, int tx, int ty);
   void follow_tactics(World& w);
   void advance_effects(World& w);
   void fire(World& w, const Object& source, Object& target, int damage);
