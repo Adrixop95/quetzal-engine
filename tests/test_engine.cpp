@@ -13,6 +13,7 @@
 #include "engine/ui/names.hpp"
 #include "engine/ui/commands_ui.hpp"
 #include "engine/ui/selection_ui.hpp"
+#include "engine/ui/hud.hpp"
 #include "core/text.hpp"
 #include "engine/assets/anim_provider.hpp"
 #include "engine/audio/audio_system.hpp"
@@ -249,10 +250,18 @@ static void test_sight() {
   for (int ambient : {32, 33}) {
     for (auto& day : inputs->daylight) day.fill(uint8_t(ambient));
     World duel = initial;
+    duel.objects[0].attack_mode = AttackMode::Aggressive;  // visibility gate test: aggressive units pursue, balanced ones hold
     GameSim combat(rules); combat.init(duel);
     for (int t = 0; t < 3; ++t) { duel.begin_tick(); combat.tick(duel); }
     CHECK(duel.objects[0].target == (ambient == 33 ? 2u : 0u));
     CHECK(object_visible(duel, 0, duel.objects[1]) == (ambient == 33));
+    // Balanced units hold their ground: the same lit enemy 400 px away is not chased (regression for the
+    // mission 1 march: idle units used to attack any enemy the side could see, starting the scripted counterattack).
+    World hold = initial;
+    hold.objects[0].attack_mode = AttackMode::Balanced;
+    GameSim hold_sim(rules); hold_sim.init(hold);
+    for (int t = 0; t < 3; ++t) { hold.begin_tick(); hold_sim.tick(hold); }
+    CHECK(hold.objects[0].target == 0u);
     // Direct packets must obey the same eligibility gate as mouse picking.
     Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
     combat.submit(attack); duel.begin_tick(); combat.tick(duel);
@@ -262,6 +271,31 @@ static void test_sight() {
     combat.submit(select); duel.begin_tick(); combat.tick(duel);
     CHECK(duel.side_state[0].selected_ids == std::vector<uint32_t>{1});
     CHECK(duel.side_state[0].selected_tactic == 7);
+    // Synthetic consumer contract: owned command groups remain selectable in
+    // darkness; visible foreign members never enter an owned control group.
+    Command group; group.type = Pct::CreateGroup; group.a = 2; group.ids = {1, 2};
+    combat.submit(group); duel.begin_tick(); combat.tick(duel);
+    group.type = Pct::SelectGroup; group.ids.clear();
+    combat.submit(group); duel.begin_tick(); combat.tick(duel);
+    CHECK(duel.side_state[0].groups[2] == std::vector<uint32_t>{1});
+    CHECK(duel.side_state[0].selected_ids == std::vector<uint32_t>{1});
+    Camera camera; camera.set_world(duel.width_px(), duel.height_px());
+    camera.set_view(duel.width_px(), duel.height_px());
+    SelectionUi selection;
+    auto click = [&](const Object& object) {
+      Input input; input.mx = object.cur_x >> 8; input.my = object.cur_y >> 8;
+      input.pressed[SDL_BUTTON_LEFT] = input.buttons[SDL_BUTTON_LEFT] = true;
+      selection.update(input, duel, camera, 1, true);
+      input.pressed[SDL_BUTTON_LEFT] = input.buttons[SDL_BUTTON_LEFT] = false;
+      input.released[SDL_BUTTON_LEFT] = true;
+      selection.update(input, duel, camera, 1, true);
+    };
+    const Object& victim = duel.objects[1];
+    CHECK((pick_object(duel, float(victim.cur_x >> 8), float(victim.cur_y >> 8), 1, 8) != nullptr) == (ambient == 33));
+    click(duel.objects[0]); CHECK(duel.selection.ids == std::vector<uint32_t>{1});
+    click(victim); CHECK(duel.selection.ids.empty());
+    // Local mouse selection does not rewrite deterministic command selection.
+    CHECK(duel.side_state[0].selected_ids == std::vector<uint32_t>{1});
   }
   // Clean checkouts have no private masks. Their combat remains functional,
   // using the bounded placeholder instead of silently disabling acquisition.
@@ -269,6 +303,7 @@ static void test_sight() {
   CHECK(initial.visibility.sides.empty());
   for (int distance : {200, 400}) {
     World duel = initial;
+    duel.objects[0].attack_mode = AttackMode::Aggressive;  // bounded placeholder radius test, not the idle leash
     duel.objects[1].teleport(to_fixed(20 * 48 + distance), to_fixed(20 * 48));
     GameSim combat(rules); combat.init(duel);
     for (int t = 0; t < 3; ++t) { duel.begin_tick(); combat.tick(duel); }
@@ -1809,6 +1844,44 @@ static void test_group_follow_commands() {
                      [](const QueueItem& q) { return q.town == 0 && !q.started; }) == 50);
 }
 
+// S: activation, day wrap and global pause survive an engine save per tick.
+// These compare engine continuations, not original-game timing measurements.
+static void test_resource_clock_save_boundary() {
+  auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  for (int type : {11, 12, 13}) {
+    World fresh = production_world(); fresh.mission.start_time = 7190;
+    fresh.resources.v.assign(1600, uint16_t(65 | (65 << 8)));
+    production_object(fresh, type, 0, 10, 10);
+    World live = fresh; GameSim sim(rules); sim.init(live);
+    CHECK(!live.objects[0].harvest_ready);
+    production_steps(sim, live, 9);
+    CHECK(live.objects[0].harvest_ready && live.day_clock == 7199);
+    SaveData saved; saved.mission = "resource-clock-boundary"; saved.tick = sim.tick_count();
+    saved.hash = sim.state_hash(live); saved.log = sim.log();
+    SaveData loaded; CHECK(deserialize_save(serialize_save(saved), loaded));
+    World restored = fresh;
+    auto replay = GameSim::replay(restored, rules, loaded.log, loaded.tick);
+    CHECK(replay->state_hash(restored) == loaded.hash);
+    const auto accumulated = live.objects[0].gold_harvest.accumulated;
+    const int money = live.side_state[0].money;
+    Command pause; pause.type = Pct::PauseOn; sim.submit(pause); replay->submit(pause);
+    for (int tick = 0; tick < 3; ++tick) {
+      production_steps(sim, live, 1); production_steps(*replay, restored, 1);
+      CHECK(live.day_clock == 7199 && live.side_state[0].money == money);
+      CHECK(live.objects[0].gold_harvest.accumulated == accumulated);
+      CHECK(sim.state_hash(live) == replay->state_hash(restored));
+    }
+    pause.type = Pct::PauseOff; sim.submit(pause); replay->submit(pause);
+    // Include scheduled farm harvests as well as periodic mine/hall payouts.
+    for (int tick = 0; tick < 1800; ++tick) {
+      production_steps(sim, live, 1); production_steps(*replay, restored, 1);
+      CHECK(live.day_clock == tick);
+      CHECK(sim.state_hash(live) == replay->state_hash(restored));
+    }
+    CHECK(live.side_state[0].money > money);
+  }
+}
+
 static void test_production() {
   auto rules = std::make_shared<RulesData>();
   CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
@@ -2005,12 +2078,17 @@ static void test_town_production() {
     World continued = fresh;
     auto continuation = GameSim::replay(continued, rules, loaded_midpoint.log, loaded_midpoint.tick);
     CHECK(continuation->state_hash(continued) == loaded_midpoint.hash);
-    pause.a = 0; continuation->submit(pause);
-    production_steps(*continuation, continued, upgrade.time - 1);
-    pause.a = 0; sim.submit(pause);
-    production_steps(sim, w, upgrade.time - 2);
-    CHECK(w.mission.towns[0].type == 0);
-    production_steps(sim, w, 1);
+    pause.a = 0; continuation->submit(pause); sim.submit(pause);
+    // S: compare every saved continuation tick, including the tree/HP transition.
+    for (int remaining = upgrade.time - 1; remaining > 0; --remaining) {
+      production_steps(sim, w, 1); production_steps(*continuation, continued, 1);
+      CHECK(continuation->state_hash(continued) == sim.state_hash(w));
+      if (remaining > 1) {
+        CHECK(w.mission.towns[0].type == 0 && w.objects[0].type == rules->town_building(0, race));
+        CHECK(w.side_state[0].queue.size() == 1);
+        CHECK(!item(sim, w, 0, race == 0 ? 14 : race == 1 ? 41 : 67).enabled);
+      }
+    }
     CHECK(w.mission.towns[0].type == level && w.mission.towns[1].type == 1);
     CHECK(w.objects.size() == 1 && w.objects[0].id == 1 && w.objects[0].type == target);
     CHECK(w.objects[0].town == 4 && w.objects[0].town_hall && w.town_state[0].hall == 1);
@@ -2234,10 +2312,12 @@ static void test_town_service() {
   SaveData loaded; CHECK(deserialize_save(serialize_save(save), loaded));
   auto replay = GameSim::replay(initial, rules, loaded.log, loaded.tick);
   CHECK(replay->state_hash(initial) == loaded.hash && initial.objects[2].alive);
-  production_steps(ls, live, 1); production_steps(*replay, initial, 1);
-  CHECK(!live.objects[2].alive && !initial.objects[2].alive);
-  production_steps(ls, live, 25); production_steps(*replay, initial, 25);
-  CHECK(replay->state_hash(initial) == ls.state_hash(live));
+  for (int tick = 0; tick < 26; ++tick) {
+    production_steps(ls, live, 1); production_steps(*replay, initial, 1);
+    CHECK(!live.objects[2].alive && !initial.objects[2].alive);
+    CHECK(replay->state_hash(initial) == ls.state_hash(live));
+    CHECK(live.repair_credits == std::vector<int>({0, 0}));
+  }
 
   // The hall service button cycles all modes using logged commands only.
   live.selection.ids = {1}; CommandsUi ui(&ls);
@@ -2263,15 +2343,28 @@ static void test_parallel_town_production() {
   CHECK(w.side_state[0].queue.size() == 3);
   CHECK(w.side_state[0].queue[0].remaining == 99 && w.side_state[0].queue[1].remaining == 100);
   CHECK(w.side_state[0].queue[2].remaining == 99);
+  SaveData saved; saved.mission = "two-town-training"; saved.tick = sim.tick_count();
+  saved.hash = sim.state_hash(w); saved.log = sim.log();
+  SaveData loaded; CHECK(deserialize_save(serialize_save(saved), loaded));
+  World restored = fresh;
+  auto continued = GameSim::replay(restored, rules, loaded.log, loaded.tick);
+  CHECK(continued->state_hash(restored) == loaded.hash);
+  auto paired_steps = [&](int ticks) {
+    for (int tick = 0; tick < ticks; ++tick) {
+      production_steps(sim, w, 1); production_steps(*continued, restored, 1);
+      CHECK(sim.state_hash(w) == continued->state_hash(restored));
+    }
+  };
   Command pause; pause.type = Pct::PauseOn; sim.submit(pause);
-  int clock = w.day_clock; production_steps(sim, w, 3);
+  continued->submit(pause);
+  int clock = w.day_clock; paired_steps(3);
   CHECK(w.day_clock == clock && w.side_state[0].queue[0].remaining == 99);
   pause.type = Pct::PauseOff; sim.submit(pause);
-  production_steps(sim, w, 99);
+  continued->submit(pause); paired_steps(99);
   CHECK(w.objects.size() == 4 && w.objects[2].town == 0 && w.objects[3].town == 1);
   CHECK(w.side_state[0].queue.size() == 1 && w.side_state[0].queue[0].remaining == 100);
-  production_steps(sim, w, 99); CHECK(w.objects.size() == 4);
-  production_steps(sim, w, 1); CHECK(w.objects.size() == 5 && w.objects.back().town == 0);
+  paired_steps(99); CHECK(w.objects.size() == 4);
+  paired_steps(1); CHECK(w.objects.size() == 5 && w.objects.back().town == 0);
   auto replay = GameSim::replay(fresh, rules, sim.log(), sim.tick_count());
   CHECK(replay->state_hash(fresh) == sim.state_hash(w));
 
@@ -3017,6 +3110,7 @@ int main(int argc, char** argv) {
     test_mine_construction_flow();
     test_automatic_placement_access();
     test_blocked_producer_exit();
+    test_resource_clock_save_boundary();
     test_production();
     test_town_production();
     test_town_service();
