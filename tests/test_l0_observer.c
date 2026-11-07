@@ -57,6 +57,7 @@ int main(int argc, char** argv) {
   pool_fixture(0x4cc3d0, 0x600000, 0x100, 133, 63, 0x610000);
   pool_fixture(0x5156f8, 0x620000, 0x200, 2, 2, 0x610008);
   GU32(0x4dd2f4) = 0x630000;
+  GU32(0x4dd15c) = 0xfedcba98;
   GU32(0x640008) = 0x630000; GU32(0x640108) = 0x63069c;
   GU32(0x4933f8 + 3 * 8) = 6;
   GU32(0x4933f8 + 20 * 8) = 2;
@@ -104,7 +105,16 @@ int main(int argc, char** argv) {
     }
     if (!strcmp(test_case, "pool_tail")) GU32(0x4cc3d0 + 8) = 0x600000 + 155 * 184;
   }
-  if (test_case && !strcmp(test_case, "unit_steps")) {
+  if (test_case && (!strcmp(test_case, "unit_steps") || !strncmp(test_case, "member_", 7))) {
+    pool_fixture(0x660000, 0x661000, 0x30, 7, 7, 0x662000);
+    GU32(0x64000c) = 0x660000; GU32(0x64010c) = 0x660000;
+    for (uint32_t i = 0; i < 7; ++i) {
+      uint32_t record = 0x661008 + i * 0x30;
+      GU32(record) = 0x600008 + i * 0x100;
+      GU32(record + 4) = 11; GU32(record + 8) = 13;
+      GU8(record + 0x14) = 1; GU8(record + 0x15) = 1;
+      GU32(record + 0x1c) = 4; GU32(record + 0x20) = 2; GU32(record + 0x24) = 7;
+    }
     for (uint32_t state = 0; state < 6; ++state) {
       uint32_t o = 0x600108 + state * 0x100;
       GU32(o + 0x64) = state;
@@ -114,7 +124,14 @@ int main(int argc, char** argv) {
       GU32(o + 0x90) = 0x600008; GU32(o + 0x94) = 0x600208;
       GU32(o + 0x8c) = 0x600308;
       GU32(o + 0x98) = 2371; GU32(o + 0x9c) = (uint32_t)-512;
+      GU8(o + 0x5f) = state % 2;
+      GU32(o + 0x88) = (uint32_t)-1;
+      GU32(o + 0x68) = 0x663000; GU32(0x663014) = 8;
     }
+    if (!strcmp(test_case, "member_duplicate")) GU32(0x661068) = 0x600108;
+    if (!strcmp(test_case, "member_span")) GU32(0x64010c) = 0xfffffff0;
+    if (!strcmp(test_case, "member_chain")) GU32(0x661000) = 0x661000;
+    if (!strcmp(test_case, "member_short")) pool_fixture(0x660000, 0x661000, 0x28, 7, 7, 0x662000);
   }
   if (test_case && !strcmp(test_case, "inactive")) GU8(0x600108 + 0x5c) = 0;
   if (test_case && !strcmp(test_case, "sentinel_live")) {

@@ -21,6 +21,9 @@ sys.argv.insert(1, str(ENGINE))
 legacy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(legacy)
 l0 = legacy.harness.l0
+walk_spec = importlib.util.spec_from_file_location("idle_walk_measure", ROOT / "tools/idle_walk_measure.py")
+idle_walk = importlib.util.module_from_spec(walk_spec)
+walk_spec.loader.exec_module(idle_walk)
 
 
 class SharedControls(unittest.TestCase):
@@ -39,6 +42,67 @@ class SharedControls(unittest.TestCase):
             self.assertEqual(scenario["observe"]["ticks"], [1, 6, 12])
             self.assertEqual(scenario["input"], [])
             l0.validate_scenario(scenario)
+
+    def test_dense_idle_walk_schedules(self):
+        directory = self.root / "dense"
+        idle_walk.prepare(directory)
+        for mission in (1, 2, 3):
+            scenario = legacy.harness.load_scenario(directory / f"idle_walk_mission_{mission}.json")
+            self.assertEqual(scenario["map"]["mission"], mission)
+            self.assertEqual(scenario["observe"]["ticks"], list(range(1, 25)))
+        with self.assertRaises(FileExistsError):
+            idle_walk.prepare(directory)
+
+    def walk_fixture(self, path, handle_base):
+        # Walking counts from the cached single mission-1 capture (2026-11-06).
+        # All identities, positions and individual assignments below are invented.
+        # This tests the evidence summarizer, not simulation or reference parity.
+        counts = [31, 33, 33, 31, 31, 31, 22, 22, 22, 22, 18, 17,
+                  16, 16, 13, 13, 12, 12, 12, 12, 9, 8, 7, 4]
+        velocities = ([0, -2091], [-2091, 0], [-1652, -1117])
+        rows = [dict(schema=2, phase="before_commands", position_unit="pixel/256")]
+        for tick, count in enumerate(counts, 1):
+            objects, orders = [], []
+            for i in range(60):
+                handle = handle_base + i
+                objects.append(dict(handle=handle, owner=0, type=27, x=i * 12288, y=12288))
+                orders.append(dict(handle=handle, kind=0, unit_state=2 if i < count else 1,
+                                   tactic_state=1, tactic_mode=3, anchor_tile=[i, 1], tile=[i, 1],
+                                   step_destination=[i * 48, 24], step_velocity=velocities[i % 3]))
+            rows.append(dict(tick=tick, objects=objects, diagnostics=dict(orders=orders)))
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+        return rows, counts
+
+    def test_idle_walk_recorded_counts_and_signed_velocities(self):
+        a, b = self.root / "walk-a.jsonl", self.root / "walk-b.jsonl"
+        rows, counts = self.walk_fixture(a, 100)
+        self.walk_fixture(b, 1000)
+        summary = idle_walk.summarize(a)
+        self.assertEqual(summary, idle_walk.summarize(b))
+        self.assertEqual(summary["walking_counts"], counts)
+        self.assertEqual(summary["first_observed_walk_counts"], {"1": 31, "2": 2})
+        self.assertIsNone(summary["cohort"][-1]["first_observed_walk_tick"])
+        self.assertEqual([unit["samples"][0]["step_velocity"] for unit in summary["cohort"][:3]],
+                         [[0, -2091], [-2091, 0], [-1652, -1117]])
+        self.assertEqual(summary["mission_seed"], [None] * 24)
+        rows[5]["diagnostics"]["orders"][0]["step_velocity"] = [0, -2090]
+        a.write_text("".join(json.dumps(row) + "\n" for row in rows))
+        self.assertNotEqual(idle_walk.summarize(a), idle_walk.summarize(b))
+
+    def test_idle_walk_rejects_incomplete_or_ambiguous_evidence(self):
+        path = self.root / "walk-invalid.jsonl"
+        rows, _ = self.walk_fixture(path, 100)
+        for mutation in (lambda r: r.pop(), lambda r: r.pop(7),
+                         lambda r: r[1]["objects"].append(r[1]["objects"][0]),
+                         lambda r: r[2]["diagnostics"]["orders"].pop(),
+                         lambda r: r[2]["objects"].pop(),
+                         lambda r: r[1]["diagnostics"]["orders"][0].update(step_velocity=[True, 0])):
+            with self.subTest(mutation=mutation):
+                invalid = copy.deepcopy(rows)
+                mutation(invalid)
+                path.write_text("".join(json.dumps(row) + "\n" for row in invalid))
+                with self.assertRaises(ValueError):
+                    idle_walk.summarize(path)
 
     def complete_bundle(self, name):
         directory = self.root / name
@@ -267,6 +331,7 @@ class SharedControls(unittest.TestCase):
                        env=dict(os.environ, L0_TEST_CASE="unit_steps"), check=True, timeout=10)
         b = l0.bundle(self.s, native, "reference", run.parent / "reference.json")
         for row in b["samples"]:
+            self.assertEqual(row["diagnostics"]["mission_seed"], 0xfedcba98)
             for state, kind in enumerate(("inactive", "idle", "walk", "attack", "death", "idle_animation")):
                 record = row["diagnostics"]["orders"][state + 1]
                 self.assertEqual(record["unit_state"], state)
@@ -276,6 +341,33 @@ class SharedControls(unittest.TestCase):
                 self.assertEqual(record["attack_target_handle"], 0x600000)
                 self.assertEqual(record["firing_target_handle"], 0x600200)
                 self.assertEqual(record["pursuit_target_handle"], 0x600300)
+                self.assertEqual(record["formation_marked"], bool(state % 2))
+                self.assertEqual(record["idle_animation_timer"], -1)
+                self.assertEqual(record["descriptor_speed_px"], 8)
+                self.assertEqual(record["member"], dict(tile=[11, 13], active=True, route_pending=True,
+                                                      route_count=4, route_cursor=2, search_counter=7))
+            missing = row["diagnostics"]["orders"][7]
+            self.assertEqual(missing["member"]["unavailable"], "Missing L0 tactic member")
+            self.assertIsNone(missing["descriptor_speed_px"])
+
+    def test_invalid_member_probe_preserves_scalar_observations(self):
+        errors = dict(member_duplicate="Duplicate L0 tactic member", member_span="Invalid L0 member pool span",
+                      member_chain="Invalid L0 active pool chain", member_short="Short L0 tactic member record")
+        for case, message in errors.items():
+            with self.subTest(case=case):
+                run = self.root / case / "reference"
+                run.mkdir(parents=True)
+                schedule, native = run / "schedule", run / "native.jsonl"
+                l0.write_schedule(self.s, schedule)
+                subprocess.run([str(OBSERVER), str(schedule), str(native), str(run)],
+                               env=dict(os.environ, L0_TEST_CASE=case), check=True, timeout=10)
+                bundle = l0.bundle(self.s, native, "reference", run.parent / "reference.json")
+                for row in bundle["samples"]:
+                    self.assertEqual(len(row["objects"]), 63)
+                    member = row["diagnostics"]["orders"][1]["member"]
+                    self.assertEqual(member["unavailable"], message)
+                    self.assertNotIn("tile", member)
+                    self.assertTrue("raw" in member)
 
     def test_page_committed_pool_padding(self):
         for case in ("pool_padding", "pool_tail"):
