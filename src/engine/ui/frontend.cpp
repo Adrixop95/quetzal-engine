@@ -561,12 +561,12 @@ void ModificationOptions::draw(SDL_Renderer* r, const Font& font, const Options&
       const size_t index = i == 0 ? 0 : size_t(i - 1);
       label = options.modifications.setting(index);
       if (options.modifications.overrides & (1u << index)) label += " (override)";
-      if (index == 3) label += " [stub]";
     }
     SDL_SetRenderDrawColor(r, 55, 42, 25, 255); SDL_RenderFillRect(r, &rect);
     font.draw(r, rect.x + 8 * sc, rect.y + 8 * sc, label, sc, {245, 230, 200, 255});
   }
   font.draw(r, top.x, top.y + 272 * sc, "Profile resets overrides. Training: 1-8 or per building.", sc, {245, 230, 200, 255});
+  font.draw(r, top.x, top.y + 288 * sc, "Unit unstick: repath, yield and relocate stalled units.", sc, {245, 230, 200, 255});
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

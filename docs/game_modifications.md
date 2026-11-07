@@ -12,10 +12,9 @@ rules and hashes, but does not establish parity for existing engine approximatio
 | `parallel_construction` | off | on | Each ordinary building progresses independently; units and hall upgrades retain the serial town lane. |
 | `parallel_training` | 1 (off) | 3 | Train 1–8 units per town, or one per completed matching producer with `per building`. `on` selects 3. |
 | `relaxed_placement` | off | on | Allow map objects and ignore building clearance during placement. |
-| `unit_unstick` | off | on | Registered stub; movement rules are unchanged. |
+| `unit_unstick` | off | on | Repath, yield and relocate stalled units; see [unit_unstick.md](unit_unstick.md). |
 
-Training and relaxed placement use the implementations on develop. Unit unstick
-remains a configuration stub. Helpers apply to the whole simulation, including computer players.
+Helpers apply to the whole simulation, including computer players.
 
 ## Command line and precedence
 
@@ -60,7 +59,7 @@ files without `profile=` keep the faithful base and their saved switch values.
 
 F9 opens the helper panel during play and in the front-end. It is also available
 through Options > Game modifications and the pause menu. It shows the profile,
-all effective values, explicit overrides and stub labels. Clicking the profile
+all effective values and explicit overrides. Clicking the profile
 switches the entire preset and clears overrides. Clicking a helper toggles its
 override; training cycles through 1–8 and per-building capacity. Training overrides can be supplied
 through the CLI or preference file. Cursor confinement now uses Ctrl+F9.

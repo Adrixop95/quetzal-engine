@@ -17,11 +17,16 @@ struct MoverConfig {
   int overlap_iterations = 3;
   int wall_penalty = 4;         // extra field cost next to walls (10 = one straight step)
   i32 slot_gap = 4 * kFix;      // extra spacing between destination slots
+  bool unit_unstick = false;   // opt-in recovery; default path and hashes stay unchanged
   int stuck_window = 24;        // ticks
 };
 
 struct Agent {
   u32 id = 0;
+  u32 team = 0;                 // equal team IDs may cooperate; never swap enemies
+  int unstick_ticks = 0;
+  i32 unstick_best = 0;
+  std::vector<Vec2> local_path;
   Vec2 pos, vel, prev_pos;      // 24.8 px
   i32 radius = 18 * kFix;
   i32 speed = 9 * kFix;         // fixed units per tick (original: px/tick * 256, e.g. footman 9)
@@ -45,7 +50,7 @@ struct Agent {
 class MoveSystem {
  public:
   explicit MoveSystem(NavGrid& grid, MoverConfig cfg = {}) : grid_(grid), cfg_(cfg) {}
-  u32 add_agent(Vec2 pos, i32 radius, i32 speed, MoveClass cls);   // returns index == id
+  u32 add_agent(Vec2 pos, i32 radius, i32 speed, MoveClass cls, u32 team = 0);   // returns index == id
   // Move the listed agents to `goal` (fixed px). They share one flow field and get distinct destination slots near the goal.
   void order_move(const u32* ids, int n, Vec2 goal);
   // Startup settling uses tile centres and occupancy rather than destination slots.
@@ -54,11 +59,12 @@ class MoveSystem {
   void block_formation_tile(Cell tile) { formation_obstacles_.push_back(tile); }
   void stop(u32 id);
   void tick();
+  void set_unit_unstick(bool enabled);
   const std::vector<Agent>& agents() const { return agents_; }
   std::vector<Agent>& agents_mut() { return agents_; }
   u64 state_hash() const;
   u64 tick_count() const { return tick_; }
-  struct Stats { u64 fields_built = 0, stuck_events = 0, repaths = 0; } stats;
+  struct Stats { u64 fields_built = 0, stuck_events = 0, repaths = 0, swaps = 0, sidesteps = 0, relocations = 0; } stats;
 
  private:
   struct Order { FlowField ff[3]; bool have[3] = {false, false, false}; Vec2 goal; Cell goal_cell; int refs = 0; };
@@ -73,6 +79,11 @@ class MoveSystem {
   void build_formation_fields(Formation& f);
   std::vector<Formation> formations_;
   std::vector<Cell> formation_obstacles_;
+  bool free_position(const Agent& a, Vec2 p, int ignore = -1) const;
+  bool free_segment(const Agent& a, Vec2 p, Vec2 q) const;
+  void local_repath(Agent& a);
+  bool cooperate(Agent& a);
+  void recover(Agent& a);
   NavGrid& grid_;
   MoverConfig cfg_;
   std::vector<Agent> agents_;

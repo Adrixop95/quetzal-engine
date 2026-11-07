@@ -5,6 +5,7 @@ without an enabled option the engine uses its default original-style rules.
 
 | Option | Default | Behavior when enabled |
 | --- | --- | --- |
+| `unit_unstick` | off | Repath, yield and relocate stalled units. |
 | `relaxed_placement` | off | Allow map objects and ignore building clearance during placement. |
 | `parallel_training` | 1 (off) | Train 1–8 units per town, or one per completed matching production building. Applies equally to human and computer sides. |
 | `parallel_construction` | off | Each ordinary building progresses independently. Unit concurrency is controlled separately by `parallel_training`. Hall upgrades retain the serial lane. |
@@ -28,6 +29,7 @@ The file uses English `name=value` lines, with optional blank or `#` comment lin
 parallel_construction=off
 parallel_training=1
 relaxed_placement=off
+unit_unstick=off
 ```
 
 A missing or invalid preference file leaves defaults unchanged. Unknown names
@@ -49,6 +51,7 @@ use their recorded settings.
 ## Menus and live changes
 
 Open **Options > Game modifications** in the front-end, or **Game modifications**
+in the in-game pause menu. Each option has a description. Construction, relaxed placement and unit unstick toggle on/off; training cycles through 1–8 and "per building".
 in the in-game pause menu. The panel shows the profile and effective values. Construction and relaxed placement toggle on/off; training cycles through 1–8 and "per building".
 Menu changes persist to the preference file; a failed write reports an error on
 stderr. During a mission they submit a deterministic `SetModifications` command
@@ -64,6 +67,7 @@ to pause/resume only that site. Every running unit also displays a status marker
 
 The AZS3 container with replay version 4 stores the initial modification bitset
 following its command log. Later changes are commands in that log. Unknown encodings
+and older replay versions are refused. Bit zero retains construction and bit one retains relaxed placement; bits 2–5 encode training as 0–7 for values 1–8, or 8 for "per building". Bit 6 enables unit unstick independently of training. Default metadata and hashes remain unchanged. Pre-merge unit-unstick builds used bit 2 for recovery; saves and replays with that option enabled are incompatible with this merged layout. Save loading restores the recorded initial
 and older replay versions are refused. Bit zero retains construction and bit one retains relaxed placement; bits 2–5 encode training as 0–7 for values 1–8, or 8 for "per building". Bit 6 stores the unit-unstick configuration stub. Default metadata and hashes remain unchanged. Binaries predating training reject enabled training encodings. Save loading restores the recorded initial
 set before replay, independent of local preferences. Low-level `GameSim::replay`
 callers must pass the initial set explicitly; the default is all options off.

@@ -24,6 +24,14 @@ TYPES = {0: (9, 1, 6000), 1: (6, 1, 5000), 2: (7, 1, 8500), 5: (5, 1, 36000), 6:
 
 def course(name):
     g = grid(); goal = (80, 30); start = (6, 30); orders = None
+    if name.startswith('unstick_'):
+        start, goal = (38, 30), (66, 30)
+        if name in ('unstick_column', 'unstick_stationary'):
+            rect(g, 44, 2, 46, H - 3); rect(g, 44, 30, 46, 30, 2)
+        elif name == 'unstick_forest':
+            rect(g, 40, 2, 60, H - 3); rect(g, 40, 30, 60, 30, 1)
+        elif name != 'unstick_box': raise ValueError('unknown course: ' + name)
+        return g, start, goal, name
     if name == 'open': pass
     elif name.startswith('gap'):          # vertical wall with a gap of given width
         w = int(name[3:] or 1); rect(g, 44, 2, 46, H - 3); rect(g, 44, 30 - w // 2, 46, 30 - w // 2 + w - 1, 2)
@@ -99,7 +107,18 @@ def main():
     if orders == 'swap': groups.append(dict(goal=start, frame=64))
     if orders == 'park':
         na = max(1, n // 3); groups = [dict(goal=(64, 30), frame=60), dict(goal=goal, frame=260)]
-    for i in range(n):
+    if name.startswith('unstick_'):
+        groups = [dict(goal=goal, frame=60)]
+        if name == 'unstick_column':
+            groups.append(dict(goal=(30, 30), frame=60))
+            for i in range(n):
+                group = int(i >= n // 2); k = i - (n // 2 if group else 0)
+                units.append((48 + k if group else 42 - k, 30, group, 0))
+        elif name == 'unstick_box':
+            units = [(38, 30, 0, 0)] + [(x, y, -1, 0) for y in range(29, 32) for x in range(37, 40) if (x, y) != (38, 30)]
+        elif name == 'unstick_forest': units = [(38, 30, 0, 0), (45, 30, -1, 0), (53, 30, -1, 0)]
+        else: units = [(42, 30, 0, 0), (44, 30, -1, 0)]
+    for i in range(0 if name.startswith('unstick_') else n):
         if orders == 'swap':
             grp = 1 if i >= n // 2 else 0; k = i - (n // 2 if grp else 0)
             x = start[0] + (66 if grp else 0) + k % 5; y = start[1] - 4 + k // 5
@@ -124,6 +143,8 @@ def main():
         lines.append('%d 0 ' % frame + ' '.join('%x' % (v & 0xffffffff) for v in d))
     def box(us):
         xs = [u[0] for u in us]; ys = [u[1] for u in us]
+        if name.startswith('unstick_'):
+            return (min(xs) * 48 + 12, min(ys) * 48 + 12, max(xs) * 48 + 36, max(ys) * 48 + 36)
         return (min(xs) * 48 - 200, min(ys) * 48 - 250, max(xs) * 48 + 250, max(ys) * 48 + 250)
     for gi, gd in enumerate(groups):
         us = [u for u in units if u[2] == gi]
@@ -135,7 +156,7 @@ def main():
         us = [u for u in units if u[2] == gi]
         return (us[0][0], us[0][1]) if us else start
     opt = {gk: bfs_len(g, gstart(gk), gv) for gk, gv in goals.items()}
-    json.dump({'name': name, 'n': n, 'W': W, 'H': H, 'grid': [''.join(map(str, r)) for r in g], 'start': start, 'goal': goal,
+    json.dump({'name': name, 'n': sum(u[2] >= 0 for u in units), 'W': W, 'H': H, 'grid': [''.join(map(str, r)) for r in g], 'start': start, 'goal': goal,
                'units': units, 'goals': {str(k): v for k, v in goals.items()}, 'order_frames': {str(gi): gd['frame'] + 2 for gi, gd in enumerate(groups)}, 'order_frame': groups[0]['frame'] + 2, 'types': types, 'fog': fog, 'optimal_px': opt},
               open(out + '/course.json', 'w'))
 if __name__ == '__main__':
