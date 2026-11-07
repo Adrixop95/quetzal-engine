@@ -9,7 +9,7 @@ void GameSim::run_ai(World& w) {
     const auto town = w.mission.towns[ti];
     const auto side = std::find_if(w.mission.sides.begin(), w.mission.sides.end(),
                                    [&](const auto& sd) { return sd.index == town.side; });
-    if (side == w.mission.sides.end() || !side->only_comp || side->neutral ||
+    if (side == w.mission.sides.end() || !side->only_comp ||
         town.side < 0 || town.side >= int(w.side_state.size())) continue;
     const auto state = w.ai_towns[ti];
     int speed = ai::build_speed(w, state, int(ti));

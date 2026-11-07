@@ -97,6 +97,8 @@ struct QueueItem {
   int tile_x = -1, tile_y = -1; // explicit map placement; negative for automatic production
   uint32_t object = 0;         // live placeholder, created when placement is accepted
 
+  int work_rate = 0;          // frozen integer HP/work increment per active tick
+
   int refund() const {
     const int completed = std::clamp(int(int64_t(total - remaining) * 256 / std::max(1, total)), 0, 256);
     return started ? int(int64_t(paid) * (256 - completed) / 256) : 0;

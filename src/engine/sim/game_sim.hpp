@@ -24,7 +24,8 @@ struct MenuItem {
   int type = 0;
   bool construct = false;     // original build-tree map flag; also controls uniqueness
   bool place = false;         // UI placement for every non-upgrade structure
-  int price = 0, time = 0;
+  int price = 0, time = 0;    // time is the undamaged duration in ticks
+  int work_rate = 0;           // integer work per tick, frozen at production start
   bool enabled = false;       // prerequisites, uniqueness and DisabledID; payment is checked at start
   const char* why_not = "";
 };

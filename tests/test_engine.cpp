@@ -1979,7 +1979,7 @@ static void test_production() {
   CHECK(!item(0, 14).enabled); // completed duplicate
   Command fast; fast.type = Pct::BuildMode; fast.a = 2; fast.ids = {2};
   sim.submit(fast); production_steps(sim, w, 1);
-  CHECK(item(0, 0).price == 100 && item(1, 0).price == 200 && item(1, 0).time == 67);
+  CHECK(item(0, 0).price == 100 && item(1, 0).price == 200 && item(1, 0).time == 68);
   w.side_state[0].money = 199;
   Command buy; buy.type = Pct::Build; buy.a = 0; buy.ids = {2};
   sim.submit(buy); production_steps(sim, w, 1);
@@ -1987,7 +1987,7 @@ static void test_production() {
   w.side_state[0].money = 200;
   production_steps(sim, w, 1); // the waiting order starts when funded
   CHECK(w.side_state[0].money == 0 && w.side_state[0].queue.front().town == 1);
-  production_steps(sim, w, 66);
+  production_steps(sim, w, 67);
   CHECK(w.side_state[0].queue.empty() && w.objects.back().type == 0 && w.objects.back().town == 1);
   CHECK(w.side_state[0].money == 0); // no second charge at spawn
 
@@ -2061,7 +2061,8 @@ static void test_town_production() {
     MenuItem upgrade = item(sim, w, 0, target);
     CHECK(upgrade.enabled && !upgrade.construct);
     CHECK(upgrade.price == rules->type(target).price);
-    CHECK(upgrade.time == production_value(rules->type(target).time, 0, 1, false, false, true));
+    CHECK(upgrade.work_rate == rules->type(target).hp_max /
+          production_value(rules->type(target).time, 0, 1, false, false, true));
     Command buy; buy.type = Pct::Build; buy.a = target; buy.ids = {1};
     sim.submit(buy); sim.submit(buy); // repeated and competing upgrades are unavailable while reserved
     production_steps(sim, w, 1);
@@ -2119,7 +2120,8 @@ static void test_town_production() {
     World w = fresh; GameSim sim(rules); sim.init(w);
     MenuItem m = item(sim, w, 0, type);
     CHECK(m.enabled && !m.construct);
-    CHECK(m.price == rules->type(type).price && m.time == rules->type(type).time);
+    CHECK(m.price == rules->type(type).price);
+    CHECK(m.work_rate == rules->type(type).hp_max / rules->type(type).time);
     Command buy; buy.type = Pct::Build; buy.a = type; buy.ids = {1}; buy.b = -999; buy.c = -999;
     sim.submit(buy); sim.submit(buy); production_steps(sim, w, 1);
     CHECK(w.side_state[0].queue.size() == 2 && w.side_state[0].queue[0].paid == m.price);
@@ -2362,8 +2364,8 @@ static void test_parallel_town_production() {
   pause.type = Pct::PauseOff; sim.submit(pause);
   continued->submit(pause); paired_steps(99);
   CHECK(w.objects.size() == 4 && w.objects[2].town == 0 && w.objects[3].town == 1);
-  CHECK(w.side_state[0].queue.size() == 1 && w.side_state[0].queue[0].remaining == 100);
-  paired_steps(99); CHECK(w.objects.size() == 4);
+  CHECK(w.side_state[0].queue.size() == 1 && w.side_state[0].queue[0].remaining == 99);
+  paired_steps(98); CHECK(w.objects.size() == 4);
   paired_steps(1); CHECK(w.objects.size() == 5 && w.objects.back().town == 0);
   auto replay = GameSim::replay(fresh, rules, sim.log(), sim.tick_count());
   CHECK(replay->state_hash(fresh) == sim.state_hash(w));
@@ -2480,7 +2482,7 @@ static void test_default_construction_placeholders() {
   production_steps(sim, w, w.side_state[0].queue[0].remaining);
   CHECK(w.side_state[0].queue.size() == 2);
   production_steps(sim, w, 3);
-  CHECK(w.side_state[0].queue[0].started && w.find(w.side_state[0].queue[0].object)->build_elapsed == 4);
+  CHECK(w.side_state[0].queue[0].started && w.find(w.side_state[0].queue[0].object)->build_elapsed == 5);
   CHECK(!w.side_state[0].queue[1].started && w.find(w.side_state[0].queue[1].object)->build_elapsed == 0);
   World fresh = initial;
   auto toggled = GameSim::replay(fresh, rules, sim.log(), sim.tick_count());
@@ -2523,14 +2525,15 @@ static void test_construction_resume_completion() {
     constexpr int damage = 7;
     w.find_mut(id)->hp -= damage; restored.find_mut(id)->hp -= damage;
     pause.a = 0; sim.submit(pause); replay->submit(pause);
-    for (int tick = 1; tick <= remaining; ++tick) {
+    const int damaged_remaining = int((int64_t(frozen.hp_max - frozen.hp + damage) + first.work_rate - 1) / first.work_rate);
+    for (int tick = 1; tick <= damaged_remaining; ++tick) {
       production_steps(sim, w, 1); production_steps(*replay, restored, 1);
       CHECK(sim.state_hash(w) == replay->state_hash(restored));
       CHECK(w.side_state[0].money == cash && !w.find(id)->harvest_ready);
-      if (tick < remaining) CHECK(w.find(id)->progress < 1000 && !w.side_state[0].queue.empty());
+      if (tick < damaged_remaining) CHECK(w.find(id)->progress < 1000 && !w.side_state[0].queue.empty());
     }
     CHECK(w.side_state[0].queue.empty() && w.find(id)->progress == 1000);
-    CHECK(w.find(id)->hp == w.find(id)->hp_max - damage && w.find(id)->anim_state == int(data::AnimState::Idle));
+    CHECK(w.find(id)->hp == w.find(id)->hp_max && w.find(id)->anim_state == int(data::AnimState::Idle));
     CHECK(!sim.can_place(w, 0, type, 15, 15)); // completed site keeps its blocker
     production_steps(sim, w, 1);
     CHECK(w.find(id)->harvest_ready);
@@ -2582,6 +2585,7 @@ static void test_mixed_production_queue() {
   };
   changes_queue_hash([](auto& q) { q.started = !q.started; });
   changes_queue_hash([](auto& q) { q.paused = !q.paused; });
+  changes_queue_hash([](auto& q) { ++q.work_rate; });
   changes_queue_hash([](auto& q) { ++q.remaining; });
   changes_queue_hash([](auto& q) { ++q.paid; });
   changes_queue_hash([](auto& q) { ++q.tile_x; });
@@ -2663,7 +2667,7 @@ static void test_mixed_production_queue() {
   CHECK(priced.side_state[0].queue[0].paid == 100 && priced.side_state[0].queue[0].total == 100);
   CHECK(priced.side_state[0].queue[1].paid == 0);
   price_sim.submit(cancel); production_steps(price_sim, priced, 1);
-  CHECK(priced.side_state[0].queue[0].paid == 200 && priced.side_state[0].queue[0].total == 67);
+  CHECK(priced.side_state[0].queue[0].paid == 200 && priced.side_state[0].queue[0].total == 68);
 
   World destroyed = production_world(); production_object(destroyed, 11, 0, 5, 5);
   destroyed.objects.back().town_hall = true;
@@ -2688,12 +2692,13 @@ static void test_campaign_initialization(const std::string& dir) {
       CHECK(false); std::printf("%s\n", error.c_str()); continue;
     }
     GameSim sim(rules); sim.init(w);
-    for (size_t i = 0; i < w.mission.objects.size(); ++i) {
-      const auto& p = w.mission.objects[i]; const auto& o = w.objects[i];
+    size_t placed = 0;
+    for (const auto& p : w.mission.objects) {
+      if (p.source == ObjectSource::Submarine) continue;
+      const auto& o = w.objects[placed++];
       CHECK(o.side == p.side && o.source == p.source && o.scenario == p.scenario_id);
       CHECK(o.town == (p.source == ObjectSource::Town && !p.defence ? p.group : -1));
       CHECK(o.tactic == (p.source == ObjectSource::Team ? p.scenario_id : -1));
-      if (o.type < 0) continue; // Submarine remains an unsupported marker.
       const auto& r = rules->type(o.type);
       CHECK(r.hp_src == Src::Verified && o.hp_max == r.hp_max && o.secondary_hp == r.secondary_hp);
       CHECK(o.hp == r.hp_max);
@@ -2704,6 +2709,89 @@ static void test_campaign_initialization(const std::string& dir) {
       CHECK(hall && hall->town_hall && hall->town == t.index && hall->side == t.side);
     }
   }
+}
+
+static void test_scenario_controllers() {
+  Ini ini;
+  ini.parse("[Globals]\nSides=1\nTowns=1\nTeams=1\nBoats=1\nJohnkas=1\nSubmarines=1\n"
+            "[Town0]\nSide=0\nX=5\nY=5\nType=1\nRace=0\n"
+            "[Team0]\nSide=0\nScenarioID=4\nUnits=1\nUnit0=1,1,0\n"
+            "[Boat0]\nSide=0\nX=2\nY=2\nScenarioID=7\n"
+            "[Johnka0]\nSide=0\nX=3\nY=3\nScenarioID=8\n"
+            "[Submarine0]\nSide=0\nX=4\nY=4\nScenarioID=9\n");
+  World w;
+  CHECK(parse_mission(ini, "controllers", w.mission));
+  CHECK(w.mission.objects.size() == 4);
+  CHECK(w.mission.objects.back().source == ObjectSource::Submarine);
+  CHECK(w.mission.objects.back().scenario_id == 9);
+  place_mission_objects(w);
+  CHECK(w.objects.size() == 4); // unit, two physical vessels, implicit hall
+  for (size_t i = 0; i < w.objects.size(); ++i) {
+    CHECK(w.objects[i].id == i + 1 && w.objects[i].type >= 0);
+    CHECK(w.find(uint32_t(i + 1)) == &w.objects[i]);
+    CHECK(w.objects[i].source != ObjectSource::Submarine);
+  }
+  CHECK(w.objects[1].type == 84 && w.objects[1].scenario == 7);
+  CHECK(w.objects[2].type == 88 && w.objects[2].scenario == 8);
+  CHECK(w.objects[3].town_hall && w.objects[3].town == 0);
+}
+
+// Invented prices, health and nominal time. No campaign or executable input.
+static void test_payment_clock() {
+  TempDir directory;
+  std::ofstream(directory.path() / "types.csv") <<
+      "id,ugi,kind,param,unit_price,build_time,dev_level\n"
+      "0,UNIT,Marine,0,37,7,0\n11,HALL,Building,0,0,0,1\n"
+      "14,BUILDING,Building,0,43,7,1\n";
+  std::ofstream(directory.path() / "desc_marine.csv") <<
+      "param,d0,d1,d2,d3,d4,d5\n0,0,101,0,101,101,8\n";
+  std::ofstream(directory.path() / "townhall_ids.csv") << "level,a,b,c\n1,11,38,64\n";
+  std::ofstream(directory.path() / "buildtree.csv") <<
+      "race,level,slot,type,map,prereq\n0,1,0,0,0,\n0,1,1,14,1,\n";
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(directory.path().string()));
+  World initial = production_world();
+  initial.mission.towns.resize(1);
+  production_object(initial, 11, 0, 5, 5); initial.objects.back().town_hall = true;
+  initial.side_state.resize(8); initial.side_state[0].money = 100;
+  World w = initial;
+  GameSim sim(rules); sim.init(w);
+  Command buy; buy.type = Pct::Build; buy.a = 0; buy.ids = {1};
+  sim.submit(buy); sim.submit(buy);
+  production_steps(sim, w, 1);
+  CHECK(w.side_state[0].money == 63 && w.side_state[0].queue.size() == 2);
+  CHECK(w.side_state[0].queue[0].work_rate == 14 && w.side_state[0].queue[0].total == 8);
+  production_steps(sim, w, 6);
+  CHECK(w.objects.size() == 1 && w.side_state[0].money == 63);
+  production_steps(sim, w, 1); // ceil(101 / floor(101 / 7)) = 8, not 7
+  CHECK(w.objects.size() == 2 && w.side_state[0].money == 26);
+  CHECK(w.side_state[0].queue.size() == 1 && w.side_state[0].queue[0].started);
+  production_steps(sim, w, 7);
+  CHECK(w.objects.size() == 3 && w.side_state[0].queue.empty() && w.side_state[0].money == 26);
+  auto replay = GameSim::replay(initial, rules, sim.log(), sim.tick_count());
+  CHECK(replay->state_hash(initial) == sim.state_hash(w));
+
+  World building = production_world();
+  building.mission.towns.resize(1);
+  production_object(building, 11, 0, 5, 5); building.objects.back().town_hall = true;
+  building.side_state.resize(8); building.side_state[0].money = 100;
+  GameSim construction(rules); construction.init(building);
+  Command place; place.type = Pct::PlaceBuilding; place.a = 14;
+  place.b = place.c = 15; place.ids = {1};
+  construction.submit(place); production_steps(construction, building, 3);
+  CHECK(building.side_state[0].money == 57 && building.objects.size() == 2);
+  CHECK(building.objects[1].hp == 12856); // three increments of 4285, initial HP 1
+  building.objects[1].hp -= 5000;
+  Command pause; pause.type = Pct::PauseBuild; pause.a = 1; pause.ids = {1};
+  construction.submit(pause); production_steps(construction, building, 3);
+  CHECK(building.objects[1].hp == 7856 && building.side_state[0].money == 57);
+  pause.a = 0; construction.submit(pause);
+  production_steps(construction, building, 5);
+  CHECK(building.objects[1].hp == 29281 && building.objects[1].progress < 1000);
+  CHECK(building.side_state[0].money == 57 && building.side_state[0].queue.size() == 1);
+  production_steps(construction, building, 1);
+  CHECK(building.objects[1].hp == 30000 && building.objects[1].progress == 1000);
+  CHECK(building.side_state[0].queue.empty() && building.side_state[0].money == 57);
 }
 
 static void test_mission_unit_health() {
@@ -3121,6 +3209,8 @@ int main(int argc, char** argv) {
     test_projectiles();
     test_object_initialization();
     test_mission_unit_health();
+    test_scenario_controllers();
+    test_payment_clock();
     test_siege_ranged();
     test_descriptor_combat();
     test_script_animation_clocks();

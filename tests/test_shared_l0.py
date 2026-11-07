@@ -403,7 +403,7 @@ class SharedControls(unittest.TestCase):
             l0.bundle(self.s, native, "reference", self.root / "bad.json")
 
     def test_pool_liveness_and_wrapped_queue_probes(self):
-        for case in ("inactive", "sentinel_live", "classes", "queue", "cycle", "active_count"):
+        for case in ("inactive", "sentinel_live", "classes", "queue", "production_span", "production_type", "cycle", "active_count"):
             run = self.root / case / "reference"
             run.mkdir(parents=True)
             schedule, native = run / "schedule", run / "native.jsonl"
@@ -429,9 +429,19 @@ class SharedControls(unittest.TestCase):
                 self.assertEqual(d["queues"][1]["queued_handles"], [0x600300])
                 self.assertEqual(d["queues"][0]["queued_types"], [28, 27])
                 self.assertEqual(d["queues"][1]["queued_types"], [28])
+                self.assertIsNone(d["queues"][0]["production"])
+                self.assertEqual(d["queues"][1]["production"], dict(
+                    type=28, work_per_tick=17, price=93, accumulated_work=51, paused=True))
+                self.assertEqual(d["queues"][1]["planner"], dict(
+                    development=4, science_timer=-1, phase=14, speed=2))
                 self.assertNotIn("diagnostics.queues", b["samples"][0]["unavailable"])
                 self.assertIsNone(b["samples"][0]["queues"])
                 self.assertTrue("queues" in b["samples"][0]["unavailable"])
+            elif case in ("production_span", "production_type"):
+                self.assertEqual(d["pool"]["live_objects"], 63)
+                self.assertEqual(d["queues"][1]["production"], dict(
+                    unavailable="Invalid L0 production object"))
+                self.assertEqual(d["queues"][1]["queued_handles"], [0x600300])
             elif case == "sentinel_live":
                 self.assertEqual(d["pool"]["live_objects"], 63)
                 obj = b["samples"][0]["objects"]["initial:-1:3:-256000:-256000"]

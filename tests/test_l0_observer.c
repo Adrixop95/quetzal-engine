@@ -87,6 +87,11 @@ int main(int argc, char** argv) {
   GU32(0x620208 + 8) = 0x63069c;
   GU32(q + 0x200) = 0x48ff84; GU32(q + 0x204) = 0x652000; GU32(q + 0x210) = 50;
   GU32(q + 0x20c) = 1; GU32(q + 0x214) = 1; GU32(0x652000) = 0x600308;
+  GU32(0x620208 + 0x114) = 0x600308;
+  GU32(0x620208 + 0x118) = 17; GU32(0x620208 + 0x11c) = 93;
+  GU32(0x620208 + 0x120) = 51; GU8(0x620208 + 0x124) = 1;
+  GU32(0x620208 + 0x178) = 4; GU32(0x620208 + 0x17c) = (uint32_t)-1;
+  GU32(0x620208 + 0x180) = 14; GU32(0x620208 + 0x158) = 2;
   // Plausible image addresses at the vtable must never become queue metadata.
   GU32(0x48ff88) = 0x411d90; GU32(0x48ff8c) = 0x411f90;
   GU32(0x48ff94) = 0x411dd0; GU32(0x48ff98) = 0x411d40;
@@ -132,6 +137,10 @@ int main(int argc, char** argv) {
     if (!strcmp(test_case, "member_span")) GU32(0x64010c) = 0xfffffff0;
     if (!strcmp(test_case, "member_chain")) GU32(0x661000) = 0x661000;
     if (!strcmp(test_case, "member_short")) pool_fixture(0x660000, 0x661000, 0x28, 7, 7, 0x662000);
+  }
+  if (test_case && !strcmp(test_case, "production_span")) GU32(0x620208 + 0x114) = 0xfffffff0;
+  if (test_case && !strcmp(test_case, "production_type")) {
+    GU32(0x620208 + 0x114) = 0x654000; GU32(0x654000 + 0x50) = 90;
   }
   if (test_case && !strcmp(test_case, "inactive")) GU8(0x600108 + 0x5c) = 0;
   if (test_case && !strcmp(test_case, "sentinel_live")) {
