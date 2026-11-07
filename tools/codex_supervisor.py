@@ -286,9 +286,24 @@ def open_prs():
                   if row["headRefName"].startswith("feature/codex-"))
 
 
+# Branch protection requires only these checks. Slower platform jobs (MSVC, MinGW, AppleClang, sanitizers) still run and are
+# visible on the pull request, but they must not hold the serial merge queue or trigger code-fix attempts; their failures are
+# handled from the post-merge run on develop. Set CODEX_REQUIRED_CHECKS to a comma list (empty value: gate on every check).
+REQUIRED_CHECKS = {name.strip() for name in os.environ.get("CODEX_REQUIRED_CHECKS", "build,pre-commit").split(",") if name.strip()}
+
+
+def gating_checks(checks):
+    """Checks that decide pending, failed and passed. Falls back to all checks when no required check is listed yet."""
+    if not REQUIRED_CHECKS:
+        return checks
+    required = [check for check in checks if check.get("name") in REQUIRED_CHECKS]
+    return required if required else checks
+
+
 def ci_state(num):
     """Separate runner failures from executed CI failures; API errors fail closed."""
     checks = gh_json(f"gh pr checks {num} --json bucket,link,name,state")
+    checks = gating_checks(checks)
     # gh pr checks exits 1 for failed checks and 8 for pending checks, even with JSON.
     infrastructure = set()
     cancelled_without_run = False
@@ -344,9 +359,42 @@ def rerun_infrastructure(num, runs):
             STATE.finish(key, kind, outcome)
 
 
+PREWARM_DEPTH = int(os.environ.get("CODEX_PREWARM_DEPTH", "3"))
+_REPO = []
+
+
+def repo_slug():
+    if not _REPO:
+        _REPO.append(run("gh repo view --json nameWithOwner -q .nameWithOwner").stdout.strip())
+    return _REPO[0]
+
+
+def prewarm(prs):
+    """Bring the first pull requests of the queue up to date server-side (no checkout, no Codex) so that their CI
+    already runs while older pull requests merge. Conflicting branches stay with the normal sync path."""
+    done = set()
+    for num, head in prs[:PREWARM_DEPTH]:
+        try:
+            view = gh_json(f"gh pr view {num} --json mergeStateStatus,mergeable")
+            if view.get("mergeStateStatus") != "BEHIND" or view.get("mergeable") != "MERGEABLE":
+                continue
+            result = run(f"gh api -X PUT repos/{repo_slug()}/pulls/{num}/update-branch")
+            log("PR", num, "update-branch", "requested" if result.returncode == 0
+                else (result.stderr + result.stdout).strip()[-120:])
+            if result.returncode == 0:
+                done.add(num)
+        except Exception as error:
+            log("PR", num, "update-branch deferred:", error)
+    return done
+
+
 def queue_step():
     """Skip blocked/waiting PRs; perform at most one code change or squash merge."""
-    for num, head in open_prs():
+    prs = open_prs()
+    warmed = prewarm(prs) if PREWARM_DEPTH > 0 else set()
+    for num, head in prs:
+        if num in warmed:
+            continue   # its CI restarts on the new head; look at it on the next pass
         key = str(num)
         try:
             view = gh_json(f"gh pr view {num} --json mergeStateStatus,mergeable,headRefOid")
@@ -412,7 +460,7 @@ def queue_loop():
             queue_step()
         except Exception as e:
             log("queue error", e)
-        time.sleep(45)
+        time.sleep(int(os.environ.get("CODEX_QUEUE_INTERVAL", "20")))
 
 
 def main():

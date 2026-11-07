@@ -30,14 +30,20 @@ class FakeRunner:
         self.mergeable = "MERGEABLE"
         self.rerun_code = 0
         self.check_code = 1
+        self.behind = set()
 
     def __call__(self, cmd, **kwargs):
         self.commands.append(cmd)
         if cmd.startswith("gh pr list"):
             return result(cmd, json.dumps([dict(number=n, headRefName=f"feature/codex-task-{n}") for n in (105, 126)]))
         if cmd.startswith("gh pr view"):
-            return result(cmd, json.dumps(dict(mergeStateStatus="CLEAN", mergeable=self.mergeable,
+            behind = any(f"gh pr view {n} " in cmd for n in self.behind)
+            return result(cmd, json.dumps(dict(mergeStateStatus="BEHIND" if behind else "CLEAN", mergeable=self.mergeable,
                                                headRefOid="unchanged")))
+        if cmd.startswith("gh repo view"):
+            return result(cmd, "example/repo")
+        if cmd.startswith("gh api -X PUT"):
+            return result(cmd, "{}")
         if cmd.startswith("gh pr checks"):
             older = "105 " in cmd
             bucket = self.bucket if older else "pass"
@@ -77,6 +83,40 @@ class SupervisorTest(unittest.TestCase):
                 patch.object(supervisor, "fix_ci", return_value="") as codex:
             supervisor.queue_step()
         return codex
+
+    def test_only_required_checks_gate_the_merge(self):
+        def rows(build="pass", precommit="pass"):
+            link = "https://github.com/example/repo/actions/runs/7/job/1"
+            return [dict(bucket=build, state=build.upper(), name="build", link=link),
+                    dict(bucket=precommit, state=precommit.upper(), name="pre-commit", link=link),
+                    dict(bucket="pending", state="PENDING", name="MSVC synthetic tests", link=link),
+                    dict(bucket="fail", state="FAILURE", name="AppleClang synthetic tests", link=link)]
+
+        def gh(table):
+            def call(cmd, **kwargs):
+                if cmd.startswith("gh pr checks"):
+                    return table
+                return dict(status="completed", conclusion="failure",
+                            jobs=[dict(conclusion="failure", steps=[dict(status="completed", conclusion="failure")])])
+            return call
+
+        with patch.object(supervisor, "gh_json", side_effect=gh(rows())):
+            self.assertEqual(supervisor.ci_state(5), ("passed", []))      # slower platform jobs do not hold the merge
+        with patch.object(supervisor, "gh_json", side_effect=gh(rows(build="pending"))):
+            self.assertEqual(supervisor.ci_state(5), ("pending", []))     # a required check still gates it
+        with patch.object(supervisor, "gh_json", side_effect=gh(rows(precommit="fail"))):
+            self.assertEqual(supervisor.ci_state(5)[0], "failed")        # and a required failure is a code failure
+        with patch.object(supervisor, "REQUIRED_CHECKS", set()), patch.object(supervisor, "gh_json", side_effect=gh(rows())):
+            self.assertEqual(supervisor.ci_state(5)[0], "failed")        # an empty list restores gating on every check
+
+    def test_behind_prs_at_the_head_of_the_queue_are_updated_server_side(self):
+        fake = FakeRunner("pass")
+        fake.behind = {105}
+        codex = self.queue(fake)
+        codex.assert_not_called()
+        self.assertIn("gh api -X PUT repos/example/repo/pulls/105/update-branch", fake.commands)
+        self.assertNotIn("gh pr merge 105 --squash --delete-branch", fake.commands)   # its CI restarts on the new head
+        self.assertIn("gh pr merge 126 --squash --delete-branch", fake.commands)      # a newer green PR is not held back
 
     def test_cancelled_rerun_skips_to_newer_pr_without_codex(self):
         fake = FakeRunner()
