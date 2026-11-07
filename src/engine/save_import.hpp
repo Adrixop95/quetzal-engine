@@ -15,6 +15,9 @@ bool load_original_save(const GameData& data, const std::string& path,
                         World& world, std::string& error);
 // Normalized simulation fields at the import boundary; unsupported domains are
 // explicitly listed and cannot establish complete resume parity.
-bool write_original_save_snapshot(const World& world, std::ostream& out, std::string& error);
+// continuation selects schema 2, including an elapsed-tick boundary. It still
+// refuses births without an audited original-to-engine identity mapping.
+bool write_original_save_snapshot(const World& world, std::ostream& out, std::string& error,
+                                  bool continuation = false);
 
 } // namespace aztec::engine

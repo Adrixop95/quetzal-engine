@@ -8,12 +8,16 @@ Run:  nohup tools/codex_supervisor.py > work/codex/supervisor.log 2>&1 &
 """
 import json
 import os
+import re
+import shlex
 import subprocess
 import sys
 import threading
 import time
 
+import codex_orch
 from codex_orch import queue_files
+from codex_state import SupervisorState
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 ORCH = os.path.join(ROOT, "tools/codex_orch.py")
@@ -45,7 +49,19 @@ def log(*a):
 
 def ensure_land():
     if not os.path.isdir(LAND):
-        run(f"git worktree add --detach {LAND} origin/develop")
+        run(f"git worktree add --detach {shlex.quote(LAND)} origin/develop", check=True)
+    merge = lrun("git rev-parse -q --verify MERGE_HEAD").returncode == 0
+    dirty = lrun("git status --porcelain").stdout.strip()
+    if merge or dirty:
+        log("recovering interrupted LAND work", "merge" if merge else "dirty checkout")
+        if merge:
+            lrun("git merge --abort")
+        for cmd in ("git reset -q --hard", "git clean -qfd -e build_sup",
+                    "git checkout -q --detach origin/develop"):
+            result = lrun(cmd)
+            if result.returncode:
+                raise RuntimeError("LAND recovery failed: " + cmd + result.stderr)
+        log("LAND recovery complete; discarded interrupted working changes")
 
 
 def lrun(cmd):
@@ -121,16 +137,28 @@ def land(name):
     mark_harvested(name)
 
 
-LAND_TRIES = {}
+MAX_ATTEMPTS = 3
+INFRA_RETRIES = int(os.environ.get("CODEX_INFRA_RETRIES", "3"))
+RETRY_DELAY = float(os.environ.get("CODEX_INFRA_RETRY_DELAY", "120"))
+STUCK_SECONDS = float(os.environ.get("CODEX_STUCK_SECONDS", "21600"))
+STATE = SupervisorState(os.path.join(ROOT, "work/codex/state/supervisor"), STUCK_SECONDS)
 
 
 def return_to_codex(name, text):
     """Send a failed landing back to the Codex session that made it (at most 3 times); otherwise leave it for a human."""
-    LAND_TRIES[name] = LAND_TRIES.get(name, 0) + 1
-    if LAND_TRIES[name] > 3:
-        log("STUCK: task", name, "failed landing 3 times")
+    key = "task:" + name
+    if not STATE.begin(key, "landing", MAX_ATTEMPTS):
+        log("STUCK: task", name, STATE.record(key).get("stuck"))
         return
-    log("feedback to", name, run(f"python3 {ORCH} feedback {name} {json.dumps(text)}").stdout.strip())
+    try:
+        result = run(f"python3 {ORCH} feedback {name} {shlex.quote(text)}")
+        outcome = (result.stdout + result.stderr).strip()
+        log("feedback to", name, outcome)
+    except Exception as error:
+        outcome = str(error)
+        raise
+    finally:
+        STATE.finish(key, "landing", outcome)
 
 
 def mark_harvested(name):
@@ -148,9 +176,6 @@ def pending_merge():
 
 
 LAND_LOCK = threading.Lock()   # LAND is one checkout: landing tasks and the merge queue take turns
-ATTEMPTS = {}                  # (pr number, kind) -> tries; reset when the PR makes progress
-MAX_ATTEMPTS = 3
-STUCK = set()
 
 
 CLAUDE_TOOLS = ["Read", "Edit", "Write", "Bash(cmake:*)", "Bash(ctest:*)", "Bash(ninja:*)", "Bash(grep:*)", "Bash(ls:*)",
@@ -248,46 +273,137 @@ def fix_ci(num, head):
             lrun("git reset -q --hard; git checkout -q --detach origin/develop")
 
 
-def attempt(num, kind):
-    ATTEMPTS[(num, kind)] = ATTEMPTS.get((num, kind), 0) + 1
-    return ATTEMPTS[(num, kind)] <= MAX_ATTEMPTS
+def gh_json(cmd):
+    result = run(cmd)
+    if result.returncode and not (cmd.startswith("gh pr checks ") and result.returncode in (1, 8)):
+        raise RuntimeError(cmd + ": " + result.stderr[-500:])
+    return json.loads(result.stdout)
+
+
+def open_prs():
+    return sorted((row["number"], row["headRefName"]) for row in
+                  gh_json("gh pr list --limit 1000 --json number,headRefName")
+                  if row["headRefName"].startswith("feature/codex-"))
+
+
+def ci_state(num):
+    """Separate runner failures from executed CI failures; API errors fail closed."""
+    checks = gh_json(f"gh pr checks {num} --json bucket,link,name,state")
+    # gh pr checks exits 1 for failed checks and 8 for pending checks, even with JSON.
+    infrastructure = set()
+    cancelled_without_run = False
+    for check in checks:
+        if check["bucket"] not in ("fail", "cancel"):
+            continue
+        match = re.search(r"/actions/runs/(\d+)", check.get("link", ""))
+        if not match:
+            cancelled_without_run |= check["bucket"] == "cancel"
+            continue
+        rid = match.group(1)
+        detail = gh_json(f"gh run view {rid} --json jobs,status,conclusion")
+        if detail.get("status") != "completed":
+            return "pending", []
+        jobs = detail.get("jobs", [])
+        bad_jobs = [job for job in jobs if job.get("conclusion") in ("failure", "cancelled", "timed_out")]
+        no_steps = not jobs or (bool(bad_jobs) and all(
+            not any(step.get("status") == "completed" and step.get("conclusion") != "skipped"
+                    for step in job.get("steps", [])) for job in bad_jobs))
+        not_acquired = "not acquired" in json.dumps(detail).lower()
+        if check["bucket"] == "cancel" or detail.get("conclusion") == "cancelled" or no_steps or not_acquired:
+            infrastructure.add(rid)
+    if infrastructure or cancelled_without_run:
+        return "infrastructure", sorted(infrastructure)
+    if any(check["bucket"] in ("fail", "cancel") for check in checks):
+        return "failed", []
+    if not checks or any(check["bucket"] == "pending" for check in checks):
+        return "pending", []
+    return "passed", []
+
+
+def rerun_infrastructure(num, runs):
+    key = str(num)
+    for rid in runs:
+        with STATE.lock:
+            record = STATE.record(key)
+            retry = record["runs"].setdefault(rid, {"next": 0})
+            if time.time() < retry["next"]:
+                continue
+            kind = "infra:" + rid
+            if not STATE.begin(key, kind, INFRA_RETRIES):
+                return
+            # Save the delay before gh, including when the service dies inside gh.
+            retry["next"] = time.time() + RETRY_DELAY
+            STATE.save()
+        try:
+            result = run(f"gh run rerun {rid} --failed")
+            outcome = "rerun requested" if result.returncode == 0 else "rerun failed: " + result.stderr[-500:]
+        except Exception as error:
+            outcome = str(error)
+            raise
+        finally:
+            STATE.finish(key, kind, outcome)
 
 
 def queue_step():
-    """One step of the serial merge queue: the oldest open codex PR is synced, fixed or merged; the rest wait their turn."""
-    out = run("gh pr list --json number,headRefName --jq '.[]|\"\\(.number) \\(.headRefName)\"'").stdout.splitlines()
-    prs = sorted((int(l.split()[0]), l.split()[1]) for l in out if len(l.split()) == 2 and l.split()[1].startswith("feature/codex-"))
-    for num, head in prs:
-        if num in STUCK:
-            continue
-        v = json.loads(run(f"gh pr view {num} --json mergeStateStatus,mergeable").stdout or "{}")
-        state, mergeable = v.get("mergeStateStatus"), v.get("mergeable")
-        checks = run(f"gh pr checks {num}").stdout
-        failed, pending = "\tfail" in checks, "\tpending" in checks
-        if mergeable == "UNKNOWN":
-            return
-        if mergeable == "CONFLICTING" or state in ("BEHIND", "DIRTY"):
-            if not attempt(num, "sync"):
-                STUCK.add(num)
-                log("STUCK: PR", num, "cannot be synced with develop after", MAX_ATTEMPTS, "tries")
+    """Skip blocked/waiting PRs; perform at most one code change or squash merge."""
+    for num, head in open_prs():
+        key = str(num)
+        try:
+            view = gh_json(f"gh pr view {num} --json mergeStateStatus,mergeable,headRefOid")
+            STATE.observe_head(key, view["headRefOid"])
+            if STATE.blocked(key):
                 continue
-            bad = sync_with_develop(num, head, "Previous attempt failed: " + str(ATTEMPTS.get((num, "last"), "")))
-            ATTEMPTS[(num, "last")] = bad
-            log("PR", num, "synced with develop" if not bad else "sync FAILED: " + bad)
-            return
-        if failed:
-            if not attempt(num, "ci"):
-                STUCK.add(num)
-                log("STUCK: PR", num, "CI keeps failing after", MAX_ATTEMPTS, "fixes")
+            ci, runs = ci_state(num)
+            if ci == "infrastructure":
+                rerun_infrastructure(num, runs)
                 continue
-            bad = fix_ci(num, head)
-            log("PR", num, "CI fix pushed" if not bad else "CI fix FAILED: " + bad)
+            if view.get("mergeable") == "UNKNOWN":
+                continue
+            if view.get("mergeable") == "CONFLICTING" or view.get("mergeStateStatus") in ("BEHIND", "DIRTY"):
+                kind = "sync"
+            elif ci == "pending":
+                continue
+            elif ci == "failed":
+                kind = "ci"
+            else:
+                result = run(f"gh pr merge {num} --squash --delete-branch")
+                log("PR", num, "merged" if not result.returncode else "merge deferred",
+                    (result.stdout + result.stderr).strip()[-150:])
+                if result.returncode:
+                    continue
+                return
+            if not STATE.begin(key, kind, MAX_ATTEMPTS):
+                continue
+            try:
+                bad = (sync_with_develop(num, head, "Previous attempt: " + STATE.record(key).get("last", ""))
+                       if kind == "sync" else fix_ci(num, head))
+            except Exception as error:
+                bad = str(error)
+            STATE.finish(key, kind, bad)
+            log("PR", num, kind, bad or "success")
             return
-        if pending or not checks.strip():
-            return   # wait for CI; the queue is serial so nothing else merges meanwhile
-        m = run(f"gh pr merge {num} --squash --delete-branch")
-        log("merged PR", num, (m.stdout + m.stderr).strip()[-150:])
-        return
+        except Exception as error:
+            log("PR", num, "deferred:", error)
+
+
+def report_status():
+    for name in codex_orch.names():
+        task = codex_orch.refresh(codex_orch.load(name))
+        record = STATE.record("task:" + name)
+        print(f"task {name} {task['status']} harvested={bool(task.get('harvested'))} "
+              f"attempts={json.dumps(record['attempts'])} STUCK={record.get('stuck', {}).get('reason', '-')}")
+    for num, head in open_prs():
+        record = STATE.record(num)
+        try:
+            ci, _ = ci_state(num)
+        except Exception as error:
+            ci = "unknown: " + str(error)
+        stuck = record.get("stuck", {})
+        reason = stuck.get("reason", "-")
+        if stuck and time.time() >= stuck["until"]:
+            reason += " (expired; retry on next pass)"
+        print(f"PR {num} task={head.removeprefix('feature/codex-')} CI={ci} action={record.get('active', 'waiting')} "
+              f"attempts={json.dumps(record['attempts'])} STUCK={reason}")
 
 
 def queue_loop():
@@ -300,6 +416,7 @@ def queue_loop():
 
 
 def main():
+    STATE.recover()
     last_resume = 0
     threading.Thread(target=queue_loop, daemon=True).start()
     while True:
@@ -309,13 +426,15 @@ def main():
             st = status()
             running = [n for n, s in st.items() if s == "running"]
             for n, s in st.items():
-                if s == "done":
+                if s == "done" and not STATE.blocked("task:" + n):
                     log("landing", n)
                     with LAND_LOCK:
                         land(n)
             if time.time() - last_resume > 1200 and any(s in ("limited", "stopped") for s in st.values()):
                 last_resume = time.time()
-                log("resume attempt", run(f"python3 {ORCH} resume all").stdout.strip())
+                for name, task_status in st.items():
+                    if task_status in ("limited", "stopped"):
+                        log("resume attempt", run(f"python3 {ORCH} resume {shlex.quote(name)}").stdout.strip())
             running = [n for n, s in status().items() if s == "running"]
             free = int(os.environ.get("CODEX_MAX_PARALLEL", "4")) - len(running)
             if free > 0:
@@ -341,4 +460,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:] == ["status"]:
+        report_status()
+    elif not sys.argv[1:]:
+        main()
+    else:
+        raise SystemExit("Usage: codex_supervisor.py [status]")
