@@ -187,3 +187,71 @@ state/frame repeatability, full runner output, explicit missing capabilities,
 validation failures and an HP negative control at tick 3. Its synthetic
 subprocess shim replaces namespace launch only for these invented inputs.
 No reference game process is executed by this test.
+
+## V13 repeated scene comparison (task 93)
+
+Status: **SYN/P; needs live run**. `tools/render_compare.py` consumes the actual
+schema-2 canonical bundles from tasks 64/81, without relabelling their
+`before_commands` phase as the older visual/UI presentation phase. It reuses
+`parity_visual.py` regional scoring: union of structural masks, differing mask
+pixels, exact mismatch fraction, channel-tolerant bad-pixel fraction and RGB MAE.
+Thresholds are declared before measurement; exact error remains separate even
+when tolerant error passes. All six regions are required at every scheduled tick.
+
+A private plan has exactly `schema: 1`, `scene`, `ticks`, `regions`, `reference`,
+`before` and `after`. Scene names are `aircraft-altitude`, `transport-initiation`,
+`turn`, `steering`, `hop`, `destruction`, `attack-death`, `overlap`, `fog` and
+`minimap`. `ticks` is a nonempty increasing subset of the shared schedule.
+`regions` maps the six L4 region names to `channel`, `max_bad_fraction`,
+`max_mae` thresholds, as in the existing visual scenario. Each of `reference`
+and `before` contains two independent run entries; `after` is either another
+pair or null. A run entry looks like:
+
+```json
+{
+  "bundle": "before1/reference.json",
+  "masks": {
+    "1": {
+      "map": "masks/reference1/tick_1_map.pgm",
+      "units": "masks/reference1/tick_1_units.pgm",
+      "hud": "masks/reference1/tick_1_hud.pgm",
+      "minimap": "masks/reference1/tick_1_minimap.pgm",
+      "command_card": "masks/reference1/tick_1_command_card.pgm",
+      "overlays": "masks/reference1/tick_1_overlays.pgm"
+    }
+  }
+}
+```
+
+This one-tick example must be expanded to **every** bundle tick, including ticks
+outside the selected scene. Paths resolve within the plan directory; captures
+still resolve within their own shared bundle directory. Masks are nonempty,
+binary P5 800x600 images. Derive structural masks independently for each runner
+from reviewed region/occupancy annotations; retain the annotations and method.
+Do not reuse the reference silhouette as the clone's observed silhouette. Fixed
+layout masks may coincide when the layout actually agrees. Include the complete
+object, shadow, projectile/effect extent and relevant terrain in the regions;
+tiny crops or omitted components cannot establish parity or readability.
+
+The tool validates all bundles/images/masks before comparison, checks matching
+mission/schedule/view/phase and distinct bundle paths, then requires exact
+normalized state, decoded RGB and mask repeatability across the full schedule
+for each version. Raw address diagnostics and frame filenames are excluded
+from repeat equality. Distinct paths cannot prove independent processes: retain
+invocations, profiles, binary/setup hashes and audit records as provenance.
+
+For each declared tick, state differences or any `unavailable` field block
+render acceptance. Available pixel metrics remain explicitly `diagnostic_only`;
+missing frames yield null metrics. Reference nondeterminism yields no before/
+after measurements. An absent after pair stays null, never zero error. Only a
+stable, unblocked before difference sets `eligible_for_engine_fix`; this is a
+measurement gate, not automatic approval of a particular code change. Review
+scene reachability, class identity, light, altitude/animation clocks and complete
+presentation alignment before attributing the difference to rendering. The L0
+object schema does not itself observe those animation producers.
+
+Reports keep provisional evidence and `needs live run` until that review.
+Exit 0 means the supplied repeated after pair passes the bounded regional
+comparison; 1 includes differences, blocked observations, unstable repeats or
+missing after data; 2 means invalid inputs. Synthetic success, including exit 0,
+does not establish original parity. See the [V13 run sheet](EXPERIMENTS.md#v13-render-and-animation-run-sheet-task-93-needs-live-run).
