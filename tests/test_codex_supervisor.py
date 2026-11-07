@@ -78,6 +78,31 @@ class SupervisorTest(unittest.TestCase):
             supervisor.queue_step()
         return codex
 
+    def test_only_required_checks_gate_the_merge(self):
+        def rows(build="pass", precommit="pass"):
+            link = "https://github.com/example/repo/actions/runs/7/job/1"
+            return [dict(bucket=build, state=build.upper(), name="build", link=link),
+                    dict(bucket=precommit, state=precommit.upper(), name="pre-commit", link=link),
+                    dict(bucket="pending", state="PENDING", name="MSVC synthetic tests", link=link),
+                    dict(bucket="fail", state="FAILURE", name="AppleClang synthetic tests", link=link)]
+
+        def gh(table):
+            def call(cmd, **kwargs):
+                if cmd.startswith("gh pr checks"):
+                    return table
+                return dict(status="completed", conclusion="failure",
+                            jobs=[dict(conclusion="failure", steps=[dict(status="completed", conclusion="failure")])])
+            return call
+
+        with patch.object(supervisor, "gh_json", side_effect=gh(rows())):
+            self.assertEqual(supervisor.ci_state(5), ("passed", []))      # slower platform jobs do not hold the merge
+        with patch.object(supervisor, "gh_json", side_effect=gh(rows(build="pending"))):
+            self.assertEqual(supervisor.ci_state(5), ("pending", []))     # a required check still gates it
+        with patch.object(supervisor, "gh_json", side_effect=gh(rows(precommit="fail"))):
+            self.assertEqual(supervisor.ci_state(5)[0], "failed")        # and a required failure is a code failure
+        with patch.object(supervisor, "REQUIRED_CHECKS", set()), patch.object(supervisor, "gh_json", side_effect=gh(rows())):
+            self.assertEqual(supervisor.ci_state(5)[0], "failed")        # an empty list restores gating on every check
+
     def test_cancelled_rerun_skips_to_newer_pr_without_codex(self):
         fake = FakeRunner()
         codex = self.queue(fake)

@@ -286,9 +286,24 @@ def open_prs():
                   if row["headRefName"].startswith("feature/codex-"))
 
 
+# Branch protection requires only these checks. Slower platform jobs (MSVC, MinGW, AppleClang, sanitizers) still run and are
+# visible on the pull request, but they must not hold the serial merge queue or trigger code-fix attempts; their failures are
+# handled from the post-merge run on develop. Set CODEX_REQUIRED_CHECKS to a comma list (empty value: gate on every check).
+REQUIRED_CHECKS = {name.strip() for name in os.environ.get("CODEX_REQUIRED_CHECKS", "build,pre-commit").split(",") if name.strip()}
+
+
+def gating_checks(checks):
+    """Checks that decide pending, failed and passed. Falls back to all checks when no required check is listed yet."""
+    if not REQUIRED_CHECKS:
+        return checks
+    required = [check for check in checks if check.get("name") in REQUIRED_CHECKS]
+    return required if required else checks
+
+
 def ci_state(num):
     """Separate runner failures from executed CI failures; API errors fail closed."""
     checks = gh_json(f"gh pr checks {num} --json bucket,link,name,state")
+    checks = gating_checks(checks)
     # gh pr checks exits 1 for failed checks and 8 for pending checks, even with JSON.
     infrastructure = set()
     cancelled_without_run = False
