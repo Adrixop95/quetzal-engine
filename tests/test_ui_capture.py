@@ -108,7 +108,7 @@ class CaptureTests(unittest.TestCase):
             script.write_text(f'wait 2\nshot {before}\nmove 400 370\ndown\nup\nwait 2\nshot {after}\nquit\n')
             env = {k: v for k, v in os.environ.items() if k not in ('AZTEC_MENU_SHOT', 'AZTEC_UI_SCRIPT')}
             env.update(SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy', AZTEC_UI_SCRIPT=str(script))
-            argv = [str(ENGINE), '--game', str(root), '--rules-dir', str(ROOT / 'docs/data'),
+            argv = [str(ENGINE), '--profile', 'faithful', '--game', str(root), '--rules-dir', str(ROOT / 'docs/data'),
                     '--size', '800x600', '--software', '--no-audio', '--no-mouse-grab']
             frames = []
             for _ in range(2):

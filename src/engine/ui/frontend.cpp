@@ -330,6 +330,10 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
   const SDL_Color gold{240, 215, 150, 255}, white{240, 240, 240, 255};
   while (!quit_ && chosen_.empty()) {
     frame_begin();
+    if (in_.hit(SDL_SCANCODE_F9) && !in_.ctrl) {
+      modification_options_.open = mode_ != Mode::Modifications;
+      mode_ = modification_options_.open ? Mode::Modifications : Mode::Options;
+    }
     switch (mode_) {
       case Mode::Main: {
         background(280);
@@ -518,7 +522,7 @@ void AudioOptions::draw(SDL_Renderer* r, const Font& font, const Options& o, int
 }
 
 SDL_Rect ModificationOptions::row(int i, int w, int h, int sc) {
-  return {(w - std::min(w - 16, 600 * sc)) / 2, h / 2 - 180 * sc + i * 45 * sc,
+  return {(w - std::min(w - 16, 600 * sc)) / 2, h / 2 - 110 * sc + i * 44 * sc,
           std::min(w - 16, 600 * sc), 36 * sc};
 }
 void ModificationOptions::update(const Input& in, Options& options, int w, int h, int sc) {
@@ -526,55 +530,43 @@ void ModificationOptions::update(const Input& in, Options& options, int w, int h
   if (in.hit(SDL_SCANCODE_ESCAPE)) open = false;
   if (!in.pressed[SDL_BUTTON_LEFT]) return;
   SDL_Point point{in.mx, in.my};
-  auto toggle = row(0, w, h, sc), relaxed = row(2, w, h, sc);
-  auto training = row(4, w, h, sc), unstick = row(6, w, h, sc), back = row(8, w, h, sc);
-  bool changed = false;
-  if (SDL_PointInRect(&point, &toggle)) {
-    options.modifications.parallel_construction = !options.modifications.parallel_construction;
-    changed = true;
+  for (int i = 0; i < 6; ++i) {
+    const auto rect = row(i, w, h, sc);
+    if (!SDL_PointInRect(&point, &rect)) continue;
+    if (i == 5) { open = false; return; }
+    if (i == 1) options.modifications.set_profile(options.modifications.profile == PlayProfile::Faithful ? "enhanced" : "faithful");
+    else {
+      const size_t index = i == 0 ? 0 : size_t(i - 1);
+      const auto training = (options.modifications.parallel_training + 1) % 9;
+      options.modifications.set(std::string(Modifications::names[index]) + "=" +
+          (index == 1 ? (training == 0 ? "per-building" : std::to_string(training)) :
+           options.modifications.value(index) ? "off" : "on"));
+    }
+    if (!save_modifications(options.modifications_file, options.modifications))
+      std::fprintf(stderr, "Cannot persist game modifications\n");
+    return;
   }
-  if (SDL_PointInRect(&point, &relaxed)) {
-    options.modifications.relaxed_placement = !options.modifications.relaxed_placement;
-    changed = true;
-  }
-  if (SDL_PointInRect(&point, &training)) {
-    options.modifications.parallel_training = (options.modifications.parallel_training + 1) % 9;
-    changed = true;
-  }
-  if (SDL_PointInRect(&point, &unstick)) {
-    options.modifications.unit_unstick = !options.modifications.unit_unstick;
-    changed = true;
-  }
-  if (changed && !save_modifications(options.modifications_file, options.modifications))
-    std::fprintf(stderr, "Cannot persist game modifications\n");
-  if (SDL_PointInRect(&point, &back)) open = false;
 }
 void ModificationOptions::draw(SDL_Renderer* r, const Font& font, const Options& options, int w, int h, int sc) const {
   if (!open) return;
   SDL_SetRenderDrawColor(r, 20, 18, 14, 255); SDL_RenderClear(r);
-  auto rect = row(0, w, h, sc);
-  font.draw(r, rect.x, rect.y - 60 * sc, "Game modifications", 2 * sc, {245, 230, 200, 255});
-  SDL_SetRenderDrawColor(r, 55, 42, 25, 255); SDL_RenderFillRect(r, &rect);
-  font.draw(r, rect.x + 8 * sc, rect.y + 8 * sc,
-      std::string("Parallel construction: ") + (options.modifications.parallel_construction ? "on" : "off"), 2 * sc, {245, 230, 200, 255});
-  font.draw(r, rect.x, rect.y + 45 * sc, "Buildings progress independently of the town queue.", sc, {245, 230, 200, 255});
-  auto relaxed = row(2, w, h, sc);
-  SDL_SetRenderDrawColor(r, 55, 42, 25, 255); SDL_RenderFillRect(r, &relaxed);
-  font.draw(r, relaxed.x + 8 * sc, relaxed.y + 8 * sc,
-      std::string("Relaxed placement: ") + (options.modifications.relaxed_placement ? "on" : "off"), 2 * sc, {245, 230, 200, 255});
-  font.draw(r, relaxed.x, relaxed.y + 45 * sc, "Allow map objects and ignore building clearance.", sc, {245, 230, 200, 255});
-  auto training = row(4, w, h, sc);
-  SDL_SetRenderDrawColor(r, 55, 42, 25, 255); SDL_RenderFillRect(r, &training);
-  font.draw(r, training.x + 8 * sc, training.y + 8 * sc,
-      "Parallel training: " + options.modifications.training_value(), 2 * sc, {245, 230, 200, 255});
-  font.draw(r, training.x, training.y + 45 * sc, "Units at once per town; applies to every side. 1 = off.", sc, {245, 230, 200, 255});
-  auto unstick = row(6, w, h, sc);
-  SDL_SetRenderDrawColor(r, 55, 42, 25, 255); SDL_RenderFillRect(r, &unstick);
-  font.draw(r, unstick.x + 8 * sc, unstick.y + 8 * sc,
-      std::string("Unit unstick: ") + (options.modifications.unit_unstick ? "on" : "off"), 2 * sc, {245, 230, 200, 255});
-  font.draw(r, unstick.x, unstick.y + 45 * sc, "Repath, yield and relocate stalled units.", sc, {245, 230, 200, 255});
-  auto back = row(8, w, h, sc);
-  font.draw(r, back.x, back.y, "Back", 2 * sc, {245, 230, 200, 255});
+  const auto top = row(0, w, h, sc);
+  font.draw(r, top.x, top.y - 44 * sc, "Game modifications (F9)", 2 * sc, {245, 230, 200, 255});
+  for (int i = 0; i < 6; ++i) {
+    const auto rect = row(i, w, h, sc);
+    std::string label;
+    if (i == 5) label = "Back";
+    else if (i == 1) label = std::string("Profile: ") + options.modifications.profile_name();
+    else {
+      const size_t index = i == 0 ? 0 : size_t(i - 1);
+      label = options.modifications.setting(index);
+      if (options.modifications.overrides & (1u << index)) label += " (override)";
+    }
+    SDL_SetRenderDrawColor(r, 55, 42, 25, 255); SDL_RenderFillRect(r, &rect);
+    font.draw(r, rect.x + 8 * sc, rect.y + 8 * sc, label, sc, {245, 230, 200, 255});
+  }
+  font.draw(r, top.x, top.y + 272 * sc, "Profile resets overrides. Training: 1-8 or per building.", sc, {245, 230, 200, 255});
+  font.draw(r, top.x, top.y + 288 * sc, "Unit unstick: repath, yield and relocate stalled units.", sc, {245, 230, 200, 255});
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

@@ -13,11 +13,11 @@ CMake targets: `aztec_engine` (library `aztec_engine_lib` plus `src/engine/app/m
     build_engine/test_engine game
 Keys: scrolling bindings from `Keys.ini` (arrows / numeric keypad by default) and edge scrolling, middle or right-drag = pan, wheel = zoom, left click on the minimap = jump,
 F11 borderless, Alt+Enter fullscreen, F1 help, F2 grid, F3 passability, F4 labels, F5 markers, F6 edge scroll, F7 terrain overlays, F8 fog,
-F9 cursor confinement, F10 HUD, Space pause (view, only if unbound in `Keys.ini`), P pause (simulation), PrintScreen screenshot, F12 toggle panel, Esc cancel targeting / quit / pause menu.
+Ctrl+F9 cursor confinement, F9 helpers, F10 HUD, Space pause (view, only if unbound in `Keys.ini`), P pause (simulation), PrintScreen screenshot, F12 toggle panel, Esc cancel targeting / quit / pause menu.
 
 Cursor confinement is enabled by default during focused gameplay in windowed,
 borderless and fullscreen modes. Focus loss, holding Alt (including Alt-Tab),
-pause and the front-end release it. F9 toggles the preference for the current
+pause and the front-end release it. Ctrl+F9 toggles the preference for the current
 session; `--no-mouse-grab` starts with it disabled. Absolute mouse coordinates
 remain available for scrolling at the outer window edges, including over the
 right panel. Scripted playtests and screenshots do not grab the mouse.

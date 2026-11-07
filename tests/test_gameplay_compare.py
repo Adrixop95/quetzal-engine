@@ -131,7 +131,7 @@ class TimelineTests(unittest.TestCase):
             script = root / 'input.txt'
             script.write_text('wait 2\nkey Escape\nwait 4\nkey Escape\nuntil 12\nquit\n')
             trace = root / 'ui.jsonl'
-            argv = [str(ENGINE), '--game', str(game), '1', '--rules-dir', str(ROOT / 'docs/data'),
+            argv = [str(ENGINE), '--profile', 'faithful', '--game', str(game), '1', '--rules-dir', str(ROOT / 'docs/data'),
                     '--size', '800x600', '--software', '--no-audio', '--no-light', '--no-fog',
                     '--menu-session', '--script', str(script), '--ui-trace', str(trace),
                     '--capture-dir', str(captures), '--capture-every', '2']

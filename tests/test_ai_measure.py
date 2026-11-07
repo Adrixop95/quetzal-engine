@@ -238,7 +238,7 @@ class Measurements(unittest.TestCase):
             (maps / 'ai.map').write_bytes(struct.pack('<HH', 40, 40) + bytes(6400))
             (maps / 'ai.scn').write_text('')
             for name in ('plain', 'traced', 'repeat'):
-                command = [ENGINE, '--headless', '--game', str(game), '--rules-dir', str(ROOT / 'docs/data'),
+                command = [ENGINE, '--headless', '--profile', 'faithful', '--game', str(game), '--rules-dir', str(ROOT / 'docs/data'),
                            '--no-auto-orders', '--max-ticks', '20', '--tick-hashes', str(folder / f'{name}.hash')]
                 if name != 'plain':
                     command += ['--ai-trace', str(folder / f'{name}.jsonl')]

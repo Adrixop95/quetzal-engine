@@ -191,7 +191,7 @@ class VisualTests(unittest.TestCase):
         capture = self.root / 'engine.png'
         script.write_text((ROOT / 'tests/parity/ui-input.txt').read_text().replace('quit', f'shot {capture}\nquit'))
         trace = self.root / 'ui.jsonl'
-        argv = [str(ENGINE), '--game', str(game), '1', '--rules-dir', str(ROOT / 'docs/data'),
+        argv = [str(ENGINE), '--profile', 'faithful', '--game', str(game), '1', '--rules-dir', str(ROOT / 'docs/data'),
                 '--size', '800x600', '--software', '--no-audio', '--no-light', '--no-fog', '--no-hud',
                 '--cam', '8,8', '--zoom', '1', '--select', '0,0,800,600', '--no-edge-scroll',
                 '--script', str(script), '--ui-trace', str(trace)]

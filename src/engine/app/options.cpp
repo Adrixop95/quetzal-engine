@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <vector>
 #include <SDL.h>
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -62,24 +63,31 @@ bool configured_game_dir(int argc, char** argv, std::string& game, std::string& 
 bool load_modifications(const std::string& path, Modifications& out) {
   std::ifstream in(path);
   if (!in) return false;
-  Modifications parsed;
+  // Legacy files without a profile keep the old all-off base.
+  Modifications parsed = Modifications::faithful();
+  std::vector<std::string> entries;
   std::string line;
+  bool has_profile = false;
   while (std::getline(in, line)) {
     if (!line.empty() && line.back() == '\r') line.pop_back();
     if (line.empty() || line.front() == '#') continue;
-    if (!parsed.set(line)) return false;
+    if (line.rfind("profile=", 0) == 0) {
+      if (has_profile || !parsed.set_profile(line.substr(8))) return false;
+      has_profile = true;
+    } else entries.push_back(line);
   }
   if (in.bad()) return false;
+  for (const auto& entry : entries) if (!parsed.set(entry)) return false;
   out = parsed;
   return true;
 }
 bool save_modifications(const std::string& path, Modifications options) {
   if (path.empty()) return false;
   std::ofstream out(path, std::ios::trunc);
-  out << "unit_unstick=" << (options.unit_unstick ? "on" : "off") << "\n";
-  out << "parallel_construction=" << (options.parallel_construction ? "on" : "off") << "\n";
-  out << "relaxed_placement=" << (options.relaxed_placement ? "on" : "off") << "\n";
-  out << "parallel_training=" << options.training_value() << "\n";
+  out << "profile=" << options.profile_name() << "\n";
+  const auto base = options.profile == PlayProfile::Faithful ? Modifications::faithful() : Modifications::enhanced();
+  for (size_t i = 0; i < Modifications::names.size(); ++i)
+    if ((options.overrides & (1u << i)) || options.value(i) != base.value(i)) out << options.setting(i) << "\n";
   out.close();
   return bool(out);
 }
@@ -142,8 +150,8 @@ const char* usage_text() {
   return "usage: aztec_engine [options] [MISSION]\n"
          "  aztec_engine --headless --help   bounded simulation-only campaign mode\n"
          "  MISSION            number (campaign mission_N), map name from game/Maps, or path to .mp (default 1)\n"
-         "  --mod NAME=value  parallel_construction=on|off; relaxed_placement=on|off; unit_unstick=on|off (default off)\n"
-         "                    parallel_training=1..8|per-building (default 1)\n"
+         "  --profile faithful|enhanced  helper preset (interactive default enhanced)\n"
+         "  --mod NAME=on|off  override a helper; parallel_training also accepts 1..8|per-building\n"
          "  --modifications-file FILE  override persisted modification settings\n"
          "  --game DIR         game directory (overrides AZTEC_GAME, settings, ./game)\n"
          "  --settings FILE    game=DIR file (default per-user settings.ini)\n"
@@ -171,7 +179,7 @@ const char* usage_text() {
          "  --sfx-volume V --music-volume V --speech-volume V   independent volumes 0..1\n"
          "  --no-acknowledgement --no-subtitles   suppress confirmations or captions\n"
          "  --no-edge-scroll   disable edge scrolling;  --no-hud  hide the info overlay;  --help-overlay  show key help\n"
-         "  --no-mouse-grab    start with cursor confinement disabled (F9 toggles it)\n"
+         "  --no-mouse-grab    start with cursor confinement disabled (Ctrl+F9 toggles it; F9 opens helpers)\n"
          "  --palette N --shade N   terrain palette/shade override\n"
          "  --screenshot FILE.png  render --frames N frames (default 5), save PNG and exit\n"
          "  --frames N         exit after N rendered mission frames\n"
@@ -188,8 +196,10 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
   // Select the file before applying command-line overrides, regardless of order.
   for (int i = 1; i + 1 < argc; ++i)
     if (std::string(argv[i]) == "--modifications-file") o.modifications_file = argv[++i];
-  o.modifications = {};
+  o.modifications = Modifications::enhanced();
   load_modifications(o.modifications_file, o.modifications);
+  std::string cli_profile;
+  std::vector<std::string> cli_modifications;
   if (!configured_game_dir(argc, argv, o.game_dir, err)) return false;
   for (int i = 1; i < argc; i++) {
     std::string a = argv[i];
@@ -201,9 +211,16 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     const char* v = nullptr;
     if (a == "--help" || a == "-h") { usage = true; return true; }
     else if (a == "--modifications-file") { if (!next(v)) return false; }
+    else if (a == "--profile") {
+      if (!next(v)) return false;
+      if (std::string(v) != "faithful" && std::string(v) != "enhanced") { err = "invalid profile: " + std::string(v); return false; }
+      cli_profile = v;
+    }
     else if (a == "--mod") {
       if (!next(v)) return false;
-      if (!o.modifications.set(v)) { err = "invalid modification: " + std::string(v); return false; }
+      Modifications checked;
+      if (!checked.set(v)) { err = "invalid modification: " + std::string(v); return false; }
+      cli_modifications.emplace_back(v);
     }
     else if (a == "--settings") { if (!next(v)) return false; }
     else if (a == "--game") { if (!next(v)) return false; o.game_dir = v; }
@@ -277,6 +294,9 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     else if (!a.empty() && a[0] == '-') { err = "unknown option " + a; return false; }
     else { o.mission = a; o.mission_given = true; }
   }
+  // Selecting a preset clears stored overrides; explicit CLI overrides always win.
+  if (!cli_profile.empty()) o.modifications.set_profile(cli_profile);
+  for (const auto& modification : cli_modifications) o.modifications.set(modification);
   if (!o.original_save.empty() && (o.mission_given || o.wander)) {
     err = "--load-original cannot be combined with a mission or --wander"; return false;
   }

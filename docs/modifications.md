@@ -1,6 +1,6 @@
 # Game modifications
 
-Modifications are clone-only simulation options. Every option defaults to off (parallel training uses value `1`);
+Modifications are clone-only simulation options. The faithful profile defaults to off (parallel training uses value `1`);
 without an enabled option the engine uses its default original-style rules.
 
 | Option | Default | Behavior when enabled |
@@ -52,6 +52,7 @@ use their recorded settings.
 
 Open **Options > Game modifications** in the front-end, or **Game modifications**
 in the in-game pause menu. Each option has a description. Construction, relaxed placement and unit unstick toggle on/off; training cycles through 1–8 and "per building".
+in the in-game pause menu. The panel shows the profile and effective values. Construction and relaxed placement toggle on/off; training cycles through 1–8 and "per building".
 Menu changes persist to the preference file; a failed write reports an error on
 stderr. During a mission they submit a deterministic `SetModifications` command
 that applies when simulation resumes. Changing mode never pays twice, resets
@@ -67,6 +68,7 @@ to pause/resume only that site. Every running unit also displays a status marker
 The AZS3 container with replay version 4 stores the initial modification bitset
 following its command log. Later changes are commands in that log. Unknown encodings
 and older replay versions are refused. Bit zero retains construction and bit one retains relaxed placement; bits 2–5 encode training as 0–7 for values 1–8, or 8 for "per building". Bit 6 enables unit unstick independently of training. Default metadata and hashes remain unchanged. Pre-merge unit-unstick builds used bit 2 for recovery; saves and replays with that option enabled are incompatible with this merged layout. Save loading restores the recorded initial
+and older replay versions are refused. Bit zero retains construction and bit one retains relaxed placement; bits 2–5 encode training as 0–7 for values 1–8, or 8 for "per building". Bit 6 stores the unit-unstick configuration stub. Default metadata and hashes remain unchanged. Binaries predating training reject enabled training encodings. Save loading restores the recorded initial
 set before replay, independent of local preferences. Low-level `GameSim::replay`
 callers must pass the initial set explicitly; the default is all options off.
 
@@ -91,7 +93,7 @@ the completed town hall. Only living, present, completed buildings belonging to
 the same town and side count. In this mode production-building recipes can be
 placed repeatedly, allowing additional barracks, stables and other producers.
 The special mode has no eight-building cap. `off` is an alias for `1`;
-`parallel_training=on` is invalid because it does not specify a capacity.
+`parallel_training=on` selects the enhanced profile capacity of 3.
 
 The queue processes eligible items in insertion order and pays the full price
 for each unit on its own start tick. Paused units occupy capacity. Running units
@@ -110,3 +112,8 @@ recorded initial setting and command log, using the existing save mechanism.
 
 See [task 100 validation and live commands](parallel_training.md). This intentional
 modification has synthetic coverage; it is not an original-game parity claim.
+The profile table, helper switches, persistence and replay contract are maintained
+in [game_modifications.md](game_modifications.md).
+
+See [the rule inventory](engine_rules_status.md#task-48-placeholders-and-optional-parallel-construction-2026-10-30)
+for task 48's construction evidence and reference limitations.

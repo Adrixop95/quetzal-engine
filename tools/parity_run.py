@@ -153,7 +153,7 @@ def shared_runner(s, args, directory, name, *, record=False, packets=None, norma
         if packets is not None:
             report.verify_packet_readback(commands, directory / "readback.txt", ticks)
     else:
-        report.execute([args.engine, "--headless", "--game", directory / "game", "--rules-dir", ROOT / "docs/data",
+        report.execute([args.engine, "--headless", "--profile", "faithful", "--game", directory / "game", "--rules-dir", ROOT / "docs/data",
                         "--no-auto-orders", "--max-ticks", ticks, "--l0-schedule", schedule,
                         "--l0-output", native, "--l0-frames", directory, "--report", directory / "report.json",
                         s["map"]["mission"]], directory, args.timeout,
@@ -209,7 +209,7 @@ def clone_runner(s, args, directory):
     directory.mkdir()
     report.private_game(args.game, directory / "game")
     output = directory.parent / "clone.jsonl"
-    report.execute([args.engine, "--headless", "--game", directory / "game", "--rules-dir", ROOT / "docs/data",
+    report.execute([args.engine, "--headless", "--profile", "faithful", "--game", directory / "game", "--rules-dir", ROOT / "docs/data",
                     "--no-auto-orders", "--max-ticks", s["observe"]["last_tick"], "--report", directory / "report.json",
                     "--observations", output, s["map"]["mission"]], directory, args.timeout, setup_network=False)
     engine = json.loads((directory / "report.json").read_text())

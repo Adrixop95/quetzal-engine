@@ -177,13 +177,13 @@ static void advance(World& w, GameSim& sim, unsigned ticks, bool orders = false)
   }
 }
 static SaveData long_save(const std::shared_ptr<RulesData>& rules) {
-  World w = initial_world(); GameSim sim(rules); sim.init(w);
+  World w = initial_world(); GameSim sim(rules, Modifications::faithful()); sim.init(w);
   advance(w, sim, 14400, true);
   auto s = fixture(); s.tick = sim.tick_count(); s.hash = sim.state_hash(w); s.log = sim.log();
   return s;
 }
 static void pending_save(const std::shared_ptr<RulesData>& rules) {
-  for (uint32_t bits = 0; bits < 100; ++bits) {
+  for (uint32_t bits = 0; bits < 128; ++bits) {
     if (!Modifications::valid(bits)) continue;
     auto world = initial_world(); GameSim game(rules, Modifications::from_bits(bits)); game.init(world);
     Command move; move.type = Pct::Move; move.ids = {1}; move.a = 300; move.b = 200;
@@ -211,7 +211,7 @@ static void pending_save(const std::shared_ptr<RulesData>& rules) {
   }
 }
 static void continuation(const SaveData& s, const std::shared_ptr<RulesData>& rules) {
-  World uninterrupted = initial_world(); GameSim original(rules); original.init(uninterrupted);
+  World uninterrupted = initial_world(); GameSim original(rules, Modifications::faithful()); original.init(uninterrupted);
   advance(uninterrupted, original, 14400, true);
   CHECK(original.state_hash(uninterrupted) == s.hash);
   CHECK(s.cam_x == -12.5f && s.cam_y == 200 && s.cam_zoom == 1.5f);
@@ -238,7 +238,7 @@ static void continuation(const SaveData& s, const std::shared_ptr<RulesData>& ru
   CHECK(error == "Save script is incompatible" && sim->state_hash(fresh) == before);
   TempDir dir; auto script = (dir.path() / "victory.scn").string();
   { std::ofstream f(script); f << "trigger(0) conditions localTime == 10 actions side(local).victory end\n"; }
-  auto w = initial_world(); GameSim game(rules); CHECK(game.attach_script(script)); game.init(w);
+  auto w = initial_world(); GameSim game(rules, Modifications::faithful()); CHECK(game.attach_script(script)); game.init(w);
   advance(w, game, 5);
   auto scripted = fixture(); scripted.tick = 5; scripted.log = game.log();
   scripted.script_hash = file_hash(script); scripted.hash = game.state_hash(w);
