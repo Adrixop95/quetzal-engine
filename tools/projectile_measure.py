@@ -65,8 +65,12 @@ def prepare(case, source, output):
     variant = case['variant']
     x, y = w // 2, h // 2
     separation = {'clear_near': 2, 'clear_middle': 4, 'clear_far': 8}.get(variant, 4)
-    mission.unit(mission.team(0), rows[case['source_type']], x - separation, y)
-    mission.unit(mission.team(1), rows[0], x, y)
+    for role, side, xx in (('source', 0, x - separation), ('target', 1, x)):
+        row = dict(rows[case.get(f'{role}_type', 0)])
+        if f'{role}_hp' in case:
+            row['hp'] = case[f'{role}_hp']
+        group = mission.groups['Town'][side] if row['kind'] in maps.STRUCTURES else mission.team(side)
+        mission.unit(group, row, xx, y)
     if variant.startswith('splash_') or variant in ('friendly', 'neutral'):
         victim = spec['victim_types'].get(variant.removeprefix('splash_'), 0)
         side = 0 if variant == 'friendly' else 2 if variant == 'neutral' else 1
@@ -87,7 +91,8 @@ def prepare(case, source, output):
         missing=['Audited reference projectile/impact/burn observer (unit log is insufficient).',
                  'Tick-12 single-shot command and tick-13 movement/source-death adapters.',
                  'Exact pixel splash offset sweep and terrain/height fixtures.',
-                 'Passive AI, visibility and regeneration controls.'],
+                 'Passive AI, visibility and regeneration controls.',
+                 'Variant-specific reload/range/composite/death/corpse controls when requested.'],
         placements=mission.placements))
     # A launch control cannot silently become a measured no-hit result.
     return private
