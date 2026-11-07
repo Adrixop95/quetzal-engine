@@ -257,11 +257,18 @@ static void test_sight() {
     CHECK(object_visible(duel, 0, duel.objects[1]) == (ambient == 33));
     // Balanced units hold their ground: the same lit enemy 400 px away is not chased (regression for the
     // mission 1 march: idle units used to attack any enemy the side could see, starting the scripted counterattack).
-    World hold = initial;
-    hold.objects[0].attack_mode = AttackMode::Balanced;
-    GameSim hold_sim(rules); hold_sim.init(hold);
-    for (int t = 0; t < 3; ++t) { hold.begin_tick(); hold_sim.tick(hold); }
-    CHECK(hold.objects[0].target == 0u);
+    for (AttackMode mode : {AttackMode::Balanced, AttackMode::Defensive}) {
+      World hold = initial;
+      hold.objects[0].attack_mode = mode;
+      hold.objects[1].attack_mode = AttackMode::Direct;
+      const auto start_x = hold.objects[0].cur_x, start_y = hold.objects[0].cur_y;
+      GameSim hold_sim(rules); hold_sim.init(hold);
+      for (int t = 0; t < 60; ++t) {
+        hold.begin_tick(); hold_sim.tick(hold);
+        CHECK(hold.objects[0].target == 0u);
+        CHECK(hold.objects[0].cur_x == start_x && hold.objects[0].cur_y == start_y);
+      }
+    }
     // Direct packets must obey the same eligibility gate as mouse picking.
     Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
     combat.submit(attack); duel.begin_tick(); combat.tick(duel);
