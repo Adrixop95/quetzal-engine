@@ -1,5 +1,134 @@
 # Running experiments with the reference runtime
 
+## Production and harvest clock run sheet (V08/V11): needs live run
+
+This checkout does not contain the task-96 early-purchase fix: its prompt remains
+in `tasks/queue/96-ai-early-spending-and-payment.md`, and the planner still sums
+development from ordinary buildings only. Collect a diagnostic baseline here if
+useful, but perform the requested **post-task-96** comparison only after that
+dependency is integrated. Record the checkout revision and uncommitted diff hash
+privately with every attempt. Do not mix pre/post-task-96 reference settings or
+claim that pre-dependency clone results measure sustained production after its fix.
+
+The supplied 2026-11-07 endpoint counts are recorded separately in
+[parity_matrix.md](parity_matrix.md#production-and-harvest-clock-v08v11-needs-live-run).
+They are leads; no two independent native captures accompany them in this
+checkout. No engine behavior was changed in this iteration. In particular, do
+not insert a mission-specific purchase schedule or subtract an assumed 100-tick
+offset from the harvest clock. The required rule and two-run confirmation remain
+open, including the mission-3 player income phase.
+
+Static investigation of the current clone identifies these candidate gates:
+
+- `ai/planner.cpp`: any incomplete town object or queued item returns before
+  advancing the phase machine. The science timer still advances on busy ticks.
+  State 13 compares non-defence objects against `3 * (development + 1)`; state
+  15 initializes the remaining target. States 14/2 can divert purchases into
+  economy requests when the estimated income is below twice average spending.
+  This estimate includes starting cash and is explicitly a fallback policy.
+  State 10 uses `100 * (development + 1)` for science, not a measured universal
+  inter-purchase cooldown. Successful development purchases do not reset that
+  timer here. None of these observations establish which gate limits the original.
+- `sim/ai.cpp`: offers are constructed only in selected phases, exclude locked
+  or unaffordable items, and use provisional placement search. Compare offered
+  prices, town speed and shared side cash before blaming the target alone.
+- `sim/game_sim.cpp` and `sim/rules.cpp`: structures begin accumulating income on
+  their first active tick. New construction skips income on its completion
+  tick. Periodic clocks initialize relative to the active day clock; scheduled
+  harvests use descriptor dates instead. There is no worker spawn/travel gate
+  in this path. Distinguish placed versus newly completed producers, periodic
+  versus scheduled descriptors, the initial day clock and the observation phase
+  before changing initialization. Sparse cash samples cannot identify a worker
+  rule, an exact credit tick, or separate simultaneous credits and purchases.
+
+First run the independent checks; rebuild the hand-written reference observer
+outside the sandbox using private generated inputs. Keep both builds here:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR= -DGAME_DIR=
+cmake --build build --parallel 2
+ctest --test-dir build --output-on-failure
+pre-commit run --all-files
+cmake -S . -B build_production_reference -DCMAKE_BUILD_TYPE=Release \
+  -DAZTEC_GEN_DIR=/home/adrox/aztec-re/work/gen
+cmake --build build_production_reference --target aztec_recomp --parallel 2
+```
+
+On the namespace-capable host, collect missions 2 and 3 at tick 1, every 100
+through 1300, then every 50 through 1600. Each mission has two independent
+reference runs and two clone runs. The collector calls the existing shared L0
+launcher with normalization disabled: creation-identity normalization currently
+rejects births, while aggregate live-object counts need no invented identities.
+The full L0 comparison remains incomplete. Each process has its own private game
+copy with immutable asset symlinks, copied mutable state, ordinary Maps/Saves
+directories and private clone profile. Both programs use dummy SDL drivers,
+`timeout -s KILL` and `unshare -rn`; reference namespace setup remains mandatory.
+
+```sh
+production_probe="$PWD/work/parity/production-$(date -u +%Y%m%dT%H%M%S)"
+python3 -I tools/production_measure.py run \
+  --game /home/adrox/aztec-re/game \
+  --runtime "$PWD/build_production_reference/aztec_recomp" \
+  --engine "$PWD/build/aztec_engine" --timeout 600 \
+  --output "$production_probe"
+python3 -I tools/production_measure.py compare "$production_probe" \
+  --output "$production_probe-tables"
+```
+
+Both commands deliberately return 1 for **needs live run**, even when all
+processes complete and aggregates agree. CLI/setup errors return 2. The collector
+retains failures in each mission's `processes.json` and continues independent
+runs; inspect those manifests, `invocation.json`, `process.log`, clone reports and
+native observations before interpreting counts. A failed process or incomplete
+schedule yields no comparison rows. The repeat check covers per-side count,
+type histogram, HP sum and money at every requested tick; it does not certify
+repeatability of positions, native pointers, orders, frames or hidden state.
+
+The private `series.md` contains both programs' counts, HP and money per side at
+every checkpoint. `report.json` also retains type histograms, cash-transition
+intervals and net growth over complete 100-tick windows, with an absolute
+one-object tolerance per window. Tick 1 is not tick zero, so the first complete
+window is 100 to 200. Absolute counts remain visible: a constant count offset
+must not be hidden by equal growth rates. Objects include structures and type
+`-1` virtual objects; they are not population or necessarily combat units.
+Use type histograms and an audited classification when interpreting production.
+Net growth includes losses/removals, and net cash includes spending, refunds and
+income. Neither is a purchase/harvest event stream.
+
+For the exact player cash phase, repeat with every tick through 1600. This
+retains 1600 frames per process (about 2.3 GB each, eight processes); reserve
+space and retain all evidence privately. Use a fresh directory:
+
+```sh
+production_clock="$PWD/work/parity/production-clock-$(date -u +%Y%m%dT%H%M%S)"
+python3 -I tools/production_measure.py run --every-tick \
+  --game /home/adrox/aztec-re/game \
+  --runtime "$PWD/build_production_reference/aztec_recomp" \
+  --engine "$PWD/build/aztec_engine" --timeout 1200 \
+  --output "$production_clock"
+python3 -I tools/production_measure.py compare "$production_clock" \
+  --output "$production_clock-tables"
+```
+
+For owner 0 in each mission, check unchanged type counts and HP and audit any
+script grants, spending or refunds. Only then attribute positive cash steps to
+harvest. Each transition reports `(after_tick, through_tick]`; consecutive ticks
+locate the observed step, while sparse intervals do not. Preserve the native
+before-command phase rather than shifting tick labels to obtain agreement.
+
+Return both repetitions, manifests, private setup/control audit, build/runtime
+hashes, descriptor/producer classification, tables and first repeated divergence
+to the orchestrator. Use existing reference queue diagnostics to identify queued
+types and active production; raw production words still lack complete normalized
+payment/remaining-time semantics. Planner target, plan cooldown, economy request
+and first-harvest activation need an audited reference observation or separate
+controlled repeated experiments; do not infer them from endpoint counts alone.
+After those measurements establish a rule, implement it with generated engine
+fixtures for target exhaustion, busy completion, shared cash, economy requests,
+first active harvest and construction activation. Rerun the same dense and clock
+commands with fresh output paths and unchanged reference controls. Publish counts
+only in the public matrix, never captures, game-derived fixtures or raw series.
+
 Task 95's dense startup-walk probes, cached evidence and remaining blockers are
 documented in [idle_tactic_walk.md](idle_tactic_walk.md).
 

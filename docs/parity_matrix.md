@@ -1,5 +1,33 @@
 # Parity matrix
 
+## Production and harvest clock (V08/V11): needs live run
+
+Supplied 2026-11-07 reported endpoint counts, before task 96; two independent
+native captures were not supplied here. Their unit/structure/virtual-object
+classification needs an audit against the new private type histograms. The new
+tool counts all live objects; these totals do not measure population. The
+supplied counts do not change historical paired-scenario totals.
+A dash is unknown. No post-task-96 production or income correction is verified.
+The [run sheet](EXPERIMENTS.md#production-and-harvest-clock-run-sheet-v08v11-needs-live-run)
+collects per-side private series and requires repeated aggregate observations.
+
+| Mission | Side | Reported reference count at tick 1 | Reported clone count at tick 1 | Reported reference count at tick 1600 | Reported clone count at tick 1600 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 2 | 0 | 16 | 16 | 16 | 16 |
+| 2 | 1 | — | — | — | — |
+| 2 | 2 | 18 | 18 | 24 | 18 |
+| 3 | 0 | 30 | 30 | 30 | 30 |
+| 3 | 1 | 54 | 54 | 82 | 62 |
+| 3 | 2 | 87 | 87 | 95 | 87 |
+
+| Current iteration evidence | Count |
+| --- | ---: |
+| New completed live runs | 0 |
+| Post-task-96 paired mission comparisons | 0 |
+| Verified player harvest phases | 0 |
+| Confirmed engine rules changed | 0 |
+| Generated measurement regression cases | 7 |
+
 Counts of scenario results in the selected diff reports. Repeated runs count
 separately. Pass means equality of the observed contract only; synthetic
 passes do not establish original-game parity. Unreported scenarios are excluded.
