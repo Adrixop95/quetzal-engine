@@ -67,6 +67,19 @@ class ResumeTests(unittest.TestCase):
         obj = json.loads(output.read_text())
         obj["save_sha256"] = self.state["save_sha256"]
         self.assertEqual(obj, self.state)
+        for ticks in (0, 1, 12):
+            continued = subprocess.run([PROBE, "--game", game, "--save", self.save,
+                                       "--rules", ROOT / "docs/data", "--output", output,
+                                       "--ticks", str(ticks)], capture_output=True, text=True, timeout=8)
+            self.assertEqual(continued.returncode, 0, continued.stderr)
+            obj = json.loads(output.read_text())
+            obj["save_sha256"] = self.state["save_sha256"]
+            self.write(output, obj)
+            self.assertEqual(resume.load_snapshot(output)["elapsed_ticks"], ticks)
+            self.assertEqual(obj["saved_tick"], 123)
+        for ticks in ("-1", "3601", "1tail", ""):
+            bad = subprocess.run([PROBE, "--ticks", ticks], capture_output=True, timeout=8)
+            self.assertEqual(bad.returncode, 2)
 
     def test_mismatch_and_identity(self):
         state = copy.deepcopy(self.state)
@@ -77,6 +90,33 @@ class ResumeTests(unittest.TestCase):
         self.write(self.reference, state)
         with self.assertRaises(ValueError):
             resume.compare(self.reference, self.clone)
+
+    def test_continuation_boundaries_and_repeated_reference(self):
+        obj = copy.deepcopy(self.state)
+        obj.update(schema=2, elapsed_ticks=12, phase="after_tick_before_commands")
+        obj["unsupported"] += sorted(resume.PRESENTATION)
+        for path in (self.reference, self.clone):
+            self.write(path, obj)
+        repeat = self.root / "repeat.json"
+        self.write(repeat, obj)
+        result = resume.compare(self.reference, self.clone, repeat, repeat)
+        self.assertTrue(result["repeated"])
+        self.assertEqual(result["status"], "incomplete")
+        obj["state"]["money"][0] += 1
+        self.write(repeat, obj)
+        self.assertEqual(resume.compare(self.reference, self.clone, repeat, self.clone)["status"],
+                         "reference_nondeterminism")
+        self.assertEqual(resume.compare(self.reference, self.clone, self.reference, repeat)["status"],
+                         "clone_nondeterminism")
+        obj["elapsed_ticks"] = 11
+        self.write(self.clone, obj)
+        with self.assertRaises(ValueError):
+            resume.compare(self.reference, self.clone)
+        for elapsed in (-1, 3601, True):
+            obj["elapsed_ticks"] = elapsed
+            self.write(self.clone, obj)
+            with self.assertRaises(ValueError):
+                resume.load_snapshot(self.clone)
 
     def test_missing_malformed_and_advanced_snapshots(self):
         mutations = [
@@ -134,7 +174,7 @@ class ResumeTests(unittest.TestCase):
 
         def execute(argv, directory, timeout, extra, *, setup_network):
             calls.append((argv, directory))
-            self.assertEqual(setup_network, directory.name == "reference")
+            self.assertEqual(setup_network, directory.name.startswith("reference"))
             self.assertEqual(extra["RT_NO_VIDEO"], "1")
             obj = copy.deepcopy(self.state)
             del obj["save_sha256"]
@@ -142,13 +182,49 @@ class ResumeTests(unittest.TestCase):
 
         with patch.object(resume.report, "execute", side_effect=execute):
             self.assertEqual(resume.run(args)["status"], "incomplete")
-        self.assertEqual(len(calls), 2)
-        self.assertNotEqual(calls[0][1], calls[1][1])
+        self.assertEqual(len(calls), 4)
+        self.assertEqual(len({directory for _, directory in calls}), 4)
+        self.assertEqual(len({Path(argv[argv.index("--save") + 1]) for argv, _ in calls}), 4)
+        self.assertEqual(hashlib.sha256(self.save.read_bytes()).hexdigest(), self.state["save_sha256"])
         for argv, directory in calls:
             self.assertEqual(Path(argv[argv.index("--game") + 1]), directory / "game")
             self.assertFalse((directory / "game/Saves").is_symlink())
         with self.assertRaises(ValueError):
             resume.run(args)  # Never reuse reports from an older run.
+
+    def test_runner_continuation_repeat_mismatch(self):
+        args = self.args()
+        args.ticks = 12
+
+        def execute(argv, directory, timeout, extra, *, setup_network):
+            obj = copy.deepcopy(self.state)
+            del obj["save_sha256"]
+            obj.update(schema=2, elapsed_ticks=12, phase="after_tick_before_commands")
+            obj["unsupported"] += sorted(resume.PRESENTATION)
+            if directory.name == "reference-repeat":
+                obj["state"]["units"]["4"]["hp"] -= 1
+            self.write(Path(argv[argv.index("--output") + 1]), obj)
+
+        with patch.object(resume.report, "execute", side_effect=execute):
+            result = resume.run(args)
+        self.assertEqual(result["status"], "reference_nondeterminism")
+        self.assertFalse(result["complete"])
+        self.assertEqual(json.loads((args.output / "result.json").read_text()), result)
+
+    def test_runner_refuses_ignored_continuation_boundary(self):
+        args = self.args()
+        args.ticks = 12
+
+        def execute(argv, directory, timeout, extra, *, setup_network):
+            self.assertEqual(argv[-2:], ["--ticks", "12"])
+            obj = copy.deepcopy(self.state)
+            del obj["save_sha256"]
+            self.write(Path(argv[argv.index("--output") + 1]), obj)
+
+        with patch.object(resume.report, "execute", side_effect=execute):
+            result = resume.run(args)
+        self.assertEqual(result["status"], "needs live run")
+        self.assertTrue("boundary" in result["detail"])
 
     def test_namespace_failure_and_mutation_are_not_matches(self):
         args = self.args()

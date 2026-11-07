@@ -13,6 +13,7 @@ report = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(report)
 DOMAINS = {"units", "money", "fog", "clock", "orders", "queues", "research", "upgrades",
            "scripts", "timers", "diplomacy"}
+PRESENTATION = {"camera", "frontend", "progression"}
 BASE = {"units", "money", "fog", "clock"}
 
 
@@ -37,23 +38,27 @@ def load_snapshot(path):
     obj = report.json_object(Path(path).read_text())
     require(set(obj) == {"schema", "phase", "elapsed_ticks", "saved_tick", "unsupported", "state", "save_sha256"},
             "unexpected or missing snapshot keys")
-    require(type(obj["schema"]) is int and obj["schema"] == 1, "unsupported schema")
-    require(obj["phase"] == "after_load_before_tick" and type(obj["elapsed_ticks"]) is int
-            and obj["elapsed_ticks"] == 0, "observer must stop before the first continued tick")
+    require(type(obj["schema"]) is int and obj["schema"] in (1, 2), "unsupported schema")
+    elapsed = obj["elapsed_ticks"]
+    require(type(elapsed) is int and 0 <= elapsed <= (3600 if obj["schema"] == 2 else 0),
+            "invalid elapsed ticks")
+    require(obj["phase"] == ("after_tick_before_commands" if elapsed else "after_load_before_tick"),
+            "invalid observation phase")
+    domains = DOMAINS | PRESENTATION if obj["schema"] == 2 else DOMAINS
     require(integer(obj["saved_tick"]) and 0 <= obj["saved_tick"] < 2**32, "invalid saved tick")
     digest = obj["save_sha256"]
     require(isinstance(digest, str) and len(digest) == 64
             and all(c in "0123456789abcdef" for c in digest), "invalid save digest")
     missing = obj["unsupported"]
-    require(isinstance(missing, list) and all(isinstance(k, str) and k in DOMAINS for k in missing)
+    require(isinstance(missing, list) and all(isinstance(k, str) and k in domains for k in missing)
             and len(set(missing)) == len(missing), "invalid unsupported domains")
     state = obj["state"]
     require(isinstance(state, dict) and BASE <= state.keys() and set(state).isdisjoint(missing)
-            and set(state) | set(missing) == DOMAINS and numeric_tree(state), "incomplete state coverage")
-    # Version 1 defines normalized layouts only for BASE. Accepting arbitrary
+            and set(state) | set(missing) == domains and numeric_tree(state), "incomplete state coverage")
+    # Both versions define normalized layouts only for BASE. Accepting arbitrary
     # numeric placeholders for the other domains would allow a false full match.
-    require(set(state) == BASE and set(missing) == DOMAINS - BASE,
-            "schema 1 has no audited layout for extended resume domains")
+    require(set(state) == BASE and set(missing) == domains - BASE,
+            "schema has no audited layout for extended resume domains")
     require(integer(state["clock"]) and 0 <= state["clock"] < 7200, "invalid clock")
     money = state["money"]
     require(isinstance(money, list) and 1 <= len(money) <= 8 and all(integer(v) for v in money), "invalid money")
@@ -77,17 +82,28 @@ def load_snapshot(path):
     return obj
 
 
-def compare(left, right):
+def compare(left, right, repeat_reference=None, repeat_clone=None):
     a, b = load_snapshot(left), load_snapshot(right)
     require(a["save_sha256"] == b["save_sha256"] and a["saved_tick"] == b["saved_tick"],
             "different save or saved tick")
+    require((a["schema"], a["phase"], a["elapsed_ticks"]) ==
+            (b["schema"], b["phase"], b["elapsed_ticks"]), "different observation boundaries")
+    for label, first, repeat in (("reference", a, repeat_reference), ("clone", b, repeat_clone)):
+        if repeat is not None:
+            other = load_snapshot(repeat)
+            require(all(first[k] == other[k] for k in
+                        ("schema", "save_sha256", "saved_tick", "elapsed_ticks", "phase")),
+                    "different repeated observation identity or boundary")
+            if first != other:
+                return dict(status=label + "_nondeterminism", complete=False)
     common = sorted(a["state"].keys() & b["state"].keys())
     for domain in common:
         if a["state"][domain] != b["state"][domain]:
             return dict(status="mismatch", domain=domain, complete=False)
     missing = sorted(set(a["unsupported"]) | set(b["unsupported"]))
     return dict(status="incomplete", complete=False,
-                compared=common, unsupported=missing)
+                compared=common, unsupported=missing,
+                repeated=repeat_reference is not None and repeat_clone is not None)
 
 
 def run(args):
@@ -106,23 +122,36 @@ def run(args):
         digest = hashlib.sha256(data).hexdigest()
         private_save = output / "input.sav"
         private_save.write_bytes(data)
+        ticks = getattr(args, "ticks", None)
+        targets = {}
         for label, binary in (("reference", args.reference_adapter), ("clone", args.clone)):
-            directory = output / label
-            directory.mkdir()
-            report.private_game(args.game.resolve(), directory / "game")
-            target = directory / "snapshot.json"
-            argv = [binary.resolve(), "--game", directory / "game", "--save", private_save, "--output", target]
-            argv += ["--runtime", args.runtime.resolve()] if label == "reference" else ["--rules", args.rules.resolve()]
-            report.execute(argv, directory, args.timeout,
-                           dict(RT_NO_VIDEO="1", RT_NO_GRAB="1", RT_RESOLUTION="800x600"),
-                           setup_network=label == "reference")
-            require(hashlib.sha256(private_save.read_bytes()).hexdigest() == digest, "observer modified the input save")
-            obj = report.json_object(target.read_text())
-            require("save_sha256" not in obj, "save digest is supplied by the runner")
-            obj["save_sha256"] = digest
-            report.write_json(target, obj)
-            load_snapshot(target)
-        result = compare(output / "reference/snapshot.json", output / "clone/snapshot.json")
+            targets[label] = []
+            for repetition in (1, 2):
+                directory = output / (label if repetition == 1 else label + "-repeat")
+                directory.mkdir()
+                report.private_game(args.game.resolve(), directory / "game")
+                # Each observer gets its own input; never share writable save files.
+                observer_save = directory / "input.sav"
+                observer_save.write_bytes(data)
+                target = directory / "snapshot.json"
+                argv = [binary.resolve(), "--game", directory / "game", "--save", observer_save, "--output", target]
+                argv += ["--runtime", args.runtime.resolve()] if label == "reference" else ["--rules", args.rules.resolve()]
+                if ticks is not None:
+                    argv += ["--ticks", str(ticks)]
+                report.execute(argv, directory, args.timeout,
+                               dict(RT_NO_VIDEO="1", RT_NO_GRAB="1", RT_RESOLUTION="800x600"),
+                               setup_network=label == "reference")
+                require(hashlib.sha256(observer_save.read_bytes()).hexdigest() == digest, "observer modified the input save")
+                obj = report.json_object(target.read_text())
+                require("save_sha256" not in obj, "save digest is supplied by the runner")
+                obj["save_sha256"] = digest
+                report.write_json(target, obj)
+                observed = load_snapshot(target)
+                require(observed["schema"] == (1 if ticks is None else 2)
+                        and observed["elapsed_ticks"] == (ticks or 0), "observer ignored requested boundary")
+                targets[label].append(target)
+        result = compare(targets["reference"][0], targets["clone"][0],
+                         targets["reference"][1], targets["clone"][1])
     except (OSError, ValueError, RuntimeError) as exc:
         result = dict(status="needs live run", detail=str(exc), complete=False)
     report.write_json(result_path, result)
@@ -135,20 +164,24 @@ def main():
     diff = sub.add_parser("compare")
     diff.add_argument("reference", type=Path)
     diff.add_argument("clone", type=Path)
+    diff.add_argument("--repeat-reference", type=Path)
+    diff.add_argument("--repeat-clone", type=Path)
     live = sub.add_parser("run")
     for name in ("game", "save", "runtime", "clone", "rules", "output"):
         live.add_argument("--" + name, type=Path, required=True)
     live.add_argument("--reference-adapter", type=Path)
     live.add_argument("--timeout", type=int, default=60)
+    live.add_argument("--ticks", type=int, help="schema 2 boundary, 0..3600 ticks after load")
     args = parser.parse_args()
     try:
         if args.action == "run":
             require(args.timeout > 0, "timeout must be positive")
+            require(args.ticks is None or 0 <= args.ticks <= 3600, "ticks must be 0..3600")
             result = run(args)
         else:
-            result = compare(args.reference, args.clone)
+            result = compare(args.reference, args.clone, args.repeat_reference, args.repeat_clone)
         print(json.dumps(result, sort_keys=True))
-        return 1  # Schema 1 cannot establish complete resume coverage.
+        return 1  # Neither schema establishes complete resume coverage.
     except (OSError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
