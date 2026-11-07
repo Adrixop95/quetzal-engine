@@ -136,7 +136,7 @@ static void neutral_computer(std::shared_ptr<const RulesData> rules) {
   initial.mission.sides[1].only_comp = false;
   initial.objects[0].town_hall = initial.objects[1].town_hall = true;
   World w = initial;
-  GameSim sim(rules); sim.init(w);
+  GameSim sim(rules, Modifications::faithful()); sim.init(w);
   for (int tick = 1; tick <= 12; ++tick) {
     w.begin_tick(); sim.tick(w);
     if (tick == 5) {
@@ -156,7 +156,7 @@ static void initialization(std::shared_ptr<const RulesData> rules) {
   w.mission.sides[1].only_comp = false;
   w.objects[0].town_hall = w.objects[1].town_hall = true;
   w.side_state[0].selected_tactic = 7;
-  GameSim sim(rules); sim.init(w);
+  GameSim sim(rules, Modifications::faithful()); sim.init(w);
   CHECK(sim.tick_count() == 0 && w.day_clock == kDayTicks - 1);
   CHECK(w.ai_towns.size() == 2 && w.town_state.size() == 2);
   CHECK(w.town_state[0].hall == 1 && w.town_state[1].hall == 2);
@@ -185,7 +185,7 @@ static void sparse_towns(std::shared_ptr<const RulesData> rules) {
   CHECK(issued(decision, Pct::AttackMove) && issued(decision, Pct::AttackMove)->ids == std::vector<uint32_t>{3});
 
   w.mission.sides[1].only_comp = false;
-  GameSim sim(rules); sim.init(w);
+  GameSim sim(rules, Modifications::faithful()); sim.init(w);
   std::vector<std::pair<uint64_t, AiEvent>> events;
   sim.set_ai_observer([&](uint64_t tick, const AiEvent& e) { events.emplace_back(tick, e); });
   w.ai_towns[0].phase = 7; w.ai_towns[0].spent = 20000;
@@ -229,7 +229,7 @@ static void observation(std::shared_ptr<const RulesData> rules) {
   object(a, 0, 0, 0, 10, 8);
   object(a, 0, 0, 0, 11, 8, 7); // Script-owned troops do not join a planner launch.
   auto b = a;
-  GameSim plain(rules), traced(rules); plain.init(a); traced.init(b);
+  GameSim plain(rules, Modifications::faithful()), traced(rules, Modifications::faithful()); plain.init(a); traced.init(b);
   a.ai_towns[0].phase = b.ai_towns[0].phase = 2;
   a.ai_towns[0].known_towns = b.ai_towns[0].known_towns = {1};
   a.ai_towns[0].elapsed = b.ai_towns[0].elapsed = 1;
@@ -258,7 +258,7 @@ static void town_orders(std::shared_ptr<const RulesData> rules) {
   w.mission.towns[1].side = w.objects[1].side = 0;
   w.mission.sides[1].only_comp = false;
   w.relation[0][1] = kFriend;
-  GameSim sim(rules); sim.init(w);
+  GameSim sim(rules, Modifications::faithful()); sim.init(w);
   w.town_speed[0] = 2;
   w.ai_towns[0].phase = w.ai_towns[1].phase = 7;
   w.ai_towns[0].spent = 20000;
@@ -291,7 +291,7 @@ static void scripted(std::shared_ptr<const RulesData> rules) {
   object(a, 0, 1, 1, 25, 26, 7); object(a, 0, 1, 1, 26, 26, 8);
   a.mission.paths = {{{24, 22}, {23, 21}}};
   auto b = a; b.local_side = 1;
-  GameSim sa(rules), sb(rules);
+  GameSim sa(rules, Modifications::faithful()), sb(rules, Modifications::faithful());
   CHECK(sa.attach_script(AZTEC_AI_SCRIPT)); CHECK(sb.attach_script(AZTEC_AI_SCRIPT));
   sa.init(a); sb.init(b);
   for (int t = 1; t <= 20; ++t) {
@@ -338,7 +338,7 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
   // These HP values exercise sustained opposition, not campaign balance.
   for (auto& o : initial.objects) { o.hp = 10000000; o.town_hall = true; }
   auto a = initial, b = initial; b.local_side = 1;
-  GameSim sa(rules), sb(rules);
+  GameSim sa(rules, Modifications::faithful()), sb(rules, Modifications::faithful());
   CHECK(sa.attach_script(AZTEC_AI_ECONOMY_SCRIPT)); CHECK(sb.attach_script(AZTEC_AI_ECONOMY_SCRIPT));
   sa.init(a); sb.init(b);
   bool construction = false, movement = false, casualties = false;

@@ -30,6 +30,7 @@ static void test_window(DisplayMode mode) {
     SDL_Event event{};
     event.type = down ? SDL_KEYDOWN : SDL_KEYUP;
     event.key.windowID = id; event.key.keysym.scancode = code; event.key.repeat = repeat;
+    if (code == SDL_SCANCODE_F9) event.key.keysym.mod = KMOD_CTRL;
     window.handle_event(event);
   };
 
@@ -83,6 +84,10 @@ static void test_window(DisplayMode mode) {
   CHECK(!grabbed());
   window.set_gameplay_active(true);  // resume
   CHECK(grabbed());
+  SDL_Event helpers{}; helpers.type = SDL_KEYDOWN; helpers.key.windowID = id;
+  helpers.key.keysym.scancode = SDL_SCANCODE_F9;
+  window.handle_event(helpers);
+  CHECK(window.mouse_grab_enabled() && grabbed());
   key(SDL_SCANCODE_F9, true);
   CHECK(!window.mouse_grab_enabled() && !grabbed());
   key(SDL_SCANCODE_F9, true, true);

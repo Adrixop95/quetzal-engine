@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
   }
   if (!rules->load_dir(rules_dir)) { std::fprintf(stderr, "Cannot load rules\n"); return 1; }
   rules->load_sight(data.root());
-  GameSim sim(rules); sim.init(world);
+  GameSim sim(rules, Modifications::faithful()); sim.init(world);
   // Diagnostic continuation only: retained orders/scripts are not executable.
   for (unsigned i = 0; i < ticks; ++i) { world.begin_tick(); sim.tick(world); }
   std::ofstream out(output);

@@ -147,7 +147,7 @@ class ProjectileControls(unittest.TestCase):
         orders.write_text('1 attack-move 0 7 5 1\n')
         def run(name, trace, observe_orders=False):
             hashes = self.root / f'{name}.hashes'
-            argv = [str(ENGINE), '--headless', '--game', str(game), '--rules-dir', str(ROOT / 'docs/data'),
+            argv = [str(ENGINE), '--headless', '--profile', 'faithful', '--game', str(game), '--rules-dir', str(ROOT / 'docs/data'),
                     '--no-auto-orders', '--orders', str(orders), '--max-ticks', '10',
                     '--tick-hashes', str(hashes)]
             if trace:

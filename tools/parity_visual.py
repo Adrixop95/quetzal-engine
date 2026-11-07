@@ -255,7 +255,7 @@ def probe(args):
                 env = {k: v for k, v in os.environ.items() if not k.startswith("RT_")}
                 env.update(SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
                 argv = ["timeout", "-s", "KILL", str(args.timeout), "unshare", "-rn",
-                        str(args.clone.resolve()), "--game", str(game), "1", "--size", "800x600",
+                        str(args.clone.resolve()), "--profile", "faithful", "--game", str(game), "1", "--size", "800x600",
                         "--rules-dir", str(ROOT / "docs/data"), "--software", "--no-audio", "--no-hud", "--no-light", "--no-sim", "--cam", "8,8",
                         "--zoom", "1", "--ui-trace", str(directory / "ui.jsonl"),
                         "--screenshot", str(directory / "frame.png"), "--frames", "4"]

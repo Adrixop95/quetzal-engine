@@ -119,7 +119,7 @@ class ParityTests(unittest.TestCase):
         a, b = self.directory / "a.jsonl", self.directory / "b.jsonl"
         orders = self.directory / "orders.txt"
         orders.write_text("1 move 0 3 3 1\n")
-        command = [str(ENGINE), "--headless", "--game", str(game), "--rules-dir", str(ROOT / "docs/data"),
+        command = [str(ENGINE), "--headless", "--profile", "faithful", "--game", str(game), "--rules-dir", str(ROOT / "docs/data"),
                    "--max-ticks", "5", "--no-auto-orders", "--orders", str(orders)]
         for output in (a, b):
             completed = subprocess.run([*command, "--observations", str(output), "1"],

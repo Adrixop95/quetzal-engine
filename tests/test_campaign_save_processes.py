@@ -46,7 +46,7 @@ class CampaignSaveTests(unittest.TestCase):
                     profile.mkdir()
                     env = dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy',
                                AZTEC_USER_DIR=str(profile))
-                    common = [str(ENGINE), '--game', str(game), '--rules-dir', str(ROOT / 'docs/data')]
+                    common = [str(ENGINE), '--profile', 'faithful', '--game', str(game), '--rules-dir', str(ROOT / 'docs/data')]
 
                     def run(args):
                         command = [*common, *args, str(mission)]

@@ -67,7 +67,7 @@ def main():
                     assert Path(filename).resolve().parent == relocated / 'lib', linked
 
         def run(*args, code=0):
-            result = subprocess.run([str(executable), *args], cwd=work, env=env,
+            result = subprocess.run([str(executable), *args, '--profile', 'faithful'], cwd=work, env=env,
                                     capture_output=True, text=True, timeout=20)
             if result.returncode != code:
                 raise AssertionError(f'{args}: {result.returncode}\n{result.stdout}\n{result.stderr}')

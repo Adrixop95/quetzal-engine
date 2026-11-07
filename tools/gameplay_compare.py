@@ -97,7 +97,7 @@ def clone_record(args, spec, directory, mission):
     captures.mkdir()
     failure = None
     try:
-        execute([args.clone.resolve(), '--game', directory / 'game', str(mission),
+        execute([args.clone.resolve(), '--profile', 'faithful', '--game', directory / 'game', str(mission),
                  '--rules-dir', ROOT / 'docs/data', '--size', '800x600', '--software', '--no-audio',
                  '--no-mouse-grab', '--no-edge-scroll', '--menu-session', '--fps', '10000',
                  '--script', script, '--ui-trace', directory / 'ui.jsonl',

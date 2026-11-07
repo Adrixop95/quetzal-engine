@@ -49,7 +49,7 @@ int main(int argc, char** argv) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     require(peer.link.tick() == goal && peer.link.synchronized(), "Two-process lockstep timed out");
-    World control = world(); GameSim sim(rules()); sim.init(control);
+    World control = world(); GameSim sim(rules(), Modifications::faithful()); sim.init(control);
     for (uint64_t tick = 0; tick < goal; ++tick) {
       if (tick >= 2) for (uint8_t player = 0; player < 2; ++player)
         for (const auto& c : input(player, tick - 2)) sim.submit(c);
