@@ -10,6 +10,12 @@ namespace aztec::engine {
 
 using namespace aztec::script;
 
+// G: embarked living passengers retain script identity and ownership counts.
+// Hidden cargo must not count as a dead protected unit or a defeated side.
+static bool script_present(const Object& object) {
+  return object.alive && (!object.removed || object.carrier != 0);
+}
+
 bool is_town_building(int t) {
   static const int th[] = {10, 11, 19, 24, 37, 38, 47, 63, 64, 71, 76};
   for (int v : th) if (v == t) return true;
@@ -80,11 +86,14 @@ void ScriptRunner::init(const World&) {
   unsupported_ = 0;
   outcome_origin_.reset();
   trigger_traces_.assign(script_.triggers.size(), {});
-  // Triggers that another trigger enables start disabled (initial state is not documented; see header).
-  for (const Trigger& t : script_.triggers) enabled_[t.id] = true;
-  for (const Trigger& t : script_.triggers)
-    for (const Action& a : t.actions)
-      if (a.kind == ActKind::TriggerEnable && a.id != t.id) enabled_[a.id] = false;
+  // V: the reference trigger constructor starts enabled. Startup actions control later gates.
+  for (const Trigger& t : script_.triggers) {
+    enabled_[t.id] = true;
+    // G: eagerly create referenced timers at mission start. The reference creates
+    // missing timers on lookup; its first-evaluation tick still needs measurement.
+    for (const auto& condition : t.conditions)
+      if (condition.kind == CondKind::Timer) timers_.try_emplace(condition.id);
+  }
 }
 
 bool ScriptRunner::trigger_enabled(int id) const {
@@ -109,7 +118,7 @@ std::vector<ScriptActionObservation> ScriptRunner::action_observations(const Wor
 int ScriptRunner::count_units(const World& w, int side) const {
   int n = 0;
   for (const Object& o : w.objects) {
-    if (o.removed || !o.alive || o.type < 0 || o.side != side) continue;
+    if (!script_present(o) || o.type < 0 || o.side != side) continue;
     const TypeInfo* ti = type_info(o.type);
     if (ti && !ti->is_structure()) n++;
   }
@@ -126,7 +135,7 @@ int ScriptRunner::count_towns(const World& w, int side) const {
 std::vector<uint32_t> ScriptRunner::tactic_members(const World& w, int side, int tactic) const {
   std::vector<uint32_t> v;
   for (const Object& o : w.objects)
-    if (!o.removed && o.alive && o.side == side && o.tactic == tactic && tactic >= 0) v.push_back(o.id);
+    if (script_present(o) && o.side == side && o.tactic == tactic && tactic >= 0) v.push_back(o.id);
   return v;
 }
 
@@ -163,7 +172,7 @@ bool ScriptRunner::eval(const World& w, const Condition& c) const {
     case CondKind::SideEnemies: {
       int n = 0;
       for (const Object& o : w.objects) {
-        if (o.removed || !o.alive || o.type < 0 || !w.hostile(side, o.side)) continue;
+        if (!script_present(o) || o.type < 0 || !w.hostile(side, o.side)) continue;
         const TypeInfo* ti = type_info(o.type);
         if (ti && (!ti->is_structure() || is_town_building(o.type))) n++;
       }
@@ -190,7 +199,8 @@ bool ScriptRunner::eval(const World& w, const Condition& c) const {
     case CondKind::SideUnitsOfId: {
       int n = 0;
       for (const Object& o : w.objects)
-        if (!o.removed && o.alive && o.side == side && o.type == c.ugi && (c.kind == CondKind::SideUnitsOfId || in_rect(o))) n++;
+        if (script_present(o) && o.side == side && o.type == c.ugi &&
+            (c.kind == CondKind::SideUnitsOfId || (!o.removed && in_rect(o)))) n++;
       return cmp(c.cmp, n, c.value);
     }
     case CondKind::TacticValid:
@@ -206,6 +216,10 @@ bool ScriptRunner::eval(const World& w, const Condition& c) const {
       } else if (c.kind == CondKind::TacticIdle) {
         v = 1;
         for (uint32_t id : m) if (w.find(id)->order != uint8_t(Order::Idle)) v = 0;
+        // A path assigned earlier in this action pass is already work, even
+        // before follow_paths submits its first movement order.
+        const auto it = tactics_.find({side, c.id});
+        if (it != tactics_.end() && it->second.path >= 0) v = 0;
       } else {
         auto it = tactics_.find({side, c.id});
         v = it != tactics_.end() && it->second.locked ? 1 : 0;
@@ -308,6 +322,11 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
     case ActKind::TacticGiftToSide: {
       int to = resolve_side(w, a.a);
       if (to < 0 || to >= int(w.side_state.size())) break;
+      // Towns share the script tactic namespace with teams (V). Transfer their
+      // ownership records too, so production and objective counts follow the gift.
+      for (size_t i = 0; i < w.mission.towns.size(); ++i)
+        if (w.mission.towns[i].side == side && w.mission.towns[i].scenario_id == a.id)
+          sim.transfer_town(w, int(i), to);
       auto members = tactic_members(w, side, a.id);
       sim.script_stop(w, members);
       for (uint32_t id : members) {
