@@ -13,8 +13,10 @@ def validate_diagnostics(row):
     if "diagnostics" not in row:
         return
     d = row["diagnostics"]
-    require(isinstance(d, dict) and set(d) == {"pool", "orders", "queues", "camera", "viewport",
-                                              "local_side_selector", "frame_phase"}, "invalid diagnostics")
+    keys = {"pool", "orders", "queues", "camera", "viewport", "local_side_selector", "frame_phase"}
+    require(isinstance(d, dict) and set(d) in (keys, keys | {"mission_seed"}), "invalid diagnostics")
+    if "mission_seed" in d:
+        require(integer(d["mission_seed"]) and d["mission_seed"] <= 0xffffffff, "invalid mission seed")
     p = d["pool"]
     require(isinstance(p, dict) and set(p) == {"capacity", "allocated", "free_slot_filtered",
                                              "inactive_object_filtered", "live_objects"}

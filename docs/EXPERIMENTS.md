@@ -1,5 +1,8 @@
 # Running experiments with the reference runtime
 
+Task 95's dense startup-walk probes, cached evidence and remaining blockers are
+documented in [idle_tactic_walk.md](idle_tactic_walk.md).
+
 The reference runtime (`runtime/` + lifted code generated locally into `work/gen`, never committed) runs the original game natively
 and is used as a test oracle and a data-extraction tool. It needs the user's own game files in `game/` (untracked).
 

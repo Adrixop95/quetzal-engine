@@ -35,6 +35,33 @@ static int kind_of(uint32_t object) {
 }
 
 // Optional diagnostics must not prevent the base state from being recorded.
+static void member_probe(uint32_t tactic, uint32_t object) {
+  uint32_t address = GU32(tactic + 0xc);
+  L0Pool members = {0};
+  const char* error = l0_span(address, 0x28) ? l0_pool_try_read(address, &members) :
+                                                           "Invalid L0 member pool span";
+  uint32_t record = 0;
+  if (!error && members.stride < 8 + 0x28) error = "Short L0 tactic member record";
+  if (!error) {
+    for (uint32_t i = 0; i < members.count; ++i) {
+      uint32_t payload = members.nodes[i] + 8;
+      if (GU32(payload) != object) continue;
+      if (record) { error = "Duplicate L0 tactic member"; break; }
+      record = payload;
+    }
+    if (!record && !error) error = "Missing L0 tactic member";
+  }
+  if (error)
+    fprintf(output, ",\"member\":{\"unavailable\":\"%s\",\"raw\":{\"pool\":%u}}", error, address);
+  else
+    // Per-member tile and route bookkeeping are distinct from the tactic anchor.
+    fprintf(output, ",\"member\":{\"tile\":[%d,%d],\"active\":%s,\"route_pending\":%s,\"route_count\":%u,\"route_cursor\":%u,\"search_counter\":%u}",
+            (int32_t)GU32(record + 4), (int32_t)GU32(record + 8),
+            GU8(record + 0x14) ? "true" : "false", GU8(record + 0x15) ? "true" : "false",
+            GU32(record + 0x1c), GU32(record + 0x20), GU32(record + 0x24));
+  free(members.nodes);
+}
+
 static int order_probe(uint32_t node, uint32_t stride) {
   uint32_t o = node + 8, tactic = GU32(o + 0x30), type = GU32(o + 0x50);
   int kind = type < 90 ? (int)GU32(0x4933f8 + type * 8) : -1;
@@ -62,12 +89,20 @@ static int order_probe(uint32_t node, uint32_t stride) {
             (int32_t)GU32(o + 0x74), (int32_t)GU32(o + 0x78),
             (int32_t)GU32(o + 0x98), (int32_t)GU32(o + 0x9c),
             state < 6 ? states[state] : "unknown");
+    fprintf(output, ",\"formation_marked\":%s,\"idle_animation_timer\":%d",
+            GU8(o + 0x5f) ? "true" : "false", (int32_t)GU32(o + 0x88));
+    uint32_t descriptor = GU32(o + 0x68);
+    if (l0_span(descriptor, 0x18))
+      fprintf(output, ",\"descriptor_speed_px\":%d", (int32_t)GU32(descriptor + 0x14));
+    else
+      fputs(",\"descriptor_speed_px\":null", output);
   }
   if (tactic)
     fprintf(output, ",\"tactic_state\":%d,\"tactic_mode\":%d,\"anchor_tile\":[%d,%d],\"route_count\":%u,\"route_cursor\":%u",
             (int32_t)GU32(tactic + 0x20), (int32_t)GU32(tactic + 0x24),
             (int32_t)GU32(tactic + 0x10), (int32_t)GU32(tactic + 0x14),
             GU32(tactic + 0x3c), GU32(tactic + 0x40));
+  if (tactic && kind == 0) member_probe(tactic, o);
   fputc('}', output);
   return 0;
 }
@@ -248,7 +283,8 @@ void rt_l0_observe(uint32_t tick) {
   }
   fputs("],\"queues\":", output);
   int queues_unavailable = queue_probe();
-  fprintf(output, ",\"camera\":[%d,%d],\"viewport\":[%u,%u],\"local_side_selector\":%u,\"frame_phase\":\"%s\"},",
+  fprintf(output, ",\"mission_seed\":%u,\"camera\":[%d,%d],\"viewport\":[%u,%u],\"local_side_selector\":%u,\"frame_phase\":\"%s\"},",
+          GU32(0x4dd15c),
           (int32_t)GU32(0x4dd330), (int32_t)GU32(0x4dd334), GU32(0x4dd340), GU32(0x4dd344), GU32(0x4cc38c),
           have_frame ? "raw_primary_present" : "unavailable");
   // A unit step/anchor is not the logical command destination. Raw presents may be partial.
