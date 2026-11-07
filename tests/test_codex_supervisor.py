@@ -100,13 +100,13 @@ class SupervisorTest(unittest.TestCase):
                             jobs=[dict(conclusion="failure", steps=[dict(status="completed", conclusion="failure")])])
             return call
 
-        with patch.object(supervisor, "gh_json", side_effect=gh(rows())):
+        with patch.object(supervisor, "run", side_effect=lambda cmd, **kw: result(cmd, "[]")), patch.object(supervisor, "gh_json", side_effect=gh(rows())):
             self.assertEqual(supervisor.ci_state(5), ("passed", []))      # slower platform jobs do not hold the merge
-        with patch.object(supervisor, "gh_json", side_effect=gh(rows(build="pending"))):
+        with patch.object(supervisor, "run", side_effect=lambda cmd, **kw: result(cmd, "[]")), patch.object(supervisor, "gh_json", side_effect=gh(rows(build="pending"))):
             self.assertEqual(supervisor.ci_state(5), ("pending", []))     # a required check still gates it
-        with patch.object(supervisor, "gh_json", side_effect=gh(rows(precommit="fail"))):
+        with patch.object(supervisor, "run", side_effect=lambda cmd, **kw: result(cmd, "[]")), patch.object(supervisor, "gh_json", side_effect=gh(rows(precommit="fail"))):
             self.assertEqual(supervisor.ci_state(5)[0], "failed")        # and a required failure is a code failure
-        with patch.object(supervisor, "REQUIRED_CHECKS", set()), patch.object(supervisor, "gh_json", side_effect=gh(rows())):
+        with patch.object(supervisor, "REQUIRED_CHECKS", set()), patch.object(supervisor, "run", side_effect=lambda cmd, **kw: result(cmd, "[]")), patch.object(supervisor, "gh_json", side_effect=gh(rows())):
             self.assertEqual(supervisor.ci_state(5)[0], "failed")        # an empty list restores gating on every check
 
     def test_behind_prs_at_the_head_of_the_queue_are_updated_server_side(self):
@@ -117,6 +117,22 @@ class SupervisorTest(unittest.TestCase):
         self.assertIn("gh api -X PUT repos/example/repo/pulls/105/update-branch", fake.commands)
         self.assertNotIn("gh pr merge 105 --squash --delete-branch", fake.commands)   # its CI restarts on the new head
         self.assertIn("gh pr merge 126 --squash --delete-branch", fake.commands)      # a newer green PR is not held back
+
+    def test_checks_fall_back_to_status_check_rollup_when_gh_has_no_json_flag(self):
+        rollup = dict(statusCheckRollup=[
+            dict(name="build", status="COMPLETED", conclusion="SUCCESS", detailsUrl="https://x/actions/runs/1/job/2"),
+            dict(name="pre-commit", status="COMPLETED", conclusion="SUCCESS", detailsUrl="https://x/actions/runs/3/job/4"),
+            dict(name="MSVC synthetic tests", status="IN_PROGRESS", conclusion="", detailsUrl="https://x/actions/runs/1/job/5"),
+            dict(name="AppleClang synthetic tests", status="COMPLETED", conclusion="CANCELLED", detailsUrl="https://x/actions/runs/1/job/6"),
+            dict(name="Compare", status="COMPLETED", conclusion="SKIPPED", detailsUrl="")])
+
+        def run_old_gh(cmd, **kwargs):
+            return result(cmd, "", code=1, stderr="unknown flag: --json")
+
+        with patch.object(supervisor, "run", side_effect=run_old_gh), patch.object(supervisor, "gh_json", return_value=rollup):
+            checks = supervisor.pr_checks(5)
+            self.assertEqual([c["bucket"] for c in checks], ["pass", "pass", "pending", "cancel", "skipping"])
+            self.assertEqual(supervisor.ci_state(5), ("passed", []))   # only build and pre-commit gate the merge
 
     def test_cancelled_rerun_skips_to_newer_pr_without_codex(self):
         fake = FakeRunner()

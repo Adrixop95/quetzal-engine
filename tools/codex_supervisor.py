@@ -300,9 +300,42 @@ def gating_checks(checks):
     return required if required else checks
 
 
+def rollup_checks(num):
+    """Checks in the bucket format of `gh pr checks --json`, built from statusCheckRollup (older gh releases lack that flag)."""
+    rows = gh_json(f"gh pr view {num} --json statusCheckRollup").get("statusCheckRollup") or []
+    checks = []
+    for row in rows:
+        name = row.get("name") or row.get("context") or ""
+        status = (row.get("status") or "").upper()
+        conclusion = (row.get("conclusion") or row.get("state") or "").upper()
+        if status in ("QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED") or (status != "COMPLETED" and not conclusion):
+            bucket = "pending"
+        elif conclusion == "SUCCESS":
+            bucket = "pass"
+        elif conclusion in ("SKIPPED", "NEUTRAL"):
+            bucket = "skipping"
+        elif conclusion == "CANCELLED":
+            bucket = "cancel"
+        elif conclusion in ("FAILURE", "ERROR", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"):
+            bucket = "fail"
+        else:
+            bucket = "pending"
+        checks.append(dict(bucket=bucket, name=name, state=conclusion or status,
+                           link=row.get("detailsUrl") or row.get("targetUrl") or ""))
+    return checks
+
+
+def pr_checks(num):
+    """`gh pr checks --json` where supported, otherwise the statusCheckRollup equivalent."""
+    result = run(f"gh pr checks {num} --json bucket,link,name,state")
+    if "unknown flag" in (result.stderr or ""):
+        return rollup_checks(num)
+    return gh_json(f"gh pr checks {num} --json bucket,link,name,state")
+
+
 def ci_state(num):
     """Separate runner failures from executed CI failures; API errors fail closed."""
-    checks = gh_json(f"gh pr checks {num} --json bucket,link,name,state")
+    checks = pr_checks(num)
     checks = gating_checks(checks)
     # gh pr checks exits 1 for failed checks and 8 for pending checks, even with JSON.
     infrastructure = set()
