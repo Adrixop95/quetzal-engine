@@ -21,6 +21,9 @@ sys.argv.insert(1, str(ENGINE))
 legacy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(legacy)
 l0 = legacy.harness.l0
+spec = importlib.util.spec_from_file_location("parity_initial", ROOT / "tools/parity_initial.py")
+initial = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(initial)
 
 
 class SharedControls(unittest.TestCase):
@@ -33,8 +36,8 @@ class SharedControls(unittest.TestCase):
         self.s["observe"]["ticks"] = [1, 3]
 
     def test_campaign_followup_scenarios(self):
-        for mission in (2, 3):
-            scenario = legacy.harness.load_scenario(ROOT / f"tests/parity/private_l0_mission_{mission}.json")
+        for mission in range(1, 16):
+            scenario = legacy.harness.load_scenario(ROOT / f"tests/parity/{initial.scenario_id(mission)}.json")
             self.assertEqual(scenario["map"], dict(kind="campaign", mission=mission))
             self.assertEqual(scenario["observe"]["ticks"], [1, 6, 12])
             self.assertEqual(scenario["input"], [])
@@ -52,10 +55,116 @@ class SharedControls(unittest.TestCase):
                 money={str(i): 100 for i in range(4)}, queues={str(i): [] for i in range(4)}, view=copy.deepcopy(self.s["view"]),
                 frame=f"{tick}.ppm", unavailable=[]))
         bundle = dict(schema=2, contract="shared-l0-v2", mission=1, phase="before_commands", position_unit="pixel/256",
-                      view=copy.deepcopy(self.s["view"]), ticks=[1, 3], samples=samples, runner=name)
+                      view=copy.deepcopy(self.s["view"]), ticks=self.s["observe"]["ticks"], samples=samples, runner=name)
         path = directory / "bundle.json"
         path.write_text(json.dumps(bundle))
         return path, bundle
+
+    def test_campaign_tables_require_repeats_and_keep_unknown_domains(self):
+        self.s["observe"]["ticks"] = [1, 6, 12]
+        a, reference = self.complete_bundle("reference")
+        b, clone = self.complete_bundle("clone")
+        identity = next(iter(clone["samples"][0]["objects"]))
+        clone["samples"][1]["objects"][identity].update(hp=99, x=18433)
+        clone["samples"][1]["money"]["0"] = 99
+        b.write_text(json.dumps(clone))
+        roots = [self.root / f"run{i}" for i in range(4)]
+        for root in roots:
+            for name, path in (("reference", a), ("clone", b)):
+                dest = root / "private_l0"
+                dest.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(path, dest / f"{name}.json")
+                for tick in (1, 6, 12):
+                    shutil.copyfile(path.parent / f"{tick}.ppm", dest / f"{tick}.ppm")
+        result = initial.mission_report(1, roots[:2], roots[2:])
+        self.assertTrue(result["before_after_aligned"])
+        row = result["before"]["rows"][1]
+        self.assertEqual(row["observed_divergences"], 3)
+        self.assertEqual(row["counts"]["positions"], dict(compared=2, divergences=1))
+        self.assertIsNone(row["divergences"])
+        for domain in ("tech", "population"):
+            self.assertEqual(row["counts"][domain], dict(compared=None, divergences=None))
+        left, right = copy.deepcopy(reference["samples"][0]), copy.deepcopy(clone["samples"][0])
+        left["unavailable"] = ["orders", "position_fraction", "money"]
+        left["objects"][identity]["orders"] = None
+        counts = initial.count_sample(left, right)["counts"]
+        for domain in ("orders", "positions", "money"):
+            self.assertIsNone(counts[domain]["compared"])
+        left, right = copy.deepcopy(reference["samples"][0]), copy.deepcopy(clone["samples"][0])
+        right["objects"] = {}
+        counts = initial.count_sample(left, right)["counts"]
+        self.assertEqual(counts["objects"], dict(compared=1, divergences=1))
+        self.assertEqual(counts["hp"], dict(compared=0, divergences=0))
+        right["objects"] = copy.deepcopy(left["objects"])
+        right["objects"][identity].update(owner=1, type=4, orders=dict(kind="move", target=None, x=1, y=2))
+        counts = initial.count_sample(left, right)["counts"]
+        for domain in ("owner", "type", "orders"):
+            self.assertEqual(counts[domain], dict(compared=1, divergences=1))
+        # A changed but internally repeatable baseline cannot justify an after-fix claim.
+        for root in roots[2:]:
+            changed = copy.deepcopy(reference)
+            changed["samples"][0]["money"]["0"] += 1
+            (root / "private_l0/reference.json").write_text(json.dumps(changed))
+        self.assertFalse(initial.mission_report(1, roots[:2], roots[2:])["before_after_aligned"])
+        (roots[1] / "private_l0/clone.json").write_text(json.dumps(reference | {"runner": "clone"}))
+        unstable = initial.mission_report(1, roots[:2], None)
+        self.assertEqual(unstable["before"]["category"], "run_nondeterminism")
+        self.assertEqual(unstable["before"]["rows"], [])
+        self.assertEqual(initial.mission_report(2, roots[:2], None)["before"]["category"], "missing_captures")
+        (roots[0] / "private_l0/reference.json").write_text('{"schema":2}')
+        self.assertEqual(initial.mission_report(1, roots[:2], None)["before"]["category"], "invalid_captures")
+
+    def test_campaign_report_creates_fifteen_pending_tables_without_captures(self):
+        output = self.root / "tables"
+        self.assertEqual(initial.main(["--output", str(output)]), 1)
+        report = json.loads((output / "report.json").read_text())
+        self.assertEqual(len(report["missions"]), 15)
+        self.assertTrue(all(r["status"] == "needs live run" for r in report["missions"]))
+        self.assertEqual(len(list(output.glob("mission_*.md"))), 15)
+        self.assertTrue("| 12 | — | population | — | — |" in (output / "mission_15.md").read_text())
+        with self.assertRaises(SystemExit):
+            initial.main(["--output", str(output)])
+
+    def test_all_campaign_specs_use_shared_runners_with_invented_maps(self):
+        fixture = legacy.ParityTests()
+        fixture.directory = self.root
+        game = fixture.synthetic_game()
+        (game / "Aztec.exe").write_bytes(b"invented marker, never executed")
+        maps = game / "Maps"
+        for mission in range(1, 16):
+            for extension in ("mp", "map"):
+                if mission > 1:
+                    shutil.copyfile(maps / f"mission_1.{extension}", maps / f"mission_{mission}.{extension}")
+            (maps / f"mission_{mission}.scn").write_text("")
+        original = subprocess.run
+        current = 0
+
+        def invented_process(argv, **kwargs):
+            self.assertEqual(argv[4:6], ["unshare", "-rn"])
+            env = kwargs["env"]
+            self.assertEqual(env["SDL_VIDEODRIVER"], "dummy")
+            self.assertEqual(env["SDL_AUDIODRIVER"], "dummy")
+            if argv[10] == str(OBSERVER):
+                script = Path(env["RT_SCRIPT"]).read_text()
+                row = 257 + 20 * (current - 1 if current <= 9 else current - 10)
+                self.assertTrue(f"click 150 {row}" in script)
+                self.assertEqual("click 645 421" in script, current > 9)
+                return original([str(OBSERVER), env["RT_L0_SCHEDULE"], env["RT_L0_OUTPUT"], env["RT_DUMP_DIR"]],
+                                **kwargs, timeout=10)
+            return original(argv[10:], **kwargs, timeout=10)
+
+        args = legacy.argparse_args(game=game, engine=ENGINE, runtime=OBSERVER, commands=None, script=None, timeout=10)
+        with patch.object(legacy.harness.report.subprocess, "run", side_effect=invented_process):
+            for current in range(1, 16):
+                scenario = legacy.harness.load_scenario(ROOT / f"tests/parity/{initial.scenario_id(current)}.json")
+                base = self.root / f"mission_{current}"
+                base.mkdir()
+                for name in ("reference", "clone"):
+                    legacy.harness.shared_runner(scenario, args, base / name, name)
+                    bundle = json.loads((base / f"{name}.json").read_text())
+                    self.assertEqual(bundle["mission"], current)
+                    self.assertEqual(bundle["ticks"], [1, 6, 12])
+                    self.assertFalse((base / name / "game/Maps").is_symlink())
 
     def test_first_divergence_and_alignment(self):
         a, _ = self.complete_bundle("reference")
