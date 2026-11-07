@@ -30,14 +30,20 @@ class FakeRunner:
         self.mergeable = "MERGEABLE"
         self.rerun_code = 0
         self.check_code = 1
+        self.behind = set()
 
     def __call__(self, cmd, **kwargs):
         self.commands.append(cmd)
         if cmd.startswith("gh pr list"):
             return result(cmd, json.dumps([dict(number=n, headRefName=f"feature/codex-task-{n}") for n in (105, 126)]))
         if cmd.startswith("gh pr view"):
-            return result(cmd, json.dumps(dict(mergeStateStatus="CLEAN", mergeable=self.mergeable,
+            behind = any(f"gh pr view {n} " in cmd for n in self.behind)
+            return result(cmd, json.dumps(dict(mergeStateStatus="BEHIND" if behind else "CLEAN", mergeable=self.mergeable,
                                                headRefOid="unchanged")))
+        if cmd.startswith("gh repo view"):
+            return result(cmd, "example/repo")
+        if cmd.startswith("gh api -X PUT"):
+            return result(cmd, "{}")
         if cmd.startswith("gh pr checks"):
             older = "105 " in cmd
             bucket = self.bucket if older else "pass"
@@ -102,6 +108,15 @@ class SupervisorTest(unittest.TestCase):
             self.assertEqual(supervisor.ci_state(5)[0], "failed")        # and a required failure is a code failure
         with patch.object(supervisor, "REQUIRED_CHECKS", set()), patch.object(supervisor, "gh_json", side_effect=gh(rows())):
             self.assertEqual(supervisor.ci_state(5)[0], "failed")        # an empty list restores gating on every check
+
+    def test_behind_prs_at_the_head_of_the_queue_are_updated_server_side(self):
+        fake = FakeRunner("pass")
+        fake.behind = {105}
+        codex = self.queue(fake)
+        codex.assert_not_called()
+        self.assertIn("gh api -X PUT repos/example/repo/pulls/105/update-branch", fake.commands)
+        self.assertNotIn("gh pr merge 105 --squash --delete-branch", fake.commands)   # its CI restarts on the new head
+        self.assertIn("gh pr merge 126 --squash --delete-branch", fake.commands)      # a newer green PR is not held back
 
     def test_cancelled_rerun_skips_to_newer_pr_without_codex(self):
         fake = FakeRunner()
