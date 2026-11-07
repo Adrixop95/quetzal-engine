@@ -533,3 +533,77 @@ failure and two agreeing invented reference timelines. Additional controls cover
 first divergence, stale route identity, malformed/inconsistent timelines,
 unsupported commands and checkpoint order. This is S tooling evidence only.
 See the [live run sheet](EXPERIMENTS.md#v19-scripted-route-run-sheet-needs-live-run).
+
+## All-mission campaign flow (task 92): needs live run
+
+**S (2026-11-07):** `campaign_flow` runs the real front-end and mission loop with
+fifteen independently invented 8x8 maps, empty resource archives and six-tick
+outcome scripts. No private installation, executable or captured data is used.
+The public fixture in `tests/test_campaign_flow.cpp` is the executable synthetic
+route specification. For each mission number it covers:
+
+1. Select the unlocked campaign button, review its briefing and press Start.
+   Menu automation stops at selection; mission loading is exercised separately.
+2. Open pause/objectives, wait, close review and resume. Tick zero must persist
+   through review; the ordinary script runner then reaches victory at tick six.
+   The outcome freezes time. Continue opens the actual successor briefing for
+   missions 1-14; mission 15 shows the clone's `victory` screen and returns to Main.
+3. Load an invented defeat script, reach defeat at tick six and return to Main.
+4. Use the existing test-only Simulation interface for an initial defeat, press
+   Retry, assert a fresh tick-zero/running world and reach normal scripted victory.
+   A second control starts with injected victory, clicks Restart, then reaches
+   normal scripted defeat and returns to Main. These injected attempts test UI
+   transitions, not achievable gameplay outcomes.
+5. Assert that playtest runs leave the engine completion profile unchanged.
+   Separately record completion through `CampaignProgress`, save/reopen it,
+   confirm the completed bit and immediate successor unlock, and assert that the
+   following mission remains locked. Profile persistence and ordinary victory dispatch
+   are separate contracts: this does not test an uninstrumented victory write.
+
+The table reports **synthetic** outcomes only. `W/L/R` means scripted victory,
+scripted defeat/return, and retry/restart controls passed. The mask is the separate
+profile API test's expected completed-mission bitmask after recording that row.
+Lose/retry leave the previous mask unchanged. No gameplay blocker was fixed:
+the change closes missing all-mission regression coverage. Every real mission's
+reached outcome, winning player route, retry outcome and profile progression
+remain **needs live run**; verified campaign routes remain **0/15**.
+
+| Mission | Synthetic reached outcome | Continue target | Profile mask | Remaining live blockers / cause |
+| --- | --- | --- | ---: | --- |
+| 1 | W/L/R | Briefing 2 | 1 | Normal-input route, objective and UI observers unmeasured |
+| 2 | W/L/R | Briefing 3 | 3 | Above; four unsupported transport sites, task 86 measurements missing |
+| 3 | W/L/R | Briefing 4 | 7 | Normal-input route, objective and UI observers unmeasured |
+| 4 | W/L/R | Briefing 5 | 15 | Normal-input route, objective and UI observers unmeasured |
+| 5 | W/L/R | Briefing 6 | 31 | Normal-input route, objective and UI observers unmeasured |
+| 6 | W/L/R | Briefing 7 | 63 | Above; two historical absent-trigger warnings require live disposition |
+| 7 | W/L/R | Briefing 8 | 127 | Above; five unsupported transport sites, task 86 measurements missing |
+| 8 | W/L/R | Briefing 9 | 255 | Normal-input route, objective and UI observers unmeasured |
+| 9 | W/L/R | Briefing 10 | 511 | Above; five unsupported transport sites, task 86 measurements missing |
+| 10 | W/L/R | Briefing 11 | 1023 | Normal-input route, objective and UI observers unmeasured |
+| 11 | W/L/R | Briefing 12 | 2047 | Above; town-derived protected-group ownership / immediate defeat unresolved |
+| 12 | W/L/R | Briefing 13 | 4095 | Normal-input route, objective and UI observers unmeasured |
+| 13 | W/L/R | Briefing 14 | 8191 | Normal-input route, objective and UI observers unmeasured |
+| 14 | W/L/R | Briefing 15 | 16383 | Normal-input route, objective and UI observers unmeasured |
+| 15 | W/L/R; clone ending screen | Main | 32767 | Above; five unsupported transport sites and original ending sequence unmeasured |
+
+**P:** the successor/unlock policy and clone ending presentation remain provisional.
+The `victory` screen is an engine heading, not evidence for an original final
+cinematic, credits or equivalent return sequence. The player-profile selector
+and complete original menu graph from task 77 remain open. A single continuous
+normal-input campaign with persistent progress has not been demonstrated.
+
+Task 86 is present as evidence tooling, but its transport behaviour dependency
+has not landed: all 19 sites remain unsupported. Tasks 77/80 supply partial flow
+and route scaffolding, not audited reference observers or successful routes.
+No engine behaviour was changed without the required original measurement
+repeated across two runs. No reference or private game-data process was launched
+in this sandbox. Follow the [task-92 run sheet](EXPERIMENTS.md#all-mission-campaign-flow-run-sheet-task-92-needs-live-run)
+to collect the missing evidence outside it. Synthetic results add no L7 passes.
+
+Validation (2026-11-07): Release configure/build passed with `AZTEC_GEN_DIR=`
+and no configured game directory. CTest passed 49 entries and skipped six
+(five private-data checks and restricted UDP processes), including passing
+`campaign_flow`, `campaign_ui` and `playthrough`. Pre-commit passed for all
+tracked files and the new fixture; `git diff --check` passed. The five task-92
+run-sheet shell blocks and embedded Python passed syntax checks only. No live
+command was executed. Changes remain uncommitted because git metadata is read-only.

@@ -1,0 +1,41 @@
+{
+  "schema": 2,
+  "id": "private_l0_mission_8",
+  "layer": "L0",
+  "map": {
+    "kind": "campaign",
+    "mission": 8
+  },
+  "setup": {},
+  "input": [],
+  "observe": {
+    "ticks": [
+      1,
+      6,
+      12
+    ],
+    "contract": "shared-l0-v2"
+  },
+  "tolerance": {
+    "exact": true
+  },
+  "evidence": "P",
+  "view": {
+    "camera": [
+      0,
+      0,
+      1
+    ],
+    "resolution": [
+      800,
+      600
+    ],
+    "side": 0,
+    "selection": [],
+    "panel": true,
+    "cursor": [
+      400,
+      300
+    ]
+  }
+}

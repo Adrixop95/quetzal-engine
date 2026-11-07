@@ -20,6 +20,7 @@ def module(name):
 ANALYZER = module('zpath_analyze')
 GENERATOR = module('make_zpath')
 TRACE = module('zpath_trace')
+REVIEW = module('zpath_review')
 
 class TraceTests(unittest.TestCase):
     def setUp(self):
@@ -170,6 +171,94 @@ class TraceTests(unittest.TestCase):
                                      '--output', str(root / 'report.json')], capture_output=True, text=True)
             self.assertEqual(result.returncode, 1)
             self.assertEqual(json.loads((root / 'report.json').read_text())['status'], 'invalid')
+
+class ReviewTests(unittest.TestCase):
+    setUp = TraceTests.setUp
+    write = TraceTests.write
+
+    def review(self, before=None, after=None, repeat=None, mutate=None):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for filename, points, origin in (
+                    ('reference', self.points, 'reference'),
+                    ('repeat', repeat or self.points, 'reference'),
+                    ('before', before or self.points, 'clone'),
+                    ('after', after or self.points, 'clone')):
+                self.write(root / filename, points, origin)
+            if mutate:
+                mutate(root)
+            return REVIEW.review(self.plan, *(root / name for name in
+                                              ('reference', 'repeat', 'before', 'after')))
+
+    def test_repeated_reference_and_before_after_metrics(self):
+        result = self.review(before=[(0, 0)] * 5)
+        self.assertEqual(result['status'], 'within_tolerance')
+        self.assertEqual(result['before']['first_divergence']['tick'], 3)
+        self.assertIsNone(result['after']['first_divergence'])
+        text = REVIEW.markdown('narrow-1', result)
+        self.assertTrue('| "scout" | 5 | censored | 5 | 4.000 / 0.000 / 4.000 | 0 / 4 / 0 |' in text)
+        self.assertTrue('tick 3, unit "scout", extra_stall' in text)
+
+    def test_sub_tolerance_reference_change_blocks_comparison(self):
+        result = self.review(repeat=[*self.points[:2], (513, 0), *self.points[3:]])
+        self.assertEqual(result['status'], 'reference_not_repeatable')
+        self.assertEqual(result['repetition']['tick'], 3)
+        self.assertEqual(result['repetition']['field'], 'x')
+        self.assertIsNone(result['before'])
+        self.assertIsNone(result['after'])
+
+    def test_reference_tail_and_health_must_repeat(self):
+        for field in ('hp', 'x'):
+            def change(root):
+                rows = [json.loads(line) for line in (root / 'repeat').read_text().splitlines()]
+                rows[-1]['objects']['pool7'][field] += 1
+                (root / 'repeat').write_text('\n'.join(json.dumps(r) for r in rows) + '\n')
+            with self.subTest(field=field):
+                self.assertEqual(self.review(mutate=change)['status'], 'reference_not_repeatable')
+
+    def test_same_reference_file_rejected(self):
+        def link(root):
+            (root / 'repeat').unlink()
+            (root / 'repeat').hardlink_to(root / 'reference')
+        with self.assertRaisesRegex(ValueError, 'separate files'):
+            self.review(mutate=link)
+
+    def test_truncated_repeat_after_first_difference_is_invalid(self):
+        def truncate(root):
+            path = root / 'repeat'
+            path.write_text('\n'.join(path.read_text().splitlines()[:-1]) + '\n')
+        with self.assertRaisesRegex(ValueError, 'truncated'):
+            self.review(repeat=[(0, 0)] * 5, mutate=truncate)
+
+    def test_bad_candidate_is_invalid_even_when_baseline_diverges(self):
+        def truncate(root):
+            (root / 'after').write_text('{}\n')
+        with self.assertRaisesRegex(ValueError, 'header'):
+            self.review(before=[(0, 0)] * 5, mutate=truncate)
+
+    def test_censored_arrivals_never_pass(self):
+        self.plan['units']['scout']['goal'] = [1000000, 0]
+        result = self.review()
+        self.assertEqual(result['status'], 'incomplete')
+        self.assertTrue('censored | censored | censored' in REVIEW.markdown('sealed', result))
+
+    def test_candidate_regression_retains_first_divergence(self):
+        result = self.review(after=[(0, 0)] * 5)
+        self.assertEqual(result['status'], 'different')
+        self.assertEqual(result['after']['first_divergence'],
+                         dict(tick=3, unit='scout', cause_class='extra_stall'))
+
+    def test_cli_invalid_inputs_write_both_reports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = subprocess.run([sys.executable, '-I', str(ROOT / 'tools/zpath_review.py'),
+                                     *[str(root / name) for name in ('plan', 'r1', 'r2', 'before', 'after')],
+                                     '--scenario', 'bird-open', '--output', str(root / 'report.json'),
+                                     '--markdown', str(root / 'report.md')], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(json.loads((root / 'report.json').read_text())['status'], 'invalid')
+            self.assertTrue('No accepted before/after comparison' in (root / 'report.md').read_text())
+
 
 class LogTests(unittest.TestCase):
     def analyze(self, samples, count=1, ticks=4):

@@ -234,6 +234,9 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME save_resume_controls COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_SOURCE_DIR}/tests/test_save_resume.py $<TARGET_FILE:test_save_import> $<TARGET_FILE:aztec_save_probe>)
   set_tests_properties(save_resume_controls PROPERTIES LABELS "unit;parity" TIMEOUT 20)
+  add_test(NAME campaign_save_processes COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_SOURCE_DIR}/tests/test_campaign_save_processes.py $<TARGET_FILE:aztec_engine>)
+  set_tests_properties(campaign_save_processes PROPERTIES LABELS "unit" TIMEOUT 45)
 endif()
 add_test(NAME save_import_private COMMAND test_save_import --private ${CMAKE_SOURCE_DIR}/game)
 set_tests_properties(save_import_private PROPERTIES SKIP_RETURN_CODE 77 LABELS "game-data")
@@ -262,6 +265,14 @@ aztec_warnings(test_campaign_ui)
 target_compile_definitions(test_campaign_ui PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data")
 add_test(NAME campaign_ui COMMAND test_campaign_ui ${CMAKE_CURRENT_BINARY_DIR}/campaign-ui)
 set_tests_properties(campaign_ui PROPERTIES LABELS "unit" TIMEOUT 30
+  ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+
+add_executable(test_campaign_flow tests/test_campaign_flow.cpp)
+target_link_libraries(test_campaign_flow PRIVATE aztec_engine_lib)
+aztec_warnings(test_campaign_flow)
+target_compile_definitions(test_campaign_flow PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data")
+add_test(NAME campaign_flow COMMAND test_campaign_flow)
+set_tests_properties(campaign_flow PROPERTIES LABELS "unit" TIMEOUT 30
   ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
 
 # Read-only campaign script inventory plus asset-independent trigger contracts.
@@ -301,10 +312,15 @@ if(Python3_Interpreter_FOUND)
   set_tests_properties(determinism_processes PROPERTIES LABELS "unit" TIMEOUT 150)
   add_test(NAME parity_controls COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tools/parity_report.py self-test)
   set_tests_properties(parity_controls PROPERTIES LABELS "unit" TIMEOUT 20)
+  add_test(NAME parity_l2 COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_l2.py)
+  set_tests_properties(parity_l2 PROPERTIES LABELS "unit;parity" TIMEOUT 20)
   if(UNIX)
     add_test(NAME handoff_tools COMMAND ${Python3_EXECUTABLE} -I
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_handoff_tools.py)
     set_tests_properties(handoff_tools PROPERTIES LABELS "unit" TIMEOUT 30)
+    add_test(NAME codex_supervisor COMMAND ${Python3_EXECUTABLE} -I
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_codex_supervisor.py)
+    set_tests_properties(codex_supervisor PROPERTIES LABELS "unit" TIMEOUT 30)
   endif()
   add_test(NAME parity_triage_matrix COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_triage.py)

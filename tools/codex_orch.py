@@ -16,6 +16,7 @@ import json
 import os
 import re
 import shlex
+import socket
 import subprocess
 import sys
 import time
@@ -88,11 +89,15 @@ def refresh(t):
     if m:
         t["workdir"] = m.group(1)
     ps = sh("ps -eo args").stdout.splitlines()
-    alive = any(l.startswith("codex exec") and t["name"] + ".last" in l for l in ps)
+    last_path = os.path.join(ROOT, "work/codex", t["name"] + ".last")
+    alive = any(any(os.path.basename(token) == "codex" for token in l.split()[:2]) and "exec" in l.split() and
+                (last_path in l or t.get("session", "<missing>") in l.split()) for l in ps)
     last = os.path.join(ROOT, "work/codex", t["name"] + ".last")
     has_last = os.path.exists(last) and os.path.getsize(last) > 0
     if t.get("harvested"):
         t["status"] = "harvested"
+    elif t.get("host") and t["host"] != socket.gethostname():
+        t["status"] = "unknown"
     elif alive:
         t["status"] = "running"
     elif "hit your usage limit" in text[-3000:]:
@@ -100,7 +105,7 @@ def refresh(t):
     elif has_last:
         t["status"] = "done"
     else:
-        t["status"] = "stopped"
+        t["status"] = "unknown" if t.get("session") else "stopped"
     save(t)
     return t
 
@@ -115,7 +120,8 @@ def start(name, prompt_file):
     subprocess.Popen(
         ["codex", "exec", "--worktree", "-s", "workspace-write", "-o", last, PREAMBLE + "\n\n" + prompt],
         cwd=ROOT, stdout=open(log, "w"), stderr=subprocess.STDOUT, start_new_session=True)
-    save({"name": name, "prompt_file": os.path.abspath(prompt_file), "started": time.time()})
+    save({"name": name, "prompt_file": os.path.abspath(prompt_file), "started": time.time(),
+          "host": socket.gethostname()})
     print("started", name)
 
 
@@ -135,6 +141,8 @@ def resume(name, prompt=None):
         ["codex", "exec", "resume", t["session"], "-c", 'sandbox_mode="workspace-write"', "-o", last,
          prompt or RESUME_PROMPT],
         cwd=t["workdir"], stdout=open(log, "a"), stderr=subprocess.STDOUT, start_new_session=True)
+    t["host"] = socket.gethostname()
+    save(t)
     print("resumed", name, t["session"])
 
 

@@ -122,6 +122,105 @@ rule, including state-hash coverage for any new flight or burn state. Keep
 unmeasured weapon families explicitly unresolved.
 
 
+## L2 whole-mission command replay run sheet (task 85, needs live run)
+
+**S / synthetic:** `tools/parity_report.py missions` records scripted input for
+missions 1, 2 and 3, then replays each packet log twice through the shared runner.
+It validates packet readback and contiguous before-command observations, compares
+raw reference pool hashes, then hashes canonical comparable simulation fields and
+reports the first differing tick/object/field. Reference raw hashes and clone
+hashes have different representations; they are never compared directly.
+**P / needs live run:** no reference commands were executed in the sandbox, no
+mission log or repeated measurement was obtained, and no engine rule was changed.
+Task 83 is present in this checkout, but its normalized orders/queues and creation
+identity dependencies remain incomplete. The clone packet translator is absent.
+
+Run outside the sandbox, from this worktree, with the existing private generated
+sources used only to rebuild the hand-written reference host:
+
+```sh
+cmake -S . -B build_l2_reference -DCMAKE_BUILD_TYPE=Release \
+  -DAZTEC_GEN_DIR=/home/adrox/aztec-re/work/gen
+cmake --build build_l2_reference --target aztec_recomp --parallel 2
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR= -DGAME_DIR=
+cmake --build build --parallel 2
+ctest --test-dir build -R 'parity_l2|parity_controls|parity_scenarios|shared_l0' --output-on-failure
+python3 -I tools/parity_report.py missions \
+  --game /home/adrox/aztec-re/game \
+  --runtime "$PWD/build_l2_reference/aztec_recomp" \
+  --engine "$PWD/build/aztec_engine" --ticks 720 --timeout 300 \
+  --output "$PWD/work/parity/l2-missions-01"
+```
+
+The last command returns nonzero for blocked or failed experiments, retaining a
+separate `m1`, `m2`, `m3` result even if an earlier mission fails. Keep each output
+directory and choose a fresh suffix for every iteration. The initial 720-tick
+horizon is a diagnostic prefix, not a winning route or whole-mission acceptance.
+To request twenty minutes per mission, use the same command with
+`--ticks 14400 --timeout 1800 --output "$PWD/work/parity/l2-missions-20min-01"`.
+Early outcomes or missing ticks fail horizon validation; reaching the log end
+does not prove mission victory. The schedule supports at most 100000 ticks.
+
+`tests/scenarios/l2_commands.txt` supplies fixed selection/movement attempts after
+mission-specific navigation. Input is recorded once as actual frame/side packets;
+wall-clock click delays do not establish deterministic input ticks. Both replays
+use the exact recorded packets and navigation only. An empty/action-free log is
+`blocked_input_coverage`, never proof of command replay. The original recording
+is preserved; `commands.txt` contains its unmodified packet prefix through the
+explicit horizon. `inputs.json` records byte SHA-256 digests of that prefix,
+the recording script and both binaries. This makes the captured log reproducible
+as a replay input; independent recordings need not be byte-identical.
+
+Every reference process runs with dummy SDL video/audio inside `unshare -rn`,
+with fail-closed loopback setup and a timeout. Each process gets immutable asset
+symlinks and copied Maps, Saves and profile/configuration files. The shared
+observer uses `RT_L0_STATE_ONLY=1` to avoid per-tick images; frames remain explicitly
+unavailable. The fixed camera is still applied at each observation. This mode has
+synthetic state-equivalence coverage, not a live timing-neutrality measurement.
+
+Return these files privately, never in a commit:
+
+- `report.json`, each `diff.json`, `inputs.json`, `scenario.json`, recording
+  script and `commands.txt`;
+- `record/reference` and both `replay-N/reference` directories, including native
+  observations, state hashes, commands/readback, invocation and process logs;
+- normalized bundles, `pool-differences.json`, `reference-repeat.json`,
+  `reference-hashes.json` and any `state-hashes.json`.
+
+Raw pool differences stop clone comparison, including when declared semantic
+fields repeat. If creation or native-handle reuse prevents normalization, both
+reference replays and their raw hash comparison are retained and identity coverage
+is reported as blocked. Normalized hashes exclude unavailable orders, queues or
+fractional positions, explicitly listing the exclusions at each tick. They omit
+render/UI state and reference-only diagnostics. Partial equality is never a full
+observed-contract pass, and these hashes do not cover all hidden simulation state.
+
+Without a translator, the expected next verdict is `blocked_command_translation`
+after repeated reference observations, or an earlier observation/identity blocker.
+No clone command run is substituted with a no-input run. Once an audited adapter
+exists, repeat the command into a fresh directory adding
+`--engine-adapter /absolute/path/to/audited-adapter`. The adapter receives
+`--engine BIN --game PRIVATE_COPY --scenario SPEC --commands PACKETS --output BUNDLE`
+inside dummy SDL and `unshare -rn`; it must translate every packet without
+retiming, use the declared per-tick schedule, isolate profile writes and emit a
+validated `shared-l0-v2` clone bundle. There is no implementation of this adapter
+in this checkout, and the option is not a claim of working clone packet replay.
+
+For each live iteration record the first divergence, cause class and evidence,
+then the last equal tick before and after a fix. `observed_equal_through_tick`
+describes the comparable projection only; `complete_observed_contract` also
+requires orders, queues and fractional positions. Retain the first known
+difference even when other domains are blocked. Do not infer an HP or movement
+cause solely from its field name. Confirm each behavior measurement in both
+reference runs before changing the clone; rerun all three missions after a fix.
+`fix_iterations` is currently empty: no measured fix or before/after tick exists.
+
+Still requiring measurement: complete reference logical orders and production
+queue semantics; object creation/generation identity; oracle packet translation
+and target identity; initial HP modifier provenance; mission-start movement and
+script/order timing; hidden state/RNG coverage; successful mission-end routes.
+The task remains **needs live run**.
+
 ## Packet replay and determinism audit
 
 The current parity runner requires a rebuilt private reference runtime that logs
@@ -1696,6 +1795,131 @@ them unless a documented reference measurement justifies the specific change.
 Update L3 paired counts from actual selected diff reports after live capture;
 currently **0 scenarios, 0 pass, 0 fail, 0 skip**. No first live divergence or
 arrival/path tolerance pass is available. Status: **needs live run**.
+
+## V05 movement run sheet (task 89): needs live run
+
+Evidence: **S** = synthetic controls; **P** = pending live capture; **M** =
+repeated original measurements. This follow-up adds S before/after reporting
+and strict reference repeatability controls; it adds **no M** evidence or engine
+correction. Task 86's tooling is present but its vessel contracts remain open.
+Task 68's audited shared custom-map setup/input/observer adapter is still absent.
+The commands below do not fill that dependency. Never run the reference inside
+the sandbox or promote a raw legacy path log to an aligned observation stream.
+
+Preserve the default 48 configurations before any measured correction:
+
+```sh
+mkdir -p work/parity/v05
+build/path_bench --json > work/parity/v05/path-before.jsonl
+ctest --test-dir build -R '^(path|path_bench_smoke|zpath_tools|engine_unit|transport_measure)$' --output-on-failure
+```
+
+On the orchestrator's unrestricted host, this exact legacy acquisition loop runs
+the task-68 ground suite twice from fresh processes/private installations. It
+uses resource symlinks, ordinary private Maps/Saves/profile copies, both dummy
+SDL drivers, a kill timeout and fail-closed `unshare -rn` network setup through
+`zpath_one.sh` / `zpath_run.sh`. Each run uses the same predefined scenario
+packets, not a recording produced by the first run. Check the custom-map menu
+entry screenshots and actual starting state before accepting either run.
+
+```sh
+movement_probe=$(mktemp -d "$PWD/work/parity/v05-reference.XXXXXX")
+export ZPATH_GAME_DIR=/home/adrox/aztec-re/game
+export ZPATH_RUNTIME=/home/adrox/aztec-re/build/aztec_recomp
+sha256sum "$ZPATH_RUNTIME" > "$movement_probe/runtime.sha256"
+for repetition in 1 2; do
+  for fog in fog explored; do
+    for course in open gap1 gap2 gap4 corr1 corr2 clusters maze utrap wall rooms swap swap1 park mixed diag; do
+      for count in 1 10 30; do
+        sh tools/zpath_one.sh "$course" "$count" "$fog" \
+          "$movement_probe/run-$repetition" 180 || exit 1
+      done
+    done
+  done
+done
+```
+
+The 180-second window is a capture allowance, not a tick budget. Reject truncated
+logs; the accepted normalized horizon must include at least 1490 ticks after
+**every** order (including delayed park orders), plus the parked tail. Extend
+captures if necessary. Raw `RT_POS_LOG` rows lack the audited identity, tick and
+fixed-point precision contract; legacy summaries alone cannot confirm a fix.
+The shared adapter must additionally capture the matching clone before and after,
+normal commands/readback, setup hashes, selected identities and before-command
+positions every tick. There is no executable shared capture invocation to give
+until task 64 supplies this adapter. Do not invent one or bypass isolation.
+
+Additional scenario specifications extend task 68; run each twice on the original
+and use the same setup and orders on the clone:
+
+| Scenario | Required controlled variation and observations |
+| --- | --- |
+| Bird speed | Single Bird, straight open routes of several measured lengths, both directions; separate acceleration/turn time from steady displacement. Repeat across obstacles with matched goals; retain Zeppelin control. |
+| Radii and footprints | Small/large ground units and actual buildings, one-at-a-time clearance sweeps around a boundary; retain exact terrain, occupancy, centre positions and nearest approach. Do not infer a radius from a six-tile arrival disk. |
+| Reservations | Same destination for 1/10/30 units, opposing gap1/swap1 traffic, delayed park traffic; reverse selection/order identities and retain parked displacement and stalls. |
+| Vehicle turns | Matched vehicle straight, right-angle and reversal orders, both directions; capture body heading separately if an audited observer supports it. Positions alone establish trajectory, not body-turn parity. |
+| WaveSearch | Narrow gap/corridor, concave trap, crowded mixed group, sealed goal, disconnected group in both selection orders; retain closest approach, final position and order state for censored arrivals. |
+| Vessels | Use task 86's Boat/Submarine/Johnka water, shore, turn and stuck controls after its movement/setup contracts are available. Ground type substitutions are insufficient. |
+
+Use the task-68 trace plan schema with every selected unit, actual mission/contract,
+identities, order tick, goal and a predeclared arrival disk/tolerances appropriate
+to each control. Two reference streams must use identical normalized identities
+and headers. Preserve provenance proving two separate launches; equal files alone
+cannot establish independent acquisition. Do not tune tolerances after viewing
+the candidate. Keep all maps, logs and reports in ignored `work/`.
+
+After the adapter supplies these four complete normalized streams per scenario,
+run the strict report (these filenames are the adapter's required output contract):
+
+```sh
+case_dir="$PWD/work/parity/v05-live/bird-open"
+python3 -I tools/zpath_review.py "$case_dir/trace-plan.json" \
+  "$case_dir/reference-1.jsonl" "$case_dir/reference-2.jsonl" \
+  "$case_dir/clone-before.jsonl" "$case_dir/clone-after.jsonl" \
+  --scenario bird-open --output "$case_dir/review.json" \
+  --markdown "$case_dir/review.md"
+```
+
+Repeat for every course/count/fog and additional control. `reference_not_repeatable`
+withholds comparisons even for sub-tolerance reference differences. `invalid`
+rejects missing/truncated observations, contract or lifecycle errors. `incomplete`
+keeps censored/unreachable arrivals separate from passes. Only `within_tolerance`
+returns zero. JSON retains each side's path length, stalls, arrival and first
+diverging tick/unit/cause; Markdown reports original versus clone before/after
+per selected unit. Cause classes identify symptoms, not a proven WaveSearch,
+reservation or turn mechanism. Before implementing a fix, diagnose the same
+divergence against both exact reference repeats; an accepted report alone does
+not identify the correct algorithm.
+
+After any correction, compare the unchanged movement configurations explicitly:
+
+```sh
+build/path_bench --json > work/parity/v05/path-after.jsonl
+python3 - <<'PY'
+import json
+from pathlib import Path
+root = Path('work/parity/v05')
+def rows(name):
+    result = {}
+    for line in (root / name).read_text().splitlines():
+        row = json.loads(line)
+        row.pop('ms_per_tick')
+        key = row['course'], row['n']
+        assert key not in result, key
+        result[key] = row
+    assert len(result) == 48
+    return result
+assert rows('path-before.jsonl') == rows('path-after.jsonl')
+print('All 48 movement hashes and non-timing metrics unchanged')
+PY
+```
+
+A measurement-justified hash change needs its specific scenario, two original
+run IDs, first divergence and before/after results documented before accepting
+an exception. Current measurements and first live divergences: **unmeasured**.
+Synthetic arrival results are in [rules_movement.md](rules_movement.md#12-v05-repeatability-and-beforeafter-preparation-task-89).
+V05 and task 86 remain open. Status: **needs live run**.
+
 ## Building and mine placement run sheet (needs live run)
 
 Task 66 depends on **64-shared-runner-observer**, which is still queued and is
@@ -2951,3 +3175,410 @@ Status: **needs live run**. HP loader correction and pool/diagnostic regressions
 are implemented; repeated reference confirmation, movement reproduction,
 normalized orders/production semantics and mission-2/3 divergence results remain
 open. This is not the first verified matching game output yet.
+
+## All-mission campaign flow run sheet (task 92): needs live run
+
+**S:** `campaign_flow` exercises all fifteen invented mission numbers through
+briefing selection, modal objective review, normal scripted victory/defeat,
+retry/restart, successor briefing and the clone ending-screen return. Completion
+profile save/reopen is tested separately; scripted playtests deliberately cannot
+write campaign completion. **P:** real routes, unlock policy, original ending
+and automatic profile updates. **M:** none. See the
+[per-mission report](playthrough.md#all-mission-campaign-flow-task-92-needs-live-run).
+Task 86's measured transport dependency is incomplete; no gameplay fix is
+justified until two independent original runs confirm the divergence.
+
+Run the synthetic checks from the worktree root:
+## V16 original-save continuation and missions 1-3: needs live run
+
+Task 94 status: **needs live run**. Task 72's structural importer is present;
+task 83's repeated startup/divergence evidence and the audited reference
+save-load observer remain incomplete. No new live measurements were collected
+in this sandbox. Do not change simulation behavior from synthetic results.
+
+Run the independent synthetic controls first on Linux:
+## All-mission initial-state run sheet (V02/V04): needs live run
+
+This extends the task-83 startup probe to all fifteen campaign missions, with
+one shared-runner specification per mission and before-command samples at ticks
+1, 6 and 12. Missions 2/3 already existed; missions 4–15 are new P specifications.
+Task 83's pool/HP changes are in this checkout, but its repeated live acceptance,
+early movement explanation and full logical order normalization remain partial.
+No original measurement was collected for this extension. No engine behavior
+was changed: a repeated original measurement is required before fixing any
+handicap/difficulty, section override, start-script or initialization hypothesis.
+
+Run the following **outside the sandbox**, from this worktree. Rebuild the
+reference observer as in the shared L0 run sheet; the external prebuilt runtime
+may predate it. Build outputs stay here; private generated inputs are read only.
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR= -DGAME_DIR=
+cmake --build build --parallel 2
+ctest --test-dir build -R 'campaign_flow|campaign_ui|playthrough|ui_capture' --output-on-failure
+```
+
+The remaining commands are for the orchestrator on a namespace-capable host,
+**outside the Codex sandbox**. Never drop `unshare -rn` after a launch failure.
+Keep all specifications, recordings, profiles and reports under ignored `work/`.
+First author `work/campaign-flow-input/scenarios.json` using task 80's route
+contract: one `mission-N-win` and one `mission-N-lose` scenario for each N=1..15,
+with expected victory/defeat, normal move/attack-move steps, measured objective
+checkpoints and a save boundary strictly before the terminal outcome. More complex
+commands still require an audited input adapter. No successful real player route
+is supplied by this task; empty plans and passive timeouts are not completions.
+
+Run paired clone simulations, retaining missing-reference failures:
+
+```sh
+campaign_flow_stamp=$(date -u +%Y%m%dT%H%M%S)
+campaign_flow_clone="$PWD/work/campaign-flow-clone-$campaign_flow_stamp"
+python3 tools/playthrough.py --game /home/adrox/aztec-re/game \
+  --engine "$PWD/build/aztec_engine" --rules-dir "$PWD/docs/data" \
+  --routes "$PWD/work/campaign-flow-input/scenarios.json" --no-auto-orders \
+  --max-ticks 43200 --timeout 900 --require-reference --out "$campaign_flow_clone"
+campaign_flow_clone_status=$?
+if test -d "$campaign_flow_clone"; then
+  printf '%s\n' "$campaign_flow_clone_status" > "$campaign_flow_clone/gate-exit-status.txt"
+fi
+```
+
+For UI evidence, author private audited normal-input reference scripts
+`work/campaign-flow-input/mission_N-win.rt`, `mission_N-lose.rt` and
+`mission_N-retry.rt` for N=1..15. Each includes startup navigation, profile choice,
+briefing, objective review and its ordinary player route. Win observes the result,
+Continue and the next briefing (or mission-15 ending and return); lose observes
+defeat and return; retry observes defeat, Retry, reset mission state, then a normal
+successful route. Capture milestones with the existing `shot` command in those
+scripts and end with `quit`. Do not set outcomes, edit scripts or fabricate unlocks.
+Record each required initial profile's provenance and unlocked missions. If a
+mission is locked, obtain the state by normal prior completion and retain that
+route; a direct mission diagnostic is not a campaign-start observation.
+
+Also author `full-campaign.rt`: start with a fresh original profile, finish all
+fifteen missions in order, review objectives, reopen the profile after returning,
+and observe the final ending and return. Its two independent runs establish
+continuous progression separately from per-mission controls. Task 77's original
+profile selector, UI observer and full graph remain dependencies; unsupported
+navigation or locked missions must be reported as blockers, never bypassed.
+
+Prepare separate writable installations for every independent recording. This
+preflight refuses missing input scripts before creating output. It does not run
+any program or derive original observations:
+
+```sh
+export campaign_flow_reference="$PWD/work/campaign-flow-reference-$campaign_flow_stamp"
+python3 - <<'PY'
+import importlib.util
+import os
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location('playthrough', 'tools/playthrough.py')
+harness = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(harness)
+inputs = Path('work/campaign-flow-input')
+cases = [f'mission_{m}-{kind}' for m in range(1, 16)
+         for kind in ('win', 'lose', 'retry')] + ['full-campaign']
+missing = [str(inputs / f'{case}.rt') for case in cases
+           if not (inputs / f'{case}.rt').is_file()]
+if missing:
+    raise SystemExit('Missing audited input scripts: ' + ', '.join(missing))
+source = Path('/home/adrox/aztec-re/game')
+maps, _ = harness.discover(source)
+root = Path(os.environ['campaign_flow_reference'])
+root.mkdir()
+for case in cases:
+    directory = root / case
+    directory.mkdir()
+    (directory / 'input.rt').write_bytes((inputs / f'{case}.rt').read_bytes())
+    for repetition in (1, 2):
+        run = directory / f'repeat-{repetition}'
+        run.mkdir()
+        harness.private_game(source, maps, run / 'game')
+(root / 'cases.txt').write_text('\n'.join(cases) + '\n')
+PY
+```
+
+Run in Bash after successful preparation. These are two independent recordings,
+not a record/replay pair. Adjust the bounded timeout before launch if a reviewed
+route needs more than one hour (or the continuous campaign more than one day).
+The supplied scripts must set up their documented initial profiles through
+normal input; the private copy alone does not create that initial condition.
+
+```sh
+while IFS= read -r campaign_flow_case; do
+  campaign_flow_probe="$campaign_flow_reference/$campaign_flow_case"
+  campaign_flow_limit=3900
+  if test "$campaign_flow_case" = full-campaign; then campaign_flow_limit=86400; fi
+  for campaign_flow_repeat in 1 2; do
+    campaign_flow_run="$campaign_flow_probe/repeat-$campaign_flow_repeat"
+    (
+      cd "$campaign_flow_run/game" || exit 1
+      timeout -s KILL "$campaign_flow_limit" unshare -rn env \
+        -u RT_CMD_REPLAY -u RT_AUDIO_DUMP \
+        SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+        RT_NO_GRAB=1 RT_NO_VIDEO=1 RT_RESOLUTION=800x600 \
+        RT_SCRIPT="$campaign_flow_probe/input.rt" RT_DUMP_DIR="$campaign_flow_run" \
+        RT_CMD_LOG="$campaign_flow_run/commands.txt" \
+        RT_STATE_LOG="$campaign_flow_run/state.txt" \
+        RT_UNIT_LOG="$campaign_flow_run/units.log" RT_UNIT_EVERY=1 \
+        sh -ec '
+          ip link set lo up
+          ip addr add 192.168.1.125/24 dev lo
+          exec /home/adrox/aztec-re/build/aztec_recomp "$1/Aztec.exe"
+        ' sh "$campaign_flow_run/game"
+    ) > "$campaign_flow_run/stdout.log" 2> "$campaign_flow_run/stderr.log"
+    printf '%s\n' "$?" > "$campaign_flow_run/exit-status.txt"
+  done
+done < "$campaign_flow_reference/cases.txt"
+```
+
+Use task 77's exact `ui_capture.py frontend` command above for the currently
+supported paired menu route. Its requested screen labels are not observed screen
+IDs. The CLI menu-script driver exits at mission selection, and gameplay scripts
+restart from their beginning on Retry: neither is a general continuous live
+campaign driver. The synthetic test uses the in-process Options interface and a
+test-only initial simulation; do not use that outcome injection on original data.
+A continuous clone UI adapter and the task-64 reference screen/objective observer
+must be completed/audited before automating equivalent full-campaign routes.
+Keep these adapter gaps explicit rather than claiming that headless simulation
+reports verify briefing, profile writes or final-ending parity.
+
+For each actual run retain runtime/engine SHA-256, input specification digest,
+initial/final profile state, observed screen order, mission-start alignment,
+objective milestones, outcome/tick, retry reset state and successor mission.
+Review both independent reference observations and raw command readback. Only
+then normalize the two actual checkpoint timelines into the task-80 contract at
+`work/campaign-flow-input/reference/ID-1.json` and `ID-2.json`, bound to the clone
+route fingerprint. The normalizer/observer is a missing dependency, not an
+available environment switch. Do not fill observations from expected timings,
+clone reports, script source or filenames. After the audit, run the strict gate:
+
+```sh
+python3 tools/playthrough.py --game /home/adrox/aztec-re/game \
+  --engine "$PWD/build/aztec_engine" --rules-dir "$PWD/docs/data" \
+  --routes "$PWD/work/campaign-flow-input/scenarios.json" --no-auto-orders \
+  --max-ticks 43200 --timeout 900 --require-reference \
+  --reference-dir "$PWD/work/campaign-flow-input/reference" \
+  --out "$PWD/work/campaign-flow-paired-$(date -u +%Y%m%dT%H%M%S)"
+```
+
+Update each mission's report with measured win, lose, retry, progression and
+first divergence, blockers fixed with two-run evidence, remaining blockers with
+cause, and save continuation. Treat a nonzero process status, timeout, missing
+observation, unsupported transport site or unreachable route as unresolved.
+Checkpoint equality alone does not validate the UI/profile/ending sequence.
+Neither synthetic tests nor pending run sheets add live L7 counts. Current
+acceptance remains **0/15 verified routes; needs live run**.
+ctest --test-dir build -R 'savegame|save_import$|save_resume_controls|engine_save|campaign_save_processes|campaign_ui' --output-on-failure
+```
+
+On Windows, after configuring SDL2 as in SETUP.md, run the same generated checks
+in a fresh native build. These commands do not read an original installation:
+
+```powershell
+cmake -S . -B build_msvc -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows -DAZTEC_GEN_DIR= -DGAME_DIR=
+cmake --build build_msvc --config Release --parallel 2
+ctest --test-dir build_msvc -C Release -R 'savegame|save_import$|save_resume_controls|engine_save|campaign_save_processes|campaign_ui' --output-on-failure
+```
+
+Return the compiler/version, build log and CTest output for both platforms.
+Linux success does not imply Windows success. `campaign_save_processes` uses
+invented missions 1-3 and dummy SDL; it is not a campaign parity verdict.
+
+For original saves, first finish the audited observer prerequisite described in
+[the tick-zero sheet](#original-save-tick-zero-run-sheet). Extend its interface
+with `--ticks N` to emit schema 2 from the **actual loaded runtime**, after exactly
+N completed updates before the next commands. At N=0 it must stop at load
+completion. Respect the explicit unsupported fields in [savegame.md](savegame.md#v16-continuation-controls-2026-11-06).
+Do not implement the adapter by copying the parser or clone output. The supplied
+reference runtime alone does not provide this adapter. Missing observer or tick
+mapping is a blocker; do not substitute millisecond waits or raw hash equality.
+
+On the namespace-capable Linux host, select one authentic mid-mission save for
+each of missions 1-3, with active orders/queues/research and script timers where
+available. Stage ordinary private copies at the following paths (adjust source
+profile/slot filenames to the actual locally selected saves):
+
+```sh
+mkdir -p work/save-resume/inputs
+cp /home/adrox/aztec-re/game/Saves/single1.sav work/save-resume/inputs/mission_1.sav
+cp /home/adrox/aztec-re/game/Saves/single2.sav work/save-resume/inputs/mission_2.sav
+cp /home/adrox/aztec-re/game/Saves/single3.sav work/save-resume/inputs/mission_3.sav
+```
+
+Slot numbers do not establish mission identity. Verify saved map names locally
+and record the selected mission/save provenance privately. Do not overwrite
+staged files for later attempts. After the audited adapter is available at
+`work/save-resume/reference-observer`, collect four fresh processes for every
+save/boundary (two reference, two clone):
+
+```sh
+resume_probe="$PWD/work/save-resume/v16-$(date -u +%Y%m%dT%H%M%S)"
+mkdir -p "$resume_probe"
+for mission in 1 2 3; do
+  for ticks in 0 1 12 120; do
+    resume_case="$resume_probe/mission_$mission-ticks_$ticks"
+    python3 -I tools/savegame/compare_resume.py run \
+      --game /home/adrox/aztec-re/game \
+      --save "$PWD/work/save-resume/inputs/mission_$mission.sav" \
+      --runtime /home/adrox/aztec-re/build/aztec_recomp \
+      --reference-adapter "$PWD/work/save-resume/reference-observer" \
+      --clone "$PWD/build/aztec_save_probe" --rules "$PWD/docs/data" \
+      --ticks "$ticks" --timeout 120 --output "$resume_case"
+    printf '%s\n' "$?" > "$resume_case/gate-exit-status.txt"
+  done
+done
+```
+
+Each runner process uses a separate private installation with immutable resource
+symlinks, copied mutable state and an ordinary private save file. It launches
+under `timeout -s KILL 120 unshare -rn` with dummy SDL video/audio; only reference
+processes configure namespace loopback/address. Keep all of this isolation.
+Namespace or adapter failure is a failed observation. Current results always
+exit nonzero: supported-field agreement is `incomplete`, never full parity.
+If the adapter is missing, omit `--reference-adapter` to record `needs live run`
+without launching either implementation. Do not reuse an output directory.
+
+Recheck an individual case offline, preserving repeatability requirements:
+
+```sh
+python3 -I tools/savegame/compare_resume.py compare \
+  "$resume_probe/mission_1-ticks_120/reference/snapshot.json" \
+  "$resume_probe/mission_1-ticks_120/clone/snapshot.json" \
+  --repeat-reference "$resume_probe/mission_1-ticks_120/reference-repeat/snapshot.json" \
+  --repeat-clone "$resume_probe/mission_1-ticks_120/clone-repeat/snapshot.json"
+```
+
+Return both repeats, all process logs/commands, result JSON, input SHA-256 and
+observer/runtime revision privately. For each missing class return the normalized
+observed values and mapping rationale, not executable-derived code. Changes to
+engine behavior require the same original divergence in two successful runs.
+Births currently fail the clone observer's identity check; provide an audited
+spawn mapping before extending that scope. Unsupported script/queue execution
+is expected diagnostic information, not a reason to erase those domains.
+
+For actual fresh-session campaign completion, use the existing
+[V19 route sheet](#v19-scripted-route-run-sheet-needs-live-run) with authored
+player routes for missions 1-3, save ticks before the observed finish, and
+`--missions 1 2 3` on the `tools/playthrough.py` commands. The route runner checks
+fresh-process AZS3 continuation through the terminal tick; empty or passive
+plans are not winning routes. Keep the complete paired tick transcripts.
+Normal graphical progression needs a separate live session: play each mission,
+save mid-mission, exit, select that slot through the front-end, finish and restart
+to inspect the next unlock/profile. Repeat defeat/retry and camera restoration.
+Automation intentionally suppresses progress writes, so its victory cannot
+establish this acceptance. Native Windows real-data isolation and interactive
+acceptance remain operator work; this Linux-only namespace/reference workflow
+must not be described as a native Windows run.
+
+Publish only aggregate evidence labels. Keep original saves, captures, logs,
+normalized streams and generated fixture outputs in ignored private directories.
+V16 remains **needs live run** until the unresolved semantic mappings, actual
+missions and native platform acceptance have observations.
+ctest --test-dir build -R 'shared_l0|parity_scenarios' --output-on-failure
+cmake -S . -B build_l0_reference -DCMAKE_BUILD_TYPE=Release \
+  -DAZTEC_GEN_DIR=/home/adrox/aztec-re/work/gen
+cmake --build build_l0_reference --target aztec_recomp --parallel 2
+```
+
+Collect two independent runs with unchanged maps, profiles, difficulty, handicap,
+modifications, seed and script/input settings. Retain their hashes, observer/build
+revision and control audit privately. Requested scenario/view equality alone
+does not prove these controls. In particular audit startup settings and anchor
+identity: owner/type/initial-position anchors cannot explain missing objects or
+ownership/position differences at tick 1. Such cases stay unmatched; do not use
+nearest-object matching. Audit both pages of the campaign navigation and any
+profile unlock requirement. A menu launch failure is not a mission comparison.
+
+```sh
+initial_probe="$PWD/work/parity/l0-initial-$(date -u +%Y%m%dT%H%M%S)"
+mkdir -p "$initial_probe"
+initial_ids="private_l0"
+for mission in $(seq 2 15); do
+  initial_ids="$initial_ids private_l0_mission_$mission"
+done
+for repetition in 1 2; do
+  python3 -I tools/parity_run.py $initial_ids \
+    --game /home/adrox/aztec-re/game \
+    --runtime "$PWD/build_l0_reference/aztec_recomp" \
+    --engine "$PWD/build/aztec_engine" --timeout 120 \
+    --output "$initial_probe/before-$repetition"
+  initial_status=$?
+  if [ "$initial_status" -ne 0 ] && [ "$initial_status" -ne 1 ]; then
+    exit "$initial_status"
+  fi
+done
+python3 -I tools/parity_initial.py \
+  --before "$initial_probe/before-1" "$initial_probe/before-2" \
+  --output "$initial_probe/before-tables"
+```
+
+The shared runner creates a separate private game copy for **each** process:
+read-only asset/executable symlinks, copied Maps/profile/settings, private Saves
+and clone user directory. Both launches use `SDL_VIDEODRIVER=dummy`,
+`SDL_AUDIODRIVER=dummy`, a hard timeout and `unshare -rn`; the reference configures
+namespace loopback. Keep failures and nonzero contract verdicts. Never bypass
+namespaces, run directly against the external installation or alter the input
+maps to make a comparison pass. The loop deliberately retains status 1 for
+failed/blocked probes; inspect each `runners.json` and process log.
+
+`parity_initial.py` writes `mission_N.json` and one `mission_N.md` divergence table
+for each mission plus `report.json`. It validates complete bundles, mission/view
+and tick alignment, then uses task 83's full repeat review (including raw
+diagnostics and frame bytes). Unstable runs produce no counts. Missing captures
+and malformed bundles stay explicit. Each tick reports common objects, presence,
+type, owner, primary HP, position components, complete logical orders and money.
+Position fractions and orders declared unavailable are excluded from counts.
+Presence differences are counted once per missing/extra identity; they are not
+also counted as differences in every object field. `observed_divergences` sums
+only available field instances, with x/y separate and orders as whole records.
+It is not a count of divergent objects or a complete-contract divergence count.
+
+**Remaining observer dependencies:** shared-l0-v2 does not expose audited runtime
+technology or population, so both domains remain null in every table. Do not
+substitute placed-object counts for population or map settings for active tech.
+Reference logical orders, normalized production queues, UI and rendering also
+remain incomplete as described above. Native execution/queue diagnostics can
+explain a candidate but cannot stand in for normalized orders. Thus even zero
+observed divergences leaves total `divergences: null` and **needs live run**.
+Technology/population observers and their normalization audit require follow-up;
+this tool deliberately does not invent offsets, bonuses or population rules.
+
+Return both run trees, tables, all logs, native JSONL, canonical bundles,
+schedules, invocation controls, frames and private setup/hash audit to the
+orchestrator. Review repeated differences across missions by domain using
+`report.json: divergence_domains`; these are leads, not established shared causes.
+Confirm the original value twice and resolve setup/identity/phase blockers before
+an engine fix. Isolate difficulty/handicap versus section overrides and scripts
+with separate controlled original repeats; retain the original campaign probe.
+
+After an authorized measured fix, preserve the before trees, rerun the exact
+collection loop with fresh `after-1` and `after-2` output paths, then compare:
+
+```sh
+for repetition in 1 2; do
+  python3 -I tools/parity_run.py $initial_ids \
+    --game /home/adrox/aztec-re/game \
+    --runtime "$PWD/build_l0_reference/aztec_recomp" \
+    --engine "$PWD/build/aztec_engine" --timeout 120 \
+    --output "$initial_probe/after-$repetition"
+  initial_status=$?
+  if [ "$initial_status" -ne 0 ] && [ "$initial_status" -ne 1 ]; then
+    exit "$initial_status"
+  fi
+done
+python3 -I tools/parity_initial.py \
+  --before "$initial_probe/before-1" "$initial_probe/before-2" \
+  --after "$initial_probe/after-1" "$initial_probe/after-2" \
+  --output "$initial_probe/after-tables"
+```
+
+`before_after_aligned` must be true before claiming any reduction: the tool
+requires unchanged reference bundles and frame bytes as well as internal repeats.
+An observer revision or changed reference settings needs a new baseline. Missing
+before/after data stays unknown. With neither input option, the tool generates
+fifteen empty pending tables for handoff. It returns 1 for this pending protocol,
+2 for CLI/output errors and never declares a full campaign pass. No captures,
+private numeric bundles or derived expectations may be committed. Public tables
+contain reviewed counts only; P/S tooling is not M original-game evidence.

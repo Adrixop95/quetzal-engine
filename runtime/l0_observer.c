@@ -232,11 +232,14 @@ void rt_l0_observe(uint32_t tick) {
   pthread_mutex_lock(&lock);
   int n = snprintf(frame_path, sizeof frame_path, "%s/tick_%u.ppm", getenv("RT_DUMP_DIR"), tick);
   if (n < 0 || (size_t)n >= sizeof frame_path) rt_fatal("L0 frame path too long");
-  pending = 1; captured = 0;
+  // L2 needs state at every tick without storing a full image for every sample.
+  // This opt-in leaves visual L0 capture and its availability contract intact.
+  int state_only = getenv("RT_L0_STATE_ONLY") && !strcmp(getenv("RT_L0_STATE_ONLY"), "1");
+  pending = !state_only; captured = 0;
   struct timespec until;
   clock_gettime(CLOCK_REALTIME, &until);
   until.tv_sec += 5;
-  while (!captured) {
+  while (!state_only && !captured) {
     if (pthread_cond_timedwait(&ready, &lock, &until)) break;
   }
   pending = 0;
