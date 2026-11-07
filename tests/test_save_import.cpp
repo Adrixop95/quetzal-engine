@@ -165,6 +165,16 @@ static void continuation() {
   w.begin_tick(); sim.tick(w);
   std::ostringstream advanced;
   CHECK(!write_original_save_snapshot(w, advanced, error) && advanced.str().empty());
+  CHECK(write_original_save_snapshot(w, advanced, error, true));
+  CHECK(advanced.str().find("\"elapsed_ticks\":1") != std::string::npos);
+  CHECK(advanced.str().find("\"saved_tick\":123") != std::string::npos);
+  CHECK(w.original_save->bytes == save.bytes);
+  std::ostringstream invalid;
+  std::swap(w.objects[0], w.objects[1]);
+  CHECK(!write_original_save_snapshot(w, invalid, error, true) && invalid.str().empty());
+  std::swap(w.objects[0], w.objects[1]);
+  w.objects.push_back(Object{});
+  CHECK(!write_original_save_snapshot(w, invalid, error, true) && invalid.str().empty());
 }
 static void synthetic() {
   Fixture f; auto save = f.decode(); auto w = base_world(); std::string error;

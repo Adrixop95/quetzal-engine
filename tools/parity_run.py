@@ -112,7 +112,8 @@ def validate_observations(s, path):
     report.compare(path, path)
 
 
-def shared_runner(s, args, directory, name):
+def shared_runner(s, args, directory, name, *, record=False, packets=None, normalize=True, state_only=False):
+    """L2 reuses the native schedule, private installation and isolated launch."""
     directory.mkdir()
     report.private_game(args.game, directory / "game")
     schedule = directory / "schedule.txt"
@@ -120,9 +121,14 @@ def shared_runner(s, args, directory, name):
     native = directory / "observations.jsonl"
     ticks = s["observe"]["ticks"][-1]
     if name == "reference":
-        require(not args.commands or not report.command_horizon(args.commands), "shared L0 does not translate command packets")
+        require(not record or packets is None, "record and replay are exclusive")
+        require(packets is not None or not args.commands or not report.command_horizon(args.commands),
+                "shared L0 does not translate command packets")
         commands = directory / "commands.txt"
         commands.write_text("")
+        if packets is not None:
+            require(report.command_horizon(packets) <= ticks, "commands exceed shared horizon")
+            shutil.copyfile(packets, commands)
         mission = s["map"]["mission"]
         navigation = (ROOT / "tests/scenarios/mission1_start.txt").read_text()
         row = 257 + 20 * (mission - 1 if mission <= 9 else mission - 10)
@@ -131,9 +137,21 @@ def shared_runner(s, args, directory, name):
             navigation = args.script.read_text()
         script = directory / "start.txt"
         script.write_text(navigation + f"\nwait {args.timeout * 1000}\nquit\n")
-        report.execute([args.runtime, directory / "game/Aztec.exe"], directory, args.timeout, dict(
-            RT_SCRIPT=str(script), RT_CMD_REPLAY=str(commands), RT_NO_GRAB="1", RT_NO_VIDEO="1",
-            RT_RESOLUTION="800x600", RT_DUMP_DIR=str(directory), RT_L0_SCHEDULE=str(schedule), RT_L0_OUTPUT=str(native)))
+        controls = dict(RT_SCRIPT=str(script), RT_NO_GRAB="1", RT_NO_VIDEO="1",
+                        RT_RESOLUTION="800x600", RT_DUMP_DIR=str(directory),
+                        RT_L0_SCHEDULE=str(schedule), RT_L0_OUTPUT=str(native))
+        if state_only:
+            controls["RT_L0_STATE_ONLY"] = "1"
+        if record or packets is not None:
+            controls.update(RT_CMD_LOG=str(directory / ("commands.txt" if record else "readback.txt")),
+                            RT_STATE_LOG=str(directory / "state.txt"))
+        if not record:
+            controls["RT_CMD_REPLAY"] = str(commands)
+        report.execute([args.runtime, directory / "game/Aztec.exe"], directory, args.timeout, controls)
+        if record or packets is not None:
+            report.state_rows(directory / "state.txt", ticks)
+        if packets is not None:
+            report.verify_packet_readback(commands, directory / "readback.txt", ticks)
     else:
         report.execute([args.engine, "--headless", "--game", directory / "game", "--rules-dir", ROOT / "docs/data",
                         "--no-auto-orders", "--max-ticks", ticks, "--l0-schedule", schedule,
@@ -143,7 +161,8 @@ def shared_runner(s, args, directory, name):
         engine = json.loads((directory / "report.json").read_text())
         require(engine["ticks"] == ticks and engine["status"] != "error" and not engine["script_errors"]
                 and not engine["unsupported_executions"], "clone did not complete supported shared L0 horizon")
-    l0.bundle(s, native, name, directory.parent / f"{name}.json")
+    if normalize:
+        l0.bundle(s, native, name, directory.parent / f"{name}.json")
     return None
 
 

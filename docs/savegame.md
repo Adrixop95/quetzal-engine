@@ -484,3 +484,71 @@ inputs/restricted networking. The final save-focused regressions and pre-commit
 gates passed, including explicit checks of the new untracked source files.
 No live reference process was launched. Status remains **needs live run**;
 the semantic mappings and audited reference observer remain open.
+
+## V16 continuation controls (2026-11-06)
+
+**S / needs live run:** task 94 builds on the present task-72 structural importer.
+Task 83 is still pending repeated reference confirmation; no new engine behavior
+or semantic importer mapping is justified by this work. No reference process or
+private game-data process was run. Retained wire state is not restored execution.
+
+`aztec_save_probe ... --ticks N` selects schema 2 for N in 0..3600. It initializes
+once, advances exactly N simulation updates without injected player commands,
+and observes before the next update/command processing. At zero the phase is
+`after_load_before_tick`; otherwise it is `after_tick_before_commands`.
+`saved_tick` remains the saved absolute tick; `elapsed_ticks` is the number of
+continued updates. The supported numeric layouts remain units, money, fog and
+clock. Camera, frontend and progression join the explicitly unsupported domains.
+The graphical loader already uses saved view coordinates, but this world-only
+observer cannot validate its final camera, zoom or front-end transitions.
+
+Schema 2 is a diagnostic of the current partial importer: restored orders,
+production, research and scripts are not executed. Differences after N updates
+can reveal consequences of those omissions; they cannot establish their cause
+without repeated original observations. New objects or reordered engine IDs
+cause observation refusal because there is no audited identity mapping for
+births. Imported dead objects remain in the unit stream as in schema 1. Extending
+the stream for live/dead membership, births and new field classes needs a new
+audited layout, not omission of unmatched objects or numeric placeholders.
+
+The comparison runner now launches two independent reference processes and two
+independent clone processes, each with a private installation and private save
+copy. Both repeats must agree before comparing programs. Different repeated
+state produces `reference_nondeterminism` or `clone_nondeterminism`; differing
+boundaries or ignored `--ticks` are failures. Offline `compare` accepts
+`--repeat-reference` and `--repeat-clone`; without both it reports `repeated=false`
+on an incomplete result. Neither schema can produce a complete match or exit
+zero. Existing schema-1 adapters still work without `--ticks`; schema-2 adapters
+must implement the exact continued-update barrier, not approximate it with waits.
+
+`campaign_save_processes` generates three distinct invented mission files named
+mission_1 through mission_3. Each has a completed trigger before the save and a
+victory trigger afterward, plus commands on both sides of the save boundary.
+Fresh-process headless continuation compares every tick from the saved boundary
+through victory, terminal hashes, command counts and script observations.
+Separate graphical processes save at tick 5 with nondefault camera/zoom, load
+through the mission shortcut, and reach victory; front-end slot selection and
+confirmation resolve the correct saved mission in another process. The test is
+registered on all platforms, including Windows, but native Windows execution
+remains pending. Invented mission numbers are not evidence for actual campaign
+missions 1-3. The test also confirms automation does not write campaign progress;
+normal-session victory/unlock/profile persistence still requires live acceptance.
+
+| Field class / acceptance | Evidence from this task | Still required |
+| --- | --- | --- |
+| Units, money, fog, clock at 0/N | S: generated saves, bounded observation and repeated comparison controls | M: real original saves, two reference runs per boundary |
+| Orders and queues | Existing structural retention only | Command, payment, remaining-time and placement mappings |
+| Research/upgrades | Existing nondefault byte retention only | Active/completed semantics and rule effects |
+| Script/timer/diplomacy | Existing graph validation/retention only | Restored execution and repeated original measurements |
+| Camera and front-end | S: AZS3 graphical save/load and slot confirmation | M: original view normalization and real campaign UI |
+| Progression | S: automation does not award progress | M: normal fresh-session finish, unlock, retry and profile persistence |
+| Missions 1-3 / platforms | S: three generated mission continuations on Linux | Real mission completion; native Windows checks; task 83 evidence |
+
+The exact external commands and return-data requirements are in
+[EXPERIMENTS.md](EXPERIMENTS.md#v16-original-save-continuation-and-missions-1-3-needs-live-run).
+Status: **needs live run**.
+
+Validation for this iteration: Release build passed; 48 of 54 CTest entries
+passed with six expected private-input/network skips. Pre-commit checks also
+passed, including explicit checks for the new untracked test. No native Windows
+or actual original-save/campaign result is claimed.

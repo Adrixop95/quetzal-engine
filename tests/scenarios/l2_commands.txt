@@ -1,0 +1,14 @@
+# Fixed scripted selection and movement attempts, captured once as lockstep packets.
+# Screen coordinates are input recipes, not assertions about selected objects.
+wait 2000
+move 40 80
+down
+wait 300
+dragto 520 450
+up
+wait 600
+rclick 420 350
+wait 3000
+rclick 250 250
+wait 3000
+rclick 450 420
