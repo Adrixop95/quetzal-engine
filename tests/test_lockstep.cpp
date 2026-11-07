@@ -115,15 +115,17 @@ static void wire_values() {
 }
 
 static void modification_mismatch() {
-  auto a = world(), b = world();
-  GameSim serial(rules()), parallel(rules(), {true}); serial.init(a); parallel.init(b);
-  require(serial.state_hash(a) != parallel.state_hash(b), "Modifications affect initial hash");
-  Lockstep x({7, 0, 0, serial.state_hash(a)}), y({7, 1, 0, parallel.state_hash(b)});
-  require(x.submit({}) && y.submit({}), "Seal modification mismatch test");
-  for (const auto& packet : x.packets()) y.receive(packet);
-  for (const auto& packet : y.packets()) x.receive(packet);
-  require(x.desync() && y.desync(), "Reject mismatching modification sets at handshake");
-  require(!x.step(serial, a) && !y.step(parallel, b), "Reject before simulation advances");
+  for (Modifications mods : {Modifications{true}, Modifications{false, false, 3}, Modifications{false, false, 0}}) {
+    auto a = world(), b = world();
+    GameSim serial(rules()), parallel(rules(), mods); serial.init(a); parallel.init(b);
+    require(serial.state_hash(a) != parallel.state_hash(b), "Modifications affect initial hash");
+    Lockstep x({7, 0, 0, serial.state_hash(a)}), y({7, 1, 0, parallel.state_hash(b)});
+    require(x.submit({}) && y.submit({}), "Seal modification mismatch test");
+    for (const auto& packet : x.packets()) y.receive(packet);
+    for (const auto& packet : y.packets()) x.receive(packet);
+    require(x.desync() && y.desync(), "Reject mismatching modification sets at handshake");
+    require(!x.step(serial, a) && !y.step(parallel, b), "Reject before simulation advances");
+  }
 }
 
 static void desync() {

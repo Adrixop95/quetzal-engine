@@ -42,7 +42,7 @@ int main(int argc, char** argv) {
   CHECK(mod_options.modifications.relaxed_placement);
   CHECK(load_modifications(mod_options.modifications_file, persisted));
   CHECK(persisted.parallel_construction && persisted.relaxed_placement);
-  auto unstick_rect = ModificationOptions::row(4, 800, 600, 1);
+  auto unstick_rect = ModificationOptions::row(6, 800, 600, 1);
   mod_click.mx = unstick_rect.x + 2; mod_click.my = unstick_rect.y + 2;
   mod_menu.update(mod_click, mod_options, 800, 600, 1);
   CHECK(mod_options.modifications.unit_unstick);
@@ -63,14 +63,39 @@ int main(int argc, char** argv) {
   write(root / "legacy-modifications.ini", "parallel_construction=on\n");
   CHECK(load_modifications((root / "legacy-modifications.ini").string(), persisted));
   CHECK(persisted.parallel_construction && !persisted.relaxed_placement && !persisted.unit_unstick);
-  for (uint32_t bits = 0; bits < 8; ++bits) {
-    CHECK(Modifications::valid(bits) && Modifications::from_bits(bits).bits() == bits);
+  for (uint32_t bits = 0; bits < 128; ++bits) {
+    const bool valid = (bits & 63u) < 36;
+    CHECK(Modifications::valid(bits) == valid);
+    if (valid) CHECK(Modifications::from_bits(bits).bits() == bits);
   }
-  CHECK(!Modifications::valid(8));
+  CHECK(!Modifications::valid(128) && !Modifications::valid(0xffffffffu));
   CHECK(Modifications::from_bits(2).relaxed_placement && !Modifications::from_bits(2).unit_unstick);
-  CHECK(Modifications::from_bits(4).unit_unstick && !Modifications::from_bits(4).relaxed_placement);
-  mod_rect = ModificationOptions::row(6, 800, 600, 1);
-  mod_click.mx = mod_rect.x + 2; mod_click.my = mod_rect.y + 2;
+  CHECK(Modifications::from_bits(64).unit_unstick && !Modifications::from_bits(64).relaxed_placement);
+  CHECK(Modifications::from_bits(64).parallel_training == 1);
+  CHECK(persisted.parallel_training == 1);
+  for (int value = 2; value <= 9; ++value) {
+    const int setting = value % 9;
+    auto training_row = ModificationOptions::row(4, 800, 600, 1);
+    mod_click.mx = training_row.x + 2; mod_click.my = training_row.y + 2;
+    mod_menu.update(mod_click, mod_options, 800, 600, 1);
+    CHECK(mod_options.modifications.parallel_training == setting);
+    CHECK(load_modifications(mod_options.modifications_file, persisted));
+    CHECK(persisted.parallel_training == setting);
+    CHECK(persisted.parallel_construction && persisted.relaxed_placement && persisted.unit_unstick);
+    CHECK(Modifications::valid(persisted.bits()));
+    CHECK(Modifications::from_bits(persisted.bits()).parallel_training == setting);
+  }
+  CHECK(persisted.set("parallel_training=per building") && persisted.parallel_training == 0);
+  CHECK(persisted.set("parallel_training=per-building") && persisted.parallel_training == 0);
+  CHECK(persisted.set("parallel_training=off") && persisted.parallel_training == 1);
+  for (const char* invalid : {"0", "9", "-1", "2junk", "", "on", "01"})
+    CHECK(!persisted.set(std::string("parallel_training=") + invalid) && persisted.parallel_training == 1);
+  args = {"engine", "--mod", "parallel_training=3", "--modifications-file", mod_path};
+  raw.clear(); for (auto& arg : args) raw.push_back(arg.data());
+  CHECK(parse_options(int(raw.size()), raw.data(), parsed_mods, parse_error, usage));
+  CHECK(parsed_mods.modifications.parallel_training == 3 && parsed_mods.modifications.unit_unstick);
+  auto back_row = ModificationOptions::row(8, 800, 600, 1);
+  mod_click.mx = back_row.x + 2; mod_click.my = back_row.y + 2;
   mod_menu.update(mod_click, mod_options, 800, 600, 1);
   CHECK(!mod_menu.open);
   GameData data; std::string error; CHECK(data.open(root.string(), error));

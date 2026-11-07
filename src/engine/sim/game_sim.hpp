@@ -100,6 +100,8 @@ class GameSim : public Simulation {
   }
   void apply(World& w, const Command& c);
   void economy(World& w);
+  int training_producer(const World& w, int town, int type) const;
+  int training_capacity(const World& w, int town, int producer) const;
   void maintain_town_marks(World& w);
   void service_towns(World& w);
   bool mark_eligible(const Object& o, const TownState& town) const;

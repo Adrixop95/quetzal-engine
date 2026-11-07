@@ -55,6 +55,23 @@ void GameSim::run_ai(World& w) {
       offers.push_back(offer);
     }
     auto decision = ai::step(w, *rules_, int(ti), state, offers);
+    // With the global modification enabled, fill a training batch from the
+    // planner's existing target. Preserve its composition and spending limits.
+    if (modifications_.parallel_training != 1) {
+      std::vector<Command> batch;
+      for (const auto& c : decision.commands) {
+        batch.push_back(c);
+        if (c.type != Pct::Build || rules_->type(c.a).structure) continue;
+        const int capacity = training_capacity(w, int(ti), training_producer(w, int(ti), c.a));
+        int price = 0;
+        for (const auto& offer : offers) if (offer.type == c.a) price = offer.price;
+        const int affordable = price > 0 ? w.side_state[town.side].money / price : capacity;
+        const int count = std::max(1, std::min({capacity, affordable, decision.next.remaining + 1, kProductionQueueCapacity}));
+        for (int i = 1; i < count; ++i) batch.push_back(c);
+        decision.next.remaining -= count - 1;
+      }
+      decision.commands = std::move(batch);
+    }
     w.ai_towns[ti] = std::move(decision.next);
     for (const auto& c : decision.commands) {
       const size_t queued = w.side_state[town.side].queue.size();

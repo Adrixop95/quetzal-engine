@@ -518,7 +518,7 @@ void AudioOptions::draw(SDL_Renderer* r, const Font& font, const Options& o, int
 }
 
 SDL_Rect ModificationOptions::row(int i, int w, int h, int sc) {
-  return {(w - std::min(w - 16, 600 * sc)) / 2, h / 2 - 150 * sc + i * 50 * sc,
+  return {(w - std::min(w - 16, 600 * sc)) / 2, h / 2 - 180 * sc + i * 45 * sc,
           std::min(w - 16, 600 * sc), 36 * sc};
 }
 void ModificationOptions::update(const Input& in, Options& options, int w, int h, int sc) {
@@ -526,22 +526,27 @@ void ModificationOptions::update(const Input& in, Options& options, int w, int h
   if (in.hit(SDL_SCANCODE_ESCAPE)) open = false;
   if (!in.pressed[SDL_BUTTON_LEFT]) return;
   SDL_Point point{in.mx, in.my};
-  auto toggle = row(0, w, h, sc), relaxed = row(2, w, h, sc), unstick = row(4, w, h, sc), back = row(6, w, h, sc);
+  auto toggle = row(0, w, h, sc), relaxed = row(2, w, h, sc);
+  auto training = row(4, w, h, sc), unstick = row(6, w, h, sc), back = row(8, w, h, sc);
+  bool changed = false;
   if (SDL_PointInRect(&point, &toggle)) {
     options.modifications.parallel_construction = !options.modifications.parallel_construction;
-    if (!save_modifications(options.modifications_file, options.modifications))
-      std::fprintf(stderr, "Cannot persist game modifications\n");
+    changed = true;
   }
   if (SDL_PointInRect(&point, &relaxed)) {
     options.modifications.relaxed_placement = !options.modifications.relaxed_placement;
-    if (!save_modifications(options.modifications_file, options.modifications))
-      std::fprintf(stderr, "Cannot persist game modifications\n");
+    changed = true;
+  }
+  if (SDL_PointInRect(&point, &training)) {
+    options.modifications.parallel_training = (options.modifications.parallel_training + 1) % 9;
+    changed = true;
   }
   if (SDL_PointInRect(&point, &unstick)) {
     options.modifications.unit_unstick = !options.modifications.unit_unstick;
-    if (!save_modifications(options.modifications_file, options.modifications))
-      std::fprintf(stderr, "Cannot persist game modifications\n");
+    changed = true;
   }
+  if (changed && !save_modifications(options.modifications_file, options.modifications))
+    std::fprintf(stderr, "Cannot persist game modifications\n");
   if (SDL_PointInRect(&point, &back)) open = false;
 }
 void ModificationOptions::draw(SDL_Renderer* r, const Font& font, const Options& options, int w, int h, int sc) const {
@@ -552,18 +557,23 @@ void ModificationOptions::draw(SDL_Renderer* r, const Font& font, const Options&
   SDL_SetRenderDrawColor(r, 55, 42, 25, 255); SDL_RenderFillRect(r, &rect);
   font.draw(r, rect.x + 8 * sc, rect.y + 8 * sc,
       std::string("Parallel construction: ") + (options.modifications.parallel_construction ? "on" : "off"), 2 * sc, {245, 230, 200, 255});
-  font.draw(r, rect.x, rect.y + 45 * sc, "Buildings progress together; units train one at a time.", sc, {245, 230, 200, 255});
+  font.draw(r, rect.x, rect.y + 45 * sc, "Buildings progress independently of the town queue.", sc, {245, 230, 200, 255});
   auto relaxed = row(2, w, h, sc);
   SDL_SetRenderDrawColor(r, 55, 42, 25, 255); SDL_RenderFillRect(r, &relaxed);
   font.draw(r, relaxed.x + 8 * sc, relaxed.y + 8 * sc,
       std::string("Relaxed placement: ") + (options.modifications.relaxed_placement ? "on" : "off"), 2 * sc, {245, 230, 200, 255});
   font.draw(r, relaxed.x, relaxed.y + 45 * sc, "Allow map objects and ignore building clearance.", sc, {245, 230, 200, 255});
-  auto unstick = row(4, w, h, sc);
-  SDL_RenderFillRect(r, &unstick);
+  auto training = row(4, w, h, sc);
+  SDL_SetRenderDrawColor(r, 55, 42, 25, 255); SDL_RenderFillRect(r, &training);
+  font.draw(r, training.x + 8 * sc, training.y + 8 * sc,
+      "Parallel training: " + options.modifications.training_value(), 2 * sc, {245, 230, 200, 255});
+  font.draw(r, training.x, training.y + 45 * sc, "Units at once per town; applies to every side. 1 = off.", sc, {245, 230, 200, 255});
+  auto unstick = row(6, w, h, sc);
+  SDL_SetRenderDrawColor(r, 55, 42, 25, 255); SDL_RenderFillRect(r, &unstick);
   font.draw(r, unstick.x + 8 * sc, unstick.y + 8 * sc,
       std::string("Unit unstick: ") + (options.modifications.unit_unstick ? "on" : "off"), 2 * sc, {245, 230, 200, 255});
   font.draw(r, unstick.x, unstick.y + 45 * sc, "Repath, yield and relocate stalled units.", sc, {245, 230, 200, 255});
-  auto back = row(6, w, h, sc);
+  auto back = row(8, w, h, sc);
   font.draw(r, back.x, back.y, "Back", 2 * sc, {245, 230, 200, 255});
 }
 

@@ -414,7 +414,7 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
       const auto& q = ss.queue[index];
       Command c; c.type = Pct::QueueKill; c.side = uint8_t(w.local_side);
       c.a = int(index);
-      if (in.shift && q.tile_x >= 0 && q.started) {
+      if (in.shift && q.started) {
         c.type = Pct::PauseBuild; c.a = !q.paused; c.b = int(index) + 1;
         if (auto id = production_member(w, town)) c.ids = {id};
       }
@@ -531,8 +531,7 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
   if (ss) {
     const QueueItem* active = !queue.empty() && ss->queue[queue.front()].started ? &ss->queue[queue.front()] : nullptr;
     const char* label = queue.empty() ? "Queue empty" : !active ? "Waiting for production" :
-                        active->paused ? (active->tile_x >= 0 ? "Resume item" : "Resume town") :
-                        active->tile_x >= 0 ? "Pause item" : "Pause town";
+                        active->paused ? "Resume item" : "Pause item";
     font.draw(r, l.pause.x, l.pause.y, label, ts, {220, 225, 185, 255});
     if (!queue.empty() && contains(l.pause, mx, my)) tip = std::string(label) + "\nScroll to view waiting orders";
     const size_t offset = queue_town_ == town ? size_t(std::clamp(queue_offset_, 0, std::max(0, int(queue.size()) - 8))) : 0;
@@ -544,14 +543,14 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
       SDL_Rect bar{rect.x, rect.y + rect.h - 3 * sc, rect.w * pct / 100, 3 * sc};
       SDL_SetRenderDrawColor(r, 90, 210, 90, 255); SDL_RenderFillRect(r, &bar);
       border(r, rect, contains(rect, mx, my));
-      if (q.tile_x >= 0 && q.started) {
+      if (q.started) {
         SDL_Rect status{rect.x + sc, rect.y + sc, 3 * sc, 3 * sc};
         SDL_SetRenderDrawColor(r, q.paused ? 230 : 90, q.paused ? 180 : 210, 90, 255);
         SDL_RenderFillRect(r, &status);
       }
       if (contains(rect, mx, my)) tip = type_display_name(strings, q.type) + " " + std::to_string(pct) + "%\nTime remaining: " + std::to_string(q.remaining) + "\nClick to cancel; refund: " + std::to_string(q.refund()) + (q.paused ? "\nPaused" : !q.started ? "\nWaiting; unpaid" : "") + "\nScroll to view waiting orders";
-      if (contains(rect, mx, my) && q.tile_x >= 0 && q.started)
-        tip += q.paused ? "\nShift-click to resume construction" : "\nConstruction in progress; Shift-click to pause";
+      if (contains(rect, mx, my) && q.started)
+        tip += q.paused ? "\nShift-click to resume item" : "\nIn progress; Shift-click to pause";
     }
   }
   if (wants_left_click() && tip.empty()) tip = placing_ >= 0 ? "Place building: click terrain\nRight-click or Escape cancels" : mode_ == TargetMode::Move ? "Move: click a destination\nRight-click or Escape cancels" : "Attack: click enemy or terrain\nRight-click or Escape cancels";

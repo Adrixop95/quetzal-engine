@@ -23,9 +23,9 @@ unit_unstick=on
 
 Graphical CLI settings override the persisted file. As with parallel construction,
 headless runs use explicit CLI settings and default off; they do not load the
-menu's persisted file. Modification mask `0x4` records this option in initial save
+menu's persisted file. Modification mask `0x40` records this option in initial save
 settings and subsequent `SetModifications` commands; `0x2` remains assigned to
-relaxed placement. Replays restore it and
+relaxed placement; bits 2–5 encode parallel training. Replays restore it and
 mid-session toggles deterministically. No save format version change is needed;
 older binaries correctly reject saves containing the newly assigned bit.
 

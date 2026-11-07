@@ -672,6 +672,25 @@ void GameSim::service_towns(World& w) {
 
 // ---- economy -----------------------------------------------------------------------------------------------------
 
+// The first town-local structure prerequisite is the producer; side-wide
+// prerequisites unlock technology. Units without one use the town hall.
+int GameSim::training_producer(const World& w, int town, int type) const {
+  const auto& td = w.mission.towns[size_t(town)];
+  for (const auto& recipe : rules_->build_list(td.race, td.type)) if (recipe.type == type)
+    for (const auto& need : recipe.prereq)
+      if (!need.side_wide && rules_->type(need.type).structure) return need.type;
+  return rules_->town_building(td.type, td.race);
+}
+
+int GameSim::training_capacity(const World& w, int town, int producer) const {
+  if (modifications_.parallel_training != 0) return modifications_.parallel_training;
+  const auto& td = w.mission.towns[size_t(town)];
+  return int(std::count_if(w.objects.begin(), w.objects.end(), [&](const auto& o) {
+    return o.alive && !o.removed && o.side == td.side && o.town == td.index &&
+        o.type == producer && o.progress >= 1000;
+  }));
+}
+
 bool GameSim::menu_ok(const World& w, int side, const BuildItem& it, int town, const char** why, const QueueItem* reservation) const {
   const SideDef* sd = nullptr;
   for (const SideDef& s : w.mission.sides) if (s.index == side) sd = &s;
@@ -695,7 +714,12 @@ bool GameSim::menu_ok(const World& w, int side, const BuildItem& it, int town, c
   }
   // Only map-construction entries reserve a single structure of their type.
   // Queued farms, mines and defences remain repeatable; upgrades have their own guard above.
-  if (it.construct) {
+  bool repeat_producer = false;
+  if (modifications_.parallel_training == 0 && it.construct)
+    for (const auto& recipe : rules_->build_list(td.race, td.type))
+      if (!rules_->type(recipe.type).structure && training_producer(w, town, recipe.type) == it.type)
+        repeat_producer = true;
+  if (it.construct && !repeat_producer) {
     for (const Object& o : w.objects)
       if ((!reservation || o.id != reservation->object) && !o.removed && o.alive && o.side == side && o.town == td.index && o.type == it.type) {
         *why = "already built"; return false;
@@ -840,9 +864,11 @@ void GameSim::economy(World& w) {
   std::vector<uint32_t> completed;
   for (size_t s = 0; s < w.side_state.size(); s++) {
     SideState& ss = w.side_state[s];
-    // Stable insertion order arbitrates shared cash. Only the enabled modification
-    // gives buildings independent timers; the default keeps one lane per town.
+    // Stable insertion order arbitrates cash and capacity. Keep the original
+    // serial branch intact when training is off, including same-tick handover.
     std::vector<int> advanced;
+    std::map<int, int> trainees;
+    std::map<std::pair<int, int>, int> producers;
     for (size_t i = 0; i < ss.queue.size();) {
       QueueItem& q = ss.queue[i];
       if (q.object) {
@@ -851,8 +877,20 @@ void GameSim::economy(World& w) {
       }
       const bool construction = modifications_.parallel_construction && rules_->type(q.type).structure &&
           upgrade_level(w.mission.towns[size_t(q.town)].race, q.type) < 0;
-      if (!construction) {
-        if (std::find(advanced.begin(), advanced.end(), q.town) != advanced.end()) { ++i; continue; }
+      const bool training = modifications_.parallel_training != 1 && !rules_->type(q.type).structure;
+      const int producer = training ? training_producer(w, q.town, q.type) : -1;
+      const auto group = std::make_pair(q.town, producer);
+      if (training) {
+        if (std::find(advanced.begin(), advanced.end(), q.town) != advanced.end() ||
+            (modifications_.parallel_training == 0 ? producers[group] : trainees[q.town]) >=
+                training_capacity(w, q.town, producer)) { ++i; continue; }
+        ++trainees[q.town]; ++producers[group];
+      } else if (!construction) {
+        if (trainees[q.town] > 0 || std::find(advanced.begin(), advanced.end(), q.town) != advanced.end()) {
+          // An ordinary building is a FIFO barrier between training batches.
+          if (trainees[q.town] > 0) advanced.push_back(q.town);
+          ++i; continue;
+        }
         advanced.push_back(q.town);
       }
       const Object* hall = town_hall(w, q.town);
@@ -932,7 +970,8 @@ void GameSim::economy(World& w) {
         const int town = q.town;
         ss.queue.erase(ss.queue.begin() + i);
         // Completing the current object frees this town's lane immediately.
-        if (!construction)
+        if (training) { --trainees[town]; --producers[group]; }
+        else if (!construction)
           advanced.erase(std::remove(advanced.begin(), advanced.end(), town), advanced.end());
       } else ++i;
     }
