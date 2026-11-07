@@ -301,6 +301,8 @@ if(Python3_Interpreter_FOUND)
   set_tests_properties(determinism_processes PROPERTIES LABELS "unit" TIMEOUT 150)
   add_test(NAME parity_controls COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tools/parity_report.py self-test)
   set_tests_properties(parity_controls PROPERTIES LABELS "unit" TIMEOUT 20)
+  add_test(NAME parity_l2 COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_l2.py)
+  set_tests_properties(parity_l2 PROPERTIES LABELS "unit;parity" TIMEOUT 20)
   if(UNIX)
     add_test(NAME handoff_tools COMMAND ${Python3_EXECUTABLE} -I
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_handoff_tools.py)

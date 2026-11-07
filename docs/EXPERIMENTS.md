@@ -119,6 +119,105 @@ rule, including state-hash coverage for any new flight or burn state. Keep
 unmeasured weapon families explicitly unresolved.
 
 
+## L2 whole-mission command replay run sheet (task 85, needs live run)
+
+**S / synthetic:** `tools/parity_report.py missions` records scripted input for
+missions 1, 2 and 3, then replays each packet log twice through the shared runner.
+It validates packet readback and contiguous before-command observations, compares
+raw reference pool hashes, then hashes canonical comparable simulation fields and
+reports the first differing tick/object/field. Reference raw hashes and clone
+hashes have different representations; they are never compared directly.
+**P / needs live run:** no reference commands were executed in the sandbox, no
+mission log or repeated measurement was obtained, and no engine rule was changed.
+Task 83 is present in this checkout, but its normalized orders/queues and creation
+identity dependencies remain incomplete. The clone packet translator is absent.
+
+Run outside the sandbox, from this worktree, with the existing private generated
+sources used only to rebuild the hand-written reference host:
+
+```sh
+cmake -S . -B build_l2_reference -DCMAKE_BUILD_TYPE=Release \
+  -DAZTEC_GEN_DIR=/home/adrox/aztec-re/work/gen
+cmake --build build_l2_reference --target aztec_recomp --parallel 2
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR= -DGAME_DIR=
+cmake --build build --parallel 2
+ctest --test-dir build -R 'parity_l2|parity_controls|parity_scenarios|shared_l0' --output-on-failure
+python3 -I tools/parity_report.py missions \
+  --game /home/adrox/aztec-re/game \
+  --runtime "$PWD/build_l2_reference/aztec_recomp" \
+  --engine "$PWD/build/aztec_engine" --ticks 720 --timeout 300 \
+  --output "$PWD/work/parity/l2-missions-01"
+```
+
+The last command returns nonzero for blocked or failed experiments, retaining a
+separate `m1`, `m2`, `m3` result even if an earlier mission fails. Keep each output
+directory and choose a fresh suffix for every iteration. The initial 720-tick
+horizon is a diagnostic prefix, not a winning route or whole-mission acceptance.
+To request twenty minutes per mission, use the same command with
+`--ticks 14400 --timeout 1800 --output "$PWD/work/parity/l2-missions-20min-01"`.
+Early outcomes or missing ticks fail horizon validation; reaching the log end
+does not prove mission victory. The schedule supports at most 100000 ticks.
+
+`tests/scenarios/l2_commands.txt` supplies fixed selection/movement attempts after
+mission-specific navigation. Input is recorded once as actual frame/side packets;
+wall-clock click delays do not establish deterministic input ticks. Both replays
+use the exact recorded packets and navigation only. An empty/action-free log is
+`blocked_input_coverage`, never proof of command replay. The original recording
+is preserved; `commands.txt` contains its unmodified packet prefix through the
+explicit horizon. `inputs.json` records byte SHA-256 digests of that prefix,
+the recording script and both binaries. This makes the captured log reproducible
+as a replay input; independent recordings need not be byte-identical.
+
+Every reference process runs with dummy SDL video/audio inside `unshare -rn`,
+with fail-closed loopback setup and a timeout. Each process gets immutable asset
+symlinks and copied Maps, Saves and profile/configuration files. The shared
+observer uses `RT_L0_STATE_ONLY=1` to avoid per-tick images; frames remain explicitly
+unavailable. The fixed camera is still applied at each observation. This mode has
+synthetic state-equivalence coverage, not a live timing-neutrality measurement.
+
+Return these files privately, never in a commit:
+
+- `report.json`, each `diff.json`, `inputs.json`, `scenario.json`, recording
+  script and `commands.txt`;
+- `record/reference` and both `replay-N/reference` directories, including native
+  observations, state hashes, commands/readback, invocation and process logs;
+- normalized bundles, `pool-differences.json`, `reference-repeat.json`,
+  `reference-hashes.json` and any `state-hashes.json`.
+
+Raw pool differences stop clone comparison, including when declared semantic
+fields repeat. If creation or native-handle reuse prevents normalization, both
+reference replays and their raw hash comparison are retained and identity coverage
+is reported as blocked. Normalized hashes exclude unavailable orders, queues or
+fractional positions, explicitly listing the exclusions at each tick. They omit
+render/UI state and reference-only diagnostics. Partial equality is never a full
+observed-contract pass, and these hashes do not cover all hidden simulation state.
+
+Without a translator, the expected next verdict is `blocked_command_translation`
+after repeated reference observations, or an earlier observation/identity blocker.
+No clone command run is substituted with a no-input run. Once an audited adapter
+exists, repeat the command into a fresh directory adding
+`--engine-adapter /absolute/path/to/audited-adapter`. The adapter receives
+`--engine BIN --game PRIVATE_COPY --scenario SPEC --commands PACKETS --output BUNDLE`
+inside dummy SDL and `unshare -rn`; it must translate every packet without
+retiming, use the declared per-tick schedule, isolate profile writes and emit a
+validated `shared-l0-v2` clone bundle. There is no implementation of this adapter
+in this checkout, and the option is not a claim of working clone packet replay.
+
+For each live iteration record the first divergence, cause class and evidence,
+then the last equal tick before and after a fix. `observed_equal_through_tick`
+describes the comparable projection only; `complete_observed_contract` also
+requires orders, queues and fractional positions. Retain the first known
+difference even when other domains are blocked. Do not infer an HP or movement
+cause solely from its field name. Confirm each behavior measurement in both
+reference runs before changing the clone; rerun all three missions after a fix.
+`fix_iterations` is currently empty: no measured fix or before/after tick exists.
+
+Still requiring measurement: complete reference logical orders and production
+queue semantics; object creation/generation identity; oracle packet translation
+and target identity; initial HP modifier provenance; mission-start movement and
+script/order timing; hidden state/RNG coverage; successful mission-end routes.
+The task remains **needs live run**.
+
 ## Packet replay and determinism audit
 
 The current parity runner requires a rebuilt private reference runtime that logs
