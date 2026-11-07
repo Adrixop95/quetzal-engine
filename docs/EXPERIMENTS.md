@@ -2247,6 +2247,156 @@ assets, screenshots and other captured data under ignored `work/`. Update L7
 paired counts only after reviewing actual `ID-reference/diff.json` results;
 pending routes and synthetic oracle fixtures add no live parity results.
 
+## V06/V10 groups, tactics and difficulty run sheet (task 90, needs live run)
+
+Evidence: **P** scenario recipes in `tests/parity/tactics.json`, **S** diagnostic
+and comparator controls in `tactic_measure`. No original process was launched
+for this task in the sandbox. No M evidence or engine policy correction is
+claimed. Task 73's shared raw-brightness visibility consumer is in this checkout;
+its aligned reference selection/picking adapter is still missing. V02/task 64
+packet/input normalization, a reference tactic/selection observer, and a global
+settings adapter remain prerequisites. The work below is independent of those
+missing adapters.
+
+Run these commands from this worktree on the orchestrator host. Each command
+uses a fresh private location; retain earlier results and change the suffix for
+subsequent attempts. Never run against the shared writable installation.
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR=
+cmake --build build --parallel 2
+ctest --test-dir build -R 'tactic_measure|engine_unit|render_contracts|oracle_packets' --output-on-failure
+mkdir -p work/parity/tactics-90
+python3 -I tools/tactic_measure.py plan > work/parity/tactics-90/plan.json
+python3 - <<'PY'
+from pathlib import Path
+import shutil
+source = Path('/home/adrox/aztec-re/game')
+private = Path('work/parity/tactics-90/game')
+private.mkdir(exist_ok=False)
+(private / 'Maps').mkdir()
+(private / 'Saves').mkdir()
+for name in ('Aztec.exe', 'Res', 'Video', 'Music', 'Campaign'):
+    if (source / name).exists():
+        (private / name).symlink_to((source / name).resolve())
+for item in source.iterdir():
+    if item.is_file() and item.suffix.lower() in ('.ini', '.plr', '.cfg'):
+        shutil.copy2(item, private / item.name)
+for item in (source / 'Maps').iterdir():
+    if item.name.lower().startswith('mission_14.'):
+        shutil.copy2(item, private / 'Maps' / item.name)
+PY
+python3 tools/make_testmaps.py --game work/parity/tactics-90/game
+```
+
+First collect a **diagnostic loading/idle control**. This generated battle has
+many actors and active computer logic; it is not an isolated acquisition or
+population experiment. The commands below do not execute the semantic plan.
+`RT_UNIT_EVERY=1` is essential, but unit logs alone cannot expose control groups,
+selection, true scan events, tactic origin/bounds, attachment graphs or global
+settings. The existing millisecond menu route only starts the map. Record its
+commands for auditing; do not use its sleep durations as simulation tick input.
+
+```sh
+for repeat in a b; do
+  ZSTAT_GAME_DIR="$PWD/work/parity/tactics-90/game" \
+  ZSTAT_RUNTIME=/home/adrox/aztec-re/build/aztec_recomp \
+  RT_UNIT_EVERY=1 \
+  RT_CMD_LOG="$PWD/work/parity/tactics-90/reference-$repeat/commands.log" \
+  RT_STATE_LOG="$PWD/work/parity/tactics-90/reference-$repeat/state.log" \
+    sh tools/zstat_run.sh ztest_battle \
+      "work/parity/tactics-90/reference-$repeat" 20000
+ done
+for repeat in a b; do
+  mkdir "work/parity/tactics-90/clone-$repeat"
+  timeout -s KILL 60 unshare -rn env \
+    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+    AZTEC_USER_DIR="$PWD/work/parity/tactics-90/clone-$repeat/profile" \
+    build/aztec_engine --headless --game "$PWD/work/parity/tactics-90/game" \
+    --rules-dir "$PWD/docs/data" --no-auto-orders --max-ticks 240 \
+    --tactic-trace "$PWD/work/parity/tactics-90/clone-$repeat/tactics.jsonl" \
+    --tick-hashes "$PWD/work/parity/tactics-90/clone-$repeat/hashes.txt" \
+    --report "$PWD/work/parity/tactics-90/clone-$repeat/report.json" ztest_battle
+ done
+```
+
+`zstat_run.sh` gives each original process another private copy with ordinary
+Maps/Saves and copied profiles, both dummy SDL drivers, a kill timeout and
+`unshare -rn` with mandatory loopback setup. A namespace/setup failure is a
+failed experiment. Never remove isolation to bypass it. Review whether the
+supplied binary supports the requested observers before collecting live data;
+rebuild privately using the shared-L0 procedure above if necessary. The new
+clone observer does not supply the missing original observer.
+
+Then realize every plan case using the audited input adapter when available.
+Until it exists, these are explicit blockers, not silently omitted scenarios:
+
+1. Prepare separate controlled copies of `ztest_battle` with just the required
+   actors and distant halls. Freeze actual coordinates, terrain/passability,
+   ownership/diplomacy, AI, mission triggers, sight/daylight, cash, technology,
+   town speed and private RNG setup. A generated placement can move to clear
+   terrain; record the actual manifest, not the requested grid position.
+2. Script each recipe at scenario ticks 12/24/36/48 as specified, all four modes,
+   every actual global difficulty setting, and independent map Difficulty 0/100
+   controls. Record the native packet/readback and its resulting selection/order
+   transition. Empty selection, duplicate IDs, invalid/foreign tactics, modifiers,
+   group replacement/death/owner change, follow chains/cycles and stop/move
+   cancellation need separate controls. Engine command field conventions are
+   not a reference wire payload specification. `--orders` currently accepts only
+   move/attack-move; it cannot execute the other recipes.
+3. For acquisition, sweep both group shape and member/target displacement,
+   reveal tick, insertion order, target HP and allied incoming damage. Sweep all
+   edges/corners by one pixel, including the inspected 4/6/8-tile candidates,
+   and distinguish sight, pursuit, coarse scan bounds and firing reach. Observe
+   actual scans/assignments: intervals between changed targets alone do not
+   reveal scan intervals. Repeat idle, moving, under attack, grouped and building
+   targets. Keep the inspected 100-entry assignment storage separate from
+   population. The inspected randomized cadence is a hypothesis for this task,
+   not a measured replacement for the four-tick engine policy.
+4. Exercise click, drag, group recall and tactic selection separately at unseen,
+   explored-only, brightness 32/33 and fractional-above-32 positions, for owned
+   and foreign objects. Repeat scout departure/death, day/night and each viewer.
+   A raw visibility gate is not an ownership, liveness or complete selection
+   predicate. Keep native picking/selection observations alongside the gate.
+5. Test production around the listed population counts for human/computer sides
+   with cash, prerequisites, space, queue capacity and time held constant. Record
+   accepted/rejected requests, payment, births/deaths, queue and completed-type
+   counts. Separate global settings from the map Difficulty editor key. Compare
+   initial/max HP, damage/reload, movement, production price/time and income;
+   no observed birth or unchanged statistic proves a universal cap or bonus.
+6. Obtain two independent original captures and a clone capture for every frozen
+   control, ticks 1..240 inclusive at `before_commands`. Bind the actual map,
+   common controlled setup, acknowledged packets, global settings and reviewed
+   normalization document with SHA-256 hashes. Audit clock conversion, canonical
+   creation identities, coordinate units, tactic IDs, logical orders and queues.
+   Never match by nearest object or native pool ID. Tick 1 precedes tick-1 commands;
+   their results appear at tick 2. Confirm this boundary in the original.
+
+After the adapters emit complete private `tactics-v1` bundles (contract below),
+the exact comparison command for a single frozen control is:
+
+```sh
+python3 -I tools/tactic_measure.py compare \
+  --reference work/parity/tactics-90/idle-in-range-mode-3/reference-a.json \
+              work/parity/tactics-90/idle-in-range-mode-3/reference-b.json \
+  --clone work/parity/tactics-90/idle-in-range-mode-3/clone.json \
+  --output work/parity/tactics-90/idle-in-range-mode-3/comparison
+```
+
+Use the corresponding paths for every expanded case. Missing bundles return 77
+and an explicit `needs live run` report. Invalid/incomplete bundles return 2;
+unstable original repeats return 77; a stable first difference returns 1;
+matching observed fields returns 0. No output directory is reused. Randomized
+scans can prevent exact repeatability: retain both traces, align controlled RNG
+or design an audited repeated distribution experiment before claiming a scan
+law. Do not introduce a timing tolerance or pick a favorable original run.
+
+Return private raw logs, input/readback, runtime identity, setup/settings/map
+fingerprints, the normalization audit, all normalized bundles and `diff.json`.
+Only a divergence repeated in the original and attributable to the controlled
+mechanic can justify a behavior correction with synthetic boundary/replay tests.
+No captures, derived data, generated maps or executable-derived code belong in
+the public repository. Status: **needs live run**.
 ## V13 render and animation run sheet (task 93, needs live run)
 
 Evidence: **SYN/P** for the comparator and existing invented renderer contracts;

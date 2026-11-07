@@ -438,6 +438,66 @@ images are validated before the first differing tick/field or exact pixel count
 is reported. Digest equality records a claimed alignment, not proof that an
 adapter obeyed it; synthetic equality never establishes reference parity.
 
+## V06/V10 tactics comparison (task 90)
+
+`tests/parity/tactics.json` contains P recipes expanded by
+`python3 -I tools/tactic_measure.py plan` into 84 mode/case combinations. Each
+case still requires actual global-difficulty enumeration and its one-variable
+sweeps. These recipes are not accepted by the shared L0 runner. The packet,
+settings and original tactic/selection adapters remain pending; task 73's shared
+visibility gate is present. See the [live run sheet](../../docs/EXPERIMENTS.md#v06v10-groups-tactics-and-difficulty-run-sheet-task-90-needs-live-run).
+
+`--headless --tactic-trace FILE` writes engine-local JSONL `engine-tactics-v1`:
+a header with schema 1, origin `engine`, phase `before_commands`, position scale
+256, first tick 1 and the requested last tick; one snapshot before each tick's
+commands; then an `event: "end"` marker with the actual final simulation tick.
+Resume is rejected. Early termination or fewer rows than the horizon is
+incomplete. The trace includes typed, unremoved objects (including retained
+corpses), every side's command selection/groups/queue, and visibility eligibility
+for every side. Object `x/y` use fixed-point pixels, destinations use whole
+pixels. `visible` calls the shared task 73 gate; liveness and ownership remain
+separate fields. `units` counts living typed nonstructures, `structures` counts
+living structures; neither count is a claimed original population formula.
+Queue rows are `[type,town,remaining,total,paid,started,paused,object]`, in storage
+order. IDs, tactic IDs and order codes are native engine values. The observer
+is read-only, excluded from hashes/saves, and contains no original scan-event,
+bounds, attachment-graph, picking, packet-readback or global-settings observer.
+This stream is deliberately not directly accepted for reference comparison.
+
+`tools/tactic_measure.py compare` requires three complete JSON bundles with
+exactly `schema: 1`, `contract: "tactics-v1"`, `origin` (`reference` for the two
+repeats, `clone` for the engine), `alignment`, `samples` and `unavailable: []`.
+Alignment contains exactly `scenario`, `first_tick`, `last_tick`,
+`phase: "before_commands"`, `viewer`, and lowercase 64-digit `map_sha256`,
+`controls_sha256`, `normalization_sha256`, `packets_sha256`, `settings_sha256`.
+All three alignments must match. The normalization audit must describe the
+original observer and engine adapter, common logical order codes, canonical
+positive integer object/tactic identities, identity references, fixed-point
+positions, whole-pixel destinations, observed selection order and production
+queue semantics. Use 0 for observed absence of a target and -1 for absent tactic
+or follow identity. Canonicalize references even to removed actors. Preserve
+actual absence; never fill unavailable observations with zeros/empty arrays.
+Hash equality is an alignment attestation, not proof of the adapter's correctness.
+
+Each inclusive tick has exactly `tick`, `objects` (canonical object ID strings
+mapped to records), and `sides` (side-indexed array, 1..8 entries). Object fields
+are integer `type`, `side`, `hp`, `hp_max`, `alive`, `x`, `y`, `dest_x`, `dest_y`,
+`order`, `target`, `tactic`, `follow`, `mode`, `resume`, `cooldown` and `visible`
+(an array of integer 0/1 gates for every side). Side fields are integer `money`,
+`units`, `structures`, `selected_tactic`, `selected` (ordered unique IDs),
+`groups` (all ten ordered unique-ID lists), and `queue` (eight-integer rows as
+above). Mode is 0..3; alive and queue started/paused are 0/1. Units/structures
+must use the declared diagnostic categories on both sides. Native packet
+acceptance, brightness, picking, population accounting and tactic scan internals
+need additional audited observations; this bounded outcome contract cannot
+certify them by itself.
+
+The comparator validates all three complete bundles before reporting any early
+difference. Nonidentical original repeats block the comparison. Stable repeats
+produce the earliest differing tick/field; no tolerance, nearest-ID matching,
+bonus, cap or scan formula is inferred. Tests use invented bundles, malformed
+late rows, repeated original instability, and an actual synthetic engine run
+with trace/hash repeatability checks. S success is not M game parity.
 ## V07 all-weapon comparison (task 87)
 
 `tools/weapon_measure.py plan` expands the task-74 controls for every current
