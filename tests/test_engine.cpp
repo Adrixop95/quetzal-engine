@@ -250,10 +250,18 @@ static void test_sight() {
   for (int ambient : {32, 33}) {
     for (auto& day : inputs->daylight) day.fill(uint8_t(ambient));
     World duel = initial;
+    duel.objects[0].attack_mode = AttackMode::Aggressive;  // visibility gate test: aggressive units pursue, balanced ones hold
     GameSim combat(rules); combat.init(duel);
     for (int t = 0; t < 3; ++t) { duel.begin_tick(); combat.tick(duel); }
     CHECK(duel.objects[0].target == (ambient == 33 ? 2u : 0u));
     CHECK(object_visible(duel, 0, duel.objects[1]) == (ambient == 33));
+    // Balanced units hold their ground: the same lit enemy 400 px away is not chased (regression for the
+    // mission 1 march: idle units used to attack any enemy the side could see, starting the scripted counterattack).
+    World hold = initial;
+    hold.objects[0].attack_mode = AttackMode::Balanced;
+    GameSim hold_sim(rules); hold_sim.init(hold);
+    for (int t = 0; t < 3; ++t) { hold.begin_tick(); hold_sim.tick(hold); }
+    CHECK(hold.objects[0].target == 0u);
     // Direct packets must obey the same eligibility gate as mouse picking.
     Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
     combat.submit(attack); duel.begin_tick(); combat.tick(duel);
@@ -295,6 +303,7 @@ static void test_sight() {
   CHECK(initial.visibility.sides.empty());
   for (int distance : {200, 400}) {
     World duel = initial;
+    duel.objects[0].attack_mode = AttackMode::Aggressive;  // bounded placeholder radius test, not the idle leash
     duel.objects[1].teleport(to_fixed(20 * 48 + distance), to_fixed(20 * 48));
     GameSim combat(rules); combat.init(duel);
     for (int t = 0; t < 3; ++t) { duel.begin_tick(); combat.tick(duel); }
