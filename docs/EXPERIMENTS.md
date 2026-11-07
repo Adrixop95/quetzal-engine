@@ -1792,6 +1792,131 @@ them unless a documented reference measurement justifies the specific change.
 Update L3 paired counts from actual selected diff reports after live capture;
 currently **0 scenarios, 0 pass, 0 fail, 0 skip**. No first live divergence or
 arrival/path tolerance pass is available. Status: **needs live run**.
+
+## V05 movement run sheet (task 89): needs live run
+
+Evidence: **S** = synthetic controls; **P** = pending live capture; **M** =
+repeated original measurements. This follow-up adds S before/after reporting
+and strict reference repeatability controls; it adds **no M** evidence or engine
+correction. Task 86's tooling is present but its vessel contracts remain open.
+Task 68's audited shared custom-map setup/input/observer adapter is still absent.
+The commands below do not fill that dependency. Never run the reference inside
+the sandbox or promote a raw legacy path log to an aligned observation stream.
+
+Preserve the default 48 configurations before any measured correction:
+
+```sh
+mkdir -p work/parity/v05
+build/path_bench --json > work/parity/v05/path-before.jsonl
+ctest --test-dir build -R '^(path|path_bench_smoke|zpath_tools|engine_unit|transport_measure)$' --output-on-failure
+```
+
+On the orchestrator's unrestricted host, this exact legacy acquisition loop runs
+the task-68 ground suite twice from fresh processes/private installations. It
+uses resource symlinks, ordinary private Maps/Saves/profile copies, both dummy
+SDL drivers, a kill timeout and fail-closed `unshare -rn` network setup through
+`zpath_one.sh` / `zpath_run.sh`. Each run uses the same predefined scenario
+packets, not a recording produced by the first run. Check the custom-map menu
+entry screenshots and actual starting state before accepting either run.
+
+```sh
+movement_probe=$(mktemp -d "$PWD/work/parity/v05-reference.XXXXXX")
+export ZPATH_GAME_DIR=/home/adrox/aztec-re/game
+export ZPATH_RUNTIME=/home/adrox/aztec-re/build/aztec_recomp
+sha256sum "$ZPATH_RUNTIME" > "$movement_probe/runtime.sha256"
+for repetition in 1 2; do
+  for fog in fog explored; do
+    for course in open gap1 gap2 gap4 corr1 corr2 clusters maze utrap wall rooms swap swap1 park mixed diag; do
+      for count in 1 10 30; do
+        sh tools/zpath_one.sh "$course" "$count" "$fog" \
+          "$movement_probe/run-$repetition" 180 || exit 1
+      done
+    done
+  done
+done
+```
+
+The 180-second window is a capture allowance, not a tick budget. Reject truncated
+logs; the accepted normalized horizon must include at least 1490 ticks after
+**every** order (including delayed park orders), plus the parked tail. Extend
+captures if necessary. Raw `RT_POS_LOG` rows lack the audited identity, tick and
+fixed-point precision contract; legacy summaries alone cannot confirm a fix.
+The shared adapter must additionally capture the matching clone before and after,
+normal commands/readback, setup hashes, selected identities and before-command
+positions every tick. There is no executable shared capture invocation to give
+until task 64 supplies this adapter. Do not invent one or bypass isolation.
+
+Additional scenario specifications extend task 68; run each twice on the original
+and use the same setup and orders on the clone:
+
+| Scenario | Required controlled variation and observations |
+| --- | --- |
+| Bird speed | Single Bird, straight open routes of several measured lengths, both directions; separate acceleration/turn time from steady displacement. Repeat across obstacles with matched goals; retain Zeppelin control. |
+| Radii and footprints | Small/large ground units and actual buildings, one-at-a-time clearance sweeps around a boundary; retain exact terrain, occupancy, centre positions and nearest approach. Do not infer a radius from a six-tile arrival disk. |
+| Reservations | Same destination for 1/10/30 units, opposing gap1/swap1 traffic, delayed park traffic; reverse selection/order identities and retain parked displacement and stalls. |
+| Vehicle turns | Matched vehicle straight, right-angle and reversal orders, both directions; capture body heading separately if an audited observer supports it. Positions alone establish trajectory, not body-turn parity. |
+| WaveSearch | Narrow gap/corridor, concave trap, crowded mixed group, sealed goal, disconnected group in both selection orders; retain closest approach, final position and order state for censored arrivals. |
+| Vessels | Use task 86's Boat/Submarine/Johnka water, shore, turn and stuck controls after its movement/setup contracts are available. Ground type substitutions are insufficient. |
+
+Use the task-68 trace plan schema with every selected unit, actual mission/contract,
+identities, order tick, goal and a predeclared arrival disk/tolerances appropriate
+to each control. Two reference streams must use identical normalized identities
+and headers. Preserve provenance proving two separate launches; equal files alone
+cannot establish independent acquisition. Do not tune tolerances after viewing
+the candidate. Keep all maps, logs and reports in ignored `work/`.
+
+After the adapter supplies these four complete normalized streams per scenario,
+run the strict report (these filenames are the adapter's required output contract):
+
+```sh
+case_dir="$PWD/work/parity/v05-live/bird-open"
+python3 -I tools/zpath_review.py "$case_dir/trace-plan.json" \
+  "$case_dir/reference-1.jsonl" "$case_dir/reference-2.jsonl" \
+  "$case_dir/clone-before.jsonl" "$case_dir/clone-after.jsonl" \
+  --scenario bird-open --output "$case_dir/review.json" \
+  --markdown "$case_dir/review.md"
+```
+
+Repeat for every course/count/fog and additional control. `reference_not_repeatable`
+withholds comparisons even for sub-tolerance reference differences. `invalid`
+rejects missing/truncated observations, contract or lifecycle errors. `incomplete`
+keeps censored/unreachable arrivals separate from passes. Only `within_tolerance`
+returns zero. JSON retains each side's path length, stalls, arrival and first
+diverging tick/unit/cause; Markdown reports original versus clone before/after
+per selected unit. Cause classes identify symptoms, not a proven WaveSearch,
+reservation or turn mechanism. Before implementing a fix, diagnose the same
+divergence against both exact reference repeats; an accepted report alone does
+not identify the correct algorithm.
+
+After any correction, compare the unchanged movement configurations explicitly:
+
+```sh
+build/path_bench --json > work/parity/v05/path-after.jsonl
+python3 - <<'PY'
+import json
+from pathlib import Path
+root = Path('work/parity/v05')
+def rows(name):
+    result = {}
+    for line in (root / name).read_text().splitlines():
+        row = json.loads(line)
+        row.pop('ms_per_tick')
+        key = row['course'], row['n']
+        assert key not in result, key
+        result[key] = row
+    assert len(result) == 48
+    return result
+assert rows('path-before.jsonl') == rows('path-after.jsonl')
+print('All 48 movement hashes and non-timing metrics unchanged')
+PY
+```
+
+A measurement-justified hash change needs its specific scenario, two original
+run IDs, first divergence and before/after results documented before accepting
+an exception. Current measurements and first live divergences: **unmeasured**.
+Synthetic arrival results are in [rules_movement.md](rules_movement.md#12-v05-repeatability-and-beforeafter-preparation-task-89).
+V05 and task 86 remain open. Status: **needs live run**.
+
 ## Building and mine placement run sheet (needs live run)
 
 Task 66 depends on **64-shared-runner-observer**, which is still queued and is
