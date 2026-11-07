@@ -167,6 +167,8 @@ static void initialization(std::shared_ptr<const RulesData> rules) {
 // Object membership uses mission town IDs; queues and planner state use vector positions.
 static void sparse_towns(std::shared_ptr<const RulesData> rules) {
   auto w = world();
+  // Farm production needs agricultural ground, not a map filled with mineral deposits.
+  w.resources.v.assign(1600, 128);
   for (int ti = 0; ti < 2; ++ti) {
     w.mission.towns[ti].index = 4 + ti * 5;
     w.objects[ti].town = w.mission.towns[ti].index;

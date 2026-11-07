@@ -1334,7 +1334,7 @@ static void test_building_placement() {
     CHECK(sim.can_place(w, 0, 14, 12, 12) == expected);
   };
   check_tile(11, 12, false); // occupied western arm, outside the old sprite rectangle
-  check_tile(13, 13, true);  // empty corner of the actual occupancy mask
+  check_tile(13, 13, false); // clearance corner is required by the default policy
   World occupied = base; production_object(occupied, 0, 0, 12, 12);
   GameSim blocked(rules); blocked.init(occupied);
   CHECK(!blocked.can_place(occupied, 0, 14, 12, 12));
@@ -1415,6 +1415,128 @@ static void test_building_placement() {
     production_steps(build, work, 1);
     CHECK(building.hp < before); // progress adds work HP without erasing damage
   }
+}
+
+// Invented map objects and resource bytes exercise both policies without game data.
+static void test_placement_modes() {
+  auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  World base = production_world();
+  production_object(base, 11, 0, 5, 5); base.objects.back().town_hall = true;
+  base.side_state.resize(8); base.side_state[0].money = 10000;
+  base.passability = {40, 40, std::vector<uint8_t>(1600, 2)};
+  const auto& barracks = rules->type(14);
+  CHECK(barracks.has_footprint_mask);
+  for (bool relaxed : {false, true}) {
+    auto check = [&](World w, int type, int x, int y, bool expected) {
+      GameSim sim(rules, {false, relaxed}); sim.init(w);
+      CHECK(sim.can_place(w, 0, type, x, y) == expected);
+      const auto cells = sim.placement_cells(w, 0, type, x, y);
+      CHECK((!cells.empty() && std::all_of(cells.begin(), cells.end(),
+          [](const PlacementCell& cell) { return !cell.blocked; })) == expected);
+    };
+    check(base, 14, 12, 12, true);
+    // Sweep all mask cells, including zeros and clearance outside the body bounds.
+    for (int i = 0; i < 49; ++i) {
+      const int x = 12 + i % 7 - 3, y = 12 + i / 7 - 3;
+      const bool body = barracks.footprint_mask[i] == 2;
+      const bool required = body || (!relaxed && barracks.footprint_mask[i] == 1);
+      World tree = base; tree.terrain.cells[y * 40 + x] = 1u << 16;
+      check(tree, 14, 12, 12, relaxed || !required); // object on otherwise open terrain
+      World rock = base; rock.passability.v[y * 40 + x] = 0;
+      check(rock, 14, 12, 12, !required);
+      World forest = base; forest.passability.v[y * 40 + x] = 1;
+      check(forest, 14, 12, 12, !required);
+      World deposit = base; deposit.resources.v[y * 40 + x] = 65 << 8;
+      check(deposit, 14, 12, 12, relaxed || !required);
+    }
+    // Agricultural resources are allowed; farms do not require mineral deposits.
+    check(base, 12, 12, 12, true);
+    World mineral = base; mineral.resources.v[12 * 40 + 12] = 65 << 8;
+    check(mineral, 12, 12, 12, relaxed);
+    for (int mine : {13, 48, 66}) {
+      check(base, mine, 12, 12, false); // low byte alone is not mineral
+      check(mineral, mine, 12, 12, true);
+      World rock = mineral; rock.passability.v[12 * 40 + 12] = 0;
+      check(rock, mine, 12, 12, true); // existing mineral-rock exception
+      World tree = mineral; tree.passability.v[12 * 40 + 12] = 1;
+      check(tree, mine, 12, 12, relaxed);
+      World occupied = mineral; production_object(occupied, 0, 0, 12, 12);
+      check(occupied, mine, 12, 12, false); // deposit never bypasses units
+      occupied = mineral; production_object(occupied, 14, 0, 12, 12);
+      check(occupied, mine, 12, 12, false);
+    }
+    World occupied = base; production_object(occupied, 14, 0, 12, 12);
+    check(occupied, 14, 12, 12, false);
+    occupied = base; production_object(occupied, 0, 0, 12, 12);
+    check(occupied, 14, 12, 12, false);
+    occupied = base; production_object(occupied, 7, 0, 12, 12);
+    CHECK(rules->type(7).flier);
+    check(occupied, 14, 12, 12, true);
+    occupied = base; production_object(occupied, 0, 0, 13, 13);
+    check(occupied, 14, 12, 12, relaxed); // unit in clearance, outside body
+    check(base, 14, 5, 5, false); // town hall body
+    check(base, 14, 8, 5, relaxed); // town hall clearance beyond its body
+    for (auto edge : {std::pair{0, 12}, {39, 12}, {12, 0}, {12, 39}})
+      check(base, 14, edge.first, edge.second, false);
+    check(base, 14, 0, 0, false); // required footprint extends off-map
+    check(base, 14, -1, 12, false);
+    check(base, 14, 35, 35, false); // town radius applies to both modes
+    World reserved = base;
+    QueueItem q; q.type = 14; q.tile_x = q.tile_y = 12;
+    reserved.side_state[0].queue.push_back(q);
+    GameSim sim(rules, {false, relaxed}); sim.init(reserved);
+    // init preserves production reservations.
+    CHECK(!sim.can_place(reserved, 0, 14, 12, 12));
+  }
+  // Switching while a ghost is active immediately changes preview and acceptance.
+  World initial = base; initial.terrain.cells[12 * 40 + 12] = 2u << 16;
+  World w = initial; GameSim sim(rules); sim.init(w);
+  CommandsUi ui(&sim); Camera cam; cam.set_world(1920, 1920); cam.set_view(796, 700);
+  Minimap mm; SDL_Rect panel{796, 0, 204, 493}; auto boxes = CommandsUi::layout(panel, 1);
+  auto menu = sim.menu(w, 0); int index = -1;
+  for (size_t i = 0; i < menu.size(); ++i) if (menu[i].type == 14) index = int(i);
+  CHECK(index >= 0);
+  if (index < 0) return;
+  w.selection.ids = {1}; Input click;
+  click.mx = boxes.production[index].x + 4; click.my = boxes.production[index].y + 4;
+  click.pressed[SDL_BUTTON_LEFT] = true;
+  ui.update(click, w, cam, 1, mm, false, panel);
+  click.pressed[SDL_BUTTON_LEFT] = false; click.released[SDL_BUTTON_LEFT] = true;
+  ui.update(click, w, cam, 1, mm, false, panel);
+  CHECK(ui.placing() == 14);
+  CHECK(!ui.placement_preview(w, cam, 12 * 48 + 24, 12 * 48 + 24).valid);
+  auto check_colour = [&](bool valid) {
+    SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, 796, 700, 32, SDL_PIXELFORMAT_ARGB8888);
+    CHECK(surface);
+    SDL_Renderer* renderer = surface ? SDL_CreateSoftwareRenderer(surface) : nullptr;
+    CHECK(renderer);
+    if (renderer) {
+      SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); SDL_RenderClear(renderer);
+      ui.draw_ghost(renderer, w, cam, 12 * 48 + 24, 12 * 48 + 24);
+      SDL_Rect sample{12 * 48 + 24, 12 * 48 + 24, 1, 1}; uint32_t pixel = 0;
+      CHECK(SDL_RenderReadPixels(renderer, &sample, SDL_PIXELFORMAT_ARGB8888, &pixel, 4) == 0);
+      const int red = (pixel >> 16) & 255, green = (pixel >> 8) & 255;
+      CHECK(valid ? green > red : red > green);
+      SDL_DestroyRenderer(renderer);
+    }
+    if (surface) SDL_FreeSurface(surface);
+  };
+  check_colour(false);
+  Command buy; buy.type = Pct::PlaceBuilding; buy.a = 14; buy.b = buy.c = 12; buy.ids = {1};
+  sim.submit(buy); production_steps(sim, w, 1);
+  CHECK(w.objects.size() == 1 && w.side_state[0].queue.empty());
+  Command toggle; toggle.type = Pct::SetModifications; toggle.a = 2;
+  sim.submit(toggle); production_steps(sim, w, 1);
+  CHECK(ui.placement_preview(w, cam, 12 * 48 + 24, 12 * 48 + 24).valid);
+  check_colour(true);
+  sim.submit(buy); production_steps(sim, w, 1);
+  CHECK(w.objects.size() == 2 && !w.side_state[0].queue.empty());
+  toggle.a = 0; sim.submit(toggle); production_steps(sim, w, 2);
+  CHECK(!sim.modifications().relaxed_placement && w.objects.size() == 2);
+  // Already accepted construction is retained when the helper is turned off.
+  World replayed = initial;
+  auto replay = GameSim::replay(replayed, rules, sim.log(), sim.tick_count());
+  CHECK(replay->state_hash(replayed) == sim.state_hash(w));
 }
 
 static void test_mine_construction_flow() {
@@ -2119,7 +2241,8 @@ static void test_town_production() {
     int race = choice.first, type = choice.second;
     int level = type == 48 || type == 66 ? 2 : 1;
     fresh.mission.towns[0].race = race; fresh.mission.towns[0].type = level;
-    fresh.resources.v.assign(1600, uint16_t(65 | (65 << 8)));
+    const bool mine = type == 13 || type == 48 || type == 66;
+    fresh.resources.v.assign(1600, uint16_t(65 | (mine ? 65 << 8 : 0)));
     fresh.side_state.resize(8); fresh.side_state[0].money = 10000;
     production_object(fresh, rules->town_building(level, race), 0, 10, 10);
     fresh.objects[0].town_hall = true;
@@ -3202,6 +3325,7 @@ int main(int argc, char** argv) {
     test_movement_rules();
     test_sight();
     test_building_placement();
+    test_placement_modes();
     test_mine_construction_flow();
     test_automatic_placement_access();
     test_blocked_producer_exit();

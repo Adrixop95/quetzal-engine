@@ -73,7 +73,7 @@ static void malformed() {
   CHECK(!deserialize_save(extra, decoded));
   auto old = bytes; old[3] = '2'; repair_checksum(old); CHECK(!deserialize_save(old, decoded));
   auto unknown_modification = bytes;
-  write_le(unknown_modification.data() + unknown_modification.size() - 12, uint32_t(2));
+  write_le(unknown_modification.data() + unknown_modification.size() - 12, uint32_t(4));
   repair_checksum(unknown_modification); CHECK(!deserialize_save(unknown_modification, decoded));
   auto old_replay = bytes; write_le(old_replay.data() + 8, uint32_t(1)); repair_checksum(old_replay);
   CHECK(!deserialize_save(old_replay, decoded)); check_save(old_replay);
@@ -181,8 +181,8 @@ static SaveData long_save(const std::shared_ptr<RulesData>& rules) {
   return s;
 }
 static void pending_save(const std::shared_ptr<RulesData>& rules) {
-  for (bool enabled : {false, true}) {
-    auto world = initial_world(); GameSim game(rules, {enabled}); game.init(world);
+  for (uint32_t bits = 0; bits < 4; ++bits) {
+    auto world = initial_world(); GameSim game(rules, Modifications::from_bits(bits)); game.init(world);
     Command move; move.type = Pct::Move; move.ids = {1}; move.a = 300; move.b = 200;
     game.submit(move);
     CHECK(game.has_pending_commands());
@@ -197,7 +197,7 @@ static void pending_save(const std::shared_ptr<RulesData>& rules) {
     CHECK(replay->state_hash(restored) == game.state_hash(world));
     advance(world, game, 30); advance(restored, *replay, 30);
     CHECK(replay->state_hash(restored) == game.state_hash(world));
-    CHECK(replay->modifications().parallel_construction == enabled);
+    CHECK(replay->modifications().bits() == bits);
   }
 }
 static void continuation(const SaveData& s, const std::shared_ptr<RulesData>& rules) {
