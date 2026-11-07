@@ -1604,15 +1604,20 @@ as the runtime's writable game directory. Use a new case root for another batch.
 
 ```sh
 case_name=ai_passive
+stage=before
 source_game=/home/adrox/aztec-re/game
 reference_runtime=/home/adrox/aztec-re/build/aztec_recomp
 adapter="$PWD/work/parity/l8/reference-adapter"
 setup="$PWD/work/parity/l8/setup/$case_name"
-batch="$PWD/work/parity/l8/$case_name"
+batch="$PWD/work/parity/l8/$case_name-$stage"
 engine="$PWD/build/aztec_engine"
 rules="$PWD/docs/data"
 test -x "$adapter" && test -f "$setup/scenario.json" || exit 1
 mkdir "$batch" || exit 1
+cp "$engine" "$batch/aztec_engine" || exit 1
+engine="$batch/aztec_engine"
+sha256sum "$engine" "$reference_runtime" "$setup/scenario.json" \
+  "$setup/clone-orders.txt" >"$batch/inputs.sha256" || exit 1
 for repeat in 1 2 3 4 5; do
   for origin in reference clone; do
     run="$batch/$origin-$repeat"
@@ -1663,6 +1668,120 @@ Use overlapping windows to bracket policy changes, then add synthetic regression
 for each measured boundary and rerun all existing AI soak/replay checks. Only
 measured results can justify replacing cheapest-unit, eight-tile placement,
 force-count launch and average-income fallback policies or changing V11 to M.
+
+### Task 91 measured AI handoff (needs live run)
+
+**S:** the offline comparator preserves per-run counts, first/last windows and
+whole-composition/site frequency counts even when the other implementation has
+no events. It reports null latency for absent events. A reference class observed
+in fewer than two runs is **needs live run**, never a usable expectation.
+`confirmed_timing_differences` identifies disjoint ordinal/edge windows supported
+by at least two reference observations. A rare ordinal seen in one run can still
+be a diagnostic difference but cannot authorize a timing fix. These are observed
+envelopes, not confidence intervals. **P:** the extra passive/provocation intervals
+require launches in each declared interval; an early burst and late burst cannot
+hide missing activity in between. Neither command activity nor synthetic soak
+tests establish measured sustained opposition.
+
+Task 85 is present, including `parity_l2`, but its live replay proof and audited
+packet translator remain incomplete. Task 75's reference AI observer/setup/input
+adapter also remains absent. This task implements the independent offline parts;
+it cannot measure those missing semantics synthetically. No original measurement
+was obtained, no planner policy changed, and no before/after improvement is
+claimed. All planner-related M labels remain open.
+
+Generate the exact pending per-behaviour forms without private resources or a
+reference process (each planning command intentionally returns 77):
+
+```sh
+for case_name in ai_passive ai_provocation; do
+  python3 -I tools/ai_measure.py --scenario "tests/parity/$case_name.json" \
+    --plan --output "work/parity/l8-task91-$case_name-plan-01"
+  result=$?
+  test "$result" -eq 77 || exit 1
+done
+```
+
+Each directory contains `scenario.json` and `diff.json`, with ten behaviour rows
+and original/clone-before/clone-after observations. Unavailable values stay null.
+SHA-256 fingerprints bind the copied recipe and available captures to a report.
+They do not certify matching seeds, event semantics or original-game parity.
+
+| Behaviour class | Original window | Clone before | Clone after | Remaining measurement |
+| --- | --- | --- | --- | --- |
+| Composition choice | Unmeasured | Unmeasured | Not run | Paid-production and whole-launch distributions |
+| Placement | Unmeasured | Unmeasured | Not run | Accepted type/site joint distributions |
+| Launch scoring | Unmeasured | Unmeasured | Not run | Candidate scores, rejected/accepted launch boundaries; launch time alone is insufficient |
+| Instantaneous income estimates | Unmeasured | Unmeasured | Not run | Estimate, units and phase before/after harvest suspension; build reaction alone is insufficient |
+| Side-plan arbitration | Unmeasured | Unmeasured | Not run | Two same-side towns competing for shared cash; candidate/accepted plan identities |
+| Hall upgrade selection | Unmeasured | Unmeasured | Not run | Explicit upgrade candidates and selected/accepted upgrade identity |
+| Expansion | Unmeasured | Unmeasured | Not run | New-town hall identity/site, distinct from upgrade; clone policy absent |
+| Retreat | Unmeasured | Unmeasured | Not run | Explicit retreat decision after superior-force stimulus; clone policy absent |
+| Sustained opposition | Unmeasured | Unmeasured | Not run | Activity per interval plus firing, losses and living opponents |
+| Defence latency | Unmeasured | Unmeasured | Not run | Accepted defensive order relative to acknowledged damaging attack |
+
+On the unrestricted host, first run task 85's replay gate with the supplied
+read-only resources, preserving both replays and their raw/semantic comparisons:
+
+```sh
+python3 -I tools/parity_report.py missions \
+  --game /home/adrox/aztec-re/game \
+  --runtime /home/adrox/aztec-re/build/aztec_recomp \
+  --engine "$PWD/build/aztec_engine" --ticks 14400 --timeout 1800 \
+  --output "$PWD/work/parity/l8-task91-l2-gate-01"
+```
+
+This command currently stops at an observation or translation blocker. It is an
+exact diagnostic command, not a claim of completed replay. Once the reviewed
+translator exists, rerun it with `--engine-adapter` as documented in the L2 run
+sheet. Do not infer AI policy differences from an unrepeatable reference replay.
+Keep record/replay evidence alongside each AI batch; whole-mission replay alone
+does not audit the AI fixture's setup or provocations.
+
+Then audit the two private recipes and run the full isolated capture block above
+once with `case_name=ai_passive`, once with `case_name=ai_provocation`, both with
+`stage=before`. The five repeats all use the frozen recipe's seed 1; this is one
+fixed-seed batch, not five independent seeds. The adapter must acknowledge the
+actual RNG initialization, setup, tick-accurate stimuli and identical command log
+for each repeat. The current clone CLI cannot set arbitrary RNG state or express
+all provocation actions: keep this blocked until audited setup/replay support is
+available. Use a separate recipe and output root for any additional fixed seed;
+never pool different seeds or retimed command logs into a timing envelope.
+
+Return the full private batches, `inputs.sha256`, copied engine binary, scenario,
+map/input digests, seed/setup/action acknowledgements, observer audit and task 85
+replay evidence to the orchestrator. Keep all captures and derived reports out of
+git. For internal scores/income/arbitration/upgrades, return separately audited
+diagnostics with units, identities and tick phase; `engine-ai-v1` cannot encode
+these variables and the report deliberately keeps them blocked.
+
+Only after the same divergence is confirmed in at least two original runs may
+the corresponding planner rule be changed. Add the measured boundary's synthetic
+regression and repeat all AI/replay checks. Capture fresh clone runs using the
+same frozen scenarios, seeds and command logs with `stage=after` in the block
+above. Retain the original before batches. Compare against the same reference
+batch, without pooling before and after captures:
+
+```sh
+for case_name in ai_passive ai_provocation; do
+  python3 -I tools/ai_measure.py \
+    --scenario "work/parity/l8/setup/$case_name/scenario.json" \
+    --reference "work/parity/l8/$case_name-before"/reference-*/events.jsonl \
+    --clone "work/parity/l8/$case_name-before"/clone-*/events.jsonl \
+    --after "work/parity/l8/$case_name-after"/clone-*/events.jsonl \
+    --output "work/parity/l8/$case_name-before-after-01"
+  result=$?
+  test "$result" -eq 0 || exit "$result"
+done
+```
+
+The report retains before and after verdicts and per-behaviour windows/frequencies;
+the top-level verdict covers only the after batch's declared event projection.
+An event-projection pass leaves diagnostic blockers open. Missing/truncated
+after data cannot become a successful comparison. Distribution differences are
+candidates for review, not automatic authorization to alter a policy: inspect
+per-run frequencies and reproduce the divergence twice. Status: **needs live run**.
+
 ## L3 path tracing run sheet (task 68, needs live run)
 
 Task 64's shared scenario runner/observer is absent in this checkout. This task

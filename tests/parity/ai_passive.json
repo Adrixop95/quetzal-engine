@@ -77,6 +77,38 @@
       "town": 1,
       "start": 1,
       "end": 14400
+    },
+    {
+      "id": "sustained_launch_1",
+      "event": "launch",
+      "side": 1,
+      "town": 1,
+      "start": 1,
+      "end": 3600
+    },
+    {
+      "id": "sustained_launch_2",
+      "event": "launch",
+      "side": 1,
+      "town": 1,
+      "start": 3601,
+      "end": 7200
+    },
+    {
+      "id": "sustained_launch_3",
+      "event": "launch",
+      "side": 1,
+      "town": 1,
+      "start": 7201,
+      "end": 10800
+    },
+    {
+      "id": "sustained_launch_4",
+      "event": "launch",
+      "side": 1,
+      "town": 1,
+      "start": 10801,
+      "end": 14400
     }
   ]
 }
