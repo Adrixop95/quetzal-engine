@@ -2247,6 +2247,124 @@ assets, screenshots and other captured data under ignored `work/`. Update L7
 paired counts only after reviewing actual `ID-reference/diff.json` results;
 pending routes and synthetic oracle fixtures add no live parity results.
 
+## V13 render and animation run sheet (task 93, needs live run)
+
+Evidence: **SYN/P** for the comparator and existing invented renderer contracts;
+**LIVE-PENDING** for original scene measurements. No engine behavior is changed
+without the same divergence measured in two independent original runs. Tasks
+64/81 are present but incomplete: reference orders/queues, observed UI and a
+complete presentation barrier remain unavailable. Shared L0 currently accepts
+campaign initialization only, with no commands or audited spawn identities.
+Consequently transport initiation, controlled turn/hop/destruction and attack/
+death scenes cannot yet be driven by this shared runner. The comparison work
+below is independent of those unfinished dependencies; scene capture acceptance
+is not. Never remove availability flags or substitute wall-clock screenshots.
+
+Per-scene measurement ledger for this checkout (not a zero-error result):
+
+| Scene | Required controlled observations | Before difference | After difference |
+| --- | --- | --- | --- |
+| aircraft-altitude | Bird/Zeppelin body and ground shadow, stationary and moving, height transitions | Unmeasured | Unmeasured |
+| transport-initiation | Boarding/opening/closing, passenger and vessel identity, phase boundaries | Unmeasured | Unmeasured |
+| turn | Body versus aim angle, both directions, start/transition/finish | Unmeasured | Unmeasured |
+| steering | Moving wheeled/flight classes, independent turret and body clocks | Unmeasured | Unmeasured |
+| hop | HopCannon ground/shadow versus raised body through full cycle | Unmeasured | Unmeasured |
+| destruction | Building/Defence radius/fire/debris stages and terminal removal | Unmeasured | Unmeasured |
+| attack-death | Attacker/victim/projectile, firing, impact, dying, retained corpse/removal | Unmeasured | Unmeasured |
+| overlap | Crossing ground/air objects, shadows, attachments and effects; both camera directions | Unmeasured | Unmeasured |
+| fog | Day/night, brightness 32/33, explored/unexplored, units/buildings at borders | Unmeasured | Unmeasured |
+| minimap | Same fog controls, friendly/enemy markers, camera viewport and UI scale | Unmeasured | Unmeasured |
+
+Run the synthetic gate from this worktree (no original resources):
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAZTEC_GEN_DIR= -DGAME_DIR=
+cmake --build build --parallel 2
+ctest --test-dir build -R 'render_compare|render_contracts|animation_headless|parity_visual_ui|shared_l0' --output-on-failure
+```
+
+On the unrestricted orchestrator host, first rebuild the hand-written observer
+as in the shared L0 run sheet. The supplied binary may predate those changes.
+Keep the lifted inputs read-only and build outputs inside this worktree:
+
+```sh
+cmake -S . -B build_l0_reference -DCMAKE_BUILD_TYPE=Release \
+  -DAZTEC_GEN_DIR=/home/adrox/aztec-re/work/gen
+cmake --build build_l0_reference --target aztec_recomp --parallel 2
+mkdir -p work/parity/v13
+cp build/aztec_engine work/parity/v13/aztec_engine_before
+sha256sum build_l0_reference/aztec_recomp work/parity/v13/aztec_engine_before \
+  > work/parity/v13/binaries-before.sha256
+for attempt in 1 2; do
+  python3 -I tools/parity_run.py private_l0 --flat-output \
+    --game /home/adrox/aztec-re/game \
+    --runtime "$PWD/build_l0_reference/aztec_recomp" \
+    --engine "$PWD/work/parity/v13/aztec_engine_before" --timeout 120 \
+    --output "$PWD/work/parity/v13/before$attempt"
+  printf '%s\n' "$?" > "work/parity/v13/before$attempt.exit"
+done
+python3 -I tools/parity_l0.py \
+  work/parity/v13/before1/reference.json work/parity/v13/before1/clone.json \
+  --repeat-reference work/parity/v13/before2/reference.json \
+  --repeat-clone work/parity/v13/before2/clone.json \
+  --output work/parity/v13/shared-repeat-review.json
+```
+
+Use fresh names if any destination exists. These are **diagnostic mission-1
+captures at ticks 1, 6, 12**, not ten scene captures. The runner creates separate
+private game directories with read-only resource/executable symlinks and copied
+writable Maps/Saves/configuration. Every process uses dummy SDL video/audio,
+`unshare -rn` and a kill timeout; reference loopback setup must succeed. Do not
+retry without isolation. Preserve nonzero exits and incomplete captures.
+
+After the observer and scene-input dependencies are available, capture each
+controlled scene twice per binary version with the same reviewed scenario.
+Declare ticks before running, including samples before, during and after each
+transition. Retain actual phase, camera/zoom/side/cursor/selection, lighting,
+animation clock, object/class/creation identities, ground position, altitude,
+body/aim angles and transport/death state. Review difficulty, map and command
+fingerprints too. Existing initialization captures may only be assigned to a
+scene when their actual contents and repeatability establish that observation;
+no scene-specific command invocation exists for the unsupported cases today.
+
+Prepare a private per-scene plan following the exact contract in
+[PARITY_TEST_PLAN.md](PARITY_TEST_PLAN.md#v13-repeated-scene-comparison-task-93).
+Place plans directly in `work/parity/v13/`, so bundle/mask paths resolve below
+that directory. Each plan names two original bundles, two before clone bundles,
+independently annotated masks for every full-schedule tick and reviewed regional
+thresholds. Set `after` to null until a measured correction exists. Run only the
+plans whose audited captures are available:
+
+```sh
+for scene in aircraft-altitude transport-initiation turn steering hop \
+             destruction attack-death overlap fog minimap; do
+  if [ -f "work/parity/v13/$scene.json" ]; then
+    python3 -I tools/render_compare.py "work/parity/v13/$scene.json" \
+      --output "work/parity/v13/$scene-before-review.json"
+    printf '%s\n' "$?" > "work/parity/v13/$scene-before-review.exit"
+  fi
+done
+```
+
+Missing plans remain unmeasured in the ledger. A plan is an audit input, not a
+capture adapter or proof of alignment. Masks must cover real structures and
+relevant regions, including foreground overlap, ground shadows and minimap
+markers. Review the complete image beside the metrics; pixel agreement alone
+does not establish readable markers or correct animation semantics.
+
+Only after two original runs reproduce an unblocked divergence, isolate the
+responsible class and correct engine rendering/animation selection. Preserve
+the original and before binaries/frames. Capture two after clone runs using the
+same schedule and audited inputs, add that pair to the scene plan, and rerun
+`tools/render_compare.py` with a fresh `--output` ending in `-after-review.json`.
+Do not substitute the before pair for missing after data. The report includes
+per-tick, per-region structural counts, exact mismatch fraction, tolerant bad
+fraction and MAE for both versions; inspect every region for regressions.
+Retain the private map/input/normalization audit, binary hashes, invocation logs,
+canonical/native streams, masks and full frames for both repeats and versions.
+Return those reports to the orchestrator; update the ledger and V13 M labels only
+after review. Commit none of the captures, private JSON, maps or derived data.
+Current status: **needs live run**.
 ## Economy and town service run sheet (needs live run)
 
 V08/V09 follow-up, 2026-11-06: **S** for asset-free engine continuation and
