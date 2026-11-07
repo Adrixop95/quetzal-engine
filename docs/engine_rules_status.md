@@ -2076,6 +2076,40 @@ codespell finding in test assertion names. `git diff --check` passed. Bash and
 Python snippets in the live run sheet passed syntax checks without executing
 reference commands. No campaign completion or reference parity was measured.
 
+
+## V06/V10 measurement preparation (task 90, 2026-11-06)
+
+Status: **needs live run**. **S:** headless `--tactic-trace` snapshots include
+assignment, mode, follow, destinations, command selection, all ten groups, side
+cash/counts/queues and the task 73 shared visibility gate before each tick's
+commands. An invented two-side battle proves trace repeatability and unchanged
+per-tick hashes. `tactic_measure` validates full audited captures and rejects
+incomplete fields/ticks, mismatched setup/settings/packet fingerprints and
+nonidentical original repeats before reporting a clone divergence. Existing
+`engine_unit` group/follow/mode, population-above-110 and map Difficulty 0/100
+checks remain synthetic engine controls.
+
+**P:** `tests/parity/tactics.json` supplies 21 cases across four numeric modes,
+with separate global difficulty enumeration, population boundaries, bounds/
+assignment/reveal-phase sweeps, group/follow packets and fog selection controls.
+The task 73 consumer is present; the V02/task 64 original packet/readback,
+tactic graph/bounds/scan, selection/picking and global-settings adapters are
+not complete. The headless order-file route only supports move/attack-move;
+semantic recipes do not imply executable paired scripts. Engine traces require
+an audited identity/field adapter and cannot be relabelled as original captures.
+
+No live original execution was attempted under the sandbox restriction. No
+nearest/lower-ID/four-tick acquisition, centroid/six-tick follow, distance,
+population or difficulty policy was changed. Inspection notes do not satisfy
+this task's requirement for two original measurements. No bonus, cap or scan
+formula was invented. See the [run sheet](EXPERIMENTS.md#v06v10-groups-tactics-and-difficulty-run-sheet-task-90-needs-live-run)
+and [capture contract](../tests/parity/README.md#v06v10-tactics-comparison-task-90).
+
+Verification: Release configure/build passed; all 48 runnable CTest entries
+passed, with six private-data/network checks skipped. Full pre-commit plus
+explicit checks of new untracked files passed. A missing-capture CLI control
+returned 77 with `needs live run`. No private game data or original runtime was
+used for these task 90 checks.
 ## V08/V09 synthetic comparison follow-up (2026-11-06)
 
 **S:** `engine_unit` compares every saved continuation tick across resource-clock

@@ -507,3 +507,65 @@ comparison confirms identical hashes and every non-timing metric across all
 Boats/Johnka, Bird speed, radii/footprint and WaveSearch parity remain open pending
 paired measurements; the archive's 14 usable runs cannot supply this aligned
 per-tick contract.
+
+## 12. V05 repeatability and before/after preparation (task 89)
+
+Evidence: **S** synthetic, **P** pending live, **M** repeated original measurement.
+Task 86's evidence tooling is present, but vessel routes and movement contracts
+remain incomplete; task 64's shared custom-map setup/input/observer adapter is
+absent. This work covers the independent reporting and synthetic checks only.
+No new M evidence was supplied, no reference process was launched, and no engine
+behavior, movement configuration or golden hash was changed.
+
+`tools/zpath_review.py` wraps the task-68 trace comparator with an exact complete
+normalized reference-repeat check, then reports original versus clone before
+and after for each selected unit. Separate reference files are mandatory; the
+orchestrator must prove separate launches and audited normalization. All observed
+objects/fields, including pre-order and parked-tail samples, must repeat exactly.
+Clone tolerances never relax reference repeatability. Reference disagreement
+withholds both comparisons; malformed streams are invalid. Censored arrivals
+remain incomplete, including matching unreachable controls. JSON retains the
+existing path/stall metrics and first divergent tick/unit/cause; the Markdown
+table includes original/before/after arrivals, traveled pixels and maximum idle
+intervals. Symptoms still need diagnosis before changing engine behavior.
+
+The nine new synthetic reporting controls cover repeatability below positional
+tolerance, final-sample/health differences, reused reference files, malformed
+tails/candidates, censored arrivals, regressions, exact before/after metrics and
+CLI failure reports. Existing engine tests retain crowded/narrow courses,
+footprint insertion/removal, unreachable and disconnected orders, ground classes
+and air replay controls. These tests establish internal behavior, not WaveSearch,
+Bird speed, measured radii, reservation or vehicle-turn parity.
+
+The full 48-case benchmark was rerun before/after this tooling change with 1490
+ticks per order. Every hash and non-timing metric is identical. The following
+synthetic arrival makespans are **elapsed ticks after each unit's own order**,
+using the legacy six-tile observation disk; they are not the absolute normalized
+arrival ticks emitted by the review tool. Each cell lists counts **1 / 10 / 30**.
+Original paired observations and first live divergences are unmeasured in every
+row. Historical aggregate logs cannot supply the missing aligned contract.
+
+| Scenario | Original paired arrival | Clone before (1 / 10 / 30) | Clone after (1 / 10 / 30) |
+| --- | --- | --- | --- |
+| open | unmeasured | 365 / 366 / 378 | 365 / 366 / 378 |
+| gap1 | unmeasured | 365 / 392 / 468 | 365 / 392 / 468 |
+| gap2 | unmeasured | 364 / 375 / 408 | 364 / 375 / 408 |
+| gap4 | unmeasured | 364 / 371 / 384 | 364 / 371 / 384 |
+| corr1 | unmeasured | 365 / 444 / 468 | 365 / 444 / 468 |
+| corr2 | unmeasured | 364 / 374 / 415 | 364 / 374 / 415 |
+| maze | unmeasured | 1313 / 1366 / 1439 | 1313 / 1366 / 1439 |
+| utrap | unmeasured | 339 / 353 / 372 | 339 / 353 / 372 |
+| wall | unmeasured | 445 / 458 / 472 | 445 / 458 / 472 |
+| rooms | unmeasured | 398 / 420 / 440 | 398 / 420 / 440 |
+| swap | unmeasured | 322 / 365 / 405 | 322 / 365 / 405 |
+| swap1 | unmeasured | 323 / 434 / 713 | 323 / 434 / 713 |
+| diag | unmeasured | 458 / 472 / 503 | 458 / 472 / 503 |
+| park | unmeasured | 149 / 374 / 406 | 149 / 374 / 406 |
+| mixed | unmeasured | 365 / 801 / 809 | 365 / 801 / 809 |
+| clusters | unmeasured | 374 / 382 / 399 | 374 / 382 / 399 |
+
+Bird speed, measured radius/footprint, reservations, vehicle turns, sealed goals,
+disconnected groups and vessel controls have no paired arrival result yet.
+Use the [task-89 run sheet](EXPERIMENTS.md#v05-movement-run-sheet-task-89-needs-live-run)
+for acquisition commands, the additional controlled scenarios and strict review.
+No L3 paired count or V05 acceptance is promoted. Status: **needs live run**.

@@ -35,3 +35,24 @@ logs, session ids and patches stay in ignored `work/codex/`. They are not portab
 a fresh clone starts remaining prompts afresh. Finish and archive merged tasks
 before moving machines. To continue unmerged work, transfer the feature branch
 and English progress notes; do not assume an old session id can be resumed.
+
+Inspect tasks and open PRs with `python3 tools/codex_supervisor.py status`.
+It shows task execution/harvest status, live CI, active PR repair, retry counts
+and STUCK reasons. A recorded session without a matching local process or local
+completion/usage-limit evidence is `unknown`; transferred host records are also
+`unknown`. Inspect those sessions before explicitly resuming them.
+
+The merge queue skips waiting and STUCK PRs so newer green PRs can proceed.
+Cancelled runs and runner failures without executed steps use `gh run rerun
+--failed`, separately from the three-attempt code repair budget. Defaults are
+three infrastructure reruns (`CODEX_INFRA_RETRIES`), at least 120 seconds between
+requests (`CODEX_INFRA_RETRY_DELAY`), and a six-hour STUCK cooldown
+(`CODEX_STUCK_SECONDS`, in seconds). Budgets survive restarts; a new PR head or
+expired cooldown renews them. API errors defer a PR without authorizing a merge.
+Merges still use squash and require GitHub's normal protections.
+
+Supervisor snapshots and per-attempt outcome lines live under ignored
+`work/codex/state/supervisor/` (`state.json` and `attempts.jsonl`). Run one
+supervisor per checkout. After interruption, its dedicated LAND checkout is
+reset to discard partial resolutions before retrying; recovery is logged.
+Never use LAND for unrelated manual changes.

@@ -303,9 +303,14 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o) const {
     const auto shot = rules_->attack(o.type, t.type, !w.hostile(o.side, t.side));
     if (!shot.damage_known || !shot.getters_known || shot.damage <= 0) continue;
     int64_t d = d2(o, t);
-    if (o.attack_mode == AttackMode::Direct) {
+    // An idle unit holds its ground: it engages what its weapon reaches plus a short leash. The original keeps
+    // idle units within one or two tiles of their tactic anchor (live mission 1 to 3 measurement); chasing any
+    // enemy the side can see made the clone's own units walk to the enemy base and start the scripted counterattack.
+    const bool idle_hold = o.order == uint8_t(Order::Idle) && o.attack_mode != AttackMode::Aggressive;
+    if (o.attack_mode == AttackMode::Direct || idle_hold) {
       const auto& tr = rules_->type(t.type);
-      const int64_t reach = weapon_reach(rules_->type(o.type), tr, shot.range_px);
+      int64_t reach = weapon_reach(rules_->type(o.type), tr, shot.range_px);
+      if (idle_hold && o.attack_mode != AttackMode::Direct) reach += 2 * kTilePx;  // Balanced and Defensive hold their ground
       if (d > reach * reach) continue;
     }
     if (d < bd || (d == bd && best && t.id < best->id)) { bd = d; best = &t; }

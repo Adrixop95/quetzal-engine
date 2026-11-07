@@ -213,22 +213,29 @@ bool load_original_save(const GameData& data, const std::string& path, World& wo
   } catch (const Invalid& e) { error = e.what(); return false; }
 }
 
-bool write_original_save_snapshot(const World& w, std::ostream& out, std::string& error) {
+bool write_original_save_snapshot(const World& w, std::ostream& out, std::string& error, bool continuation) {
   error.clear();
-  if (!w.original_save || w.objects.size() != w.original_unit_ids.size() || w.tick != w.original_save->globals[4]
+  if (!w.original_save || w.objects.size() != w.original_unit_ids.size()
+      || w.tick < w.original_save->globals[4] || (!continuation && w.tick != w.original_save->globals[4])
       || w.side_state.size() < w.mission.sides.size() || w.visibility.sides.size() != w.mission.sides.size()) {
-    error = "Snapshot requires an imported world before its first continued tick";
+    error = "Snapshot requires an imported world with stable identities and a valid observation tick";
     return false;
   }
   const auto* towns = w.original_save->section("towns");
   if (!towns) { error = "Missing original town identities"; return false; }
   for (const auto& o : w.objects)
     if (o.town < -1 || o.town >= int(towns->records.size())) { error = "Invalid imported town identity"; return false; }
+  for (size_t i = 0; i < w.objects.size(); ++i)
+    if (w.objects[i].id != i + 1) { error = "Original save identity mapping changed"; return false; }
   // Only numeric gameplay values enter this stream. Private packets, raw memory,
   // descriptions and file paths remain in the retained decoder snapshot.
-  out << "{\"schema\":1,\"phase\":\"after_load_before_tick\",\"elapsed_ticks\":0,\"saved_tick\":" << w.tick
-      << ",\"unsupported\":[\"orders\",\"queues\",\"research\",\"upgrades\",\"scripts\",\"timers\",\"diplomacy\"]"
-      << ",\"state\":{\"units\":{";
+  const auto elapsed = w.tick - w.original_save->globals[4];
+  out << "{\"schema\":" << (continuation ? 2 : 1) << ",\"phase\":\""
+      << (elapsed ? "after_tick_before_commands" : "after_load_before_tick")
+      << "\",\"elapsed_ticks\":" << elapsed << ",\"saved_tick\":" << w.original_save->globals[4]
+      << ",\"unsupported\":[\"orders\",\"queues\",\"research\",\"upgrades\",\"scripts\",\"timers\",\"diplomacy\"";
+  if (continuation) out << ",\"camera\",\"frontend\",\"progression\"";
+  out << "],\"state\":{\"units\":{";
   std::vector<size_t> order(w.objects.size());
   for (size_t i = 0; i < order.size(); ++i) order[i] = i;
   std::sort(order.begin(), order.end(), [&](size_t a, size_t b) { return w.original_unit_ids[a] < w.original_unit_ids[b]; });

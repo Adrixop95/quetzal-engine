@@ -234,6 +234,9 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME save_resume_controls COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_SOURCE_DIR}/tests/test_save_resume.py $<TARGET_FILE:test_save_import> $<TARGET_FILE:aztec_save_probe>)
   set_tests_properties(save_resume_controls PROPERTIES LABELS "unit;parity" TIMEOUT 20)
+  add_test(NAME campaign_save_processes COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_SOURCE_DIR}/tests/test_campaign_save_processes.py $<TARGET_FILE:aztec_engine>)
+  set_tests_properties(campaign_save_processes PROPERTIES LABELS "unit" TIMEOUT 45)
 endif()
 add_test(NAME save_import_private COMMAND test_save_import --private ${CMAKE_SOURCE_DIR}/game)
 set_tests_properties(save_import_private PROPERTIES SKIP_RETURN_CODE 77 LABELS "game-data")
@@ -309,10 +312,15 @@ if(Python3_Interpreter_FOUND)
   set_tests_properties(determinism_processes PROPERTIES LABELS "unit" TIMEOUT 150)
   add_test(NAME parity_controls COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tools/parity_report.py self-test)
   set_tests_properties(parity_controls PROPERTIES LABELS "unit" TIMEOUT 20)
+  add_test(NAME parity_l2 COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_l2.py)
+  set_tests_properties(parity_l2 PROPERTIES LABELS "unit;parity" TIMEOUT 20)
   if(UNIX)
     add_test(NAME handoff_tools COMMAND ${Python3_EXECUTABLE} -I
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_handoff_tools.py)
     set_tests_properties(handoff_tools PROPERTIES LABELS "unit" TIMEOUT 30)
+    add_test(NAME codex_supervisor COMMAND ${Python3_EXECUTABLE} -I
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_codex_supervisor.py)
+    set_tests_properties(codex_supervisor PROPERTIES LABELS "unit" TIMEOUT 30)
   endif()
   add_test(NAME parity_triage_matrix COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parity_triage.py)
@@ -358,6 +366,9 @@ set_tests_properties(ui_screenshots PROPERTIES LABELS "unit" TIMEOUT 30
 
 # L1 specifications and L8 event-window comparisons use synthetic inputs in CI.
 if(Python3_Interpreter_FOUND)
+  add_test(NAME tactic_measure COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_tactic_measure.py $<TARGET_FILE:aztec_engine>)
+  set_tests_properties(tactic_measure PROPERTIES LABELS "unit;parity" TIMEOUT 30)
   add_test(NAME town_compare COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_town_compare.py)
   set_tests_properties(town_compare PROPERTIES LABELS "unit;parity" TIMEOUT 20)

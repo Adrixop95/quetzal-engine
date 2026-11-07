@@ -166,7 +166,7 @@ int main(int argc, char** argv) {
   rt_l0_clock(100000);
   pthread_t thread;
   if (pthread_create(&thread, NULL, renderer, NULL)) return 2;
-  for (uint32_t tick = 1; tick <= 3; ++tick) {
+  for (uint32_t tick = 1; tick <= 12; ++tick) {
     rt_l0_observe(tick);
     GU32(0x600008 + 0x38) -= 1;
     GU32(0x600008 + 0x70) += 64;
