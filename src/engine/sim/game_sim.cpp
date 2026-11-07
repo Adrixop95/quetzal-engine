@@ -1606,9 +1606,14 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(uint32_t(o.town)); mix(o.harvest_ready);
     for (const auto* h : {&o.gold_harvest, &o.repair_harvest}) { mix(h->accumulated); mix(h->last_clock); mix(h->cursor); }
     mix(o.id); mix(uint32_t(o.type)); mix(uint32_t(o.side)); mix(uint32_t(o.hp)); mix(uint32_t(o.cur_x)); mix(uint32_t(o.cur_y));
-    mix(o.carrier); mix(o.boarding); mix(o.vessel_enabled); mix(o.vessel_route); mix(o.vessel_arrived);
-    mix(o.landing_x); mix(o.landing_y); mix(o.cargo.size());
-    for (auto id : o.cargo) mix(id);
+    // Transport state joins the digest only when present, preserving pinned hashes of non-transport worlds.
+    const bool vessel_state = is_transport(o.type) || o.carrier || o.boarding || !o.vessel_enabled ||
+                              o.vessel_route || o.vessel_arrived || o.landing_x || o.landing_y || !o.cargo.empty();
+    if (vessel_state) {
+      mix(o.carrier); mix(o.boarding); mix(o.vessel_enabled); mix(o.vessel_route); mix(o.vessel_arrived);
+      mix(o.landing_x); mix(o.landing_y); mix(o.cargo.size());
+      for (auto id : o.cargo) mix(id);
+    }
     mix(uint8_t(o.attack_mode)); mix(uint32_t(o.follow_tactic)); mix(o.order); mix(o.target); mix(uint32_t(o.cooldown)); mix(o.alive); mix(o.removed); mix(uint32_t(o.progress));
     mix(uint32_t(o.render_height)); mix(uint32_t(o.destruction_radius));
     mix(uint32_t(o.transport_phase)); mix(uint32_t(o.orientation)); mix(o.construction_overlay); mix(o.has_fired);

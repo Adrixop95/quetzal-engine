@@ -118,7 +118,7 @@ static void test_movement_rules() {
     w.passability.v[10 * 20 + 10] = 1;
     Object o; o.id = 1; o.type = type;
     o.teleport(tile_center_fixed(4), tile_center_fixed(10)); w.objects.push_back(o);
-    GameSim sim(rules); sim.init(w);
+    GameSim sim(rules, Modifications::faithful()); sim.init(w);
     Command move; move.type = Pct::Move; move.ids = {1}; move.a = 16 * 48 + 24; move.b = 10 * 48 + 24;
     sim.submit(move);
     for (int tick = 0; tick < 250; ++tick) { w.begin_tick(); sim.tick(w); }
@@ -135,7 +135,7 @@ static void test_movement_rules() {
   }
   for (Pct command : {Pct::Move, Pct::AttackMove}) {
     World w = initial;
-    GameSim sim(rules); sim.init(w);
+    GameSim sim(rules, Modifications::faithful()); sim.init(w);
     for (const auto& o : w.objects) CHECK((o.mover >= 0) == is_transport(o.type));
     Command move; move.type = command; move.ids = {1,2,3,4}; move.a = 700; move.b = 600;
     sim.submit(move);
@@ -202,7 +202,7 @@ static void test_sight() {
   legacy.visibility.sides.resize(8);
   legacy.visibility.sides[0] = {40, 40, std::vector<uint8_t>(1600, 152)};
   legacy.visibility.sides[0].v[0] = 0;
-  GameSim converted(rules); converted.init(legacy); legacy.begin_tick(); converted.tick(legacy);
+  GameSim converted(rules, Modifications::faithful()); converted.init(legacy); legacy.begin_tick(); converted.tick(legacy);
   CHECK(legacy.visibility_brightness);
   CHECK(legacy.visibility.sides[0].v[0] == 32 && legacy.visibility.sides[0].v[1] == 0);
   const auto raw_hash = converted.state_hash(legacy);
@@ -210,7 +210,7 @@ static void test_sight() {
   CHECK(converted.state_hash(legacy) != raw_hash);
 
   World world = initial;
-  GameSim sim(rules); sim.init(world);
+  GameSim sim(rules, Modifications::faithful()); sim.init(world);
   world.begin_tick(); sim.tick(world);
   CHECK(world.visibility.sides.size() == 8);
   const auto index = size_t(20 * 41 + 20);
@@ -232,7 +232,7 @@ static void test_sight() {
   CHECK(sim.state_hash(world) != hash);
 
   World a = initial, b = initial;
-  GameSim first(rules), second(rules); first.init(a); second.init(b);
+  GameSim first(rules, Modifications::faithful()), second(rules, Modifications::faithful()); first.init(a); second.init(b);
   b.local_side = 7;
   for (int t = 0; t < 8; ++t) {
     a.begin_tick(); first.tick(a); b.begin_tick(); second.tick(b);
@@ -251,7 +251,7 @@ static void test_sight() {
     for (auto& day : inputs->daylight) day.fill(uint8_t(ambient));
     World duel = initial;
     duel.objects[0].attack_mode = AttackMode::Aggressive;  // visibility gate test: aggressive units pursue, balanced ones hold
-    GameSim combat(rules); combat.init(duel);
+    GameSim combat(rules, Modifications::faithful()); combat.init(duel);
     for (int t = 0; t < 3; ++t) { duel.begin_tick(); combat.tick(duel); }
     CHECK(duel.objects[0].target == (ambient == 33 ? 2u : 0u));
     CHECK(object_visible(duel, 0, duel.objects[1]) == (ambient == 33));
@@ -262,7 +262,7 @@ static void test_sight() {
       hold.objects[0].attack_mode = mode;
       hold.objects[1].attack_mode = AttackMode::Direct;
       const auto start_x = hold.objects[0].cur_x, start_y = hold.objects[0].cur_y;
-      GameSim hold_sim(rules); hold_sim.init(hold);
+      GameSim hold_sim(rules, Modifications::faithful()); hold_sim.init(hold);
       for (int t = 0; t < 60; ++t) {
         hold.begin_tick(); hold_sim.tick(hold);
         CHECK(hold.objects[0].target == 0u);
@@ -312,7 +312,7 @@ static void test_sight() {
     World duel = initial;
     duel.objects[0].attack_mode = AttackMode::Aggressive;  // bounded placeholder radius test, not the idle leash
     duel.objects[1].teleport(to_fixed(20 * 48 + distance), to_fixed(20 * 48));
-    GameSim combat(rules); combat.init(duel);
+    GameSim combat(rules, Modifications::faithful()); combat.init(duel);
     for (int t = 0; t < 3; ++t) { duel.begin_tick(); combat.tick(duel); }
     CHECK(duel.objects[0].target == (distance == 200 ? 2u : 0u));
     CHECK(duel.visibility.sides.empty());
@@ -563,7 +563,7 @@ static void test_commands_ui() {
   Object town; town.id = 2; town.type = 11; town.town = 0; town.town_hall = true; town.teleport(to_fixed(600), to_fixed(600));
   Object enemy; enemy.id = 3; enemy.type = 0; enemy.side = 1; enemy.teleport(to_fixed(700), to_fixed(600));
   w.objects = {unit, town, enemy};
-  GameSim sim(rules); sim.init(w);
+  GameSim sim(rules, Modifications::faithful()); sim.init(w);
   w.side_state[0].money = 2000;
   w.selection.ids = {1};
   World fresh = w;
@@ -787,7 +787,7 @@ static void test_siege_ranged() {
     CHECK(shot.range_px == range && shot.reload == reload);
     for (bool explicit_order : {false, true}) {
       World initial = scene(type, 180), w = initial;
-      GameSim sim(rules); sim.init(w);
+      GameSim sim(rules, Modifications::faithful()); sim.init(w);
       if (explicit_order) {
         Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
         sim.submit(attack);
@@ -807,7 +807,7 @@ static void test_siege_ranged() {
     // These weapon classes have no positive minimum range. A nearby target
     // must not cause a retreat, a melee substitution or an immediate hit.
     World close = scene(type, 80);
-    GameSim close_sim(rules); close_sim.init(close);
+    GameSim close_sim(rules, Modifications::faithful()); close_sim.init(close);
     Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
     close_sim.submit(attack); close.begin_tick(); close_sim.tick(close);
     CHECK(close.objects[0].has_fired && !close.effects.empty());
@@ -821,7 +821,7 @@ static void test_siege_ranged() {
     for (int outside : {0, 1}) {
       World edge = scene(type, reach + outside);
       edge.objects[0].attack_mode = AttackMode::Direct;
-      GameSim edge_sim(rules); edge_sim.init(edge); edge_sim.submit(attack);
+      GameSim edge_sim(rules, Modifications::faithful()); edge_sim.init(edge); edge_sim.submit(attack);
       edge.begin_tick(); edge_sim.tick(edge);
       CHECK(edge.objects[0].has_fired == (outside == 0));
     }
@@ -829,7 +829,7 @@ static void test_siege_ranged() {
     // Direct mode respects the descriptor range and does not pursue.
     World far = scene(type, 600);
     far.objects[0].attack_mode = AttackMode::Direct;
-    GameSim direct(rules); direct.init(far); direct.submit(attack);
+    GameSim direct(rules, Modifications::faithful()); direct.init(far); direct.submit(attack);
     for (int tick = 0; tick < 20; ++tick) { far.begin_tick(); direct.tick(far); }
     CHECK(!far.objects[0].has_fired && far.effects.empty());
     CHECK(far.objects[0].cur_x == to_fixed(400));
@@ -839,7 +839,7 @@ static void test_siege_ranged() {
     World approach = scene(type, 500);
     approach.passability = {40, 40, std::vector<uint8_t>(1600, 2)};
     for (int y = 0; y < 40; ++y) approach.passability.v[y * 40 + 16] = 0;
-    GameSim pursuit(rules); pursuit.init(approach); pursuit.submit(attack);
+    GameSim pursuit(rules, Modifications::faithful()); pursuit.init(approach); pursuit.submit(attack);
     for (int tick = 0; tick < 100; ++tick) { approach.begin_tick(); pursuit.tick(approach); }
     CHECK(approach.objects[0].has_fired);
     CHECK(approach.objects[0].cur_x < to_fixed(16 * 48));
@@ -859,7 +859,7 @@ static void test_siege_ranged() {
   // Ball shots aim at a launch-time position and damage objects at the actual
   // landing point. Moving the target away must not deliver a guaranteed hit.
   World w = scene(83, 180);
-  GameSim sim(rules); sim.init(w);
+  GameSim sim(rules, Modifications::faithful()); sim.init(w);
   Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
   sim.submit(attack); w.begin_tick(); sim.tick(w);
   CHECK(w.effects.size() == 1 && w.effects[0].kind == data::EffectClass::BallExpl);
@@ -885,7 +885,7 @@ static void test_siege_ranged() {
     o.teleport(to_fixed(i == 1 ? 262 : i == 2 ? 287 : 200), to_fixed(200));
     blast.objects.push_back(o);
   }
-  GameSim blast_sim(rules); blast_sim.init(blast);
+  GameSim blast_sim(rules, Modifications::faithful()); blast_sim.init(blast);
   Effect impact; impact.kind = data::EffectClass::BallExpl; impact.flight = true;
   impact.source = 99; impact.payload_id = 3;
   impact.x = impact.end_x = to_fixed(200); impact.y = impact.end_y = to_fixed(200);
@@ -915,7 +915,7 @@ static void test_projectiles() {
     target.teleport(to_fixed(290), to_fixed(200));
     initial.objects = {shooter, target};
     World a = initial, b = initial;
-    GameSim sa(rules), sb(rules); sa.init(a); sb.init(b);
+    GameSim sa(rules, Modifications::faithful()), sb(rules, Modifications::faithful()); sa.init(a); sb.init(b);
     std::ostringstream trace;
     int launches = 0, impacts = 0, hits = 0;
     sa.set_combat_observer([&](uint64_t tick, const char* event, const Effect& effect, uint32_t victim, int before, int after) {
@@ -983,7 +983,7 @@ static void test_projectiles() {
   Object neighbour = target; neighbour.id = 2; neighbour.teleport(to_fixed(210), to_fixed(200));
   Object ally = neighbour; ally.id = 3; ally.side = 0;
   w.objects = {target, neighbour, ally}; w.relation[0][1] = kEnemy;
-  GameSim sim(rules); sim.init(w);
+  GameSim sim(rules, Modifications::faithful()); sim.init(w);
   for (auto& o : w.objects) o.hp_max = 10000;
   Effect e; e.flight = true; e.source = 99; e.target = 1; e.side = 0;
   e.x = e.end_x = to_fixed(200); e.y = e.end_y = to_fixed(200);
@@ -1010,7 +1010,7 @@ static void test_projectiles() {
     Object building; building.id = 1; building.type = 10; building.hp = 10000;
     building.destruction_radius = radius; building.teleport(to_fixed(200), to_fixed(200));
     rubble.objects = {building};
-    GameSim death(rules); death.init(rubble); death.script_kill(rubble, 1);
+    GameSim death(rules, Modifications::faithful()); death.init(rubble); death.script_kill(rubble, 1);
     CHECK(!rubble.objects[0].alive && rubble.objects[0].removed == (radius < 0));
     CHECK(rubble.effects.size() == (radius < 0 ? 1u : 0u));
     for (int tick = 0; tick < 249; ++tick) { rubble.begin_tick(); death.tick(rubble); }
@@ -1037,7 +1037,7 @@ static void test_sim(const std::string& dir) {
 
   World a, b, c;
   CHECK(load_world(data, "1", a, err) && load_world(data, "1", b, err) && load_world(data, "1", c, err));
-  GameSim sa(rules), sb(rules), sc(rules);
+  GameSim sa(rules, Modifications::faithful()), sb(rules, Modifications::faithful()), sc(rules, Modifications::faithful());
   sa.init(a); sb.init(b); sc.init(c);
   uint64_t h0 = sa.state_hash(a);
   run_scenario(a, sa, 200, true);
@@ -1055,7 +1055,7 @@ static void test_sim(const std::string& dir) {
   {
     World h1;
     CHECK(load_world(data, "1", h1, err));
-    GameSim g1(rules);
+    GameSim g1(rules, Modifications::faithful());
     g1.init(h1);
     uint64_t before = g1.state_hash(h1);
     Command big; big.type = Pct::Move; big.side = 0; big.a = 2000000000; big.b = -2000000000; big.ids = side_units(h1, 0, true);
@@ -1071,7 +1071,7 @@ static void test_sim(const std::string& dir) {
     World h2;
     CHECK(load_world(data, "1", h2, err));
     h2.objects[0].type = 5000;
-    GameSim g2(rules);
+    GameSim g2(rules, Modifications::faithful());
     g2.init(h2);
     CHECK(h2.objects[0].type == -1);
   }
@@ -1091,7 +1091,7 @@ static void test_sim(const std::string& dir) {
   // combat: a footman next to an enemy footman kills it with the measured duel (600 dmg per 10 ticks)
   World f;
   CHECK(load_world(data, "1", f, err));
-  GameSim fs(rules);
+  GameSim fs(rules, Modifications::faithful());
   fs.init(f);
   Object* mine0 = nullptr; Object* enemy = nullptr;
   for (Object& o : f.objects) { if (o.type == 0 && o.side == 0 && !mine0) mine0 = &o; if (o.side == 1 && o.type == 27 && !enemy) enemy = &o; }
@@ -1107,7 +1107,7 @@ static void test_sim(const std::string& dir) {
   // economy: training spends money and spawns a unit after the build time
   World e;
   CHECK(load_world(data, "1", e, err));
-  GameSim es(rules);
+  GameSim es(rules, Modifications::faithful());
   es.init(e);
   e.side_state[0].money = 5000;
   size_t n0 = e.objects.size();
@@ -1127,7 +1127,7 @@ static void test_sim(const std::string& dir) {
 static void test_script_path_hash() {
   auto rules = std::make_shared<RulesData>();
   rules->init_defaults();
-  GameSim sim(rules);
+  GameSim sim(rules, Modifications::faithful());
   World w;
   w.terrain.w = w.terrain.h = 2;
   w.terrain.cells.resize(4);
@@ -1165,7 +1165,7 @@ static void test_animation_producers() {
   Object target = truck; target.id = 2; target.type = 0; target.side = 1;
   target.teleport(to_fixed(280), to_fixed(230));
   initial.objects = {truck, target};
-  World world = initial; GameSim sim(rules); sim.init(world);
+  World world = initial; GameSim sim(rules, Modifications::faithful()); sim.init(world);
   Command attack; attack.type = Pct::Attack; attack.side = 0; attack.ids = {1}; attack.a = 2;
   sim.submit(attack); world.begin_tick(); sim.tick(world);
   auto& unit = world.objects[0];
@@ -1191,7 +1191,7 @@ static void test_animation_producers() {
   World flight; flight.terrain = initial.terrain;
   Object bird; bird.id = 1; bird.type = 33; bird.hp = 100;
   bird.teleport(to_fixed(200), to_fixed(200));
-  flight.objects = {bird}; GameSim air(rules); air.init(flight);
+  flight.objects = {bird}; GameSim air(rules, Modifications::faithful()); air.init(flight);
   auto& flyer = flight.objects[0]; flyer.order = uint8_t(Order::Move);
   flyer.dest_x = 291; flyer.dest_y = 237;
   flight.begin_tick(); air.tick(flight);
@@ -1206,7 +1206,7 @@ static void test_animation_producers() {
   World construction; construction.terrain = initial.terrain;
   Object tower; tower.id = 1; tower.type = 17; tower.hp = 100;
   tower.teleport(to_fixed(400), to_fixed(400)); construction.objects = {tower};
-  GameSim build(rules); build.init(construction);
+  GameSim build(rules, Modifications::faithful()); build.init(construction);
   auto& structure = construction.objects[0];
   structure.progress = 0; structure.build_total = 3; structure.anim_state = kAnimConstruct;
   construction.begin_tick(); build.tick(construction);
@@ -1236,7 +1236,7 @@ static void test_script_animation_clocks() {
     o.teleport(to_fixed(200), to_fixed(200));
     w.objects.push_back(o);
     if (imported) w.original_save = std::make_shared<SaveGame>();
-    GameSim sim(rules);
+    GameSim sim(rules, Modifications::faithful());
     CHECK(sim.attach_script(path.string()));
     sim.init(w);
     Command pause; pause.type = Pct::PauseOn;
@@ -1267,7 +1267,7 @@ static void test_script(const std::string& dir) {
   rules->set_sight(nullptr);
   World w;
   if (!load_world(data, "1", w, err)) { CHECK(false); return; }
-  GameSim sim(rules);
+  GameSim sim(rules, Modifications::faithful());
   CHECK(sim.attach_script(data.map_file("mission_1", "scn")));
   sim.init(w);
   // trigger 0 (localTime == 1400): side 1 tactic 7 attacks town 0
@@ -1291,7 +1291,7 @@ static void test_script(const std::string& dir) {
   // determinism with scripts
   World a, b;
   CHECK(load_world(data, "1", a, err) && load_world(data, "1", b, err));
-  GameSim sa(rules), sb(rules);
+  GameSim sa(rules, Modifications::faithful()), sb(rules, Modifications::faithful());
   sa.attach_script(data.map_file("mission_1", "scn")); sb.attach_script(data.map_file("mission_1", "scn"));
   sa.init(a); sb.init(b);
   for (int t = 0; t < 1600; t++) { a.begin_tick(); sa.tick(a); b.begin_tick(); sb.tick(b); }
@@ -1330,15 +1330,15 @@ static void test_building_placement() {
   base.passability = {40, 40, std::vector<uint8_t>(1600, 2)};
   auto check_tile = [&](int x, int y, bool expected) {
     World w = base; w.passability.v[y * 40 + x] = 0;
-    GameSim sim(rules); sim.init(w);
+    GameSim sim(rules, Modifications::faithful()); sim.init(w);
     CHECK(sim.can_place(w, 0, 14, 12, 12) == expected);
   };
   check_tile(11, 12, false); // occupied western arm, outside the old sprite rectangle
   check_tile(13, 13, false); // clearance corner is required by the default policy
   World occupied = base; production_object(occupied, 0, 0, 12, 12);
-  GameSim blocked(rules); blocked.init(occupied);
+  GameSim blocked(rules, Modifications::faithful()); blocked.init(occupied);
   CHECK(!blocked.can_place(occupied, 0, 14, 12, 12));
-  GameSim sim(rules); World w = base; sim.init(w);
+  GameSim sim(rules, Modifications::faithful()); World w = base; sim.init(w);
   CHECK(!sim.can_place(w, 0, 14, 35, 35)); // owned town build radius
   CHECK(!sim.can_place(w, 0, 13, 12, 12)); // empty high-byte mineral resource
 
@@ -1405,7 +1405,7 @@ static void test_building_placement() {
   }
   if (surface) SDL_FreeSurface(surface);
 
-  World work = base; GameSim build(rules); build.init(work);
+  World work = base; GameSim build(rules, Modifications::faithful()); build.init(work);
   Command buy; buy.type = Pct::Build; buy.a = 14; buy.b = 12; buy.c = 12; buy.ids = {1};
   build.submit(buy); production_steps(build, work, 100);
   CHECK(work.objects.size() == 2);
@@ -1558,7 +1558,7 @@ static void test_mine_construction_flow() {
         initial.resources.v[y * 40 + x] = 65 << 8;
         initial.passability.v[y * 40 + x] = 0; // mineral rock, not ordinary clear land
       }
-    World w = initial; GameSim sim(rules); sim.init(w);
+    World w = initial; GameSim sim(rules, Modifications::faithful()); sim.init(w);
     CHECK(sim.can_place(w, 0, type, 12, 12));
     CHECK(!sim.can_place(w, 0, type, 20, 12)); // clear land without a deposit
     CHECK(!sim.can_place(w, 0, type, 12, 12, nullptr, nullptr, 1)); // wrong producing town
@@ -1666,7 +1666,7 @@ static void test_automatic_placement_access() {
   World w = production_world();
   production_object(w, 11, 0, 8, 8); w.objects.back().town_hall = true;
   w.side_state.resize(8); w.side_state[0].money = 100000;
-  GameSim sim(rules); sim.init(w);
+  GameSim sim(rules, Modifications::faithful()); sim.init(w);
   int duration = 0;
   for (const auto& item : sim.menu(w, 0)) if (item.type == 12) duration = item.time;
   CHECK(duration > 0);
@@ -1697,7 +1697,7 @@ static void test_blocked_producer_exit() {
     w.passability = {40, 40, std::vector<uint8_t>(1600, 0)};
     if (have_exit) w.passability.v[12 * 40 + 12] = 2;
     w.side_state.resize(8); w.side_state[0].money = 10000;
-    World initial = w; GameSim sim(rules); sim.init(w);
+    World initial = w; GameSim sim(rules, Modifications::faithful()); sim.init(w);
     int duration = 0;
     for (const auto& item : sim.menu(w, 0)) if (item.type == 0) duration = item.time;
     CHECK(duration > 0);
@@ -1741,7 +1741,7 @@ static void test_population_difficulty_modes() {
       MissionDef mission; CHECK(parse_mission(ini, "synthetic", mission));
       pair.first->mission.sides[0] = mission.sides[0]; // discarded by the simulation adapter
     }
-    GameSim a(rules), b(rules); a.init(low); b.init(high);
+    GameSim a(rules, Modifications::faithful()), b(rules, Modifications::faithful()); a.init(low); b.init(high);
     Command buy; buy.type = Pct::Build; buy.a = 0;
     a.submit(buy); b.submit(buy);
     for (int t = 0; t < 110; ++t) {
@@ -1763,7 +1763,7 @@ static void test_population_difficulty_modes() {
   production_object(initial, 0, -1, 25, 25); // unassigned member stays independent
   for (int mode = 0; mode <= 3; ++mode) {
     World w = initial;
-    GameSim sim(rules); sim.init(w);
+    GameSim sim(rules, Modifications::faithful()); sim.init(w);
     Command stance; stance.type = Pct::AttackMode; stance.a = mode; stance.ids = {1, 1, 4, 999};
     sim.submit(stance); production_steps(sim, w, 4);
     CHECK(w.objects[0].attack_mode == AttackMode(mode));
@@ -1790,7 +1790,7 @@ static void test_population_difficulty_modes() {
   World direct = initial;
   direct.objects[0].type = 27; // ranged unit, outside collision overlap
   direct.objects[2].teleport(direct.objects[0].cur_x + to_fixed(60), direct.objects[0].cur_y);
-  GameSim ds(rules); ds.init(direct);
+  GameSim ds(rules, Modifications::faithful()); ds.init(direct);
   Command stance; stance.type = Pct::AttackMode; stance.a = 0; stance.ids = {1};
   ds.submit(stance); production_steps(ds, direct, 4);
   CHECK(direct.objects[0].has_fired);
@@ -1807,7 +1807,7 @@ static void test_population_difficulty_modes() {
   production_object(duel, 0, -1, 10, 10);
   production_object(duel, 0, -1, 11, 10); duel.objects.back().side = 1;
   const World duel_initial = duel;
-  GameSim melee(rules); melee.init(duel);
+  GameSim melee(rules, Modifications::faithful()); melee.init(duel);
   production_steps(melee, duel, 100);
   CHECK(duel.objects[0].hp < duel.objects[0].hp_max || duel.objects[1].hp < duel.objects[1].hp_max);
   production_steps(melee, duel, 600);
@@ -1828,7 +1828,7 @@ static void test_population_difficulty_modes() {
 
   // Defensive/direct modes preserve movement; aggressive/balanced can interrupt it.
   for (int mode = 0; mode <= 3; ++mode) {
-    World w = initial; GameSim sim(rules); sim.init(w);
+    World w = initial; GameSim sim(rules, Modifications::faithful()); sim.init(w);
     stance.a = mode; sim.submit(stance);
     Command move; move.type = Pct::Move; move.ids = {1}; move.a = 700; move.b = 500;
     sim.submit(move); production_steps(sim, w, 4);
@@ -1851,7 +1851,7 @@ static void test_group_follow_commands() {
   initial.objects[2].tactic = 20;
   initial.objects[3].tactic = 30;
   initial.objects[4].side = 1; initial.objects[4].tactic = 20;
-  World w = initial; GameSim sim(rules); sim.init(w);
+  World w = initial; GameSim sim(rules, Modifications::faithful()); sim.init(w);
   auto send = [&](Pct type, int a, std::vector<uint32_t> ids = {}, int b = 0) {
     Command c; c.type = type; c.a = a; c.b = b; c.ids = std::move(ids);
     sim.submit(c); production_steps(sim, w, 1);
@@ -1926,7 +1926,7 @@ static void test_group_follow_commands() {
     fight.objects[1].tactic = 11; // follow expands only the source tactic
     fight.objects[4].teleport(fight.objects[0].cur_x + to_fixed(60), fight.objects[0].cur_y);
     fight.relation[0][1] = kEnemy;
-    GameSim fs(rules); fs.init(fight);
+    GameSim fs(rules, Modifications::faithful()); fs.init(fight);
     Command stance; stance.type = Pct::AttackMode; stance.a = mode; stance.ids = {1}; fs.submit(stance);
     Command follow; follow.type = Pct::FollowTeam; follow.a = 20; follow.ids = {1}; fs.submit(follow);
     production_steps(fs, fight, 4);
@@ -1952,7 +1952,7 @@ static void test_group_follow_commands() {
   World queue = production_world(); queue.side_state.resize(8); queue.side_state[0].money = 100000;
   production_object(queue, 11, 0, 4, 4);
   production_object(queue, 11, 1, 30, 30);
-  GameSim qs(rules); qs.init(queue);
+  GameSim qs(rules, Modifications::faithful()); qs.init(queue);
   Command pause; pause.type = Pct::PauseBuild; pause.a = 1; qs.submit(pause);
   Command buy; buy.type = Pct::Build; buy.a = 0; buy.ids = {1};
   for (int i = 0; i < 51; ++i) qs.submit(buy);
@@ -1981,7 +1981,7 @@ static void test_resource_clock_save_boundary() {
     World fresh = production_world(); fresh.mission.start_time = 7190;
     fresh.resources.v.assign(1600, uint16_t(65 | (65 << 8)));
     production_object(fresh, type, 0, 10, 10);
-    World live = fresh; GameSim sim(rules); sim.init(live);
+    World live = fresh; GameSim sim(rules, Modifications::faithful()); sim.init(live);
     CHECK(!live.objects[0].harvest_ready);
     production_steps(sim, live, 9);
     CHECK(live.objects[0].harvest_ready && live.day_clock == 7199);
@@ -2050,7 +2050,7 @@ static void test_production() {
   mine.resources.v[10 * 40 + 10] = uint16_t(65 << 8);
   mine.resources.v[9 * 40 + 10] = 65535;
   mine.mission.start_time = 7150;
-  GameSim ms(rules); ms.init(mine);
+  GameSim ms(rules, Modifications::faithful()); ms.init(mine);
   production_steps(ms, mine, 99); CHECK(mine.side_state[0].money == 0);
   production_steps(ms, mine, 1); CHECK(mine.side_state[0].money == 16 && mine.day_clock == 50);
 
@@ -2058,29 +2058,29 @@ static void test_production() {
   production_object(farm, 12, 0, 10, 10);
   production_object(farm, 18, 1, 24, 24); // another town never multiplies this farm
   World farm_fresh = farm;
-  GameSim fs(rules); fs.init(farm);
+  GameSim fs(rules, Modifications::faithful()); fs.init(farm);
   production_steps(fs, farm, 1000); CHECK(farm.side_state[0].money == 363);
   for (int warehouses : {1, 2}) {
     World w = farm_fresh;
     for (int i = 0; i < warehouses; ++i) production_object(w, i ? 70 : 18, 0, 20 + i * 4, 20);
-    GameSim sim(rules); sim.init(w);
+    GameSim sim(rules, Modifications::faithful()); sim.init(w);
     production_steps(sim, w, 1000); CHECK(w.side_state[0].money == 484);
   }
   World mixed_channels = farm_fresh;
   mixed_channels.resources.v.assign(1600, uint16_t(65 | (65 << 8)));
-  GameSim cs(rules); cs.init(mixed_channels);
+  GameSim cs(rules, Modifications::faithful()); cs.init(mixed_channels);
   production_steps(cs, mixed_channels, 1000); CHECK(mixed_channels.side_state[0].money == 367);
   World mine_warehouse = mine; mine_warehouse.side_state[0].money = 0;
   production_object(mine_warehouse, 70, 0, 20, 20);
-  GameSim mw(rules); mw.init(mine_warehouse);
+  GameSim mw(rules, Modifications::faithful()); mw.init(mine_warehouse);
   production_steps(mw, mine_warehouse, 100); CHECK(mine_warehouse.side_state[0].money == 16);
   World unfinished = farm_fresh;
   production_object(unfinished, 18, 0, 20, 20);
-  GameSim us(rules); us.init(unfinished);
+  GameSim us(rules, Modifications::faithful()); us.init(unfinished);
   unfinished.objects.back().progress = 0; unfinished.objects.back().build_total = 2000;
   production_steps(us, unfinished, 1000); CHECK(unfinished.side_state[0].money == 363);
   World hall = production_world(); production_object(hall, 11, 0, 10, 10);
-  GameSim hs(rules); hs.init(hall);
+  GameSim hs(rules, Modifications::faithful()); hs.init(hall);
   production_steps(hs, hall, 20);
   CHECK(hall.side_state[0].money == 0 && hall.repair_credits[0] == 0);
   production_steps(hs, hall, 280); CHECK(hall.side_state[0].money == 60);
@@ -2089,7 +2089,7 @@ static void test_production() {
   for (auto pair : {std::pair{12, 850}, std::pair{39, 150}}) {
     World w = production_world(); w.mission.start_time = 1200;
     production_object(w, pair.first, 0, 10, 10);
-    GameSim sim(rules); sim.init(w);
+    GameSim sim(rules, Modifications::faithful()); sim.init(w);
     production_steps(sim, w, 1); CHECK(w.side_state[0].money == 0 && w.objects[0].gold_harvest.cursor == 1);
     production_steps(sim, w, pair.second - 2); CHECK(w.side_state[0].money == 0);
     production_steps(sim, w, 1); CHECK(w.side_state[0].money > 0);
@@ -2097,7 +2097,7 @@ static void test_production() {
   World w = production_world();
   production_object(w, 11, 0, 5, 5); production_object(w, 11, 1, 25, 25);
   production_object(w, 14, 1, 22, 25); production_object(w, 22, 1, 28, 25);
-  GameSim sim(rules); sim.init(w); w.side_state[0].money = 2000;
+  GameSim sim(rules, Modifications::faithful()); sim.init(w); w.side_state[0].money = 2000;
   auto item = [&](int town, int type) {
     for (const auto& m : sim.menu(w, 0, town)) if (m.type == type) return m;
     return MenuItem{};
@@ -2132,7 +2132,7 @@ static void test_production() {
 
   World construction = production_world();
   production_object(construction, 11, 0, 5, 5); construction.objects.back().town_hall = true;
-  GameSim bs(rules); bs.init(construction); construction.side_state[0].money = 5000;
+  GameSim bs(rules, Modifications::faithful()); bs.init(construction); construction.side_state[0].money = 5000;
   Command build; build.type = Pct::Build; build.a = 14; build.b = 15; build.c = 15;
   bs.submit(fast); production_steps(bs, construction, 1); // invalid member is ignored
   Command speed; speed.type = Pct::BuildMode; speed.a = 2; bs.submit(speed);
@@ -2159,7 +2159,7 @@ static void test_production() {
   // Synthetic command-log roundtrip across a full day, including price selection and harvest cursors.
   World replay_world = farm_fresh; replay_world.side_state.resize(8); replay_world.side_state[0].money = 1000;
   World original = replay_world;
-  GameSim rs(rules); rs.init(original);
+  GameSim rs(rules, Modifications::faithful()); rs.init(original);
   fast.ids = {1}; rs.submit(fast);
   buy.ids = {1}; rs.submit(buy);
   production_steps(rs, original, 7210);
@@ -2186,7 +2186,7 @@ static void test_town_production() {
     fresh.objects[0].town_hall = true;
     fresh.side_state.resize(8); fresh.side_state[0].money = 10000;
     World w = fresh;
-    GameSim sim(rules); sim.init(w);
+    GameSim sim(rules, Modifications::faithful()); sim.init(w);
     MenuItem upgrade = item(sim, w, 0, target);
     CHECK(upgrade.enabled && !upgrade.construct);
     CHECK(upgrade.price == rules->type(target).price);
@@ -2247,7 +2247,7 @@ static void test_town_production() {
     production_object(fresh, rules->town_building(level, race), 0, 10, 10);
     fresh.objects[0].town_hall = true;
     if (type == 17 || type == 42) production_object(fresh, race == 0 ? 14 : 41, 0, 20, 20);
-    World w = fresh; GameSim sim(rules); sim.init(w);
+    World w = fresh; GameSim sim(rules, Modifications::faithful()); sim.init(w);
     MenuItem m = item(sim, w, 0, type);
     CHECK(m.enabled && !m.construct);
     CHECK(m.price == rules->type(type).price);
@@ -2291,7 +2291,7 @@ static void test_town_production() {
   World capacity = production_world();
   capacity.side_state.resize(8); capacity.side_state[0].money = 100000;
   production_object(capacity, 11, 0, 10, 10); capacity.objects[0].town_hall = true;
-  GameSim capacity_sim(rules); capacity_sim.init(capacity);
+  GameSim capacity_sim(rules, Modifications::faithful()); capacity_sim.init(capacity);
   Command pause_queue; pause_queue.type = Pct::PauseBuild; pause_queue.a = 1;
   capacity_sim.submit(pause_queue);
   Command mine; mine.type = Pct::Build; mine.a = 13; mine.ids = {1};
@@ -2311,7 +2311,7 @@ static void test_town_production() {
   blocked.passability = {40, 40, std::vector<uint8_t>(1600, 0)};
   blocked.side_state.resize(8); blocked.side_state[0].money = 10000;
   production_object(blocked, 11, 0, 10, 10); blocked.objects[0].town_hall = true;
-  GameSim blocked_sim(rules); blocked_sim.init(blocked);
+  GameSim blocked_sim(rules, Modifications::faithful()); blocked_sim.init(blocked);
   Command request; request.type = Pct::Build; request.a = 12;
   blocked_sim.submit(request); production_steps(blocked_sim, blocked, 200);
   CHECK(blocked.objects.size() == 1 && blocked.side_state[0].queue[0].remaining == 0);
@@ -2324,7 +2324,7 @@ static void test_town_production() {
   World cancelled = production_world(); cancelled.mission.towns[0].type = 0;
   cancelled.side_state.resize(8); cancelled.side_state[0].money = 10000;
   production_object(cancelled, 10, 0, 10, 10); cancelled.objects[0].town_hall = true;
-  GameSim cancel_sim(rules); cancel_sim.init(cancelled);
+  GameSim cancel_sim(rules, Modifications::faithful()); cancel_sim.init(cancelled);
   request.a = 19; cancel_sim.submit(request); production_steps(cancel_sim, cancelled, 1);
   int cancellation_cash = cancelled.side_state[0].money + cancelled.side_state[0].queue.front().refund();
   cancel_sim.submit(remove); production_steps(cancel_sim, cancelled, 1);
@@ -2333,7 +2333,7 @@ static void test_town_production() {
 
   World w = production_world(); production_object(w, 11, 0, 10, 10);
   w.objects[0].town_hall = true;
-  GameSim sim(rules); sim.init(w); w.side_state[0].money = 0;
+  GameSim sim(rules, Modifications::faithful()); sim.init(w); w.side_state[0].money = 0;
   CHECK(item(sim, w, 0, 12).enabled); // ordering does not require immediate cash
   w.side_state[0].money = 10000; w.mission.sides[0].disabled = {12};
   CHECK(!item(sim, w, 0, 12).enabled);
@@ -2364,7 +2364,7 @@ static void test_town_service() {
   for (int i = 0; i < 4; ++i) production_object(w, 12, 0, 10 + i * 4, 10);
   production_object(w, 17, 0, 10, 20);
   production_object(w, 12, 1, 25, 30);
-  GameSim sim(rules); sim.init(w);
+  GameSim sim(rules, Modifications::faithful()); sim.init(w);
   for (size_t i = 2; i < w.objects.size(); ++i) w.objects[i].hp_max = 1200;
   w.objects[2].hp = 300; w.objects[3].hp = 301;
   w.objects[4].hp = 400; w.objects[5].hp = 401;
@@ -2385,7 +2385,7 @@ static void test_town_service() {
   // Fixed shares are not recomputed after a capped target; residue flows to the next group.
   World capped = base();
   for (int i = 0; i < 3; ++i) production_object(capped, 12, 0, 10 + i * 4, 10);
-  GameSim cs(rules); cs.init(capped);
+  GameSim cs(rules, Modifications::faithful()); cs.init(capped);
   capped.objects[2].hp_max = 100; capped.objects[2].hp = 25;
   capped.objects[3].hp_max = 1200; capped.objects[3].hp = 100;
   capped.objects[4].hp_max = 1200; capped.objects[4].hp = 400;
@@ -2398,7 +2398,7 @@ static void test_town_service() {
   World destroyed = base();
   production_object(destroyed, 12, 0, 10, 10);
   production_object(destroyed, 17, 0, 10, 20);
-  GameSim ds(rules); ds.init(destroyed);
+  GameSim ds(rules, Modifications::faithful()); ds.init(destroyed);
   destroyed.objects[2].hp_max = 1200; destroyed.objects[2].hp = 1000;
   destroyed.objects[3].hp_max = 2000; destroyed.objects[3].hp = 2000;
   mode.a = 2; ds.submit(mode); mark.ids = {4, 3}; ds.submit(mark);
@@ -2412,7 +2412,7 @@ static void test_town_service() {
   World small_share = base();
   for (int i = 0; i < 3; ++i) production_object(small_share, 12, 0, 10 + i * 4, 10);
   production_object(small_share, 17, 0, 10, 20);
-  GameSim zs(rules); zs.init(small_share);
+  GameSim zs(rules, Modifications::faithful()); zs.init(small_share);
   for (size_t i = 2; i < 5; ++i) {
     small_share.objects[i].hp_max = 1200; small_share.objects[i].hp = 300;
   }
@@ -2427,7 +2427,7 @@ static void test_town_service() {
 
   // Protected ordinary structures consume work without taking service damage.
   World protected_world = base(); production_object(protected_world, 10, 0, 15, 15);
-  GameSim ps(rules); ps.init(protected_world);
+  GameSim ps(rules, Modifications::faithful()); ps.init(protected_world);
   int hp = protected_world.objects[2].hp;
   ps.submit(mode); mark.ids = {3}; ps.submit(mark);
   production_steps(ps, protected_world, 20);
@@ -2436,7 +2436,7 @@ static void test_town_service() {
   // Commands and earned credits reproduce service through completion from an engine save.
   World initial = base(); production_object(initial, 12, 0, 10, 10);
   initial.objects[2].hp = 1000;
-  World live = initial; GameSim ls(rules); ls.init(live);
+  World live = initial; GameSim ls(rules, Modifications::faithful()); ls.init(live);
   ls.submit(mode); mark.ids = {3}; ls.submit(mark);
   production_steps(ls, live, 19);
   SaveData save; save.mission = "synthetic-service"; save.tick = ls.tick_count();
@@ -2468,7 +2468,7 @@ static void test_parallel_town_production() {
   production_object(fresh, 11, 0, 5, 5); fresh.objects.back().town_hall = true;
   production_object(fresh, 11, 1, 30, 30); fresh.objects.back().town_hall = true;
   fresh.side_state.resize(8); fresh.side_state[0].money = 10000;
-  World w = fresh; GameSim sim(rules); sim.init(w);
+  World w = fresh; GameSim sim(rules, Modifications::faithful()); sim.init(w);
   Command buy; buy.type = Pct::Build; buy.a = 0; buy.ids = {1};
   sim.submit(buy); sim.submit(buy); buy.ids = {2}; sim.submit(buy);
   production_steps(sim, w, 1);
@@ -2503,7 +2503,7 @@ static void test_parallel_town_production() {
   World capacity = production_world();
   production_object(capacity, 11, 0, 5, 5); capacity.objects.back().town_hall = true;
   production_object(capacity, 11, 1, 30, 30); capacity.objects.back().town_hall = true;
-  GameSim capacity_sim(rules); capacity_sim.init(capacity); capacity.side_state[0].money = 10000;
+  GameSim capacity_sim(rules, Modifications::faithful()); capacity_sim.init(capacity); capacity.side_state[0].money = 10000;
   buy.ids = {1}; for (int i = 0; i < 9; ++i) capacity_sim.submit(buy);
   buy.ids = {2}; capacity_sim.submit(buy);
   production_steps(capacity_sim, capacity, 1);
@@ -2513,7 +2513,7 @@ static void test_parallel_town_production() {
   World ui_world = production_world();
   production_object(ui_world, 11, 0, 5, 5); ui_world.objects.back().town_hall = true;
   production_object(ui_world, 11, 1, 30, 30); ui_world.objects.back().town_hall = true;
-  GameSim ui_sim(rules); ui_sim.init(ui_world); ui_world.side_state[0].money = 10000;
+  GameSim ui_sim(rules, Modifications::faithful()); ui_sim.init(ui_world); ui_world.side_state[0].money = 10000;
   buy.ids = {1}; ui_sim.submit(buy); buy.ids = {2}; ui_sim.submit(buy);
   production_steps(ui_sim, ui_world, 1);
   ui_world.selection.ids = {2}; CommandsUi ui(&ui_sim);
@@ -2750,18 +2750,40 @@ static void test_parallel_training() {
   }
 }
 
+// Pin pre-profile hashes without buildings or mission groups: formation setup is unrelated.
+static void test_faithful_profile_hashes() {
+  auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  World w = production_world(); production_object(w, 0, 0, 5, 5);
+  GameSim sim(rules, Modifications::faithful()); sim.init(w);
+  const uint64_t before_profiles[] = {
+    10966095332724573841ull, 6216605996558649658ull, 15231455327624153898ull,
+    14308430164348026918ull, 657650451907204673ull, 2755125741927956737ull};
+  CHECK(sim.state_hash(w) == before_profiles[0]);
+  Command move; move.type = Pct::Move; move.ids = {1}; move.a = 12 * 48; move.b = 12 * 48;
+  sim.submit(move);
+  for (int tick = 1; tick <= 5; ++tick) {
+    production_steps(sim, w, 1);
+    CHECK(sim.state_hash(w) == before_profiles[tick]);
+  }
+}
+
 // Default production stays serial, but every accepted placement is visible immediately.
 static void test_default_construction_placeholders() {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
   World initial = production_world();
   production_object(initial, 11, 0, 5, 5); initial.objects.back().town_hall = true;
   initial.side_state.resize(8); initial.side_state[0].money = 10000;
-  World w = initial; GameSim sim(rules); sim.init(w);
-  Command unit; unit.type = Pct::Build; unit.a = 0; unit.ids = {1}; sim.submit(unit);
+  World w = initial; GameSim sim(rules, Modifications::faithful()); sim.init(w);
+  // Decode the legacy all-off bitset independently of named profile selection.
+  World legacy_world = initial; GameSim legacy(rules, Modifications::from_bits(0)); legacy.init(legacy_world);
+  CHECK(sim.state_hash(w) == legacy.state_hash(legacy_world));
+  Command unit; unit.type = Pct::Build; unit.a = 0; unit.ids = {1}; sim.submit(unit); legacy.submit(unit);
   Command place; place.type = Pct::PlaceBuilding; place.a = 12; place.ids = {1};
-  place.b = 12; place.c = 12; sim.submit(place);
-  place.b = 18; place.c = 18; sim.submit(place);
+  place.b = 12; place.c = 12; sim.submit(place); legacy.submit(place);
+  place.b = 18; place.c = 18; sim.submit(place); legacy.submit(place);
   production_steps(sim, w, 1);
+  production_steps(legacy, legacy_world, 1);
+  CHECK(sim.state_hash(w) == legacy.state_hash(legacy_world));
   CHECK(w.objects.size() == 3 && w.side_state[0].queue.size() == 3);
   for (size_t i : {1u, 2u}) {
     const auto& q = w.side_state[0].queue[i]; const auto* object = w.find(q.object);
@@ -2770,6 +2792,8 @@ static void test_default_construction_placeholders() {
   }
   CHECK(w.side_state[0].money == 9900 && !sim.can_place(w, 0, 12, 18, 18));
   production_steps(sim, w, 4);
+  production_steps(legacy, legacy_world, 4);
+  CHECK(sim.state_hash(w) == legacy.state_hash(legacy_world));
   CHECK(w.side_state[0].queue[0].remaining == 95 && w.objects[1].progress == 0 && w.objects[2].progress == 0);
   SaveData saved; saved.mission = "serial-placeholder"; saved.tick = sim.tick_count();
   saved.hash = sim.state_hash(w); saved.log = sim.log(); saved.modifications = sim.initial_modifications();
@@ -2814,7 +2838,7 @@ static void test_construction_resume_completion() {
     production_object(initial, 11, 0, 5, 5); initial.objects.back().town_hall = true;
     if (type == 17) production_object(initial, 14, 0, 9, 5);
     initial.side_state.resize(8); initial.side_state[0].money = 10000;
-    World w = initial; GameSim sim(rules); sim.init(w);
+    World w = initial; GameSim sim(rules, Modifications::faithful()); sim.init(w);
     Command place; place.type = Pct::PlaceBuilding; place.a = type; place.b = place.c = 15; place.ids = {1};
     sim.submit(place); production_steps(sim, w, 1);
     CHECK(w.side_state[0].queue.size() == 1);
@@ -2976,7 +3000,7 @@ static void test_mixed_production_queue() {
   // A waiting item's price and duration use the speed when it starts.
   World priced = production_world(); production_object(priced, 11, 0, 5, 5);
   priced.objects.back().town_hall = true;
-  GameSim price_sim(rules); price_sim.init(priced); priced.side_state[0].money = 1000;
+  GameSim price_sim(rules, Modifications::faithful()); price_sim.init(priced); priced.side_state[0].money = 1000;
   buy.a = 0; price_sim.submit(buy); price_sim.submit(buy); production_steps(price_sim, priced, 1);
   Command speed; speed.type = Pct::BuildMode; speed.a = 2; speed.ids = {1};
   price_sim.submit(speed); production_steps(price_sim, priced, 1);
@@ -2987,7 +3011,7 @@ static void test_mixed_production_queue() {
 
   World destroyed = production_world(); production_object(destroyed, 11, 0, 5, 5);
   destroyed.objects.back().town_hall = true;
-  GameSim ds(rules); ds.init(destroyed); destroyed.side_state[0].money = 10000;
+  GameSim ds(rules, Modifications::faithful()); ds.init(destroyed); destroyed.side_state[0].money = 10000;
   buy.a = 14; ds.submit(buy); production_steps(ds, destroyed, 1);
   uint32_t building = destroyed.side_state[0].queue[0].object;
   CHECK(building != 0);
@@ -3007,7 +3031,7 @@ static void test_campaign_initialization(const std::string& dir) {
     if (!load_world(data, std::to_string(mission), w, error)) {
       CHECK(false); std::printf("%s\n", error.c_str()); continue;
     }
-    GameSim sim(rules); sim.init(w);
+    GameSim sim(rules, Modifications::faithful()); sim.init(w);
     size_t placed = 0;
     for (const auto& p : w.mission.objects) {
       if (p.source == ObjectSource::Submarine) continue;
@@ -3071,7 +3095,7 @@ static void test_payment_clock() {
   production_object(initial, 11, 0, 5, 5); initial.objects.back().town_hall = true;
   initial.side_state.resize(8); initial.side_state[0].money = 100;
   World w = initial;
-  GameSim sim(rules); sim.init(w);
+  GameSim sim(rules, Modifications::faithful()); sim.init(w);
   Command buy; buy.type = Pct::Build; buy.a = 0; buy.ids = {1};
   sim.submit(buy); sim.submit(buy);
   production_steps(sim, w, 1);
@@ -3091,7 +3115,7 @@ static void test_payment_clock() {
   building.mission.towns.resize(1);
   production_object(building, 11, 0, 5, 5); building.objects.back().town_hall = true;
   building.side_state.resize(8); building.side_state[0].money = 100;
-  GameSim construction(rules); construction.init(building);
+  GameSim construction(rules, Modifications::faithful()); construction.init(building);
   Command place; place.type = Pct::PlaceBuilding; place.a = 14;
   place.b = place.c = 15; place.ids = {1};
   construction.submit(place); production_steps(construction, building, 3);
@@ -3126,7 +3150,7 @@ static void test_mission_unit_health() {
   place_mission_objects(world);
   auto rules = std::make_shared<RulesData>();
   CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
-  GameSim sim(rules); sim.init(world);
+  GameSim sim(rules, Modifications::faithful()); sim.init(world);
   for (const auto& o : world.objects) CHECK(o.hp == rules->type(o.type).hp_max);
   CHECK(world.objects[1].hp == 12000 && world.objects[3].hp == 13000);
   // Explicit instance health and restored state have independent semantics.
@@ -3160,7 +3184,7 @@ static void test_object_initialization() {
   place_mission_objects(initial);
   CHECK(initial.objects.size() == kNumTypes + 2);
   World world = initial;
-  GameSim sim(rules); sim.init(world);
+  GameSim sim(rules, Modifications::faithful()); sim.init(world);
   for (int id = 0; id < kNumTypes; ++id) {
     const auto& p = initial.mission.objects[id];
     const auto& o = world.objects[id];
@@ -3213,7 +3237,7 @@ static void test_object_initialization() {
     Object o; o.id = 1; o.type = id; o.hp = r.regen_alt_threshold;
     o.regen_service_ticks = 2; o.teleport(tile_center_fixed(10), tile_center_fixed(10));
     fresh.objects = {o};
-    World live = fresh; GameSim game(rules); game.init(live);
+    World live = fresh; GameSim game(rules, Modifications::faithful()); game.init(live);
     Command pause; pause.type = Pct::PauseOn; game.submit(pause);
     live.begin_tick(); game.tick(live);
     CHECK(live.objects[0].hp == o.hp && live.objects[0].regen_service_ticks == 2);
@@ -3297,7 +3321,7 @@ static void test_descriptor_combat() {
   b.teleport(to_fixed(220), to_fixed(200));
   fresh.objects = {a, b};
   World world = fresh;
-  GameSim sim(rules); sim.init(world);
+  GameSim sim(rules, Modifications::faithful()); sim.init(world);
   CHECK(world.objects[1].hp == 5000 && world.objects[1].hp_max == 13000);
   CHECK(world.objects[1].secondary_hp == 23000);
   auto hash = sim.state_hash(world);
@@ -3371,7 +3395,7 @@ static void test_town_commands() {
   initial.objects.back().removed = true;
   add(14, 0, 4, 22, 22);     // 13: current construction
   World w = initial;
-  GameSim sim(rules); sim.init(w);
+  GameSim sim(rules, Modifications::faithful()); sim.init(w);
   w.objects[6].hp /= 2;
   w.objects[7].hp /= 2;
   // Store damaged mission inputs before init for command-log save replay.
@@ -3521,6 +3545,7 @@ int main(int argc, char** argv) {
     test_town_service();
     test_parallel_town_production();
     test_parallel_training();
+    test_faithful_profile_hashes();
     test_default_construction_placeholders();
     test_construction_resume_completion();
     test_mixed_production_queue();

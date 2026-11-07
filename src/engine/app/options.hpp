@@ -16,7 +16,7 @@ bool load_modifications(const std::string& path, Modifications& out);
 bool save_modifications(const std::string& path, Modifications options);
 
 struct Options {
-  Modifications modifications;
+  Modifications modifications = Modifications::faithful();
   std::string modifications_file;
   std::string game_dir = "game";
   std::string original_save;        // --load-original FILE

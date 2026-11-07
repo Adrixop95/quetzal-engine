@@ -80,8 +80,9 @@ static void test_determinism() {
   u64 a = run_course("gap1", 30, 500), b = run_course("gap1", 30, 500);
   CHECK(a == b);
   // Golden value: update only for an intentional algorithm or hash-contract change.
-  // Includes water flow fields and enabled/embarked agent state.
-  const u64 golden = 0x343f3cb437c701b6ull;
+  // Water flow fields and disabled (embarked) agent state join the digest only when present,
+  // so this ground-only course keeps the digest it had before the water movement class existed.
+  const u64 golden = 0x74aad6e9f83f2c2eull;
   if (a != golden) printf("  movement hash: %016llx\n", (unsigned long long)a);
   CHECK(a == golden);
 }

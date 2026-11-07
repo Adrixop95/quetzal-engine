@@ -207,10 +207,12 @@ int run_headless(int argc, char** argv) {
   std::string l0_schedule, l0_output, l0_frames, tactic_path;
   int max_ticks = 43200, interval = 120, save_tick = 0;
   bool auto_orders = true, order_observations = false;
-  Modifications modifications;
+  Modifications modifications = Modifications::faithful();
   try {
     std::string settings_error;
     if (!configured_game_dir(argc, argv, game, settings_error)) throw std::runtime_error(settings_error);
+    std::string cli_profile = "faithful";
+    std::vector<std::string> cli_modifications;
     bool mission_given = false;
     for (int i = 1; i < argc; ++i) {
       std::string a = argv[i];
@@ -220,7 +222,15 @@ int run_headless(int argc, char** argv) {
       };
       if (a == "--game") game = value();
       else if (a == "--settings") { value(); }
-      else if (a == "--mod") { if (!modifications.set(value())) throw std::runtime_error("invalid modification"); }
+      else if (a == "--profile") {
+        cli_profile = value();
+        if (cli_profile != "faithful" && cli_profile != "enhanced") throw std::runtime_error("invalid profile");
+      }
+      else if (a == "--mod") {
+        const auto option = value(); Modifications checked;
+        if (!checked.set(option)) throw std::runtime_error("invalid modification");
+        cli_modifications.push_back(option);
+      }
       else if (a == "--rules-dir") rules_dir = value();
       else if (a == "--max-ticks") max_ticks = number(value(), 1);
       else if (a == "--order-interval") interval = number(value(), 1);
@@ -240,11 +250,13 @@ int run_headless(int argc, char** argv) {
       else if (a == "--resume") resume_path = value();
       else if (a == "--no-auto-orders") auto_orders = false;
       else if (a == "--help") {
-        std::puts("usage: aztec_engine --headless [--settings FILE] --game DIR --rules-dir DIR [--mod parallel_construction=on|off] [--mod relaxed_placement=on|off] [--mod parallel_training=1..8|per-building] [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE [--order-observations]] [--combat-trace FILE] [--ai-trace FILE] [--tactic-trace FILE] [--tick-hashes FILE] [--l0-schedule FILE --l0-output FILE --l0-frames DIR] [--save-at N --save FILE] [--resume FILE] MISSION");
+        std::puts("usage: aztec_engine --headless [--settings FILE] --game DIR --rules-dir DIR [--profile faithful|enhanced] [--mod NAME=on|off (parallel_training also 1..8|per-building)] [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE [--order-observations]] [--combat-trace FILE] [--ai-trace FILE] [--tactic-trace FILE] [--tick-hashes FILE] [--l0-schedule FILE --l0-output FILE --l0-frames DIR] [--save-at N --save FILE] [--resume FILE] MISSION");
         return 0;
       } else if (a.empty() || a[0] == '-' || mission_given) throw std::runtime_error("unexpected argument: " + a);
       else { report.mission = a; mission_given = true; }
     }
+    modifications.set_profile(cli_profile);
+    for (const auto& option : cli_modifications) modifications.set(option);
     if (!mission_given) throw std::runtime_error("headless mode requires a mission");
     if (order_observations && observations_path.empty()) throw std::runtime_error("--order-observations requires --observations FILE");
     GameData data;

@@ -332,7 +332,7 @@ int main(int argc, char** argv) {
   dying.anim_state = int(data::AnimState::Die);
   initial.objects.push_back(dying);
   World silent = initial, presented = initial;
-  GameSim silent_sim(rules), presented_sim(rules); silent_sim.init(silent); presented_sim.init(presented);
+  GameSim silent_sim(rules, Modifications::faithful()), presented_sim(rules, Modifications::faithful()); silent_sim.init(silent); presented_sim.init(presented);
   audio.event_sink = {}; audio.start_music(0, 3, 0);
   for (int t = 0; t < 1200; ++t) {
     if (t % 100 == 0) {

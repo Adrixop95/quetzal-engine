@@ -95,7 +95,7 @@ static void provider_controls() {
       Object boat; boat.id = 1; boat.source = ObjectSource::Boat;
       boat.orientation = orientation; boat.transport_phase = phase;
       world.objects.push_back(boat);
-      GameSim sim(rules); sim.init(world);
+      GameSim sim(rules, Modifications::faithful()); sim.init(world);
       Command pause; pause.type = Pct::PauseOn; sim.submit(pause);
       for (int tick = 0; tick < 8; ++tick) { world.begin_tick(); sim.tick(world); }
       CHECK(world.objects[0].anim_tick == 0 && world.objects[0].transport_phase == phase);

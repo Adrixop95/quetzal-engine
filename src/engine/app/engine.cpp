@@ -323,6 +323,10 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       if (in.hit(SDL_SCANCODE_F11)) win.cycle_borderless();
       if (in.hit(SDL_SCANCODE_RETURN) && in.alt) win.toggle_fullscreen();
       notice_left = std::max(0.0, notice_left - dt);
+      if (in.hit(SDL_SCANCODE_F9) && !in.ctrl && !briefing.open && !audio_options.open && !slots.open) {
+        modification_options.open = !modification_options.open;
+        if (modification_options.open) pause.open = true;
+      }
       const bool submodal = briefing.open || audio_options.open || modification_options.open || slots.open;
       const bool slot_saving = slots.saving;
       const int confirmed_slot = slots.update(in, ow, oh, pscale);

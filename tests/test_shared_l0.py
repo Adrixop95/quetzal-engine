@@ -722,7 +722,7 @@ class SharedControls(unittest.TestCase):
             env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
             trace_args = ["--combat-trace", str(run / "combat.jsonl"),
                           "--observations", str(run / "objects.jsonl"), "--order-observations"] if repetition == 2 else []
-            result = subprocess.run([str(ENGINE), "--headless", "--game", str(game), "--rules-dir", str(ROOT / "docs/data"),
+            result = subprocess.run([str(ENGINE), "--headless", "--profile", "faithful", "--game", str(game), "--rules-dir", str(ROOT / "docs/data"),
                                      "--no-auto-orders", "--max-ticks", "3", "--l0-schedule", str(schedule),
                                      "--l0-output", str(native), "--l0-frames", str(run),
                                      "--tick-hashes", str(run / "hashes.txt"), *trace_args, "1"],

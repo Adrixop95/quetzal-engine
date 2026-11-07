@@ -119,7 +119,7 @@ static void continuation() {
   auto w = base_world(); std::string error;
   CHECK(import_original_save(save, w, error)); CHECK(w.find(1)->town_hall);
   CHECK(w.original_save->bytes == save.bytes);
-  auto rules = std::make_shared<RulesData>(); rules->init_defaults(); GameSim sim(rules); sim.init(w);
+  auto rules = std::make_shared<RulesData>(); rules->init_defaults(); GameSim sim(rules, Modifications::faithful()); sim.init(w);
   CHECK(w.original_save->bytes == save.bytes && w.tick == 123);
   std::ostringstream snapshot;
   CHECK(write_original_save_snapshot(w, snapshot, error));
@@ -203,7 +203,7 @@ static void synthetic() {
   }
   auto bw = base_world(); CHECK(import_original_save(bordered.decode(), bw, error));
   CHECK(bw.visibility.sides[1].v == Bytes({0, 96, 152, 1}));
-  auto rules = std::make_shared<RulesData>(); rules->init_defaults(); GameSim sim(rules);
+  auto rules = std::make_shared<RulesData>(); rules->init_defaults(); GameSim sim(rules, Modifications::faithful());
   // Computer-owned imported towns must initialize the planner without resetting saved fog.
   w.mission.sides[0].only_comp = true;
   sim.init(w);
@@ -306,7 +306,7 @@ static int private_saves(int argc, char** argv) {
         for (int x = 0; x < layer.w; ++x)
           CHECK(layer.v[size_t(y) * layer.w + x] == decoded.bytes[fog->offset + size_t(y) * stride + x]);
     }
-    auto rules = std::make_shared<RulesData>(); rules->init_defaults(); GameSim sim(rules);
+    auto rules = std::make_shared<RulesData>(); rules->init_defaults(); GameSim sim(rules, Modifications::faithful());
     const auto tick = w.tick; const int hp = w.objects.empty() ? 0 : w.objects[0].hp;
     sim.init(w); CHECK(sim.tick_count() == tick);
     CHECK(w.objects.empty() || w.objects[0].hp == hp);
@@ -319,7 +319,7 @@ int main(int argc, char** argv) {
   if (argc == 4 && std::string(argv[1]) == "--generate") {
     auto save = continuation_fixture(); auto w = base_world(); std::string error;
     CHECK(import_original_save(save, w, error));
-    auto rules = std::make_shared<RulesData>(); rules->init_defaults(); GameSim sim(rules); sim.init(w);
+    auto rules = std::make_shared<RulesData>(); rules->init_defaults(); GameSim sim(rules, Modifications::faithful()); sim.init(w);
     std::ofstream bytes(argv[2], std::ios::binary);
     bytes.write(reinterpret_cast<const char*>(save.bytes.data()), std::streamsize(save.bytes.size()));
     bytes.close(); CHECK(!bytes.fail());

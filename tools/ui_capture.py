@@ -134,7 +134,7 @@ def capture(args, row, runner, directory):
                 env = dict(RT_UI_SCRIPT=str(script), RT_NO_GRAB='1', RT_NO_VIDEO='1',
                            RT_RESOLUTION='800x600', RT_DUMP_DIR=str(run))
             else:
-                argv = [binary.resolve(), '--game', game, '--rules-dir', ROOT / 'docs/data',
+                argv = [binary.resolve(), '--profile', 'faithful', '--game', game, '--rules-dir', ROOT / 'docs/data',
                         '--size', '800x600', '--software', '--no-audio', '--no-mouse-grab']
                 env = {}
                 if route['mission'] is None:
@@ -271,7 +271,7 @@ def capture_clone(args, spec, directory):
             values = [str(shots[name])]
         script.append(f"{event['frame']} {command}" + ''.join(' ' + str(v) for v in values))
     (directory / 'input.txt').write_text('\n'.join(script) + '\n')
-    execute([args.clone.resolve(), '--game', game, '--rules-dir', ROOT / 'docs/data',
+    execute([args.clone.resolve(), '--profile', 'faithful', '--game', game, '--rules-dir', ROOT / 'docs/data',
              '--size', '800x600', '--software', '--no-audio', '--menu-script', directory / 'input.txt',
              '--menu-trace', directory / 'trace.jsonl'], directory, args.timeout,
             dict(AZTEC_USER_DIR=str(directory / 'profile'), AZTEC_UI_SCRIPT='', AZTEC_MENU_SHOT=''), setup_network=False)

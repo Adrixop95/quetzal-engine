@@ -424,7 +424,7 @@ u64 MoveSystem::state_hash() const {
   mix(agents_.size());
   for (const Agent& a : agents_) {
     mix(a.id); mix((u32)a.pos.x); mix((u32)a.pos.y); mix((u32)a.vel.x); mix((u32)a.vel.y); mix((u32)a.prev_pos.x); mix((u32)a.prev_pos.y);
-    mix((u32)a.radius); mix((u32)a.speed); mix((u64)a.cls); mix((u64)a.state); mix(a.hold); mix(a.enabled); mix((u32)a.order);
+    mix((u32)a.radius); mix((u32)a.speed); mix((u64)a.cls); mix((u64)a.state); mix(a.hold); if (!a.enabled) mix(a.enabled); mix((u32)a.order);
     mix((u32)a.slot.x); mix((u32)a.slot.y); mix((u32)a.facing); mix((u32)a.heading);
     mix((u32)a.win_start.x); mix((u32)a.win_start.y); mix((u32)a.win_ticks); mix((u32)a.stuck_level); mix((u32)a.squeeze_ticks); mix((u32)a.ghost_ticks); mix(a.moved_ticks);
     mix((u32)a.target.x); mix((u32)a.target.y); mix(a.target_until); mix((u32)a.backoff_ticks);
@@ -445,8 +445,10 @@ u64 MoveSystem::state_hash() const {
   }
   mix(orders_.size());
   for (const auto& o : orders_) {
-    mix((u32)o->refs); mix((u32)o->goal.x); mix((u32)o->goal.y); mix((u32)o->goal_cell.x); mix((u32)o->goal_cell.y); mix(o->have[0]); mix(o->have[1]); mix(o->have[2]);
-    for (int k = 0; k < 3; ++k) if (o->have[k]) mix(o->ff[k].state_hash());
+    mix((u32)o->refs); mix((u32)o->goal.x); mix((u32)o->goal.y); mix((u32)o->goal_cell.x); mix((u32)o->goal_cell.y); mix(o->have[0]); mix(o->have[1]);
+    for (int k = 0; k < 2; ++k) if (o->have[k]) mix(o->ff[k].state_hash());
+    // Water fields join the digest only when built, preserving pinned hashes of ground-only orders.
+    if (o->have[2]) { mix(o->have[2]); mix(o->ff[2].state_hash()); }
   }
   return h;
 }

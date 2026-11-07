@@ -49,7 +49,7 @@ static void source_locations() {
 }
 
 static void order_and_enablement() {
-  World w = world(); GameSim sim(rules()); sim.init(w);
+  World w = world(); GameSim sim(rules(), Modifications::faithful()); sim.init(w);
   auto r = runner(w,
       "trigger(9) conditions always actions side(local).addMoney(1) trigger(9).disable end "
       "trigger(2) conditions always actions trigger(9).enable trigger(7).enable trigger(3).disable trigger(2).disable side(local).addMoney(10) end "
@@ -71,7 +71,7 @@ static void order_and_enablement() {
 }
 
 static void timers() {
-  World w = world(); GameSim sim(rules()); sim.init(w);
+  World w = world(); GameSim sim(rules(), Modifications::faithful()); sim.init(w);
   auto r = runner(w,
       "trigger(0) conditions localTime == 1 actions timer(1).set(5) timer(1).stop end "
       "trigger(1) conditions globalTime == 2 actions timer(1).start timer(0).kill end "
@@ -99,7 +99,7 @@ static void conditions_and_identity() {
   object(w, 0, 1, 10, 20, 20); object(w, 11, 1, -1, 25, 25);
   w.objects[3].scenario = 42; w.objects[3].defence = true;
   w.side_state[2].money = 50;
-  GameSim sim(rules()); sim.init(w); auto r = runner(w, "");
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w); auto r = runner(w, "");
   const std::string checks[] = {
     "always", "localTime == 0", "globalTime == 0", "timer(0) == 0",
     "side(local).units == 2", "side(local).towns == 1", "side(local).enemies == 2",
@@ -135,7 +135,7 @@ static void paths_and_gifts() {
   for (const auto& method : {"setPath", "setInvertedPath", "setCycledPath", "setCycledInvertedPath"}) {
     World w = world(); object(w, 0, 2, 5, 3, 4);
     w.mission.paths = {{{6, 7}, {8, 9}}};
-    GameSim sim(rules()); sim.init(w);
+    GameSim sim(rules(), Modifications::faithful()); sim.init(w);
     const std::string m = method;
     auto r = runner(w, "trigger(0) conditions always actions side(local).tactic(5)." + m + "(0) trigger(0).disable end");
     const bool inverted = m.find("Inverted") != std::string::npos;
@@ -152,7 +152,7 @@ static void paths_and_gifts() {
     if (cycled) CHECK(w.objects[0].dest_x == (inverted ? 8 : 6) * kTilePx + kTilePx / 2);
   }
   World w = world(); object(w, 0, 2, 5, 3, 4); object(w, 0, 1, 5, 6, 7);
-  GameSim sim(rules()); sim.init(w);
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
   auto r = runner(w,
       "trigger(0) conditions localTime == 1 actions side(local).tactic(5).moveTo(20,20) end "
       "trigger(1) conditions localTime == 2 actions side(local).tactic(5).giftToSide(1) end");
@@ -169,7 +169,7 @@ static void actions_and_outcomes() {
   World w = world(); object(w, 0, 2, 5, 3, 4); object(w, 11, 1, -1, 10, 12);
   w.objects[1].scenario = 30;
   SideDef sd; sd.index = 2; sd.cameras.push_back({7, 8, 0}); w.mission.sides.push_back(sd);
-  GameSim sim(rules()); sim.init(w);
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
   auto r = runner(w,
       "trigger(0) conditions always actions side(local).tactic(5).lock side(local).tactic(5).attackTown(30) "
       "side(local).setFriendlyTo(1) side(local).addMoney(50) side(local).takeMoney(100) "
@@ -243,7 +243,7 @@ static void action_observation_contracts() {
   // Each unresolved grammar branch must remain visible both before and after dispatch.
   for (const auto& method : {"side(local).buildCommand(UGI_FOOTMAN,1,2)", "side(local).moveCommand(1,2)",
                             "side(local).cameraDeactivate(0)"}) {
-    World w = world(); GameSim sim(rules()); sim.init(w);
+    World w = world(); GameSim sim(rules(), Modifications::faithful()); sim.init(w);
     auto r = runner(w,
         "trigger(7) conditions localTime == 2 actions " + std::string(method) + " trigger(7).disable end\n"
         "trigger(8) conditions localTime > 10 actions " + method + " end\n"
@@ -270,7 +270,7 @@ static void action_observation_contracts() {
       CHECK(row.trace.executions == 0 && row.trace.first_tick == 0 && row.trace.last_tick == 0);
   }
   // Repeated IDs share enablement, but never share execution provenance.
-  World w = world(); GameSim sim(rules()); sim.init(w);
+  World w = world(); GameSim sim(rules(), Modifications::faithful()); sim.init(w);
   auto r = runner(w,
       "trigger(3) conditions always actions trigger(3).disable end "
       "trigger(3) conditions always actions boat(1).activate end");
@@ -290,7 +290,7 @@ static void replay() {
   World initial = world(); object(initial, 0, 2, 5, 3, 4);
   initial.mission.paths = {{{6, 7}, {8, 9}}};
   World a = initial, b = initial; b.local_side = 7;
-  auto data = rules(); GameSim first(data), second(data);
+  auto data = rules(); GameSim first(data, Modifications::faithful()), second(data, Modifications::faithful());
   CHECK(first.attach_script(path.string()) && second.attach_script(path.string())); first.init(a); second.init(b);
   for (int tick = 0; tick < 240; ++tick) {
     if (tick == 30) {

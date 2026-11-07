@@ -46,7 +46,7 @@ static void loopback(uint8_t delay) {
   require(a.link.synchronized() && b.link.synchronized(), "Final hashes exchanged");
   require(a.sim.state_hash(a.w) == b.sim.state_hash(b.w), "Peer hashes agree");
   require(a.w.objects[0].cur_x != to_fixed(200), "Commands move a real simulation unit");
-  World control = world(); GameSim sim(rules()); sim.init(control);
+  World control = world(); GameSim sim(rules(), Modifications::faithful()); sim.init(control);
   for (uint64_t tick = 0; tick < goal; ++tick) {
     if (tick >= delay) for (uint8_t side = 0; side < 2; ++side)
       for (const auto& c : input(side, tick - delay)) sim.submit(c);
@@ -115,9 +115,9 @@ static void wire_values() {
 }
 
 static void modification_mismatch() {
-  for (Modifications mods : {Modifications{true}, Modifications{false, false, 3}, Modifications{false, false, 0}}) {
+  for (Modifications mods : {Modifications{true}, Modifications{false, false, 3}, Modifications{false, false, 0}, Modifications::enhanced()}) {
     auto a = world(), b = world();
-    GameSim serial(rules()), parallel(rules(), mods); serial.init(a); parallel.init(b);
+    GameSim serial(rules(), Modifications::faithful()), parallel(rules(), mods); serial.init(a); parallel.init(b);
     require(serial.state_hash(a) != parallel.state_hash(b), "Modifications affect initial hash");
     Lockstep x({7, 0, 0, serial.state_hash(a)}), y({7, 1, 0, parallel.state_hash(b)});
     require(x.submit({}) && y.submit({}), "Seal modification mismatch test");

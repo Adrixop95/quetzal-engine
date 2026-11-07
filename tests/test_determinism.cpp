@@ -43,7 +43,7 @@ static void unit() {
   require(production_value(8388608, 1, 0, false, false, false) == 5592406, "binary32 half rounding");
   require(production_value(16777217, 1, 1, true, false, false) == 13421774, "computer binary32 rounding");
   require(production_value(INT32_MAX, 1, 2, true, false, false) == INT32_MAX, "production overflow clamp");
-  auto r = rules(); auto w = initial(); GameSim sim(r); sim.init(w);
+  auto r = rules(); auto w = initial(); GameSim sim(r, Modifications::faithful()); sim.init(w);
   auto changes_hash = [&](auto change) {
     auto altered = w; change(altered);
     require(sim.state_hash(w) != sim.state_hash(altered), "missing future-affecting field");
@@ -95,7 +95,7 @@ static void unit() {
   require(a.state_hash() != b.state_hash(), "script program omitted from hash");
   // Known seed sequence is independent of view/audio; four queued births consume four draws.
   auto births = initial(); births.objects.resize(3); births.mission.sides.resize(1); births.mission.towns.resize(1);
-  GameSim birth_sim(r); birth_sim.init(births);
+  GameSim birth_sim(r, Modifications::faithful()); birth_sim.init(births);
   Command build; build.type = Pct::Build; build.a = 0;
   for (int i = 0; i < 4; ++i) birth_sim.submit(build);
   for (int tick = 0; tick < 1000 && births.objects.size() < 7; ++tick) { births.begin_tick(); birth_sim.tick(births); }
@@ -148,7 +148,7 @@ static void run(const std::string& mode, const std::string& trace_path, const st
     sim = GameSim::replay(w, r, save.log, save.tick);
     require(sim->state_hash(w) == save.hash, "continuation hash mismatch before restore");
   } else {
-    sim = std::make_unique<GameSim>(r); sim->init(w);
+    sim = std::make_unique<GameSim>(r, Modifications::faithful()); sim->init(w);
   }
   std::ofstream trace(trace_path); require(bool(trace), "cannot write trace");
   if (mode == "log-replay") {

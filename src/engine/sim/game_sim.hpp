@@ -37,7 +37,7 @@ struct PlacementCell {
 
 class GameSim : public Simulation {
  public:
-  explicit GameSim(std::shared_ptr<const RulesData> rules, Modifications modifications = {});
+  explicit GameSim(std::shared_ptr<const RulesData> rules, Modifications modifications = Modifications::faithful());
   Modifications modifications() const { return modifications_; }
   Modifications initial_modifications() const { return initial_modifications_; }
   void init(World& w) override;
@@ -90,7 +90,7 @@ class GameSim : public Simulation {
   using ReplayObserver = std::function<void(uint64_t, const World&, const GameSim&)>;
   static std::unique_ptr<GameSim> replay(World& fresh, std::shared_ptr<const RulesData> rules,
                                          const std::vector<LoggedCommand>& log, uint64_t until_tick,
-                                         const std::string& scn_path = "", ReplayObserver before_commands = {}, Modifications modifications = {});
+                                         const std::string& scn_path = "", ReplayObserver before_commands = {}, Modifications modifications = Modifications::faithful());
 
  private:
   CombatObserver combat_observer_;
