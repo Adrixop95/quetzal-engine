@@ -85,6 +85,57 @@ class Measurements(unittest.TestCase):
             self.assertEqual(result['status'], 'needs live run')
             self.assertFalse(result['passed'])
 
+    def test_reference_class_requires_two_observed_runs(self):
+        result = compare([[], [event()]], [[event()], [event()]])
+        self.assertEqual(result['status'], 'needs live run')
+        self.assertFalse(result['passed'])
+        row = result['groups'][0]
+        self.assertEqual(row['original']['counts'], [0, 1])
+        self.assertEqual(row['original']['observed_runs'], 1)
+        self.assertEqual(row['original']['runs'][0], dict(ticks=[], frequencies=dict(composition=[], placement=[])))
+        self.assertEqual(row['confirmed_timing_differences'], [])
+        missing = compare([[event()], [event()]], [[], []])['groups'][0]
+        self.assertEqual(missing['original']['first_window'], [5, 5])
+        self.assertIsNone(missing['clone']['first_window'])
+        self.assertEqual(missing['clone']['counts'], [0, 0])
+
+    def test_repeated_timing_evidence_and_before_after_forms(self):
+        before = compare([[event(8)], [event(9)]], [[event(13)], [event(14)]])
+        after = compare([[event(8)], [event(9)]], [[event(9)], [event(9)]])
+        self.assertEqual(before['groups'][0]['confirmed_timing_differences'], ['first', 'last', '0'])
+        rows = ai.behaviour_report(spec(), before, after)
+        self.assertEqual(len(rows), 10)
+        composition = next(row for row in rows if row['behaviour'] == 'composition_choice')['groups'][0]
+        self.assertEqual(composition['original']['first_window'], [3, 4])
+        self.assertEqual(composition['clone_before']['first_window'], [8, 9])
+        self.assertEqual(composition['clone_after']['first_window'], [4, 4])
+        self.assertEqual(composition['differences_after'], [])
+        frequencies = composition['original']['frequencies']['composition']
+        self.assertEqual(frequencies, [dict(value=((0, 3), (1, 1)), count=2)])
+        self.assertEqual(composition['original']['runs'][0]['ticks'], [3])
+        self.assertEqual(composition['original']['runs'][0]['frequencies']['composition'][0]['count'], 1)
+        for row in rows:
+            if row['behaviour'] in {'launch_scoring', 'instantaneous_income', 'side_plan_arbitration',
+                                    'hall_upgrade_selection', 'sustained_opposition'}:
+                self.assertEqual(row['status'], 'needs live run')
+                self.assertTrue(row['blocker'])
+
+    def test_rare_ordinal_cannot_authorize_timing_fix(self):
+        result = compare([[event(8)], [event(8), event(10)]],
+                         [[event(8), event(12)], [event(8), event(12)]])
+        row = result['groups'][0]
+        self.assertTrue('1_timing_window' in row['differences'])
+        self.assertNotIn('1', row['confirmed_timing_differences'])
+
+    def test_sustained_windows_detect_silent_middle_interval(self):
+        data = spec()
+        data['groups'] = [dict(id=f'interval_{i}', event='launch', side=1, town=0, start=start, end=end)
+                          for i, (start, end) in enumerate(((5, 9), (10, 14), (15, 20)))]
+        result = compare([[event(8), event(12), event(18)]] * 2,
+                         [[event(8), event(18)]] * 2, data)
+        self.assertFalse(result['passed'])
+        self.assertTrue('missing_behaviour_class' in result['groups'][1]['differences'])
+
     def test_full_stream_validation(self):
         good = capture([event()], 'engine')
         variants = [good[:-1], good[:-2] + good[-1:], good + [good[-1]]]
@@ -133,6 +184,39 @@ class Measurements(unittest.TestCase):
             data = ai.scenario(json.loads((ROOT / f'tests/parity/{name}.json').read_text()))
             self.assertIsNone(data['reference_audit'])
             self.assertEqual(data['evidence'], 'P')
+
+    def test_cli_plan_and_after_keep_evidence_private(self):
+        private = ROOT / 'work/parity'
+        private.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=private) as directory:
+            folder = Path(directory)
+            scenario = folder / 'scenario.json'
+            scenario.write_text(json.dumps(spec()))
+            base = [sys.executable, '-I', str(ROOT / 'tools/ai_measure.py'), '--scenario', str(scenario)]
+            run = subprocess.run([*base, '--plan', '--output', str(folder / 'plan')], capture_output=True, text=True)
+            self.assertEqual(run.returncode, 77, run.stderr)
+            plan = json.loads((folder / 'plan/diff.json').read_text())
+            self.assertEqual(len(plan['behaviours']), 10)
+            self.assertTrue(all(row['status'] == 'needs live run' for row in plan['behaviours']))
+            paths = [folder / f'{i}.jsonl' for i in range(6)]
+            for i, path in enumerate(paths):
+                tick = 8 if i < 2 else 14 if i < 4 else 8
+                path.write_text(''.join(json.dumps(row) + '\n' for row in capture(
+                    [event(tick)], 'reference' if i < 2 else 'engine')))
+            command = [*base, '--reference', *map(str, paths[:2]), '--clone', *map(str, paths[2:4]),
+                       '--after', *map(str, paths[4:]), '--output', str(folder / 'comparison')]
+            run = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            result = json.loads((folder / 'comparison/diff.json').read_text())
+            self.assertFalse(result['before']['passed'])
+            self.assertTrue(result['after']['passed'])
+            self.assertEqual(len(result['inputs']), 7)
+            self.assertTrue(all(len(item['sha256']) == 64 for item in result['inputs']))
+            # Truncation after the fix cannot be hidden by successful before parsing.
+            paths[-1].write_text(paths[-1].read_text().rsplit('\n', 2)[0] + '\n')
+            command[-1] = str(folder / 'truncated-after')
+            run = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 2, run.stderr)
 
     @unittest.skipUnless(ENGINE, 'engine binary not supplied')
     def test_headless_trace_and_hash_neutrality(self):

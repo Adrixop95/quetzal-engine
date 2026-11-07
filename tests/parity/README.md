@@ -386,6 +386,30 @@ which internal plan caused a wave. This is a diagnostic distribution check, not
 a confidence interval, proof of stochastic equivalence, launch-score recovery,
 or full AI parity. Retain raw captures and distributions only under ignored work/.
 See the [live run sheet](../../docs/EXPERIMENTS.md#l8-ai-run-sheet-needs-live-run).
+
+Task 91 adds `--plan` (without capture arguments) to write the copied scenario and
+pending report for all ten requested behaviour classes; it returns 77. `--after
+FILE...` optionally compares a separate, fully validated clone batch against the
+same references. The regular `--clone` batch remains the before measurement.
+After captures require the same minimum repeat count and distinct paths, including
+across before/after. Reports retain both verdicts, original/before/after per-run
+counts, first/last relative windows, and empirical composition/site frequencies.
+Missing observations remain null; zero counts are preserved. Input SHA-256
+fingerprints are provenance aids and do not establish matching scenario/seed setup.
+
+At least two reference runs must observe a class before it provides expectations.
+`confirmed_timing_differences` lists only disjoint windows with two reference
+observations for that edge/ordinal. A rare ordinal may remain a diagnostic
+difference without this confirmation. The additional interval groups detect
+missing launches in the middle of a sustained run. Launch commands alone cannot
+verify sustained firing, losses or opponent survival. Internal launch scores,
+instantaneous estimates, side-plan arbitration and hall-upgrade selection are
+explicit blockers, never inferred from command traces. The top-level comparison
+verdict covers only selected event groups; the ten-class report retains these
+blockers even if event windows overlap. No planner correction follows without
+reviewed, repeated original evidence and task 85 replay/setup controls. See the
+[task 91 handoff](../../docs/EXPERIMENTS.md#task-91-measured-ai-handoff-needs-live-run).
+
 ## Placement comparison contract
 
 `placement.json` supplies task 66 candidate screen input on ztest_all. Task 64 is
