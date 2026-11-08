@@ -92,3 +92,47 @@ Findings that change what the clone must do:
   reduced to one quarter instead of zero).
 - Hit effects of classes 2, 4/5, 6, 10 and 11, and the helper objects they spawn, are still
   to be read; they are named in `tasks/queue/140` and `141`.
+
+## Weapon graph of the unresolved units (third pass)
+
+Evidence date: 2026-11-08. **V** = read from the decompilation or from the descriptor
+and weapon record tables in `docs/data/rules.json` (already in the repository). Weapon
+record layouts by class (V from the methods above):
+
+- class 12 (sum): `rec[0]` and `rec[1]` are the ids of the two component weapons,
+  `rec[2]` the reload; the damage is the sum of both components (the same id twice is a
+  double shot).
+- class 0 (ballistic carrier): `rec[1]` flight parameter, `rec[2]` speed per tick,
+  `rec[3]` range, `rec[4]` id of the impact weapon that supplies the damage.
+- class 3 (straight projectile): `rec[1]` speed per tick, `rec[2]` reload, `rec[3]` range,
+  `rec[4]` damage factor, `rec[5]` id of the impact weapon.
+- class 7 (explosion): `rec[1]` inner radius, `rec[2]` outer radius, `rec[4]` damage,
+  `rec[5]` required airborne flag of the target (0 means ground targets only).
+- class 9 and class 2 and 13 keep the direct-damage layouts described above.
+
+| Unit (type) | How the weapon is found (V) | Weapon chain |
+| --- | --- | --- |
+| Mage (28) | Marine descriptor weapon id 24 | 24 (class 3, speed 20, reload 20, range 200, factor 600) then impact 25 (class 7, inner radius 20, outer radius 35, damage 2000, ground only) |
+| Aztec crossbow tower (49) | Defence descriptor weapon id 28 | 28 (class 3, speed 20, reload 20, range 225, factor 800) then impact 29 (class 7, radii 20 and 50, damage 2700, ground only) |
+| Axe thrower trucks and wheels (3, 61), Rus fortress tower (23) | weapon id 7 | 7 (class 12, reload 25) = 5 + 6 (class 3, speed 25, reload 35, range 250, factor 500) then impact 21 (class 9, damage 2000 with armor component) |
+| Cannon truck (4), Rus cannon tower (26) | weapon ids 39 and 51 | 39 (class 12, reload 25) = 40 + 40 (class 0, speed 30, range 290) then impact 41 (class 7, radii 35 and 70, damage 4000, air 0) |
+| Elefant (57) | weapon id 47 | 47 (class 12, reload 15) = 46 + 46 (class 0, range 230) then impact 45 (class 9, damage 3800) |
+| Catapult (83) | Truck descriptor field d7 = 32 | 32 (class 0, speed 30, range 200) then impact 3 (class 7, radii 24 and 72, damage 3000) |
+| Hopcannon (87) | Cannon descriptor field d7 = 2 | 2 (class 0, range 250) then impact 3 (as the catapult) |
+| Deltaplan (34) | Bird descriptor field d9 = 35 | 35 (class 12, reload 25) = 36 + 36 (class 1 arrow, speed 15, reload 30, range 140) |
+| Paraplan (60) | Bird descriptor field d9 = 52 | 52 (class 2 direct, damage 2600, range 200, no effect on structures or non-organic) |
+| Zeppelin2 (85) | Zeppelin descriptor field d8 = 44 | 44 (class 12, reload 15) = 43 + 43 (class 0, speed 48, range 30) then impact 42 (class 7, radii 80 and 120, damage 3000): a bomb |
+| Eagle (33), Zeppelin (7) | descriptor weapon field is -1 | no weapon in the descriptor; their behaviour (scout, carrier or something else) is still unknown |
+| Demolisher (2) | Marine weapon id 38 | class 7 explosion used directly (damage falls off with distance) |
+| Spider and wheel flamethrowers (35, 59) | weapon id 34 | class 11 burn (see above); has no weapon record |
+
+Corrections to the open list from `gap_recon.md`:
+
+- Mage and the Aztec crossbow tower are not a plain 500 damage shot: they combine the
+  class 3 hit (factor times 48 divided by speed, integer division) with a class 7 impact
+  that depends on distance. Their damage in the clone must come from this chain.
+- Catapult, Hopcannon, cannons, bombs and the elefant all work through class 0 carriers that
+  hand the damage to a class 7 or class 9 impact weapon, so one implementation of the weapon
+  graph covers all of them.
+- Only the Eagle, the first Zeppelin, Johnka, the boat and the firethrow tower family
+  have no resolved weapon.
