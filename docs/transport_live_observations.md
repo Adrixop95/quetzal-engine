@@ -54,3 +54,13 @@ player can control the squad after landing, capacity (three units boarded here).
 - `f_00408d50` (boat.activate script action): sets phase 3 and starts the travel animation directly, without a boarding request.
 - `f_00408770` (visual think): the ferry travels by changing both pixel coordinates by five with opposite signs per think, until the next tile fails the passability test; at that point the phase flips between travel and turn, and the direction bit at `+0x68` toggles (`1 - dir`), which makes the ferry shuttle back along the same line. Direction (north east on the maps seen so far) is therefore fixed by the scenario placement and direction bit, not chosen by the player.
 - Open: the eligibility predicate that rejects the 12-unit group, and the exact unit think time between pixel steps. Both need a follow-up read of the requester's virtual method at `+0xa0` and of the passenger predicate called in the 3 by 3 scan.
+
+## Fifth run: eligibility tests (box-selected groups versus the scenario squad)
+
+| Label | Observation |
+| --- | --- |
+| V | Box-selecting units around the village makes the game create an ad hoc squad with its own panel icon (acknowledgement text appears). Groups of 12, 7 (three foot soldiers and four ranged) and 5 (three cavalry and two foot soldiers) were each sent to a ferry with a right click. In every case the units walked to the shore area near the ferries and stopped. The ferry never opened its ramp, no unit boarded and the ferry never left, for at least 32 s after the click. |
+| V | The scenario squad of three siege units boarded every time (four runs, both ferries). |
+| V | So boarding is not decided by group size alone or by unit type alone among the tested groups: three different ad hoc groups with sizes 5, 7 and 12 and mixed types were all refused, even the group of 5 which fits the capacity of five. |
+| G | Inference from the code (`f_00408dd0` stores the requester and asks it for its destination controller through the virtual method at `+0xa0`; unloading transfers the passengers to that controller): a ferry only accepts a group that has a scenario destination for it. The siege squad has one (its landing town on the far shore), ad hoc squads do not. Not yet proven: the task that implements this must compare the scenario records of the siege squad and the village soldiers (tactics and towns of mission 2 in the private scenario file) and find the field that differs. |
+| V | Side effect worth copying: a refused group still walks towards the ferry area; there is no refusal message. |
