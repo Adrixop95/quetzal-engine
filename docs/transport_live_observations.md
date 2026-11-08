@@ -34,3 +34,23 @@ player never uses a ferry command card or an unload button. The clone currently 
 ferry selectable with a sail and unload command card, which differs from the original.
 Open measurements: where the ferry goes, where and when the squad unloads, whether the
 player can control the squad after landing, capacity (three units boarded here).
+
+## Third and fourth runs: shuttle cycle, return trip, who may board
+
+| Label | Observation |
+| --- | --- |
+| V | The left ferry behaves exactly like the right one. A right click with the scenario squad selected makes the three siege units walk to the ferry; the ferry has left the view about 12 s after the click. |
+| V | The squad icon is back in the panel about 48 s after the click (landed). |
+| V | The ferry is back at its original dock, ramp closed, between 56 s and 64 s after the click, and is ready for the next request. So the ferry is a shuttle: dock, load, sail to the far shore, unload, sail back, dock. The full cycle is about 60 s. The second ferry never moved during the first ferry's trip. |
+| V | A group of 12 foot and mounted units (formed by box-selecting the village units, which the game names a squad) was sent to the ferry with a right click. All 12 walked to the ferry and gathered beside it, but none boarded and the ferry did not open or leave. Selecting the village building itself selects the same 12 units and gives the same result when right-clicking the ferry. |
+| V | So boarding is not open to any selected unit. The scenario squad of three siege units boards; an ad hoc group of 12 does not. Which condition rejects the 12 (group size above the capacity of five, unit type, or the requester not being the scenario group tied to this ferry) is not decided by these runs. |
+| V | Camera notes: clicking the squad icon centres the camera only when the squad is out of view; edge scrolling happens when the cursor touches the screen border. |
+
+## Original control flow read from the lifted code (V, function addresses)
+
+- Ferry controller object fields: `+0x58` the ferry world object, `+0xf0` controller phase, `+0xf4` requesting group controller, `+0xf8` passenger count (limit 5), `+0xfc` destination controller of the passengers.
+- `f_00408dd0` (boarding request, a virtual method): stores the requester at `+0xf4`, asks the requester for its destination controller through the requester's virtual method at `+0xa0` and stores it at `+0xfc`, sets phase 1 (opening) and starts the opening animation.
+- `f_00408eb0` (per think): ends or ignores the ferry when its object is missing or off the map by more than 7 tiles. In phase 1 to 5 it requires the ferry object's state `0x60` to equal 3 (docked and idle) before taking passengers, scans a 3 by 3 tile block centred on the ferry, and accepts candidates that belong to the requester until five are aboard. When boarding is finished it sets phase 2 (closing). When closing ends it sets phase 3 (travel) and starts the travel animation. On arrival (object state back to 1) it calls the unload routine `f_004474d0` of the destination controller, then sets phase 5 (turn), then phase 0 (idle) after the return.
+- `f_00408d50` (boat.activate script action): sets phase 3 and starts the travel animation directly, without a boarding request.
+- `f_00408770` (visual think): the ferry travels by changing both pixel coordinates by five with opposite signs per think, until the next tile fails the passability test; at that point the phase flips between travel and turn, and the direction bit at `+0x68` toggles (`1 - dir`), which makes the ferry shuttle back along the same line. Direction (north east on the maps seen so far) is therefore fixed by the scenario placement and direction bit, not chosen by the player.
+- Open: the eligibility predicate that rejects the 12-unit group, and the exact unit think time between pixel steps. Both need a follow-up read of the requester's virtual method at `+0xa0` and of the passenger predicate called in the 3 by 3 scan.
