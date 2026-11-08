@@ -11,7 +11,7 @@ Evidence date: 2026-11-08. **V** = observed in the recompiled original running h
 | V | Earlier coarse runs show the outpost going back to side 1 at about tick 4480 after the player units have left; no unit changes side in these runs, only this building. |
 | G | Capture is decided by presence: the building flips to the side that has units near it when the previous owner has none (or no armed unit) nearby, and flips back the same way. The exact radius, the unit types that count and any delay are not established. |
 
-Next step (task 142): find the ownership change in the Building class think routine (outposts
+Resolved from the decompilation in docs/ownership_mechanism.md (CheckCapture 0x45b1e0 and CaptureTown 0x45a920). Original next step: find the ownership change in the Building class think routine (outposts
 are Building types 10, 37 and 63; the code path ends in the side-list update `0x43ed50`
 through virtual `+0x7c`, with the list functions `0x449ab0`/`0x449ac0`) and read the radius and
 the condition. Until then the clone's outpost capture can use: flip to the side with
