@@ -23,7 +23,7 @@ Ranked by how directly they can block a mission. "Enemy" means the opponent owns
 
 | Rank | Mechanic | Missions | Status in the clone (from the docs) | How to resolve |
 | --- | --- | --- | --- | --- |
-| 1 | Hypnosis: Hypno units (enemy) and Chinese hypno towers (enemy); the hypno school is not placed but is buildable | 7, 9, 11, 12, 15 | "Hypno behaviour open" | live test in the original: what a hypno attack does to a player unit (mind control, duration, range, counter), then lifted code |
+| 1 | Hypnosis: resolved for the Hypno unit (plain ranged damage, no ownership transfer, see hypno_recon.md); the hypno tower and school still need a check | 7, 9, 11, 12, 15 | Hypno weapon verified from the decompilation | check the tower and school classes the same way |
 | 2 | Air units: Eagle, Deltaplan, Paraplan, Zeppelin, Zeppelin2 (both sides), air facilities and air towers | 4, 5, 7, 8, 11 to 14 | speeds default to 8 px per tick, weapon fields of Bird and Zeppelin unresolved, altitude open | who can shoot air units, speed, weapons, bombing; live observation plus lifted code |
 | 3 | Siege and special weapons: Cannon, Hopcannon, Katusha trucks and wheels, Demolisher, Catapult | 1, 6, 8 to 10, 12 to 15 (player owned in 6, 13, 14, 15) | siege approximations, hit timing and splash unmeasured | measure range, damage, splash, reload on a few targets |
 | 4 | Fire weapons: flamethrower trucks, Spider flamethrower, wheel firethrower, Chinese firethrow tower | 12, 14, 15 | "standalone FireThrow and burn scheduling remain disabled" | measure burn damage over time and what burns |
