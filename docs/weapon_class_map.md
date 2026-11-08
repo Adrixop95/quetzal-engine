@@ -154,3 +154,33 @@ Corrections to the open list from `gap_recon.md`:
 - Marine virtual `+0xa0` (`0x432fa0`) returns descriptor byte `+0x2c` (class flag byte 0); bit 0 of
   a group's flag dword requires that every member answers true. Its meaning is not yet
   established; it is not used by the ferry.
+
+## Units without a weapon, Johnka, class 8 and the anti-air table (fourth pass)
+
+**V** from the decompilation and the rules tables.
+
+- The weapon getter of the Bird kind (`0x42c3c0`) reads the weapon id from descriptor dword 9
+  (`+0x24`), of the Zeppelin kind (`0x471680`) from dword 8 (`+0x20`) and returns no weapon
+  when the id is -1 or when the damage against the target is not positive. **The Eagle (33)
+  and the first Zeppelin (7) have id -1: they are unarmed.** (Scouts or decoys in the
+  missions that place them; the Zeppelin death routine `0x471740` plays a crash effect.)
+- **Johnka (88)** has no descriptor weapon: its getter (`0x42d950`) returns the prototype at
+  `0x515b98`, which is **weapon 54**, only when the target is not airborne.
+- **Class 8 is a rocket volley:** `rec[0]` is the id of the explosion weapon (class 7), `rec[1]`
+  the scatter radius (96 px), `rec[2]` the range and `rec[3]` the number of rockets. Weapon
+  19 (Katusha trucks and wheels) fires explosion 17 (80 rockets, range 200), weapon 20 (the
+  Chinese air tower) fires explosion 18 (50 rockets, range 200), weapon 54 (Johnka) fires
+  explosion 53 (30 rockets, range 300). Explosions 17 and 53 are ground-only; **explosion 18
+  has the airborne flag set and is the only air-only explosion in the game.**
+
+### Which weapons can hit an airborne target (from the damage formulas)
+
+| Result | Units and towers |
+| --- | --- |
+| Yes | Rifleman (direct damage times 1.25), Rus watch tower (1.25), Archer (arrows 1.0), Aztec archer tower (1.0), Bizon (0.62), Paraplan (1.0, air to air), Chinese air tower (volley, air only) |
+| No | Footman, Bear, Knight, Ninja, Snowman, Jaguar, Chief, Abdula, Tuzem, Hypno and the hypno tower, spider and wheel crossbows, axe-thrower trucks and wheels, the flamethrower family, Mage and the Aztec crossbow tower (class 3 gives zero against airborne targets and its explosion is ground-only), cannons, cannon towers, Elefant, Catapult, Hopcannon, Zeppelin2 bombs, Katusha, Johnka, Deltaplan |
+
+The unit rule behind it: the weapon getter drops any weapon whose damage against the target
+is not positive, so a zero airborne multiplier means the unit does not attack air targets at
+all. The clone must reproduce this list (it determines which armies can defend against the
+Eagle, Deltaplan, Paraplan and Zeppelin waves of the missions that use them).
