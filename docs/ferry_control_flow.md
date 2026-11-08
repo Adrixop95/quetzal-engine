@@ -63,3 +63,40 @@ allied object whose tactic kind is not 1; the group approaches the ferry's ancho
 is sent when the anchor is closer than the group's reach, the ferry is in phase 0, and the group
 is not all-airborne; the ferry then takes up to five members of the requesting group that stand
 inside its 3 by 3 tile block. Do not add a "scenario squad" rule.
+
+## Update: group reach and the follow order (second reading)
+
+**V** from the decompilation:
+
+- The order that a right click on an allied non-group tactic produces (`+0xf0`, function
+  `0x451440`) is a **follow order**: it clears the group's member queue, releases the previous
+  target, sets the target-mode byte at `+0x94` to 1, stores the target tactic at `+0x98`,
+  increments the target's reference counter at `+0xac`, calls the target's virtual `+0x6c`
+  with the group (registering the follower) and the group's own virtual `+0x58`, and plays
+  an acknowledgement voice line chosen by the language setting. Debug messages in it mention
+  "lost team" and "hidden team ordered to follow".
+- The stop/cancel order (`+0xdc`, function `0x4543e0`) clears the member queue, releases the
+  target (target virtual `+0x70`, counter decrement) and clears the mode byte.
+- **The reach of a group (`+0xc`, function `0x4516b0`) is a table indexed by the group's mode
+  field at `+0x24`: 4, 8, 8 and 6 tiles for modes 0, 1, 2 and 3.** It is compared with the
+  approximate norm (`0x461fe0`) of the tile offset between the group's anchor and its target.
+  For the mode all measured campaign units use (3) the reach is 6 tiles, so the distance
+  condition for the ferry request is easy to satisfy.
+- Consequence for the live observation: the groups of 5, 7 and 12 units that never triggered
+  the request were all within the 6 tile reach after walking to the shore (the anchor of a group
+  is within a few tiles of the ferry). The distance hypothesis in the first part of this
+  document is therefore weak. What remains in the code path that could stop the request: the
+  ferry not being in phase 0, the target kind (`+0x80` equal to 2) and the mode byte, or a
+  difference between the scenario siege squad and a group built by box selection that this
+  reading did not find (for example a field set only on scenario groups). Resolve it with
+  the headless experiment below instead of reading further.
+- Decisive experiment (headless): in mission 2 send groups of 1, 2 and 3 foot units and the
+  scenario squad to the ferry through the runtime input script (`click`/`dragto`/`rclick`),
+  logging for every tick the ferry phase (`ferry tactic + 0xf0`), the group tactic fields
+  `+0x24` (mode), `+0x94`, `+0x98`, `+0x9c`, `+0x9d`, `+0xea` and the anchor tile
+  (`+0x10`, `+0x14`). Compare the scenario squad with a built group field by field.
+
+Side finding for the AI and unit-behaviour tasks: the group reach table (4, 8, 8, 6 tiles by
+mode) is also the radius used in the tactic assignment code (`0x451c30`, `0x452c70`
+compare member distances against `+0xc`). The clone's attack-mode radii (`AttackMode::Direct`,
+`Defensive`, `Aggressive`, `Balanced` = modes 0 to 3) should be checked against it.
