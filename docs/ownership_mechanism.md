@@ -65,3 +65,27 @@ Replace any scripted or ad hoc capture rule with the radius rule above (4 or 8 t
 within about 2 tiles, no defender object or armed group of the town's side inside the radius),
 and make a town's side change move every member of the town tactic to a new tactic of the
 capturing side. Keep the alert counter and the voice line as presentation.
+
+## Script gift (`giftToSide`): what is established and what is open
+
+**V** from the decompilation:
+
+- The script parser (`0x4382c0`, string `giftToSide`) builds a command record with command
+  code `0x18`, stores the script argument in the first payload word and a side value obtained
+  from `0x436d90` (second argument 1), and enqueues it through `0x45f3b0`. That function takes
+  a 0x404 byte record from the pool of the object at `this + 0x10` (virtual `+0x14`), writes
+  the command code in the first word, copies 0x100 payload words and stores a flag byte after
+  them. It is used by nine parser functions (`0x436f00`, `0x4375e0`, `0x437720`, `0x4378a0`,
+  `0x4379e0`, `0x437fb0`, `0x4382c0`, `0x4388e0`, `0x438c50`), so every script action that
+  addresses a tactic or a side goes through the same queue.
+- The category table `0x45c4f0` maps command codes to a class number; codes `0x18` and `0x4c`
+  map to class 3, while `0x13`, `0x2f` and `0x47` map to class 2. The mapping of class 3 is
+  the gift family.
+- The effect of a gift is the ownership mechanism above: the queue consumer must add the
+  gifted tactic's members to a tactic of the receiving side (`AddMember`, slot `0xd4`) or
+  re-point the tactic's side, ending in `0x43ecf0` and `0x43ed50`.
+
+**Open (not located in this pass):** the consumer of the command queue (a table dispatched
+executor, not a `switch` on `0x18`). The next step is to find who reads the records written
+by `0x45f3b0` (the readers use the same pool and the object at `tactic +0x10` of the
+script tactic) and to read the branch for class 3.
