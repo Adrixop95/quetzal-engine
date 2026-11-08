@@ -100,3 +100,17 @@ Side finding for the AI and unit-behaviour tasks: the group reach table (4, 8, 8
 mode) is also the radius used in the tactic assignment code (`0x451c30`, `0x452c70`
 compare member distances against `+0xc`). The clone's attack-mode radii (`AttackMode::Direct`,
 `Defensive`, `Aggressive`, `Balanced` = modes 0 to 3) should be checked against it.
+
+## Passenger selection of the ferry think (decompiled, `0x408eb0`)
+
+**V** from the lifted instruction comments (private):
+
+- The ferry scans the 3 by 3 block of tiles centred on the tile of the ferry object. For every
+  cell it reads the object registered in the tile occupancy grid (`0x4dd2f8`, one object
+  per tile) and accepts it when the cell holds an object, the object is alive (`+0x5c`), it is
+  **not airborne** (virtual `+0xa4` false), its tactic (`+0x30`) is the requesting tactic
+  stored at `+0xf4`, and the passenger count at `+0xf8` is below 5. Accepted objects are
+  handed to the ferry through its virtual `+0xd4` and the count is incremented. Nothing else
+  (unit type, hit points, side other than membership of the requesting group) is tested.
+- Therefore a unit must stand on a registered tile inside the block, belonging to the requesting
+  group, and the grid keeps one object per tile.
