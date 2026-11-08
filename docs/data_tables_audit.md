@@ -106,3 +106,29 @@ Descriptor offsets read through field `+0x64` (number of functions reading each)
 fixed offset by code the scan could match; the rest are accessed through indexed loops (for
 example the build tree and production lists inside the Building record) and need the
 containing functions read as tables, not as single offsets.
+
+## Words that actually carry data (third scan, 2026-11-09)
+
+Most descriptor words are zero or `-1` in every type of their kind, so only the words that
+are non-zero in at least one type need a name (word 321 of a Building and the equivalent last
+word of other kinds hold a code pointer, not data).
+
+| Kind | Raw words | Non-zero in any type | Named today | Still to name |
+| --- | --- | --- | --- | --- |
+| Building | 322 | 55 | 6 | 49 |
+| Defence | 68 | 39 | 3 | 36 |
+| Bird | 22 | 18 | 2 | 16 |
+| Headtruck | 20 | 17 | 7 | 10 |
+| Spider | 19 | 16 | 5 | 11 |
+| Marine | 19 | 15 | 13 | 2 |
+| Truck | 17 | 14 | 3 | 11 |
+| Zeppelin | 17 | 14 | 3 | 11 |
+| Cannon | 16 | 13 | 1 | 12 |
+| **Total** | 497 | 201 | 43 | **158** |
+
+Building words that carry data come in runs: words 0 to 5 (named), 15 to 18, 21 to 40, 42 to
+46, 55 to 56, 59 to 74 and the pointer words 320 and 321. The runs 21 to 40 and 59 to 74 look
+like small integer arrays (placement and footprint flags, production and upgrade entries); name
+them by reading the loops that index them (build tree and production code), not single offsets.
+So the work to take the descriptor tables to 99 percent is the naming of about 158 words, not
+about 450.
