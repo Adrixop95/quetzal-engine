@@ -136,3 +136,21 @@ Corrections to the open list from `gap_recon.md`:
   graph covers all of them.
 - Only the Eagle, the first Zeppelin, Johnka, the boat and the firethrow tower family
   have no resolved weapon.
+
+## Weapon effects resolved (second reading)
+
+**V**:
+
+- Jaguar (weapon class 10): the effect calls the attacker's virtual `+0x104` with one third of
+  the damage. For a Marine `+0x104` (`0x4029d0`) is **Heal(amount)**: it adds to the
+  current hit points and caps at the maximum (virtual `+0x3c`). The Jaguar heals itself for a
+  third of the damage it deals (life steal), up to its maximum hit points.
+- Snowman (weapon class 6) area effect: virtual `+0x9c` (`0x471220`) adds the value 0x12 to the
+  object field at `+0x84`. That field is the facing angle (the unit initialiser stores a
+  random 0 to 255 there and the animation frame is `((angle + 4) >> 3) & 0x1f`, 32
+  directions). The snow burst therefore **turns** every non-allied, non-airborne
+  organic Marine within about 96 px of the target by 18 angle units (about 25 degrees). It
+  has no other effect in this code path.
+- Marine virtual `+0xa0` (`0x432fa0`) returns descriptor byte `+0x2c` (class flag byte 0); bit 0 of
+  a group's flag dword requires that every member answers true. Its meaning is not yet
+  established; it is not used by the ferry.
