@@ -56,3 +56,39 @@ facility and air tower family. Classes 0 (ids 2, 30, 32, 40, 43, 46, 50), 9 (ids
    (`+0x104`), any spawned helper object, and whether the owner or side changes.
 5. Check the behaviour in the headless reference runs when a number needs confirming
    (see `hypno_recon.md`).
+
+## Classes read in detail (second pass)
+
+Evidence date: 2026-11-08. **V** = read from the decompilation. Class-to-vtable links come
+from the factory `0x46d900` (case number to constructor) and are labelled **G** where the
+case number could not be tied to the constructor with certainty. `rec[n]` is word n of the
+weapon record in `docs/data/rules.json` (`record_raw`).
+
+| Class (G for the link) | Vtable | Constructor | Damage `+0x5c` | Hit effect `+0x7c` | What it is (V) |
+| --- | --- | --- | --- | --- | --- |
+| 0 | `0x48f8f4` | `0x406700` | `0x4068e0` | `0x4069c0` | Ballistic carrier projectile. Its damage is delegated to the weapon whose id is in `rec[4]` (a second weapon prototype). Launch computes the flight from the start and target points: speed from `rec[1]`, an arc over the flight time, frame from the direction (`0x461ac0` angle), and a spawn height offset of two pixels. Range method `0x406960` divides the distance by `rec[1]`. Weapons 2, 30, 32, 40, 43, 46, 50 |
+| 1 | `0x48f558` | `0x403b60` | `0x403d00` | `0x403f40` | Arrow family; formula already in the rules notes (start `rec[4]`, multipliers `rec[7..11]`, armor `rec[5]`, secondary `rec[12]`) |
+| 3 | `0x48f7e0` | `0x404c80` | `0x404b90` | `0x404f70` | Straight projectile. Damage: zero against airborne targets and against allied objects (same-side test `0x4472e0` on the side list); otherwise `rec[4]` (0.6875 of it against non-organic targets, `0xb0` out of 256) multiplied by `48 / rec[1]` (the projectile speed), plus the damage of the secondary weapon whose id is in `rec[5]` when present. Range method `0x404c30` is the distance divided by `rec[1]` (flight time). Launch `0x404f70` clamps the aim point to the weapon range, sets the angle and direction frame, and the projectile moves by `rec[1]` per tick. Multi-target scan `+0x64` (`0x404e10`) lists objects in a box and applies the same damage rule to each. Weapons 5, 6, 22, 24 (Mage), 26, 28 (Aztec crossbow tower) |
+| 7 | `0x4943a4` | `0x44c010` | `0x44c100` | `0x44c3c0` | Distance based area explosion. `0x44c130`: applies only to targets whose airborne flag equals the flag in `rec[5]`; with distance d between the objects, full damage `rec[4]` inside `rec[1]`, linear falloff between `rec[1]` and `rec[2]`, zero beyond it; 0.8 (`0xcc` of 256) of the result for targets with the `+0xe8` category, then scaled by the target's armor factor from virtual `+0x108`. Weapons 3, 17, 18, 25, 29, 37, 38 (Demolisher), 41, 42, 49, 53 |
+| 9 | `0x493fe0` | `0x444080` | `0x444160` | none (inherits) | Direct damage with multipliers: base `rec[0]`, then `rec[3]` against airborne, `rec[4]` non-organic, `rec[5]` for `+0xf4`, `rec[6]` for `+0xe8`, `rec[7]` structure (each applied as value times current divided by 256), plus `rec[1]` times the target's armor value (`+0x10c`) divided by 256. Weapons 21, 23, 27, 45 |
+| 11 | `0x4927a8` | `0x429c90` | `0x429c00` | `0x42a010` | Burn. Damage per application is 10 times `0x429f60`: zero for the object itself or an airborne target, otherwise 2000 (`0x7d000` / 256 scale) reduced to one quarter (`0x40` of 256) when the target belongs to an allied side, then scaled by the target's fire armor factor (virtual `+0x108`). Weapon 34 (spider flamethrower, wheel firethrower). Effect `0x42a010` and the helper object it creates are still to be read |
+| 12 | `0x490738` | `0x41e350` | `0x41e3c0` | `0x41e4a0` | Sum of two weapons: the damage is the sum of the damages of the weapons with ids `rec[0]` and `rec[1]`. Weapons 7, 35, 39, 44, 47, 51 (axe thrower, cannon, elefant and the towers that use them) |
+| 2 | `0x494f10` | (factory) | `0x46dfe0` | `0x46ed90` | Direct damage; effect still to be read |
+| 4, 5 | `0x4950a8` | (factory) | `0x46e580` | `0x46e8b0` | Knight and Ninja melee: 3000, 1500 against non-organic or structure, reload 19, range 72; effect to be read |
+| 6 | `0x495020` | (factory) | `0x46ead0` | `0x46eb10` | Snowman: 18000, 9000 against non-organic, zero against air; the effect also applies status `0x12` through virtual `+0x9c` to non-allied, non-airborne objects of the two Marine categories within about 96 px |
+| 10 | `0x494f98` | (factory) | `0x46ec90` | `0x46ed00` | Jaguar: 1800, 1125 against non-organic or structure, 1.25 for two category flags, zero against air; the effect calls the attacker's virtual `+0x104` with damage divided by 3 |
+| 13 | `0x495130` | (factory) | `0x46dfe0` | `0x46e0d0` | Hypno and hypno tower: direct damage, no side change (see `hypno_recon.md`) |
+
+Findings that change what the clone must do:
+
+- Classes 3, 0 and 7 are not independent: projectile classes delegate or add the damage of a
+  second weapon prototype (`rec[4]` or `rec[5]`), and explosions (class 7) are those second
+  weapons. A faithful implementation therefore needs a weapon graph, not a flat table.
+- Damage against airborne targets is zero for classes 3, 6, 10 and 4/5 and for the burn, and
+  class 9 and 2/13 carry an explicit airborne multiplier (zero in the rules data for the
+  checked weapons). Anti-air in the original comes from weapons that set the airborne flag in
+  class 7 (`rec[5]`) and from the Bird, Zeppelin and tower weapons listed in the next task.
+- Allied fire is suppressed by a side-list test (`0x4472e0`) in classes 3 and 11 (burn is
+  reduced to one quarter instead of zero).
+- Hit effects of classes 2, 4/5, 6, 10 and 11, and the helper objects they spawn, are still
+  to be read; they are named in `tasks/queue/140` and `141`.
