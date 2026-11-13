@@ -512,6 +512,23 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
       else if (i == 5) tip += "\nToggle buildings in the town's active repairer list";
       else if (!enabled) tip += "\nSelect an owned unit";
       else if (i == 1) tip += "\nClick an enemy to attack, or terrain to attack-move";
+      if (i == 1) for (auto id : w.selection.ids) {
+        const auto* o = w.find(id);
+        if (!o || !o->alive || o->removed || o->side != w.local_side) continue;
+        const auto& rule = sim_->rules().type(o->type);
+        if (rule.weapon.klass == 6) {
+          tip += "\nAttack delays nearby enemy ground attacks";
+          break;
+        }
+        if (rule.weapon.klass == 10) {
+          tip += "\nLife drain: heals for one third of attack damage";
+          break;
+        }
+        if (rule.weapon.klass != 7) continue;
+        tip += "\nArea attack: also damages nearby allies";
+        tip += "\nReload: " + std::to_string(rule.reload + 1) + " ticks";
+        break;
+      }
     }
   }
   int town = production_town(w);

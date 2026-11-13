@@ -898,6 +898,173 @@ static void test_siege_ranged() {
   CHECK(blast.objects[0].last_hit_by == 99);
 }
 
+static void test_standalone_area_attack() {
+  // Invented descriptors exercise the contract without extracting game fixtures.
+  TempDir directory;
+  const auto root = directory.path();
+  std::ofstream(root / "types.csv") << "id,ugi,kind,param,price,time,dev\n"
+      "2,TEST_AREA,Marine,0,7,9,0\n27,TEST_VICTIM,Marine,1,1,1,0\n";
+  std::ofstream(root / "desc_marine.csv") << "param,d0,d1,d2,d3,d4,d5,d6,d7\n"
+      "0,0,900,0,900,900,1,0,1\n1,0,900,0,900,900,1,0,0\n";
+  std::ofstream(root / "weapons_ids.csv") << "id,class,param\n0,14,0\n1,7,0\n";
+  std::ofstream(root / "weapon_class_w7.csv") << "param,d0,d1,d2,d3,d4,d5,d6,d7,d8\n"
+      "0,0,8,40,110,90,0,3,0,0\n";
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(root.string()));
+  const auto shot = rules->attack(2, 27);
+  CHECK(shot.damage_known && shot.getters_known && shot.damage == 90);
+  CHECK(shot.reload == 3 && shot.range_px == 110);
+  CHECK(rules->type(2).weapon.payload_id == 1 && rules->type(2).weapon.anim == 0);
+  auto scene = [] {
+    World w; w.terrain.w = w.terrain.h = 20; w.terrain.cells.resize(400);
+    for (int i = 0; i < 6; ++i) {
+      Object o; o.id = uint32_t(i + 1); o.type = i == 0 ? 2 : i == 4 ? 7 : 27;
+      o.side = i == 1 || i == 3 || i == 4 ? 1 : 0; o.hp = 900;
+      o.teleport(to_fixed(i == 0 ? 200 : i == 2 ? 320 : i == 3 ? 500 : 290),
+                 to_fixed(i == 0 || i == 1 ? 200 : 202));
+      if (i == 5) o.alive = false;
+      w.objects.push_back(o);
+    }
+    return w;
+  };
+  World w = scene();
+  GameSim sim(rules, Modifications::faithful()); sim.init(w);
+  w.selection.ids = {1};
+  CHECK(CommandsUi::action_enabled(PanelAction::Attack, w, rules.get()));
+  CommandsUi ui(&sim); Camera camera; Minimap minimap;
+  Input input; input.key_hit[SDL_SCANCODE_X] = true;
+  ui.update(input, w, camera, 1.f, minimap, true, {800, 0, 240, 700});
+  CHECK(ui.target_mode() == TargetMode::Attack && ui.wants_left_click());
+  ui.cancel_mode();
+  const int money = w.side_state[0].money;
+  Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
+  sim.submit(attack);
+  std::vector<uint64_t> hashes;
+  for (int tick = 1; tick <= 8; ++tick) {
+    w.begin_tick(); sim.tick(w); hashes.push_back(sim.state_hash(w));
+    const int hits = tick < 5 ? 1 : 2;
+    CHECK(w.objects[1].hp == 900 - hits * 90);
+    CHECK(w.objects[2].hp == 900 - hits * 67); // allied victim in the falloff band
+    CHECK(w.objects[0].hp == 900 && w.objects[3].hp == 900 && w.objects[4].hp == 900);
+    CHECK(w.objects[5].hp == 900 && !w.objects[5].alive);
+    CHECK(w.objects[1].last_hit_by == 1 && w.objects[2].last_hit_by == 1);
+    CHECK(w.side_state[0].money == money);
+    CHECK(w.effects.empty()); // no placeholder projectile or delayed guaranteed hit
+  }
+  auto hash = sim.state_hash(w);
+  ++w.objects[0].cooldown; CHECK(sim.state_hash(w) != hash); --w.objects[0].cooldown;
+  --w.objects[2].hp; CHECK(sim.state_hash(w) != hash); ++w.objects[2].hp;
+  World fresh = scene();
+  auto replay = GameSim::replay(fresh, rules, sim.log(), 8, "",
+      [&](uint64_t tick, const World& state, const GameSim& replay_sim) {
+        if (tick > 1) CHECK(replay_sim.state_hash(state) == hashes[size_t(tick - 2)]);
+      });
+  CHECK(replay->state_hash(fresh) == hashes.back());
+
+  // Pause freezes both damage and reload, and Stop prevents another area hit.
+  Command pause; pause.type = Pct::PauseOn; sim.submit(pause);
+  const int cooldown = w.objects[0].cooldown;
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.objects[0].cooldown == cooldown && w.objects[1].hp == 720);
+  pause.type = Pct::PauseOff; sim.submit(pause);
+  Command stop; stop.type = Pct::Stop; stop.ids = {1}; sim.submit(stop);
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.objects[1].hp == 720);
+
+  // Direct mode does not fire beyond range, including both objects' extents.
+  World far = scene(); far.objects[0].attack_mode = AttackMode::Direct;
+  far.objects[1].teleport(to_fixed(500), to_fixed(200));
+  GameSim far_sim(rules, Modifications::faithful()); far_sim.init(far); far_sim.submit(attack);
+  far.begin_tick(); far_sim.tick(far);
+  CHECK(!far.objects[0].has_fired && far.objects[1].hp == 900);
+}
+
+static void test_life_drain() {
+  TempDir directory;
+  const auto root = directory.path();
+  std::ofstream(root / "types.csv") << "id,ugi,kind,param,price,time,dev\n"
+      "31,TEST_DRAIN,Marine,0,1,1,0\n27,TEST_VICTIM,Marine,1,1,1,0\n";
+  std::ofstream(root / "desc_marine.csv") << "param,d0,d1,d2,d3,d4,d5,d6,d7\n"
+      "0,0,2000,0,2000,17,1,0,1\n1,0,3000,0,3000,23,1,0,0\n";
+  std::ofstream(root / "weapons_ids.csv") << "id,class,param\n0,14,0\n1,10,0\n";
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(root.string()));
+  auto scene = [](int hp, int victim_hp) {
+    World w; w.terrain.w = w.terrain.h = 20; w.terrain.cells.resize(400);
+    Object attacker; attacker.id = 1; attacker.type = 31; attacker.hp = hp;
+    attacker.teleport(to_fixed(200), to_fixed(200));
+    Object victim; victim.id = 2; victim.type = 27; victim.side = 1; victim.hp = victim_hp;
+    victim.teleport(to_fixed(225), to_fixed(200));
+    w.objects = {attacker, victim}; return w;
+  };
+  Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
+  const int drain_damage = rules->attack(31, 27).damage;
+  CHECK(drain_damage == 2250);
+  for (int hp : {100, 1900, 2000}) for (int victim_hp : {1, 3000}) {
+    World w = scene(hp, victim_hp), fresh = w;
+    GameSim sim(rules, Modifications::faithful()); sim.init(w); sim.submit(attack);
+    w.begin_tick(); sim.tick(w);
+    CHECK(w.objects[0].hp == std::min(2000, hp + drain_damage / 3));
+    CHECK(w.objects[1].hp == std::max(0, victim_hp - drain_damage));
+    CHECK(w.objects[1].alive == (victim_hp > drain_damage));
+    CHECK(w.objects[0].secondary_hp == 17 && w.objects[1].secondary_hp == 23);
+    CHECK(w.objects[0].cooldown == 12);
+    CHECK(w.effects.empty());
+    const auto first_hash = sim.state_hash(w);
+    for (int tick = 0; tick < 10; ++tick) { w.begin_tick(); sim.tick(w); }
+    CHECK(w.objects[0].hp == std::min(2000, hp + drain_damage / 3));
+    auto replay = GameSim::replay(fresh, rules, sim.log(), 11, "",
+        [&](uint64_t tick, const World& state, const GameSim& replay_sim) {
+          if (tick == 2) CHECK(replay_sim.state_hash(state) == first_hash);
+        });
+    CHECK(replay->state_hash(fresh) == sim.state_hash(w));
+  }
+  // The category-adjusted hit, rather than nominal organic damage, feeds healing.
+  World armoured = scene(100, 3000); armoured.objects[1].type = 14;
+  GameSim sim(rules, Modifications::faithful()); sim.init(armoured); sim.submit(attack);
+  armoured.begin_tick(); sim.tick(armoured);
+  CHECK(armoured.objects[1].hp == 1875 && armoured.objects[0].hp == 475);
+}
+
+static void test_attack_delay() {
+  TempDir directory;
+  const auto root = directory.path();
+  std::ofstream(root / "types.csv") << "id,ugi,kind,param,price,time,dev\n"
+      "56,TEST_DELAY,Marine,0,1,1,0\n27,TEST_VICTIM,Marine,1,1,1,0\n";
+  std::ofstream(root / "desc_marine.csv") << "param,d0,d1,d2,d3,d4,d5,d6,d7\n"
+      "0,0,4000,0,4000,17,1,0,1\n1,0,30000,0,30000,23,1,0,0\n";
+  std::ofstream(root / "weapons_ids.csv") << "id,class,param\n0,14,0\n1,6,0\n";
+  auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(root.string()));
+  World initial; initial.terrain.w = initial.terrain.h = 20; initial.terrain.cells.resize(400);
+  for (int i = 0; i < 9; ++i) {
+    Object o; o.id = uint32_t(i + 1); o.type = i == 0 ? 56 : i == 5 ? 7 : i == 6 ? 14 : 27;
+    o.side = i == 0 ? 0 : i == 3 ? 2 : i == 8 ? 3 : 1; o.hp = i == 0 ? 4000 : 30000;
+    o.cooldown = i == 0 ? 0 : 100;
+    o.teleport(to_fixed(i == 0 ? 200 : i == 1 ? 225 : i == 4 ? 249 : 248),
+               to_fixed(i <= 1 ? 200 : 248));
+    if (i == 7) o.alive = false;
+    initial.objects.push_back(o);
+  }
+  initial.relation[0][2] = kFriend; initial.relation[0][3] = kNeutral;
+  World w = initial; GameSim sim(rules, Modifications::faithful()); sim.init(w);
+  Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
+  sim.submit(attack); w.begin_tick(); sim.tick(w);
+  CHECK(w.objects[1].hp == 12000 && w.objects[0].cooldown == 26);
+  // Countdown processing still occurs on each recipient's own turn this tick.
+  for (int i : {1, 2, 8}) CHECK(w.objects[i].cooldown == 117);
+  for (int i : {3, 4, 5, 6}) CHECK(w.objects[i].cooldown == 99);
+  CHECK(w.objects[7].cooldown == 100);
+  CHECK(w.objects[2].hp == 30000); // the secondary effect does not deal area damage
+  auto hash = sim.state_hash(w);
+  ++w.objects[2].cooldown; CHECK(sim.state_hash(w) != hash); --w.objects[2].cooldown;
+  Command pause; pause.type = Pct::PauseOn; sim.submit(pause);
+  w.begin_tick(); sim.tick(w); CHECK(w.objects[2].cooldown == 117);
+  pause.type = Pct::PauseOff; sim.submit(pause);
+  w.begin_tick(); sim.tick(w); CHECK(w.objects[2].cooldown == 116);
+  auto replay = GameSim::replay(initial, rules, sim.log(), 3);
+  CHECK(replay->state_hash(initial) == sim.state_hash(w));
+}
+
 static void test_projectiles() {
   auto rules = std::make_shared<RulesData>();
   CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
@@ -905,8 +1072,8 @@ static void test_projectiles() {
   CHECK(rules->type(27).weapon.speed == 30 && rules->type(27).range_px == 160);
   CHECK(rules->type(3).weapon.anim == 101);
   CHECK(rules->type(4).weapon.anim == 100);
-  CHECK(rules->type(2).weapon.anim == 157);
-  for (int type : {27, 3, 4, 2}) {
+  CHECK(rules->type(2).weapon.anim == 0); // standalone area hit, tested separately
+  for (int type : {27, 3, 4}) {
     World initial;
     initial.terrain.w = initial.terrain.h = 40;
     initial.terrain.cells.resize(1600);
@@ -3446,8 +3613,8 @@ static void test_descriptor_combat() {
   CHECK(rules->weapon(11, ground).damage == 2250);
   CHECK(rules->weapon(16, ground).damage == 18000);
   CHECK(rules->weapon(7, ground).damage_known && rules->weapon(7, ground).getters_known);
-  CHECK(!rules->weapon(19, ground).getters_known); // standalone FireThrow scheduling unresolved
-  CHECK(!rules->weapon(3, target).getters_known);
+  CHECK(!rules->weapon(19, ground).getters_known); // scatter salvo remains unresolved
+  CHECK(rules->weapon(3, target).getters_known); // standalone area descriptor getters
   CHECK(!rules->weapon(34, target).damage_known); // burn
   CHECK(!rules->weapon(999, target).damage_known);
   CHECK(rules->attack(0, 0).reload == 9 && rules->attack(0, 0).range_px == 10);
@@ -3699,6 +3866,9 @@ int main(int argc, char** argv) {
     test_construction_resume_completion();
     test_mixed_production_queue();
     test_projectiles();
+    test_standalone_area_attack();
+    test_life_drain();
+    test_attack_delay();
     test_object_initialization();
     test_mission_unit_health();
     test_scenario_controllers();

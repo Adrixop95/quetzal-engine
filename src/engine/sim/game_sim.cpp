@@ -1237,6 +1237,18 @@ void GameSim::fire(World& w, const Object& source, Object& target, int damage) {
 }
 
 void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& source, Object& target, int damage) {
+  if (weapon.klass == 7) {
+    // V: a standalone area hit resolves at the target position plus two pixels
+    // vertically. It has no travelling projectile or hostile-only victim gate.
+    Effect hit;
+    hit.trace_id = ++next_trace_id_; hit.source = source.id; hit.target = target.id; hit.side = source.side;
+    hit.kind = data::EffectClass::SplashDamage; hit.payload_id = weapon.payload_id;
+    hit.x = target.cur_x; hit.y = target.cur_y + to_fixed(2);
+    trace_combat("launch", hit); trace_combat("impact", hit);
+    if (weapon.impact_anim) decoration(w, weapon.impact_anim, int(next_visual_rand() % 3), hit.x, hit.y, 0, hit.side);
+    apply_blast(w, hit);
+    return;
+  }
   if (!weapon.components.empty()) {
     const auto offset = path::with_length({target.cur_y - source.cur_y, source.cur_x - target.cur_x},
                                           weapon.spread_px * 256);
@@ -1272,12 +1284,34 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
     trace_combat("damage", hit, target.id, target.hp, target.hp - damage);
     target.hp -= damage; target.last_hit_by = source.id;
     if (target.hp <= 0) kill(w, target);
+    if (weapon.klass == 10) {
+      // V: life drain uses one third of calculated damage, including overkill,
+      // then the ordinary capped-healing operation on the attacker.
+      if (auto* attacker = w.find_mut(source.id))
+        attacker->hp = int(std::min(int64_t(attacker->hp_max), int64_t(attacker->hp) + damage / 3));
+    }
+    if (weapon.klass == 6) {
+      // V: the secondary reaction adds eighteen to the recipient's attack
+      // countdown. The spatial query is a 96-pixel square about the source.
+      // G: stable engine object order supplies the original's bounded query.
+      int candidates = 0;
+      for (auto& victim : w.objects) {
+        if (!victim.alive || victim.removed || std::abs(px(victim.cur_x) - px(source.cur_x)) > 48 ||
+            std::abs(px(victim.cur_y) - px(source.cur_y)) > 48) continue;
+        if (++candidates > 128) break;
+        const auto& type = rules_->type(victim.type);
+        if (victim.side == source.side || (source.side >= 0 && source.side < 8 && victim.side >= 0 &&
+            victim.side < 8 && w.relation[source.side][victim.side] == kFriend) || type.flier ||
+            !(type.category_e8 || type.category_f4)) continue;
+        victim.cooldown = int(std::min(int64_t(std::numeric_limits<int>::max()), int64_t(victim.cooldown) + 18));
+      }
+    }
     return;
   }
   Effect e;
   e.trace_id = ++next_trace_id_;
   e.kind = weapon.klass == 0 ? data::EffectClass::BallExpl : weapon.klass == 3 ? data::EffectClass::Axe :
-           weapon.klass == 7 ? data::EffectClass::FireThrow : data::EffectClass::Arrow;
+           data::EffectClass::Arrow;
   e.source = source.id; e.target = target.id; e.side = source.side;
   e.anim = weapon.anim; e.angle = angle;
   auto sequence = data::projectile_sequence(e.kind, angle);
@@ -1300,6 +1334,19 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
   e.impact_anim = weapon.impact_anim; e.splash_px = weapon.splash_px; e.shockwave = weapon.shockwave;
   trace_combat("launch", e);
   w.effects.push_back(e);
+}
+
+void GameSim::apply_blast(World& w, const Effect& e) {
+  for (auto& o : w.objects) {
+    if (!o.alive || o.removed) continue;
+    const int64_t dx = int64_t(o.cur_x) - e.x, dy = int64_t(o.cur_y) - e.y;
+    const int distance = path::length({int32_t(dx), int32_t(dy)}) / 256;
+    const int damage = rules_->blast_damage(e.payload_id, rules_->type(o.type), distance);
+    if (damage <= 0) { trace_combat("miss", e, o.id, o.hp, o.hp); continue; }
+    trace_combat("damage", e, o.id, o.hp, o.hp - damage);
+    o.hp -= damage; o.last_hit_by = e.source;
+    if (o.hp <= 0) kill(w, o);
+  }
 }
 
 void GameSim::advance_effects(World& w) {
@@ -1340,19 +1387,10 @@ void GameSim::advance_effects(World& w) {
     trace_combat("impact", e);
     if (e.impact_anim) decoration(w, e.impact_anim, int(next_visual_rand() % 3), e.x, e.y, 0, e.side);
     if (e.shockwave == data::kShockwaveAnim) decoration(w, e.shockwave, 0, e.x, e.y, 0, e.side);
+    if (e.payload_id >= 0) { apply_blast(w, e); continue; }
     for (auto& o : w.objects) {
       if (!o.alive || o.removed) continue;
       int64_t dx = int64_t(o.cur_x) - e.x, dy = int64_t(o.cur_y) - e.y;
-      if (e.payload_id >= 0) {
-        int distance = path::length({int32_t(dx), int32_t(dy)}) / 256;
-        int damage = rules_->blast_damage(e.payload_id, rules_->type(o.type), distance);
-        if (damage > 0) {
-          trace_combat("damage", e, o.id, o.hp, o.hp - damage);
-          o.hp -= damage; o.last_hit_by = e.source;
-          if (o.hp <= 0) kill(w, o);
-        } else trace_combat("miss", e, o.id, o.hp, o.hp);
-        continue;
-      }
       bool splash = e.splash_px > 0 && w.hostile(e.side, o.side) &&
                     dx * dx + dy * dy <= int64_t(e.splash_px * 256) * (e.splash_px * 256);
       if (o.id != e.target && !splash) {
