@@ -296,9 +296,9 @@ bool RulesData::load_dir(const std::string& dir) {
         w.impact_anim = num(splash, 1); w.splash_px = num(splash, 3);
       }
     } else if (w.klass == 7) {
-      w.anim = 157; w.speed = 24; w.range = 96; w.reload = 12;
-      w.impact_anim = num(row(flames, w.parameter), 1);
-      w.splash_px = num(row(flames, w.parameter), 7);
+      const auto r = row(flames, w.parameter);
+      w.range = num(r, 4); w.reload = num(r, 7);
+      w.payload_id = id; w.impact_anim = num(r, 1);
     } else if (w.klass == 2 || w.klass == 13) {
       auto r = row(direct, w.parameter);
       w.range = num(r, 5); w.reload = num(r, 1);
@@ -455,7 +455,13 @@ WeaponResult RulesData::weapon_impl(int id, const TypeRules& target, bool allied
   if (it == weapons_.end() || depth >= 16) return out;
   const auto& w = it->second;
   const auto& d = w.data;
-  if (w.kind == 8 && !d.empty()) return weapon_impl(d[0], target, allied, depth + 1);
+  if (w.kind == 8 && !d.empty()) {
+    out = weapon_impl(d[0], target, allied, depth + 1);
+    // The scatter launcher owns its range/reload and timed salvo. A child's
+    // established getters must not enable it as a single immediate blast.
+    out.getters_known = false;
+    return out;
+  }
   if (w.kind == 12 && d.size() >= 2) {
     auto a = weapon_impl(d[0], target, allied, depth + 1);
     auto b = weapon_impl(d[1], target, allied, depth + 1);
@@ -482,7 +488,10 @@ WeaponResult RulesData::weapon_impl(int id, const TypeRules& target, bool allied
     // Potential damage at the impact centre; actual blast damage is spatial.
     out.damage = blast_damage(id, target, 0);
     out.damage_known = true;
-    return out; // standalone FireThrow scheduling remains unresolved
+    // V: standalone area weapons expose d3 range and d6 reload getters.
+    // Animation release timing is separate from these descriptor values.
+    out.range_px = d[3]; out.reload = d[6]; out.getters_known = true;
+    return out;
   }
   if (w.kind == 9 && d.size() >= 8) {
     std::vector<int> factors;

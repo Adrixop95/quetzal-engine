@@ -115,6 +115,7 @@ class GameSim : public Simulation {
   void advance_effects(World& w);
   void fire(World& w, const Object& source, Object& target, int damage);
   void fire_weapon(World& w, const WeaponRules& weapon, const Object& source, Object& target, int damage);
+  void apply_blast(World& w, const Effect& effect);
   void decoration(World& w, int anim, int slot, Fixed x, Fixed y, int height, int side, uint32_t source = 0);
   void sync_movement(World& w);
   void update_animation_state(World& w);
