@@ -538,9 +538,14 @@ def main():
                         land(n)
             if time.time() - last_resume > 1200 and any(s in ("limited", "stopped") for s in st.values()):
                 last_resume = time.time()
-                for name, task_status in st.items():
+                resume_cap = int(os.environ.get("CODEX_MAX_PARALLEL", "4"))
+                resumed_running = sum(1 for s in st.values() if s == "running")
+                for name, task_status in sorted(st.items()):
                     if task_status in ("limited", "stopped"):
+                        if resumed_running >= resume_cap:
+                            break   # resumes obey the same parallel limit as new tasks
                         log("resume attempt", run(f"python3 {ORCH} resume {shlex.quote(name)}").stdout.strip())
+                        resumed_running += 1
             running = [n for n, s in status().items() if s == "running"]
             free = int(os.environ.get("CODEX_MAX_PARALLEL", "4")) - len(running)
             if free > 0:
