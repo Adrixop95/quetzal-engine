@@ -202,4 +202,27 @@ Evidence date: 2026-11-14. **V** = read from the decompilation (function address
   once, because the three result lists are walked independently; a live test would settle
   it.
 - The fire helper `0x42a010` is not in the decompilation corpus (no function at that
-  address was exported); it is still open and needs a targeted Ghidra pass.
+  address was exported); it is now read, see the next section.
+
+## Fire stream helpers (`0x42a010`, `0x429e20`, `0x429f60`)
+
+Evidence date: 2026-11-14. **V** = read from the Ghidra decompilation (function addresses
+only), **G** = guess.
+
+- V: `0x42a010` is the fire object set-up, not a damage effect. It reads the owner's facing
+  angle (owner virtual `+0x100`), combines it with the owner position, and picks the
+  sprite direction frame as `((angle + 4) / 8) & 0x1f` (32 directions) through `0x4034c0`.
+- V: `0x429e20` collects victims: a circle query around the point `weapon virtual +0x68`
+  displaced by `weapon virtual +0x74` (reach), up to a caller supplied maximum, keeping only
+  victims whose per victim damage from `0x429f60` is non-zero, and returns the pair
+  list (victim, damage).
+- V: `0x429f60` per victim damage: zero if the victim is the weapon owner or is airborne
+  (victim virtual `+0xa4`). Otherwise the base value is `0x7d000` (512000); if the side
+  test `0x4472e0` says the victim is friendly, the base is scaled by a fixed point factor
+  `0x40` through `0x404810`; the result is multiplied by the victim fire armor (virtual
+  `+0x108`) and shifted right by 8.
+- G: the friendly factor `0x40` is 64/256, a quarter of the damage; the fixed point
+  routine `0x404810` was not read.
+- Consequence: burn damage per hit is about 2000 times the fire armor value of the victim
+  (the armor value is a 256 based multiplier), a quarter of that for allies, and zero
+  against air units.
