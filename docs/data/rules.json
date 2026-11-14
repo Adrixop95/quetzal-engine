@@ -329,6 +329,10 @@
      "value": 20000,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 20000,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 9,
      "status": "verified"
@@ -339,15 +343,15 @@
     },
     "weapon_id": {
      "value": 7,
-     "status": "guess"
+     "status": "verified"
     },
     "armor_fire": {
      "value": 128,
-     "status": "guess"
+     "status": "verified"
     },
     "armor_physical": {
      "value": 256,
-     "status": "guess"
+     "status": "verified"
     }
    },
    "speed_measured_px_per_tick": 9.38
@@ -391,6 +395,10 @@
      "value": 15000,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 15000,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 6,
      "status": "verified"
@@ -401,15 +409,15 @@
     },
     "weapon_id": {
      "value": 39,
-     "status": "guess"
+     "status": "verified"
     },
     "armor_fire": {
      "value": 128,
-     "status": "guess"
+     "status": "verified"
     },
     "armor_physical": {
      "value": 256,
-     "status": "guess"
+     "status": "verified"
     }
    },
    "speed_measured_px_per_tick": 6.24
@@ -666,6 +674,10 @@
      "value": 17500,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 17500,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 6,
      "status": "verified"
@@ -676,15 +688,15 @@
     },
     "weapon_id": {
      "value": 58,
-     "status": "guess"
+     "status": "verified"
     },
     "armor_fire": {
      "value": 256,
-     "status": "guess"
+     "status": "verified"
     },
     "armor_physical": {
      "value": 256,
-     "status": "guess"
+     "status": "verified"
     }
    },
    "speed_measured_px_per_tick": 6.24
@@ -728,6 +740,10 @@
      "value": 16000,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 16000,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 5,
      "status": "verified"
@@ -738,15 +754,15 @@
     },
     "weapon_id": {
      "value": 19,
-     "status": "guess"
+     "status": "verified"
     },
     "armor_fire": {
      "value": 128,
-     "status": "guess"
+     "status": "verified"
     },
     "armor_physical": {
      "value": 256,
-     "status": "guess"
+     "status": "verified"
     }
    },
    "speed_measured_px_per_tick": 5.2
@@ -6349,6 +6365,18 @@
      "value": 26000,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 26000,
+     "status": "verified"
+    },
+    "armor_fire": {
+     "value": 256,
+     "status": "verified"
+    },
+    "armor_physical": {
+     "value": 256,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 4,
      "status": "verified"
@@ -6359,7 +6387,7 @@
     },
     "weapon_id": {
      "value": 1,
-     "status": "guess"
+     "status": "verified"
     }
    },
    "speed_measured_px_per_tick": 4.0
@@ -6658,6 +6686,18 @@
      "value": 28000,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 28000,
+     "status": "verified"
+    },
+    "armor_fire": {
+     "value": 256,
+     "status": "verified"
+    },
+    "armor_physical": {
+     "value": 256,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 4,
      "status": "verified"
@@ -6668,7 +6708,7 @@
     },
     "weapon_id": {
      "value": 34,
-     "status": "guess"
+     "status": "verified"
     }
    },
    "speed_measured_px_per_tick": 4.0
@@ -12434,6 +12474,10 @@
      "value": 14000,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 14000,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 7,
      "status": "verified"
@@ -12444,15 +12488,15 @@
     },
     "weapon_id": {
      "value": 19,
-     "status": "guess"
+     "status": "verified"
     },
     "armor_fire": {
      "value": 128,
-     "status": "guess"
+     "status": "verified"
     },
     "armor_physical": {
      "value": 256,
-     "status": "guess"
+     "status": "verified"
     }
    },
    "speed_measured_px_per_tick": 7.27
@@ -12496,6 +12540,10 @@
      "value": 16000,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 16000,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 8,
      "status": "verified"
@@ -12506,15 +12554,15 @@
     },
     "weapon_id": {
      "value": 34,
-     "status": "guess"
+     "status": "verified"
     },
     "armor_fire": {
      "value": 128,
-     "status": "guess"
+     "status": "verified"
     },
     "armor_physical": {
      "value": 256,
-     "status": "guess"
+     "status": "verified"
     }
    },
    "speed_measured_px_per_tick": 8.32
@@ -12601,6 +12649,10 @@
      "value": 16000,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 16000,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 11,
      "status": "verified"
@@ -12611,15 +12663,15 @@
     },
     "weapon_id": {
      "value": 7,
-     "status": "guess"
+     "status": "verified"
     },
     "armor_fire": {
      "value": 128,
-     "status": "guess"
+     "status": "verified"
     },
     "armor_physical": {
      "value": 256,
-     "status": "guess"
+     "status": "verified"
     }
    },
    "speed_measured_px_per_tick": 11.45
@@ -12663,6 +12715,10 @@
      "value": 15000,
      "status": "verified"
     },
+    "secondary_hp_initial": {
+     "value": 15000,
+     "status": "verified"
+    },
     "speed_px_per_tick": {
      "value": 8,
      "status": "verified"
@@ -12673,15 +12729,15 @@
     },
     "weapon_id": {
      "value": 48,
-     "status": "guess"
+     "status": "verified"
     },
     "armor_fire": {
      "value": 128,
-     "status": "guess"
+     "status": "verified"
     },
     "armor_physical": {
      "value": 256,
-     "status": "guess"
+     "status": "verified"
     }
    },
    "speed_measured_px_per_tick": 8.33
@@ -18823,8 +18879,24 @@
    ],
    "fields": {
     "hp_initial": {
+     "value": 10000,
+     "status": "verified"
+    },
+    "hp_max": {
+     "value": 10000,
+     "status": "verified"
+    },
+    "secondary_hp_initial": {
      "value": 3000,
-     "status": "guess"
+     "status": "verified"
+    },
+    "armor_fire": {
+     "value": 256,
+     "status": "verified"
+    },
+    "armor_physical": {
+     "value": 256,
+     "status": "verified"
     },
     "sight_mask_id": {
      "value": 66,
