@@ -817,9 +817,9 @@ static void test_siege_ranged() {
     CHECK(close.effects.size() == (type == 83 ? 1u : 2u));
     if (close.effects.size() == 2) CHECK(close.effects[0].y != close.effects[1].y);
 
-    const auto& target_rules = rules->type(14);
-    const int reach = range + rules->type(type).radius_px +
-        std::max(target_rules.foot_w, target_rules.foot_h) * 24;
+    // V: centre-to-aim range in the reference integer norm; axial physical
+    // displacements 260/301/207 map to descriptor ranges 250/290/200.
+    const int reach = type == 3 ? 260 : type == 4 ? 301 : 207;
     for (int outside : {0, 1}) {
       World edge = scene(type, reach + outside);
       edge.objects[0].attack_mode = AttackMode::Direct;
@@ -849,12 +849,14 @@ static void test_siege_ranged() {
   }
   TypeRules victim;
   CHECK(rules->blast_damage(3, victim, 0) == 3000);
-  CHECK(rules->blast_damage(3, victim, 38) == 3000); // inner radius plus victim extent
-  CHECK(rules->blast_damage(3, victim, 62) == 1500);
-  CHECK(rules->blast_damage(3, victim, 86) == 0);
-  CHECK(rules->blast_damage(3, victim, 87) == 0);
+  CHECK(rules->blast_damage(3, victim, 52) == 3000); // V: 24 inner plus 28 combat radius
+  CHECK(rules->blast_damage(3, victim, 76) == 1500);
+  CHECK(rules->blast_damage(3, victim, 100) == 0);
+  CHECK(rules->blast_damage(3, victim, 101) == 0);
   victim.structure = true;
-  CHECK(rules->blast_damage(3, victim, 62) == 1195);
+  CHECK(rules->blast_damage(3, victim, 76) == 1500);
+  victim.category_e8 = true;
+  CHECK(rules->blast_damage(3, victim, 76) == 1195);
   victim.flier = true;
   CHECK(rules->blast_damage(3, victim, 0) == 0);
 
@@ -893,8 +895,10 @@ static void test_siege_ranged() {
   impact.x = impact.end_x = to_fixed(200); impact.y = impact.end_y = to_fixed(200);
   blast.effects.push_back(impact);
   blast.begin_tick(); blast_sim.tick(blast);
-  CHECK(blast.objects[0].hp == 7000 && blast.objects[1].hp == 8500);
-  CHECK(blast.objects[2].hp == 10000 && blast.objects[3].hp == 10000);
+  // V: physical separations 62/87 have norm 61/85. Ratios are 208/80;
+  // retain the fraction through the +0xe8 factor 204/256 before integer HP.
+  CHECK(blast.objects[0].hp == 7000 && blast.objects[1].hp == 8058);
+  CHECK(blast.objects[2].hp == 9253 && blast.objects[3].hp == 10000);
   CHECK(blast.objects[0].last_hit_by == 99);
 }
 
@@ -915,12 +919,15 @@ static void test_standalone_area_attack() {
   CHECK(shot.damage_known && shot.getters_known && shot.damage == 90);
   CHECK(shot.reload == 3 && shot.range_px == 110);
   CHECK(rules->type(2).weapon.payload_id == 1 && rules->type(2).weapon.anim == 0);
+  // A 45-pixel separation has combat norm 44, between the 36/68 blast radii.
+  CHECK(combat_distance(45, 0) == 44);
+  CHECK(rules->blast_damage(1, rules->type(27), 44) == 67);
   auto scene = [] {
     World w; w.terrain.w = w.terrain.h = 20; w.terrain.cells.resize(400);
     for (int i = 0; i < 6; ++i) {
       Object o; o.id = uint32_t(i + 1); o.type = i == 0 ? 2 : i == 4 ? 7 : 27;
       o.side = i == 1 || i == 3 || i == 4 ? 1 : 0; o.hp = 900;
-      o.teleport(to_fixed(i == 0 ? 200 : i == 2 ? 320 : i == 3 ? 500 : 290),
+      o.teleport(to_fixed(i == 0 ? 200 : i == 2 ? 335 : i == 3 ? 500 : 290),
                  to_fixed(i == 0 || i == 1 ? 200 : 202));
       if (i == 5) o.alive = false;
       w.objects.push_back(o);

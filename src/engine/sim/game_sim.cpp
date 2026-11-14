@@ -27,11 +27,16 @@ int pursuit_distance(const Object& a, const Object& b) {
   const int longest = std::max(x,y), short_weight = std::min(x,y) * 3 / 2;
   return longest + short_weight / 4 + short_weight / 64 - longest / 128 - longest / 32;
 }
-// Mobile weapon reach starts at the source collision disc, not its centre.
-// Omitting that radius can make melee reach shorter than non-overlapping discs.
-int64_t weapon_reach(const TypeRules& source, const TypeRules& target, int range) {
-  const int target_extent = target.structure ? std::max(target.foot_w, target.foot_h) * 24 : target.radius_px;
-  return int64_t(range) + target_extent + (source.mobile ? source.radius_px : 0);
+int64_t weapon_reach(const TypeRules& source, const TypeRules& target, const WeaponResult& shot) {
+  if (source.weapon_id < 0) {
+    // G: preserve the existing asset-free geometry when no descriptor weapon is available.
+    const int extent = target.structure ? std::max(target.foot_w, target.foot_h) * 24 : target.radius_px;
+    return int64_t(shot.range_px) + extent + (source.mobile ? source.radius_px : 0);
+  }
+  return int64_t(shot.range_px) + (shot.edge_range ? source.combat_radius() + target.combat_radius() : 0);
+}
+bool weapon_in_range(const TypeRules& source, int64_t dx, int64_t dy, int64_t reach) {
+  return source.weapon_id < 0 ? dx * dx + dy * dy <= reach * reach : combat_distance(dx, dy) <= reach;
 }
 // 8-direction facing from a vector: 0 = east, counter-clockwise (2 = north), as used by the animation tables.
 int facing_from(int dx, int dy) {
@@ -305,6 +310,8 @@ void GameSim::kill(World& w, Object& o) {
   o.hp = 0;
   o.order = uint8_t(Order::Idle);
   o.target = 0;
+  o.release_target = 0;
+  o.attack_facing = 0;
   o.corpse_ticks = 0;
   const TypeRules& r = rules_->type(o.type);
   if (r.kind == 1 || r.kind == 3 || r.kind == 4 || r.kind == 5 || r.kind == 6 || r.kind == 9) {
@@ -355,9 +362,10 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o) const {
     const bool idle_hold = o.order == uint8_t(Order::Idle) && o.attack_mode != AttackMode::Aggressive;
     if (o.attack_mode == AttackMode::Direct || idle_hold) {
       const auto& tr = rules_->type(t.type);
-      int64_t reach = weapon_reach(rules_->type(o.type), tr, shot.range_px);
+      int64_t reach = weapon_reach(rules_->type(o.type), tr, shot);
       if (idle_hold && o.attack_mode != AttackMode::Direct) reach += 2 * kTilePx;  // Balanced and Defensive hold their ground
-      if (d > reach * reach) continue;
+      if (!weapon_in_range(rules_->type(o.type), int64_t(px(t.cur_x)) - px(o.cur_x),
+                           int64_t(px(t.cur_y)) - px(o.cur_y), reach)) continue;
     }
     if (d < bd || (d == bd && best && t.id < best->id)) { bd = d; best = &t; }
   }
@@ -1141,6 +1149,12 @@ void GameSim::run_orders(World& w) {
     path::Agent* ag = o.mover >= 0 ? &mover_->agents_mut()[size_t(o.mover)] : nullptr;
     bool moving = ag && ag->state == path::AgentState::Moving;
 
+    if (o.release_target) {
+      if (ag && moving) mover_->stop(uint32_t(o.mover));
+      advance_attack(w, o);
+      continue;
+    }
+
     if ((o.order == uint8_t(Order::Move) ||
          (r.flier && (o.order == uint8_t(Order::AttackMove) || o.order == uint8_t(Order::Follow)))) && !moving) {
       if (r.flier) {
@@ -1199,8 +1213,8 @@ void GameSim::run_orders(World& w) {
     const TypeRules& tr = rules_->type(t->type);
     const auto shot = rules_->attack(o.type, t->type, !w.hostile(o.side, t->side));
     if (!shot.damage_known || !shot.getters_known || shot.damage <= 0) continue;
-    const int64_t reach = weapon_reach(r, tr, shot.range_px);
-    if (d2(o, *t) <= reach * reach) {
+    const int64_t reach = weapon_reach(r, tr, shot);
+    if (weapon_in_range(r, int64_t(px(t->cur_x)) - px(o.cur_x), int64_t(px(t->cur_y)) - px(o.cur_y), reach)) {
       if (ag && moving) mover_->stop(uint32_t(o.mover));
       int f = facing_from(px(t->cur_x) - px(o.cur_x), px(t->cur_y) - px(o.cur_y));
       if (f >= 0) o.facing = uint8_t(f);
@@ -1215,7 +1229,14 @@ void GameSim::run_orders(World& w) {
         o.cooldown = std::max(1, shot.reload + (siege ? 0 : 1));
         o.has_fired = true;
         o.anim_state = kAnimAttack; o.anim_tick = 0; o.attack_tick = 0;
-        fire(w, o, *t, shot.damage);
+        if (rules_->attack_frame(o.type, o.facing, 0).known) {
+          o.attack_facing = o.facing;
+          o.release_target = t->id;
+          advance_attack(w, o);
+        } else {
+          // G: without resource timing, preserve the asset-free immediate-release fallback.
+          fire(w, o, *t, shot.damage);
+        }
       }
     } else if (o.attack_mode != AttackMode::Direct && ag && ((tick_ + o.id) % 6 == 0 || !moving)) {
       uint32_t aid = uint32_t(o.mover);
@@ -1232,7 +1253,7 @@ void GameSim::run_orders(World& w) {
           for (int x = std::max(0, int((tx - reach) / kTilePx)); x <= std::min(nav_.width() - 1, int((tx + reach) / kTilePx)); ++x) {
             path::Vec2 candidate{tile_center_fixed(x), tile_center_fixed(y)};
             const int64_t dx = px(candidate.x) - tx, dy = px(candidate.y) - ty;
-            if (dx * dx + dy * dy > reach * reach || !field.reachable(x, y) ||
+            if (combat_distance(dx, dy) > reach || !field.reachable(x, y) ||
                 nav_.disc_hits(candidate, ag->radius, ag->cls)) continue;
             if (field.cost(x, y) < best) { best = field.cost(x, y); goal = candidate; found = true; }
           }
@@ -1241,6 +1262,28 @@ void GameSim::run_orders(World& w) {
       mover_->order_move(&aid, 1, goal);
     }
   }
+}
+
+void GameSim::advance_attack(World& w, Object& source) {
+  const auto frame = rules_->attack_frame(source.type, source.attack_facing, source.attack_tick);
+  if (!frame.active) {
+    source.release_target = 0;
+    source.attack_facing = 0;
+    source.set_anim(kAnimIdle);
+    return;
+  }
+  source.anim_state = kAnimAttack;
+  source.facing = source.attack_facing;
+  source.body_angle = source.turret_angle = source.attack_facing * 32;
+  source.cur_x += to_fixed(frame.dx);
+  source.cur_y += to_fixed(frame.dy);
+  if (source.mover >= 0) mover_->agents_mut()[size_t(source.mover)].pos = {source.cur_x, source.cur_y};
+  if (!frame.fire) return;
+  auto* target = w.find_mut(source.release_target);
+  if (!target || !target->alive || target->removed) return;
+  // V: release reselects the weapon for the retained victim; it does not restart CanFire.
+  const auto shot = rules_->attack(source.type, target->type, !w.hostile(source.side, target->side));
+  if (shot.damage_known && shot.damage > 0) fire(w, source, *target, shot.damage);
 }
 
 void GameSim::decoration(World& w, int anim, int slot, Fixed x, Fixed y, int height, int side, uint32_t source) {
@@ -1359,8 +1402,8 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
 void GameSim::apply_blast(World& w, const Effect& e) {
   for (auto& o : w.objects) {
     if (!o.alive || o.removed) continue;
-    const int64_t dx = int64_t(o.cur_x) - e.x, dy = int64_t(o.cur_y) - e.y;
-    const int distance = path::length({int32_t(dx), int32_t(dy)}) / 256;
+    const int distance = int(combat_distance(int64_t(o.cur_x / 256) - e.x / 256,
+                                           int64_t(o.cur_y / 256) - e.y / 256));
     const int damage = rules_->blast_damage(e.payload_id, rules_->type(o.type), distance);
     if (damage <= 0) { trace_combat("miss", e, o.id, o.hp, o.hp); continue; }
     trace_combat("damage", e, o.id, o.hp, o.hp - damage);
@@ -1413,7 +1456,14 @@ void GameSim::advance_effects(World& w) {
       int64_t dx = int64_t(o.cur_x) - e.x, dy = int64_t(o.cur_y) - e.y;
       bool splash = e.splash_px > 0 && w.hostile(e.side, o.side) &&
                     dx * dx + dy * dy <= int64_t(e.splash_px * 256) * (e.splash_px * 256);
-      if (o.id != e.target && !splash) {
+      bool direct_hit = o.id == e.target;
+      if (direct_hit && e.kind == data::EffectClass::Arrow) {
+        const auto& bounds = rules_->type(o.type).combat_bounds;
+        const int64_t x = int64_t(e.x / 256) - o.cur_x / 256;
+        const int64_t y = int64_t(e.y / 256) - e.height - o.cur_y / 256 + o.render_height;
+        direct_hit = x >= bounds[0] && x < bounds[2] && y >= bounds[1] && y < bounds[3];
+      }
+      if (!direct_hit && !splash) {
         trace_combat("miss", e, o.id, o.hp, o.hp);
         continue;
       }
@@ -1446,7 +1496,7 @@ void GameSim::sync_movement(World& w) {
       int f = facing_from(a.vel.x, a.vel.y);
       if (f >= 0) o.facing = uint8_t(f);
     }
-    bool shooting = o.anim_state == kAnimAttack && o.anim_tick < 8;
+    bool shooting = o.release_target || (o.anim_state == kAnimAttack && o.anim_tick < 8);
     if (!shooting) o.set_anim(mv ? kAnimMove : kAnimIdle);
   }
 }
@@ -1456,6 +1506,11 @@ void GameSim::update_animation_state(World& w) {
     if (o.removed || !o.alive) continue;
     const auto& r = rules_->type(o.type);
     const bool turret = o.type >= 0 && o.type < 90 && data::kTypeAnims[o.type].anim2 != 0;
+    if (o.release_target) {
+      o.facing = o.attack_facing;
+      o.body_angle = o.turret_angle = o.attack_facing * 32;
+      continue;
+    }
     if (o.body_angle < 0) o.body_angle = o.facing * 32;
     if (o.turret_angle < 0) o.turret_angle = o.body_angle;
     // Use actual displacement, including the final flight step. This is an
@@ -1752,6 +1807,7 @@ uint64_t GameSim::state_hash(const World& w) const {
     }
     if (is_transport(o.type)) { mix(o.unload_pending); if (o.unload_pending) { mix(uint32_t(o.unload_x)); mix(uint32_t(o.unload_y)); } }
     mix(uint8_t(o.attack_mode)); mix(uint32_t(o.follow_tactic)); mix(o.order); mix(o.target); mix(uint32_t(o.cooldown)); mix(o.alive); mix(o.removed); mix(uint32_t(o.progress));
+    if (o.release_target) { mix(o.release_target); mix(o.attack_facing); }
     mix(uint32_t(o.render_height)); mix(uint32_t(o.destruction_radius));
     mix(uint32_t(o.transport_phase)); mix(uint32_t(o.orientation)); mix(o.construction_overlay); mix(o.has_fired);
     mix(o.body_tick); mix(o.attack_tick); mix(o.body_moving); mix(o.anim_tick);

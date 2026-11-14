@@ -17,6 +17,22 @@
 
 namespace aztec::engine {
 
+bool RulesData::load_combat_animations(const std::string& units_xbe) {
+  auto sprites = std::make_shared<data::SpriteDb>();
+  combat_animations_.reset();
+  if (!sprites->open(units_xbe)) return false;
+  combat_animations_ = std::move(sprites);
+  return true;
+}
+
+AttackFrame RulesData::attack_frame(int type_id, int facing, int64_t elapsed) const {
+  if (!combat_animations_ || type(type_id).kind != 0 || type_id < 0 || type_id >= 90) return {};
+  auto animation = combat_animations_->anim(combat_animations_->anim_id(type_id));
+  if (!animation.ok()) return {};
+  auto frame = animation.at_tick(9 + (facing & 7), elapsed, false);
+  return {true, frame.valid(), frame.fire != 0, frame.dx, frame.dy};
+}
+
 bool SightData::load(const std::string& game_dir) {
   masks.clear();
   Archive lights;
@@ -142,6 +158,7 @@ int production_value(int base, int hall, int speed, bool computer, bool hostile_
 
 void RulesData::init_defaults() {
   loaded_ = false;
+  combat_animations_.reset();
   tree_.clear();
   duel_.clear();
   weapons_.clear();
@@ -335,6 +352,14 @@ bool RulesData::load_dir(const std::string& dir) {
         }
       }
       t.hp_max = num(r, f.hp + 1); t.hp_src = Src::Verified;
+      if (f.kind == 2 || f.kind == 7) {
+        const int first = f.kind == 2 ? 2 : 5;
+        if (r.size() > size_t(first + 4)) {
+          for (int i = 0; i < 4; ++i) t.combat_bounds[i] = num(r, first + i + 1);
+          if (t.combat_bounds[0] > t.combat_bounds[2]) std::swap(t.combat_bounds[0], t.combat_bounds[2]);
+          if (t.combat_bounds[1] > t.combat_bounds[3]) std::swap(t.combat_bounds[1], t.combat_bounds[3]);
+        }
+      }
       t.secondary_hp = f.secondary >= 0 ? num(r, f.secondary + 1) : 0;
       t.regen = f.regen >= 0 ? num(r, f.regen + 1) : 0;
       t.regen_alt_threshold = f.threshold >= 0 ? num(r, f.threshold + 1) : 0;
@@ -409,6 +434,13 @@ int category_damage(int base, const std::vector<int>& multipliers) {
   return int(value);
 }
 
+int64_t combat_distance(int64_t dx, int64_t dy) {
+  const int64_t x = std::abs(dx), y = std::abs(dy);
+  const int64_t major = std::max(x, y), minor = std::min(x, y);
+  const int64_t blend = minor + (minor >> 1);
+  return major + (blend >> 2) + (blend >> 6) - (major >> 7) - (major >> 5);
+}
+
 int regenerated_hp(const TypeRules& type, int hp, bool serviced) {
   if (hp <= 0 || type.regen <= 0) return hp;
   const int threshold = serviced ? type.hp_max : type.regen_alt_threshold;
@@ -433,19 +465,21 @@ int RulesData::blast_damage(int id, const TypeRules& target, int distance) const
   if (it == weapons_.end() || it->second.kind != 7 || it->second.data.size() < 9) return 0;
   const auto& d = it->second.data;
   if (target.flier != bool(d[5])) return 0;
-  const int inner = target.radius_px + d[1], outer = target.radius_px + d[2];
+  const int inner = target.combat_radius() + d[1], outer = target.combat_radius() + d[2];
   if (distance > outer) return 0;
   if (distance <= inner) return d[4];
-  int damage = int(int64_t(d[4]) * (outer - distance) / std::max(1, outer - inner));
-  if (target.structure) damage = category_damage(damage, {204});
-  return category_damage(damage, {target.blast_multiplier});
+  const int ratio = int(int64_t(outer - distance) * 256 / std::max(1, outer - inner));
+  int64_t damage = int64_t(d[4]) * ratio;
+  // V: the outer band checks virtual +0xe8, not the structure predicate +0xec.
+  if (target.category_e8) damage = (damage * 204) >> 8;
+  return int(((damage * target.blast_multiplier) >> 8) >> 8);
 }
 
 WeaponResult RulesData::attack(int attacker, int target, bool allied) const {
   const auto& a = type(attacker);
   if (a.weapon_id >= 0) return weapon(a.weapon_id, type(target), allied);
   // No descriptor weapon: retain explicitly marked placeholder behavior, never duel intervals.
-  return {a.dmg, a.reload, a.range_px, 0, true, true};
+  return {a.dmg, a.reload, a.range_px, 0, true, true, true};
 }
 
 WeaponResult RulesData::weapon_impl(int id, const TypeRules& target, bool allied, int depth) const {
@@ -470,6 +504,7 @@ WeaponResult RulesData::weapon_impl(int id, const TypeRules& target, bool allied
     // Paired launchers use the first child's range and reload getters.
     out.reload = a.reload; out.range_px = a.range_px; out.projectile_speed = a.projectile_speed;
     out.getters_known = a.getters_known;
+    out.edge_range = a.edge_range;
     return out;
   }
   if ((w.kind == 0 && d.size() >= 5) || (w.kind == 3 && d.size() >= 6)) {
@@ -482,6 +517,7 @@ WeaponResult RulesData::weapon_impl(int id, const TypeRules& target, bool allied
     }
     out.reload = d[2]; out.range_px = d[3]; out.projectile_speed = d[1];
     out.getters_known = true;
+    out.edge_range = false;
     return out;
   }
   if (w.kind == 7 && d.size() >= 9) {
@@ -514,7 +550,12 @@ WeaponResult RulesData::weapon_impl(int id, const TypeRules& target, bool allied
     if (target.category_f4) factors.push_back(d[mult + 2]);
     if (target.category_e8) factors.push_back(d[mult + 3]);
     if (target.structure) factors.push_back(d[mult + 4]);
-    out.damage = category_damage(d[base], factors);
+    if (arrow) {
+      // V: Arrow retains eight fractional bits between category operations.
+      int64_t damage = int64_t(d[base]) * 256;
+      for (int factor : factors) damage = (damage * factor) >> 8;
+      out.damage = int(damage >> 8);
+    } else out.damage = category_damage(d[base], factors);
     if (!(arrow && target.flier && d[mult] == 0))
       out.damage += int((int64_t(d[armor]) * target.physical_armor) >> 8);
     out.damage_known = true;
@@ -526,6 +567,7 @@ WeaponResult RulesData::weapon_impl(int id, const TypeRules& target, bool allied
     out.reload = d[arrow ? 2 : 0]; out.range_px = d[arrow ? 3 : 4];
     out.projectile_speed = arrow ? d[1] : 0;
     out.getters_known = true;
+    out.edge_range = !arrow && (d.size() < 14 || (d[13] & 255) == 0);
   } else if (w.kind == 4 || w.kind == 5 || w.kind == 6 || w.kind == 10) {
     out.damage_known = out.getters_known = true;
     if (w.kind == 4 || w.kind == 5) {
@@ -535,11 +577,12 @@ WeaponResult RulesData::weapon_impl(int id, const TypeRules& target, bool allied
     } else if (w.kind == 6) {
       out.damage = target.nonorganic ? 9000 : 18000;
       out.reload = 25; out.range_px = 10;
+      out.edge_range = true;
     } else {
       out.damage = (target.nonorganic || target.structure) ? 1125 : 1800;
-      if (target.category_f4) out.damage = category_damage(out.damage, {320});
-      if (target.category_e8) out.damage = category_damage(out.damage, {320});
+      if (target.category_f4 || target.category_e8) out.damage = category_damage(out.damage, {320});
       out.reload = 11; out.range_px = 10;
+      out.edge_range = true;
     }
     if (target.flier) out.damage = 0;
   }

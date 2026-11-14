@@ -96,6 +96,12 @@ add_executable(test_engine tests/test_engine.cpp)
 target_link_libraries(test_engine aztec_engine_lib)
 add_test(NAME engine COMMAND test_engine ${CMAKE_SOURCE_DIR}/game)
 
+add_executable(test_combat tests/test_combat.cpp)
+target_link_libraries(test_combat PRIVATE aztec_engine_lib)
+aztec_warnings(test_combat)
+add_test(NAME combat_unit COMMAND test_combat)
+set_tests_properties(combat_unit PROPERTIES LABELS "unit")
+
 # ---- static recompilation runtime: needs generated C from tools/ghidra_scripts/LiftAll.java
 # cmake -DAZTEC_GEN_DIR=work/gen ..   (generated code is derived from the user's own Aztec.exe; never commit it)
 set(AZTEC_GEN_DIR "" CACHE PATH "Directory with gen_*.c produced by LiftAll.java")
