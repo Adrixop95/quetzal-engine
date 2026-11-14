@@ -111,11 +111,6 @@ struct QueueItem {
   int plan_town = -1, plan_entry = -1; // owning AI request; training objects are created at completion
   uint64_t plan_generation = 0;
   int work_rate = 0;          // frozen integer HP/work increment per active tick
-
-  int refund() const {
-    const int completed = std::clamp(int(int64_t(total - remaining) * 256 / std::max(1, total)), 0, 256);
-    return started ? int(int64_t(paid) * (256 - completed) / 256) : 0;
-  }
 };
 
 // Per-side economy and command state.
