@@ -288,6 +288,9 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
       int other = resolve_side(w, a.a);
       if (side < 0 || side >= 8 || other < 0 || other >= 8 || side == other) break;
       uint8_t r = a.kind == ActKind::SideSetFriendlyTo ? kFriend : a.kind == ActKind::SideSetNeutralTo ? kNeutral : kEnemy;
+      const uint32_t bit = uint32_t(1) << other;
+      if (r == kEnemy) w.side_state[size_t(side)].enemy_mask |= bit;
+      else w.side_state[size_t(side)].enemy_mask &= ~bit;
       w.relation[side][other] = r;   // one-directional, like the original's per-side masks
       break;
     }
