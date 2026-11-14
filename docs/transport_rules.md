@@ -50,15 +50,26 @@ DAT zero also represents some walls, so this mask is provisional. Mixed land/wat
 orders split before destination assignment. Ground passability remains unchanged.
 Player sailing speed currently uses the existing eight-pixel rule fallback.
 
-G: Right-click nearby land to unload, or press **Unload** in the command card's
-former Garrison cell. The selection summary shows count/capacity, and the info
-overlay lists cargo IDs. Unloading processes cargo in boarding order. Candidate
-land tiles within two tiles of the vessel sort by squared distance to the requested
-landing point, then row and column; structures, terrain and passenger collision
-radii block placement. Requests more than three tiles away do nothing. Full shores
-retain remaining cargo; later requests retry it. This bounded policy differs from
-the original expanding rings. The ferry remains controllable after unloading.
-Destroying a vessel destroys its remaining cargo (V cleanup intent; G exact timing).
+G: Right-click land to sail to a reachable adjacent water tile and unload, or
+press **Unload** in the command card's former Garrison cell to unload at the
+current shore. Vessel landing takes priority over enemy picking. The selection
+summary shows count/capacity, and the info overlay lists cargo IDs. Cargo unloads
+in boarding order onto connected land within six tiles, sorted by distance to the
+landing click, row and column; terrain, structures and passenger collision radii
+block placement. Impossible routes preserve an existing sail and display a
+message. Full shores retain cargo and display a message; later requests retry it.
+Pending landing requests are hashed and canceled by Stop or a replacement sail.
+The ring bound, route ranking and player control remain G. Original scripted
+unloading uses expanding rings (V). See [mission2_blockers.md](mission2_blockers.md)
+for evidence, targeting limits and mission controls.
+
+G: Automatic target selection excludes the ferry (type 84), but not Johnka.
+This is not blanket immunity: explicit attacks, projectile damage and scripted
+destruction can still kill a ferry and its passengers. Static inspection found
+zero-valued maximum HP/armour getters and the normal explicit damage handler,
+not a positive ferry HP descriptor. Original automatic scan/controller eligibility
+remains unresolved. Destroying a vessel destroys its remaining cargo (V cleanup
+intent; G exact timing).
 
 BoatActivate enables its owner's commands and starts entry toward EditorX/EditorY,
 then attempts unloading. G: entry interpolates directly, including from outside
@@ -77,7 +88,7 @@ message rather than silently incrementing the unsupported-action counter.
 Cargo, carrier links, pending boarding, vessel enablement, route destination and
 completion participate in the state hash. Board/Unload commands use normal
 command-log serialization. Saves restore cargo by deterministic replay. Replay
-semantics version is now 6, so earlier engine saves fail explicitly rather than
+semantics version is now 8, so earlier engine saves fail explicitly rather than
 silently continuing with changed simulation rules. Original-save transport import
 remains partial; this task does not establish original-save interoperability.
 

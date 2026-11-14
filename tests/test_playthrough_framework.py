@@ -51,6 +51,7 @@ class FrameworkTests(unittest.TestCase):
         self.assertGreater(left[-1]['income'], 0)
         embarked = [o for r in left for o in r['objects'] if o['carrier']]
         self.assertTrue(embarked)
+        self.assertTrue(any(o['unload_pending'] for r in left for o in r['objects']))
         self.assertTrue(all(o['alive'] for o in embarked))
         # Run the same input with telemetry disabled and compare the ordinary final hash.
         direct = self.root / 'direct.txt'

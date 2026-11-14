@@ -13,6 +13,7 @@
 //   keydown NAME | keyup NAME    hold / release across frames, including mouse drags
 //                          modifier names: ctrl, shift, alt, lctrl/rctrl, lshift/rshift, lalt/ralt
 //   shot FILE.png          screenshot of the next rendered frame
+//   dump [SIDE] [TYPE]     live objects, including cargo: id/type/side/tile/HP/cargo count/carrier; -1 = all
 //   print                  one status line: tick, state hash, money, outcome, object counts
 //   expect NAME OP VALUE   NAME = money | tick | outcome (0 running, 1 victory, 2 defeat) | selection | units SIDE | towns SIDE | enemies;
 //                          OP = == != < <= > >=. A failed expectation makes the process exit with status 3.
@@ -67,6 +68,7 @@ class PlaytestScript {
   uint64_t until_tick_ = 0;
   // pending releases for the frame after a click / key
   bool release_left_ = false, release_right_ = false, release_middle_ = false;
+  bool settle_mouse_ = false;
   std::vector<SDL_Scancode> release_keys_;
   int drag_phase_ = 0, dx0_ = 0, dy0_ = 0, dx1_ = 0, dy1_ = 0;
   int failures_ = 0;

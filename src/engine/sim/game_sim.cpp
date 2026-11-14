@@ -20,6 +20,13 @@ inline int64_t d2(const Object& a, const Object& b) {
   int64_t dx = px(a.cur_x) - px(b.cur_x), dy = px(a.cur_y) - px(b.cur_y);
   return dx * dx + dy * dy;
 }
+// V: Marine chase retention uses the reference pixel-distance approximation.
+// Target assignment itself still uses the engine's nearest-visible policy.
+int pursuit_distance(const Object& a, const Object& b) {
+  int x = std::abs(px(a.cur_x) - px(b.cur_x)), y = std::abs(px(a.cur_y) - px(b.cur_y));
+  const int longest = std::max(x,y), short_weight = std::min(x,y) * 3 / 2;
+  return longest + short_weight / 4 + short_weight / 64 - longest / 128 - longest / 32;
+}
 // Mobile weapon reach starts at the source collision disc, not its centre.
 // Omitting that radius can make melee reach shorter than non-overlapping discs.
 int64_t weapon_reach(const TypeRules& source, const TypeRules& target, int range) {
@@ -334,8 +341,10 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o) const {
   // unavailable. This six-tile fallback remains a placeholder, not a sight fact.
   constexpr int64_t fallback_radius = 6 * kTilePx;
   int64_t bd = mask_sight ? std::numeric_limits<int64_t>::max() : fallback_radius * fallback_radius;
+  // G: scripted ferries are excluded from automatic combat assignment; direct damage remains possible.
   for (const Object& t : w.objects) {
-    if (t.removed || !t.alive || t.type < 0 || !w.hostile(o.side, t.side) || t.progress < 1000) continue;
+    if (t.removed || !t.alive || t.type < 0 || t.type == 84 || !w.hostile(o.side, t.side) || t.progress < 1000) continue;
+    if (rules_->type(o.type).kind == 0 && pursuit_distance(o,t) > 1152) continue;
     if (mask_sight && !position_visible(w, o.side, px(t.cur_x), px(t.cur_y))) continue;
     const auto shot = rules_->attack(o.type, t.type, !w.hostile(o.side, t.side));
     if (!shot.damage_known || !shot.getters_known || shot.damage <= 0) continue;
@@ -397,9 +406,11 @@ void GameSim::apply(World& w, const Command& c) {
     }
     case Pct::Unload:
       for (auto* o : own_ids(true)) if (is_transport(o->type)) {
-        script_stop(w, {o->id}); o->vessel_route = false;
-        unload(w, *o, c.c == 1 ? px(o->cur_x) / kTilePx : std::clamp(c.a, 0, w.width_px()-1) / kTilePx,
-                        c.c == 1 ? px(o->cur_y) / kTilePx : std::clamp(c.b, 0, w.height_px()-1) / kTilePx);
+        if (c.c == 1) {
+          script_stop(w, {o->id});
+          unload(w, *o, px(o->cur_x) / kTilePx, px(o->cur_y) / kTilePx);
+        } else request_unload(w, *o, std::clamp(c.a, 0, w.width_px()-1) / kTilePx,
+                              std::clamp(c.b, 0, w.height_px()-1) / kTilePx);
       }
       break;
     case Pct::Move:
@@ -409,9 +420,8 @@ void GameSim::apply(World& w, const Command& c) {
       // Coordinates come from untrusted command packets: clamp into the map before any fixed-point conversion.
       const int cx = std::clamp(c.a, 0, std::max(0, w.width_px() - 1)), cy = std::clamp(c.b, 0, std::max(0, w.height_px() - 1));
       for (Object* o : v) {
-        if (is_transport(o->type) && !nav_.blocked(cx / kTilePx, cy / kTilePx, path::MoveClass::Small)) {
-          script_stop(w, {o->id}); o->vessel_route = false;
-          unload(w, *o, cx / kTilePx, cy / kTilePx); continue;
+        if (is_transport(o->type) && nav_.in_bounds(cx / kTilePx, cy / kTilePx) && nav_.terrain(cx / kTilePx, cy / kTilePx) != 0) {
+          request_unload(w, *o, cx / kTilePx, cy / kTilePx); continue;
         }
         if (is_transport(o->type)) script_stop(w, {o->id});
         o->boarding = 0; o->vessel_route = false;
@@ -1170,7 +1180,9 @@ void GameSim::run_orders(World& w) {
     }
     if (o.order != uint8_t(Order::Attack)) continue;
     Object* t = w.find_mut(o.target);
-    if (!t || t->removed || !t->alive) {
+    const bool lost_chase = t && r.kind == 0 &&
+        (pursuit_distance(o,*t) > 1152 || (rules_->sight() && !object_visible(w,o.side,*t)));
+    if (!t || t->removed || !t->alive || lost_chase) {
       o.target = 0;
       if (o.resume) {
         o.order = uint8_t(resumed_order(o.resume)); o.resume = 0;
@@ -1180,6 +1192,7 @@ void GameSim::run_orders(World& w) {
         }
       } else {
         o.order = uint8_t(Order::Idle);
+        if (lost_chase && ag) mover_->stop(uint32_t(o.mover));
       }
       continue;
     }
@@ -1598,6 +1611,7 @@ void GameSim::script_stop(World& w, const std::vector<uint32_t>& ids) {
       agent.enabled = true; agent.pos = agent.prev_pos = {o->cur_x, o->cur_y};
     }
     o->vessel_route = false;
+    o->unload_pending = false;
     o->boarding = 0;
     o->order = uint8_t(Order::Idle); o->target = 0; o->resume = 0;
     o->follow_tactic = -1;
@@ -1736,6 +1750,7 @@ uint64_t GameSim::state_hash(const World& w) const {
       mix(o.landing_x); mix(o.landing_y); mix(o.cargo.size());
       for (auto id : o.cargo) mix(id);
     }
+    if (is_transport(o.type)) { mix(o.unload_pending); if (o.unload_pending) { mix(uint32_t(o.unload_x)); mix(uint32_t(o.unload_y)); } }
     mix(uint8_t(o.attack_mode)); mix(uint32_t(o.follow_tactic)); mix(o.order); mix(o.target); mix(uint32_t(o.cooldown)); mix(o.alive); mix(o.removed); mix(uint32_t(o.progress));
     mix(uint32_t(o.render_height)); mix(uint32_t(o.destruction_radius));
     mix(uint32_t(o.transport_phase)); mix(uint32_t(o.orientation)); mix(o.construction_overlay); mix(o.has_fired);

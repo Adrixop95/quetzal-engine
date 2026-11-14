@@ -53,8 +53,11 @@ static World initial(int mission) {
     o.hp = type == 11 ? 1000 : 100000; o.town_hall = type == 11;
     o.teleport(tile_center_fixed(x), tile_center_fixed(y)); w.objects.push_back(o);
   };
-  add(84, 0, 5, 7); add(0, 0, 3, 7); add(0, 0, 18, 18); add(0, 1, 23, 18);
+  // Keep the combat target inside the synthetic sight mask for chase retention.
+  add(84, 0, 5, 7); add(0, 0, 3, 7); add(0, 0, 18, 18); add(0, 1, 20, 18);
   add(11, 0, 18, 8, 0); add(11, 1, 27, 27, 1);
+  // The first attack precedes the first dynamic fog update.
+  w.visibility.sides[0].v[18 * 32 + 20] = 0;
   return w;
 }
 static void schedule(GameSim& sim, uint64_t tick) {
