@@ -19085,10 +19085,11 @@
     250,
     3
    ],
-   "reload_ticks": 37,
+   "flight_param": 30,
+   "projectile_speed": 37,
    "range_px": 250,
    "delegates_to_weapon": 3,
-   "status": "guess (reload/range via vtable +0x60/+0x74, damage delegated)"
+   "status": "verified (layout, docs/weapon_class_map.md); damage delegated to the impact weapon"
   },
   {
    "id": 3,
@@ -19105,7 +19106,11 @@
     150,
     -500
    ],
-   "status": "unread (distance based, 0x44c130)"
+   "inner_radius": 24,
+   "outer_radius": 72,
+   "damage": 3000,
+   "requires_airborne": 0,
+   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
   },
   {
    "id": 4,
@@ -19150,11 +19155,12 @@
     500,
     21
    ],
+   "projectile_speed": 25,
    "reload_ticks": 35,
    "range_px": 250,
-   "damage": 500,
+   "damage_factor": 500,
    "chained_weapon": 21,
-   "status": "guess"
+   "status": "verified (layout, docs/weapon_class_map.md); 0 vs air and allies, damage rec[4]*(0x30/rec[1])"
   },
   {
    "id": 6,
@@ -19168,11 +19174,12 @@
     500,
     21
    ],
+   "projectile_speed": 25,
    "reload_ticks": 35,
    "range_px": 250,
-   "damage": 500,
+   "damage_factor": 500,
    "chained_weapon": 21,
-   "status": "guess"
+   "status": "verified (layout, docs/weapon_class_map.md); 0 vs air and allies, damage rec[4]*(0x30/rec[1])"
   },
   {
    "id": 7,
@@ -19402,7 +19409,11 @@
     150,
     -600
    ],
-   "status": "unread (distance based, 0x44c130)"
+   "inner_radius": 15,
+   "outer_radius": 25,
+   "damage": 3000,
+   "requires_airborne": 0,
+   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
   },
   {
    "id": 18,
@@ -19419,7 +19430,11 @@
     150,
     -600
    ],
-   "status": "unread (distance based, 0x44c130)"
+   "inner_radius": 15,
+   "outer_radius": 25,
+   "damage": 3000,
+   "requires_airborne": 1,
+   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
   },
   {
    "id": 19,
@@ -19468,7 +19483,7 @@
    "mult_f4": 1.0,
    "mult_e8": 1.0,
    "mult_structure": 0.625,
-   "status": "guess"
+   "status": "verified (layout, docs/weapon_class_map.md)"
   },
   {
    "id": 22,
@@ -19482,11 +19497,12 @@
     600,
     23
    ],
+   "projectile_speed": 20,
    "reload_ticks": 20,
    "range_px": 200,
-   "damage": 600,
+   "damage_factor": 600,
    "chained_weapon": 23,
-   "status": "guess"
+   "status": "verified (layout, docs/weapon_class_map.md); 0 vs air and allies, damage rec[4]*(0x30/rec[1])"
   },
   {
    "id": 23,
@@ -19509,7 +19525,7 @@
    "mult_f4": 0.5,
    "mult_e8": 1.3125,
    "mult_structure": 2.0,
-   "status": "guess"
+   "status": "verified (layout, docs/weapon_class_map.md)"
   },
   {
    "id": 24,
@@ -19523,11 +19539,12 @@
     600,
     25
    ],
+   "projectile_speed": 20,
    "reload_ticks": 20,
    "range_px": 200,
-   "damage": 600,
+   "damage_factor": 600,
    "chained_weapon": 25,
-   "status": "guess"
+   "status": "verified (layout, docs/weapon_class_map.md); 0 vs air and allies, damage rec[4]*(0x30/rec[1])"
   },
   {
    "id": 25,
@@ -19544,7 +19561,11 @@
     150,
     -500
    ],
-   "status": "unread (distance based, 0x44c130)"
+   "inner_radius": 20,
+   "outer_radius": 35,
+   "damage": 2000,
+   "requires_airborne": 0,
+   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
   },
   {
    "id": 26,
@@ -19558,11 +19579,12 @@
     600,
     27
    ],
+   "projectile_speed": 20,
    "reload_ticks": 20,
    "range_px": 200,
-   "damage": 600,
+   "damage_factor": 600,
    "chained_weapon": 27,
-   "status": "guess"
+   "status": "verified (layout, docs/weapon_class_map.md); 0 vs air and allies, damage rec[4]*(0x30/rec[1])"
   },
   {
    "id": 27,
@@ -19585,7 +19607,7 @@
    "mult_f4": 0.5,
    "mult_e8": 1.3125,
    "mult_structure": 2.0,
-   "status": "guess"
+   "status": "verified (layout, docs/weapon_class_map.md)"
   },
   {
    "id": 28,
@@ -19599,11 +19621,12 @@
     800,
     29
    ],
+   "projectile_speed": 20,
    "reload_ticks": 20,
    "range_px": 225,
-   "damage": 800,
+   "damage_factor": 800,
    "chained_weapon": 29,
-   "status": "guess"
+   "status": "verified (layout, docs/weapon_class_map.md); 0 vs air and allies, damage rec[4]*(0x30/rec[1])"
   },
   {
    "id": 29,
@@ -19620,7 +19643,11 @@
     150,
     -300
    ],
-   "status": "unread (distance based, 0x44c130)"
+   "inner_radius": 20,
+   "outer_radius": 50,
+   "damage": 2700,
+   "requires_airborne": 0,
+   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
   },
   {
    "id": 30,
@@ -19633,10 +19660,11 @@
     15,
     3
    ],
-   "reload_ticks": 40,
+   "flight_param": 0,
+   "projectile_speed": 40,
    "range_px": 15,
    "delegates_to_weapon": 3,
-   "status": "guess (reload/range via vtable +0x60/+0x74, damage delegated)"
+   "status": "verified (layout, docs/weapon_class_map.md); damage delegated to the impact weapon"
   },
   {
    "id": 31,
@@ -19682,10 +19710,11 @@
     200,
     3
    ],
-   "reload_ticks": 30,
+   "flight_param": 30,
+   "projectile_speed": 30,
    "range_px": 200,
    "delegates_to_weapon": 3,
-   "status": "guess (reload/range via vtable +0x60/+0x74, damage delegated)"
+   "status": "verified (layout, docs/weapon_class_map.md); damage delegated to the impact weapon"
   },
   {
    "id": 33,
@@ -19724,7 +19753,7 @@
    "param": 0,
    "reload_ticks": 40,
    "range_px": 96,
-   "status": "guess (damage 10*f(0x429f60) per tick of burn)"
+   "status": "verified (formula 10*f(0x429f60) per tick of burn, docs/weapon_class_map.md); hit-effect helper 0x42a010 unread"
   },
   {
    "id": 35,
@@ -19789,7 +19818,11 @@
     150,
     -500
    ],
-   "status": "unread (distance based, 0x44c130)"
+   "inner_radius": 20,
+   "outer_radius": 30,
+   "damage": 1500,
+   "requires_airborne": 0,
+   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
   },
   {
    "id": 38,
@@ -19806,7 +19839,11 @@
     150,
     -200
    ],
-   "status": "unread (distance based, 0x44c130)"
+   "inner_radius": 25,
+   "outer_radius": 55,
+   "damage": 3500,
+   "requires_airborne": 0,
+   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
   },
   {
    "id": 39,
@@ -19834,10 +19871,11 @@
     290,
     41
    ],
-   "reload_ticks": 45,
+   "flight_param": 30,
+   "projectile_speed": 45,
    "range_px": 290,
    "delegates_to_weapon": 41,
-   "status": "guess (reload/range via vtable +0x60/+0x74, damage delegated)"
+   "status": "verified (layout, docs/weapon_class_map.md); damage delegated to the impact weapon"
   },
   {
    "id": 41,
@@ -19854,7 +19892,11 @@
     150,
     -100
    ],
-   "status": "unread (distance based, 0x44c130)"
+   "inner_radius": 35,
+   "outer_radius": 70,
+   "damage": 4000,
+   "requires_airborne": 0,
+   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
   },
   {
    "id": 42,
@@ -19871,7 +19913,11 @@
     150,
     -100
    ],
-   "status": "unread (distance based, 0x44c130)"
+   "inner_radius": 30,
+   "outer_radius": 80,
+   "damage": 3000,
+   "requires_airborne": 0,
+   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
   },
   {
    "id": 43,
@@ -19884,10 +19930,11 @@
     30,
     42
    ],
-   "reload_ticks": 48,
+   "flight_param": 0,
+   "projectile_speed": 48,
    "range_px": 30,
    "delegates_to_weapon": 42,
-   "status": "guess (reload/range via vtable +0x60/+0x74, damage delegated)"
+   "status": "verified (layout, docs/weapon_class_map.md); damage delegated to the impact weapon"
   },
   {
    "id": 44,
@@ -19925,7 +19972,7 @@
    "mult_f4": 0.5,
    "mult_e8": 1.3125,
    "mult_structure": 2.0,
-   "status": "guess"
+   "status": "verified (layout, docs/weapon_class_map.md)"
   },
   {
    "id": 46,
@@ -19938,10 +19985,11 @@
     230,
     45
    ],
-   "reload_ticks": 40,
+   "flight_param": 20,
+   "projectile_speed": 40,
    "range_px": 230,
    "delegates_to_weapon": 45,
-   "status": "guess (reload/range via vtable +0x60/+0x74, damage delegated)"
+   "status": "verified (layout, docs/weapon_class_map.md); damage delegated to the impact weapon"
   },
   {
    "id": 47,
@@ -20006,7 +20054,11 @@
     150,
     -100
    ],
-   "status": "unread (distance based, 0x44c130)"
+   "inner_radius": 35,
+   "outer_radius": 70,
+   "damage": 4000,
+   "requires_airborne": 0,
+   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
   },
   {
    "id": 50,
@@ -20019,10 +20071,11 @@
     360,
     49
    ],
-   "reload_ticks": 45,
+   "flight_param": 30,
+   "projectile_speed": 45,
    "range_px": 360,
    "delegates_to_weapon": 49,
-   "status": "guess (reload/range via vtable +0x60/+0x74, damage delegated)"
+   "status": "verified (layout, docs/weapon_class_map.md); damage delegated to the impact weapon"
   },
   {
    "id": 51,
@@ -20085,7 +20138,11 @@
     150,
     -600
    ],
-   "status": "unread (distance based, 0x44c130)"
+   "inner_radius": 15,
+   "outer_radius": 25,
+   "damage": 3000,
+   "requires_airborne": 0,
+   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
   },
   {
    "id": 54,

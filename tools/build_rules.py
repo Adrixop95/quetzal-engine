@@ -56,16 +56,17 @@ for r in ids:
         w.update(reload_ticks=rec[0], damage=rec[1], armor_scaled_damage=rec[2], range_px=rec[4], mult_air=rec[5] / 256, mult_nonorganic=rec[6] / 256, mult_f4=rec[7] / 256, mult_e8=rec[8] / 256, mult_structure=rec[9] / 256, status='verified (formula from code; footman 600/10 observed)')
     elif c == 1 and rec:
         w.update(projectile_speed=rec[1], reload_ticks=rec[2], range_px=rec[3], damage=rec[4], armor_scaled_damage=rec[5], mult_air=rec[7] / 256, mult_nonorganic=rec[8] / 256, mult_f4=rec[9] / 256, mult_e8=rec[10] / 256, mult_structure=rec[11] / 256, chained_weapon=rec[12], status='verified (formula from code; archer 800 observed)')
-    elif c == 0 and rec: w.update(reload_ticks=rec[2], range_px=rec[3], delegates_to_weapon=rec[4], status='guess (reload/range via vtable +0x60/+0x74, damage delegated)')
-    elif c == 3 and rec: w.update(reload_ticks=rec[2], range_px=rec[3], damage=rec[4], chained_weapon=rec[5], status='guess')
+    elif c == 0 and rec: w.update(flight_param=rec[1], projectile_speed=rec[2], range_px=rec[3], delegates_to_weapon=rec[4], status='verified (layout, docs/weapon_class_map.md); damage delegated to the impact weapon')
+    elif c == 3 and rec: w.update(projectile_speed=rec[1], reload_ticks=rec[2], range_px=rec[3], damage_factor=rec[4], chained_weapon=rec[5], status='verified (layout, docs/weapon_class_map.md); 0 vs air and allies, damage rec[4]*(0x30/rec[1])')
     elif c == 8 and rec: w.update(delegates_to_weapon=rec[0], status='verified (code)')
     elif c == 12 and rec: w.update(sum_of_weapons=[rec[0], rec[1]], status='verified (code)')
-    elif c == 9 and rec: w.update(damage=rec[0], armor_scaled_damage=rec[1], mult_air=rec[3] / 256, mult_nonorganic=rec[4] / 256, mult_f4=rec[5] / 256, mult_e8=rec[6] / 256, mult_structure=rec[7] / 256, status='guess')
+    elif c == 9 and rec: w.update(damage=rec[0], armor_scaled_damage=rec[1], mult_air=rec[3] / 256, mult_nonorganic=rec[4] / 256, mult_f4=rec[5] / 256, mult_e8=rec[6] / 256, mult_structure=rec[7] / 256, status='verified (layout, docs/weapon_class_map.md)')
     elif c in (4, 5): w.update(reload_ticks=19, range_px=72, damage=3000, damage_vs_nonorganic_or_structure=1500, status='verified (code; rifleman first hit at 68 px observed); 0 vs allied or air')
     elif c == 6: w.update(reload_ticks=25, range_px=10, damage=18000, damage_vs_nonorganic=9000, status='verified (code); 0 vs air')
     elif c == 10: w.update(reload_ticks=11, range_px=10, damage=1800, damage_vs_nonorganic_or_structure=1125, mult_organic_f4_e8=1.25, status='verified (code); 0 vs air')
-    elif c == 11: w.update(reload_ticks=40, range_px=96, status='guess (damage 10*f(0x429f60) per tick of burn)')
-    elif c == 7: w.update(status='unread (distance based, 0x44c130)')
+    elif c == 11: w.update(reload_ticks=40, range_px=96, status='verified (formula 10*f(0x429f60) per tick of burn, docs/weapon_class_map.md); hit-effect helper 0x42a010 unread')
+    elif c == 7 and rec: w.update(inner_radius=rec[1], outer_radius=rec[2], damage=rec[4], requires_airborne=rec[5], status='verified (layout, docs/weapon_class_map.md); distance based, 0x44c130')
+    elif c == 7: w.update(status='verified (distance based, 0x44c130); no record')
     W.append(w)
 R['weapons'] = W
 R['build_tree'] = [{k: num(v) for k, v in r.items()} for r in rd('buildtree.csv')]
