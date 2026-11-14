@@ -68,6 +68,11 @@ class GameSim : public Simulation {
   std::vector<PlacementCell> placement_cells(const World& w, int side, int type, int tx, int ty,
       int town = -1, const QueueItem* reservation = nullptr) const;
   const RulesData& rules() const { return *rules_; }
+  // Read-only playthrough diagnostics, excluded from state hashes and saves.
+  uint64_t path_failures(const Object& o) const {
+    return mover_ && o.mover >= 0 ? mover_->agents().at(size_t(o.mover)).path_failures : 0;
+  }
+  int64_t income_total(int side) const { return side >= 0 && side < 8 ? income_total_[side] : 0; }
   // Bounding rectangle of occupied tiles; use occupies() for the actual shape.
   static void footprint(const TypeRules& r, int tx, int ty, int& x0, int& y0, int& x1, int& y1);
 
@@ -148,6 +153,7 @@ class GameSim : public Simulation {
   uint32_t visual_rng_ = 12345;
   uint32_t spawn_counter_ = 0;
   uint64_t tick_ = 0;
+  int64_t income_total_[8] = {};
 };
 
 constexpr int kCorpseTicks = 480;   // placeholder: a corpse stays 40 s

@@ -187,6 +187,7 @@ void MoveSystem::order_move(const u32* ids, int n, Vec2 goal) {
     Agent& a0 = agents_[ids[0]];
     int sx = floor_div(a0.pos.x, kTileFix), sy = floor_div(a0.pos.y, kTileFix);
     if (grid_.in_bounds(sx, sy) && o.ff[(int)strict].cost(sx, sy) == FlowField::kInf) {
+      for (int i = 0; i < n; ++i) ++agents_[ids[i]].path_failures;
       std::vector<u8> seen((size_t)grid_.width() * grid_.height(), 0); std::vector<Cell> q{{sx, sy}}; seen[(size_t)sy * grid_.width() + sx] = 1;
       i64 best = -1; Cell bc{sx, sy};
       for (size_t qi = 0; qi < q.size(); ++qi) {
@@ -446,7 +447,7 @@ void MoveSystem::local_repath(Agent& a) {
     }
   }
   a.local_path.clear();
-  if (best < 0) return;
+  if (best < 0) { ++a.path_failures; return; }
   for (int i = best; i != queue[0]; i = parent[i]) a.local_path.push_back(point(i));
   std::reverse(a.local_path.begin(), a.local_path.end()); ++stats.repaths;
 }

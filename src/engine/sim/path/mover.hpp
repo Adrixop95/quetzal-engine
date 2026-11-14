@@ -41,6 +41,7 @@ struct Agent {
   // diagnostics / stuck handling
   Vec2 win_start; int win_ticks = 0; int stuck_level = 0; int squeeze_ticks = 0; int ghost_ticks = 0;
   u32 moved_ticks = 0;
+  u64 path_failures = 0;       // Diagnostic only; excluded from state_hash: unreachable requests and failed local repaths.
   Vec2 target; u64 target_until = 0; int backoff_ticks = 0;   // cached steering target (recomputed every few ticks)
   int formation = -1;
   Vec2 step_goal;              // reserved tile centre during startup approach

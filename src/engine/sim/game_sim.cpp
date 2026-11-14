@@ -114,6 +114,7 @@ void GameSim::init(World& w) {
   if (w.side_state.size() < 8) w.side_state.resize(8);
   paused_ = false;
   spawn_counter_ = 0;
+  std::fill(std::begin(income_total_), std::end(income_total_), 0);
   visual_rng_ = 12345;
   if (script_.loaded() && !w.original_save) script_.init(w);
   for (Object& o : w.objects) {
@@ -1061,6 +1062,7 @@ void GameSim::economy(World& w) {
                                           int64_t(gain) * 11184811 / 8388608));
       }
       w.side_state[o.side].money += gain;
+      if (o.side < 8) income_total_[o.side] += gain;
       int repair_rate = int(((int64_t(h.repair_rate) * 65536 / 100) + 128) >> 8);
       int credits = harvest_tick(o.repair_harvest, repair_rate, w.day_clock, h.repair_period);
       for (size_t ti = 0; ti < w.mission.towns.size(); ++ti)

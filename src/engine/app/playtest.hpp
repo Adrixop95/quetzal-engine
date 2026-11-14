@@ -16,9 +16,16 @@
 //   print                  one status line: tick, state hash, money, outcome, object counts
 //   expect NAME OP VALUE   NAME = money | tick | outcome (0 running, 1 victory, 2 defeat) | selection | units SIDE | towns SIDE | enemies;
 //                          OP = == != < <= > >=. A failed expectation makes the process exit with status 3.
+//   select type TYPE | select id ID | select group GROUP; group assign GROUP
+//   train TYPE N BUILDING_ID; build/harvest/gather TYPE X Y BUILDING_ID
+//   order-move X Y | attack-move X Y | context ID | unload X Y
+//   await TIMEOUT CONDITION | checkpoint CONDITION (see docs/playthrough_framework.md)
+//   budget N | record FILE | capture TICK FILE     runner diagnostics and bounds
 //   quit
 #pragma once
 #include <string>
+#include <fstream>
+#include <map>
 #include <vector>
 #include "engine/platform/input.hpp"
 #include "engine/sim/game_sim.hpp"
@@ -36,14 +43,24 @@ class PlaytestScript {
  public:
   bool load(const std::string& path, std::string& err);
   // Applies the next frame of the script to `in` (call after Input::begin_frame()). Returns false when the script is finished.
-  bool step(Input& in, const World& w, const GameSim* sim, PlaytestRequest& req);
+  bool step(Input& in, World& w, GameSim* sim, PlaytestRequest& req);
+  void observe(const World& w, const GameSim* sim);
+  void finish(const World& w);
+  std::string capture_at(uint64_t tick) const { auto i = captures_.find(tick); return i == captures_.end() ? "" : i->second; }
+  bool limit_reached(const World& w) const { return w.tick >= tick_limit_; }
+  bool recording() const { return observations_.is_open(); }
   int failures() const { return failures_; }
 
  private:
   struct Line { std::string cmd; std::vector<std::string> args; int src_line = 0; };
   void press_key(Input& in, const std::string& name, bool down, bool auto_release = false);
   static void update_modifiers(Input& in);
-  bool evaluate(const World& w, const Line& l);
+  bool evaluate(const World& w, const GameSim* sim, const Line& l, bool quiet = false);
+  bool player_command(World& w, GameSim* sim, const Line& l);
+  std::ofstream observations_;
+  std::map<uint64_t, std::string> captures_;
+  size_t observed_commands_ = 0;
+  uint64_t observed_tick_ = UINT64_MAX, deadline_ = 0, tick_limit_ = UINT64_MAX;
   std::vector<Line> lines_;
   size_t pc_ = 0;
   int wait_ = 0;
@@ -53,6 +70,7 @@ class PlaytestScript {
   std::vector<SDL_Scancode> release_keys_;
   int drag_phase_ = 0, dx0_ = 0, dy0_ = 0, dx1_ = 0, dy1_ = 0;
   int failures_ = 0;
+  bool completed_ = false;
 };
 
 }  // namespace aztec::engine
