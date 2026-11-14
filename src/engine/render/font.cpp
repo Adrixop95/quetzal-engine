@@ -1,6 +1,7 @@
 #include "engine/render/font.hpp"
 
 #include <cctype>
+#include <algorithm>
 #include "core/text.hpp"
 #include <vector>
 
@@ -133,6 +134,25 @@ std::vector<std::string> Font::wrap(const std::string& text, int scale, int max_
   append();
   if (!line.empty()) lines.push_back(line);
   return lines;
+}
+
+void Font::draw_state(SDL_Renderer* r, int x, int y, const std::string& text, int scale, unsigned state) const {
+  state = std::min(state, 3u);
+  if (!original_) {
+    const SDL_Color colors[] = {{235, 215, 160, 255}, {235, 215, 160, 255}, {255, 240, 170, 255}, {130, 120, 110, 255}};
+    draw(r, x, y, text, scale, colors[state]);
+    return;
+  }
+  const int multiplier = eff(scale);
+  for (unsigned char ch : utf8_to_cp1250(text)) {
+    const auto& sprite = store_->get(SpriteKey{ArchiveId::Fnts, 0x44c, uint32_t(1200 + ch), 0, uint8_t(state)});
+    if (ch == ' ' || !sprite.ok()) { x += 4 * multiplier; continue; }
+    auto source = sprite.frame_rect(0);
+    SDL_Rect destination{x - sprite.ox * multiplier, y - sprite.oy * multiplier,
+                         sprite.cw * multiplier, sprite.ch * multiplier};
+    SDL_RenderCopy(r, store_->atlas().page(sprite.region.page), &source, &destination);
+    x += glyph_advance(sprite, multiplier);
+  }
 }
 
 void Font::draw(SDL_Renderer* r, int x, int y, const std::string& s0, int scale, SDL_Color c, bool shadow) const {

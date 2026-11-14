@@ -7,6 +7,9 @@
 #include <filesystem>
 #include <fstream>
 #include "core/text.hpp"
+#include "core/mapfiles.hpp"
+#include "core/endian.hpp"
+#include "engine/ui/frontend_layout.hpp"
 #include "core/visfile.hpp"
 #include "engine/assets/mission.hpp"
 #include "engine/app/options.hpp"
@@ -49,6 +52,41 @@ std::string mission_briefing(const GameData& data, const std::string& spec) {
     if (load_mission(mp, mission)) for (const auto& note : mission.notes) text += note + "\n";
   }
   return text.empty() ? "No briefing or objectives are available for this mission." : text;
+}
+
+std::string installed_credits(const GameData& data) {
+  std::vector<uint8_t> bytes;
+  if (!read_file(find_file_ci(data.root(), "Aztec.exe"), bytes) || bytes.size() < 64 ||
+      bytes[0] != 'M' || bytes[1] != 'Z') return {};
+  auto u16 = [&](size_t offset) { return read_le<uint16_t>(bytes.data() + offset); };
+  auto u32 = [&](size_t offset) { return read_le<uint32_t>(bytes.data() + offset); };
+  const size_t pe = u32(60);
+  if (pe > bytes.size() || bytes.size() - pe < 24 || u32(pe) != 0x4550) return {};
+  const size_t table = pe + 24 + u16(pe + 20);
+  if (table > bytes.size() || u16(pe + 6) > (bytes.size() - table) / 40) return {};
+  // V: this revision stores the credits string at RVA 0xa9760. No code is interpreted.
+  constexpr uint32_t credits_rva = 0xa9760;
+  for (size_t section = table; section < table + size_t(u16(pe + 6)) * 40; section += 40) {
+    const uint32_t start = u32(section + 12), size = u32(section + 16), offset = u32(section + 20);
+    if (credits_rva < start || credits_rva - start >= size || (u32(section + 36) & 0x20000000)) continue;
+    if (offset > bytes.size() || size > bytes.size() - offset) return {};
+    const size_t first = size_t(offset) + credits_rva - start;
+    const size_t limit = std::min(size_t(offset) + size, first + 32768);
+    std::string text;
+    bool terminated = false;
+    for (size_t i = first; i < limit; ++i) {
+      const uint8_t ch = bytes[i];
+      if (!ch) { terminated = true; break; }
+      if (ch == 1 || ch == 5) continue; // G: treat the observed inline style markers as non-text.
+      if (ch < 32 && ch != '\n' && ch != '\r' && ch != '\t') return {};
+      text += char(ch);
+    }
+    // Reject data that does not resemble a multiline credits block.
+    if (!terminated || text.empty() || text.front() != '\n' || std::count(text.begin(), text.end(), '\n') < 10) return {};
+    // Preserve the installed glyph indices using the renderer's existing single-byte transport.
+    return cp1250_to_utf8(text);
+  }
+  return {};
 }
 
 bool CampaignProgress::won(int n) const { return n >= 1 && n <= 15 && (completed & (1u << (n - 1))); }
@@ -95,15 +133,19 @@ bool CampaignProgress::save(const std::string& path) const {
 }
 
 std::string SaveLoadMenu::slot_path(int slot) {
-  return slot >= 0 && slot < 3 ? user_file("Saves/engine_slot" + std::to_string(slot + 1) + ".azs") : "";
+  return slot >= 0 && slot < slot_count ? user_file("Saves/engine_slot" + std::to_string(slot + 1) + ".azs") : "";
 }
 SDL_Rect SaveLoadMenu::row(int i, int w, int h, int sc) {
-  const int width = std::min(w - 16, 420 * sc);
-  return {(w - width) / 2, h / 2 - 100 * sc + i * 48 * sc, width, 36 * sc};
+  (void)sc;
+  const FrontendLayout layout(w, h);
+  // V: dialog bounds and action controls in f_0041eef0; G: list width.
+  if (i == slot_count) return layout.physical({150, 328, 72, 60});
+  if (i == slot_count + 1) return layout.physical({350, 328, 72, 60});
+  return layout.physical({140, 148 + i * 20, 300, 20});
 }
 void SaveLoadMenu::show(bool save) {
   saving = save; open = true; confirming = false; selected = -1;
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < slot_count; ++i) {
     SaveData data;
     labels_[i] = read_save(slot_path(i), data) ? data.mission + " / tick " + std::to_string(data.tick) : "Empty or unreadable";
   }
@@ -123,36 +165,44 @@ int SaveLoadMenu::update(const Input& in, int w, int h, int sc) {
     auto rect = row(i, w, h, sc); const SDL_Point point{in.mx, in.my};
     return in.pressed[SDL_BUTTON_LEFT] && SDL_PointInRect(&point, &rect);
   };
-  if (clicked(4)) { if (confirming) confirming = false; else open = false; return -1; }
-  if (!confirming) for (int i = 0; i < 3; ++i) if (clicked(i)) {
+  if (clicked(slot_count + 1)) { if (confirming) confirming = false; else open = false; return -1; }
+  if (!confirming) for (int i = 0; i < slot_count; ++i) if (clicked(i)) {
     SaveData save;
     if (saving || read_save(slot_path(i), save)) selected = i;
     return -1;
   }
-  if (selected >= 0 && (clicked(3) || (in.hit(SDL_SCANCODE_RETURN) && !in.alt))) {
+  if (selected >= 0 && (clicked(slot_count) || (in.hit(SDL_SCANCODE_RETURN) && !in.alt))) {
     if (!confirming) confirming = true;
     else { open = false; return selected; }
   }
   return -1;
 }
-void SaveLoadMenu::draw(SDL_Renderer* r, const Font& font, int w, int h, int sc) const {
+void SaveLoadMenu::draw(SDL_Renderer* r, const Font& font, int w, int h, int sc, SpriteStore* store) const {
   if (!open) return;
   SDL_SetRenderDrawColor(r, 20, 18, 14, 255); SDL_RenderClear(r);
+  if (store) {
+    const auto& sprite = store->get(SpriteKey{ArchiveId::Common, 0x44c, 284});
+    if (sprite.ok()) {
+      auto source = sprite.frame_rect(0);
+      auto destination = FrontendLayout(w, h).physical({0, 0, 800, 600});
+      SDL_RenderCopy(r, store->atlas().page(sprite.region.page), &source, &destination);
+    }
+  }
   auto top = row(0, w, h, sc);
   const std::string title = std::string(saving ? "Save game" : "Load game") +
       (confirming ? " / slot " + std::to_string(selected + 1) : "");
-  font.draw(r, top.x, top.y - 48 * sc, title, 2 * sc, {255, 230, 150, 255});
-  for (int i = 0; i < 5; ++i) {
-    if (confirming && i < 3) continue;
+  font.draw(r, top.x, top.y - 28 * sc, title, 2 * sc, {255, 230, 150, 255});
+  for (int i = 0; i < slot_count + 2; ++i) {
+    if (confirming && i < slot_count) continue;
     auto rect = row(i, w, h, sc);
     std::string label;
-    if (i < 3) {
+    if (i < slot_count) {
       label = (selected == i ? "> " : "") + std::string("Slot ") + std::to_string(i + 1) + ": " +
           labels_[i];
-    } else if (i == 3) label = confirming ? (saving ? "Confirm save / overwrite" : "Confirm load") : "Continue";
+    } else if (i == slot_count) label = confirming ? "Confirm" : (saving ? "Save" : "Load");
     else label = "Cancel";
-    SDL_SetRenderDrawColor(r, 55, 42, 25, 255); SDL_RenderFillRect(r, &rect);
-    font.draw(r, rect.x + 8 * sc, rect.y + 8 * sc, label, sc, {245, 230, 200, 255});
+    const int ts = std::max(1, int(FrontendLayout(w, h).scale));
+    font.draw(r, rect.x, rect.y, label, font.ui_scale(ts), {245, 230, 200, 255});
   }
 }
 
@@ -201,9 +251,17 @@ OutcomeMenu::Action OutcomeMenu::update(const Input& in, int w, int h, int scale
   }
   return Action::None;
 }
-void OutcomeMenu::draw(SDL_Renderer* r, const Font& font, int w, int h, int scale, bool victory, bool final_mission, bool has_next) {
+void OutcomeMenu::draw(SDL_Renderer* r, const Font& font, int w, int h, int scale, bool victory, bool final_mission, bool has_next, SpriteStore* store) {
   SDL_Rect box{0, 0, w, h};
   SDL_SetRenderDrawColor(r, 10, 10, 10, 220); SDL_RenderFillRect(r, &box);
+  if (store) {
+    const auto& sprite = store->get(SpriteKey{ArchiveId::Common, 0x44c, 284});
+    if (sprite.ok()) {
+      auto source = sprite.frame_rect(0);
+      auto destination = FrontendLayout(w, h).physical({0, 0, 800, 600});
+      SDL_RenderCopy(r, store->atlas().page(sprite.region.page), &source, &destination);
+    }
+  }
   const int ts = 2 * scale;
   const std::string heading = victory ? (final_mission ? "CAMPAIGN COMPLETE" : "MISSION COMPLETE") : "MISSION FAILED";
   font.draw(r, (w - font.width(heading, ts)) / 2, h / 3, heading, ts, {255, 230, 150, 255});

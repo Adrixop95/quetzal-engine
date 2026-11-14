@@ -45,7 +45,7 @@ class AudioOptions {
   bool open = false;
   static SDL_Rect row(int index, int width, int height, int scale);
   void update(const Input& in, Options& options, int width, int height, int scale);
-  void draw(SDL_Renderer* r, const Font& font, const Options& options, int width, int height, int scale) const;
+  void draw(SDL_Renderer* r, const Font& font, const Options& options, int width, int height, int scale, bool backdrop = true) const;
 };
 
 class ModificationOptions {

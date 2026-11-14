@@ -11,6 +11,8 @@ namespace aztec::engine {
 int campaign_number(const std::string& spec);
 std::string next_campaign_mission(const GameData& data, const std::string& spec);
 std::string mission_briefing(const GameData& data, const std::string& spec);
+// Optional credits text from the supported installation's read-only PE data section.
+std::string installed_credits(const GameData& data);
 
 // A separate engine profile; original .plr files are never modified.
 struct CampaignProgress {
@@ -25,6 +27,7 @@ struct CampaignProgress {
 // Engine replay slots. Selection and confirmation never perform disk writes.
 class SaveLoadMenu {
  public:
+  static constexpr int slot_count = 9;
   bool open = false;
   bool saving = false;
   bool confirming = false;
@@ -34,10 +37,10 @@ class SaveLoadMenu {
   void show(bool save);
   // Returns a slot index only after confirmation; -1 means no operation.
   int update(const Input& in, int width, int height, int scale);
-  void draw(SDL_Renderer* r, const Font& font, int width, int height, int scale) const;
+  void draw(SDL_Renderer* r, const Font& font, int width, int height, int scale, SpriteStore* store = nullptr) const;
   const char* screen_id() const;
  private:
-  std::array<std::string, 3> labels_;
+  std::array<std::string, slot_count> labels_;
 };
 
 class TextOverlay {
@@ -57,6 +60,6 @@ class OutcomeMenu {
   static SDL_Rect button(int index, int width, int height, int scale);
   static Action update(const Input& in, int width, int height, int scale, bool victory);
   static void draw(SDL_Renderer* r, const Font& font, int width, int height, int scale,
-                   bool victory, bool final_mission, bool has_next);
+                   bool victory, bool final_mission, bool has_next, SpriteStore* store = nullptr);
 };
 }  // namespace aztec::engine
