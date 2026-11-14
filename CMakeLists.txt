@@ -459,3 +459,9 @@ if(Python3_Interpreter_FOUND)
     ${CMAKE_SOURCE_DIR}/tests/test_transport_playtest.py $<TARGET_FILE:aztec_engine>)
   set_tests_properties(transport_playtest PROPERTIES LABELS "unit" TIMEOUT 60)
 endif()
+
+if(Python3_Interpreter_FOUND)
+  add_test(NAME playthrough_framework COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_SOURCE_DIR}/tests/test_playthrough_framework.py $<TARGET_FILE:aztec_engine>)
+  set_tests_properties(playthrough_framework PROPERTIES LABELS "unit" TIMEOUT 60)
+endif()

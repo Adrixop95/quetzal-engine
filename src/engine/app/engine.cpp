@@ -297,7 +297,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         in.focused = true; in.mouse_inside = false;   // no edge scrolling from the synthetic mouse
         PlaytestRequest req;
         bool more = playtest.step(in, world, game, req);
-        for (int i = 0; i < req.run_ticks; i++) { world.begin_tick(); sim->tick(world); emit_audio(); }
+        for (int i = 0; i < req.run_ticks && !playtest.limit_reached(world) && world.outcome == kRunning; i++) { world.begin_tick(); sim->tick(world); playtest.observe(world, game); emit_audio(); }
         if (!req.shot.empty()) pending_shot = req.shot;
         if (!more || req.quit) in.quit = true;
       } else {
@@ -460,11 +460,12 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       }
 
       // Fixed 12 Hz simulation, independent of frame rate.
-      if (!paused && !pause.open && !submodal && !briefing.open && !audio_options.open && !leave && world.outcome == kRunning) {
+      if ((!pt || !playtest.limit_reached(world)) && !paused && !pause.open && !submodal && !briefing.open && !audio_options.open && !leave && world.outcome == kRunning) {
         int n = stepper.advance(dt);
         for (int i = 0; i < n; i++) {
           world.begin_tick();
           sim->tick(world);
+          if (pt) playtest.observe(world, game);
           emit_audio();
           if (world.outcome != kRunning) break;
         }
@@ -650,12 +651,13 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         if (!ui_trace) { std::fprintf(stderr, "UI trace write failed\n"); rc = 1; break; }
       }
 
+      if (pt && pending_shot.empty()) pending_shot = playtest.capture_at(world.tick);
       if (!pending_shot.empty()) {
         std::printf(save_screenshot(win.renderer(), pending_shot) ? "saved %s\n" : "screenshot failed %s\n", pending_shot.c_str());
         pending_shot.clear();
       }
       // A recording ends at the first result; later route clicks must not restart it.
-      if (pt && o.capture_every > 0 && world.outcome != kRunning) in.quit = true;
+      if (pt && !playtest.recording() && o.capture_every > 0 && world.outcome != kRunning) in.quit = true;
       frame++;
       if (o.frames > 0 && frame >= o.frames) {
         if (!o.screenshot.empty()) {
@@ -672,6 +674,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         if (spent < want) SDL_Delay(Uint32((want - spent) * 1000));
       }
     }
+    if (pt) playtest.finish(world);
     if (pt && playtest.failures() > 0) playtest_failed = true;
     win.set_gameplay_active(false);
   }

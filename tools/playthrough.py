@@ -417,7 +417,8 @@ def write_action_findings(output, rows):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     epilog="Player-command routes: --scenario FILE --game DIR --mission N, or --demo. See docs/playthrough_framework.md; --demo --help lists route options.")
     parser.add_argument('--game', type=Path, required=True, help="user's private read-only game installation")
     parser.add_argument('--engine', type=Path, default=ROOT / 'build/aztec_engine')
     parser.add_argument('--rules-dir', type=Path, default=ROOT / 'docs/data')
@@ -581,4 +582,7 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
+    if '--scenario' in sys.argv or '--demo' in sys.argv:
+        from playthrough_route import main as route_main
+        sys.exit(route_main())
     sys.exit(main())

@@ -1,0 +1,28 @@
+# Entirely invented 32x24 town, narrow wall passage and river.
+# The generator is tools/playthrough_route.py:demo_game.
+build 14 5 10 3
+await 1000 count 14 >= 1
+harvest 12 5 18 3
+await 1000 count 12 >= 1
+await 1000 income >= 1
+train 0 2 3
+await 1000 count 0 >= 3
+select type 0
+group assign 1
+select group 1
+checkpoint selection == 3
+order-move 14 12
+wait 220
+context 2
+await 500 cargo 2 == 3
+select id 2
+order-move 21 12
+await 500 tile 2 21 12 == 1
+unload 24 12
+await 200 cargo 2 == 0
+select group 1
+attack-move 26 12
+await 300 outcome == 1
+checkpoint count 0 == 3
+checkpoint outcome == 1
+quit
