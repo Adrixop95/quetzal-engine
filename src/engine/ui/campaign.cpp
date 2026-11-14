@@ -105,7 +105,8 @@ void SaveLoadMenu::show(bool save) {
   saving = save; open = true; confirming = false; selected = -1;
   for (int i = 0; i < 3; ++i) {
     SaveData data;
-    labels_[i] = read_save(slot_path(i), data) ? data.mission + " / tick " + std::to_string(data.tick) : "Empty or unreadable";
+    std::string error;
+    labels_[i] = read_save(slot_path(i), data, &error) ? data.mission + " / tick " + std::to_string(data.tick) : error;
   }
 }
 const char* SaveLoadMenu::screen_id() const {

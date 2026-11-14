@@ -188,13 +188,14 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       SaveData saved;
       auto resumed = std::unique_ptr<GameSim>{};
       try {
-        if (save_content_ok && read_save(o.resume_save, saved) && saved.mission == world.mission.file_name)
+        if (save_content_ok && read_save(o.resume_save, saved, &err) && saved.mission == world.mission.file_name)
           resumed = replay_save(saved, world, rules, session_content, data.map_file(world.mission.file_name, "scn"), err);
       } catch (const std::exception& error) { err = error.what(); }
       if (!resumed) {
+        if (err.empty()) err = "Invalid or incompatible save";
         std::fprintf(stderr, "Cannot resume selected save: %s\n", err.c_str());
         o.resume_save.clear();
-        o.frontend_notice = "Load failed: invalid or incompatible save";
+        o.frontend_notice = "Load failed: " + err;
         return PlayExit::ToMenu;
       }
       game = resumed.get(); sim = std::move(resumed); cmdui.set_sim(game);
@@ -224,7 +225,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
     hud.show_help = o.help;
     bool edge = o.edge_scroll, paused = false, show_hud = o.hud;
     bool drag_minimap = false;
-    uint32_t seen_center = 0;
+    uint32_t seen_center = world.center_serial;
     bool end_shown = false;
     uint64_t freq = SDL_GetPerformanceFrequency(), last = SDL_GetPerformanceCounter();
     double fps_acc = 0; int fps_n = 0;
@@ -387,6 +388,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
           SaveData sd;
           sd.mission = world.mission.file_name; sd.content_hash = session_content; sd.tick = game->tick_count(); sd.hash = game->state_hash(world);
           sd.script_hash = file_hash(data.map_file(world.mission.file_name, "scn"));
+          sd.selection = world.selection.ids; sd.local_side = uint32_t(world.local_side);
           sd.cam_x = cam.x; sd.cam_y = cam.y; sd.cam_zoom = cam.zoom; sd.log = game->log(); sd.modifications = game->initial_modifications();
           std::string dir = user_file("Saves");
           std::error_code sec;
@@ -407,7 +409,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
           std::string lerr = "Invalid or incompatible save";
           std::unique_ptr<GameSim> ns;
           uint64_t current_content = 0;
-          if (save_content_ok && read_save(path, sd) && sd.mission == world.mission.file_name &&
+          if (save_content_ok && read_save(path, sd, &lerr) && sd.mission == world.mission.file_name &&
               current_save_content(data, world, spec, loaded_rules_dir, current_content) &&
               current_content == session_content && load_world(data, spec, fresh, lerr)) {
             try {
@@ -425,7 +427,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
             sim = std::move(ns);
             cmdui.set_sim(game);
             cam.x = sd.cam_x; cam.y = sd.cam_y; cam.zoom = sd.cam_zoom;
-            world.selection.clear();
+            seen_center = world.center_serial;
             world.fog_version++;
             pause.open = false;
             end_shown = false;
@@ -434,6 +436,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
             notify("Game loaded");
             std::printf("loaded game (tick %llu)\n", (unsigned long long)sd.tick);
           } else {
+            if (lerr.empty()) lerr = "Invalid or incompatible save";
             std::fprintf(stderr, "Load failed: %s\n", lerr.c_str());
             notify("Load failed: " + lerr);
           }

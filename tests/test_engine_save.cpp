@@ -79,6 +79,30 @@ static void malformed() {
   }
   auto old_replay = bytes; write_le(old_replay.data() + 8, uint32_t(1)); repair_checksum(old_replay);
   CHECK(!deserialize_save(old_replay, decoded)); check_save(old_replay);
+  std::string error;
+  for (uint32_t version : {0u, 1u, 2u, 3u, 4u, kSaveFormatVersion + 1}) {
+    auto incompatible = bytes; write_le(incompatible.data() + 4, version); repair_checksum(incompatible);
+    CHECK(!deserialize_save(incompatible, decoded, &error));
+    CHECK(error.find("Unsupported save version") == 0);
+  }
+  CHECK(!deserialize_save(old, decoded, &error) && error == "Unsupported save format: AZS2");
+  CHECK(!deserialize_save(old_replay, decoded, &error) && error.find("Unsupported save version") == 0);
+  auto corrupt = bytes; corrupt.back() ^= 1;
+  CHECK(!deserialize_save(corrupt, decoded, &error) && error == "Corrupt or truncated save");
+  auto selected = s; selected.selection = {3, 1}; selected.local_side = 7;
+  CHECK(deserialize_save(serialize_save(selected), decoded, &error) && error.empty());
+  CHECK(decoded.selection == selected.selection && decoded.local_side == 7);
+  const auto selected_bytes = serialize_save(selected);
+  for (auto [offset, value] : std::vector<std::pair<size_t, uint32_t>>{
+      {selected_bytes.size() - 28, 8}, {selected_bytes.size() - 24, UINT32_MAX},
+      {selected_bytes.size() - 20, 0}, {selected_bytes.size() - 16, 3}}) {
+    auto invalid = selected_bytes; write_le(invalid.data() + offset, value); repair_checksum(invalid);
+    CHECK(!deserialize_save(invalid, decoded)); check_save(invalid);
+  }
+  selected.selection = {1, 1}; CHECK(serialize_save(selected).empty());
+  selected.selection = {0}; CHECK(serialize_save(selected).empty());
+  selected.selection.resize(kMaxCommandIds + 1); CHECK(serialize_save(selected).empty());
+  selected = s; selected.local_side = 8; CHECK(serialize_save(selected).empty());
   for (auto name : {"", "../mission_1", "/mission_1", "mission.mp", "a b"}) {
     auto bad = s; bad.mission = name; CHECK(serialize_save(bad).empty());
   }
@@ -219,6 +243,15 @@ static void continuation(const SaveData& s, const std::shared_ptr<RulesData>& ru
   auto sim = replay_save(s, fresh, rules, s.content_hash, "", error);
   CHECK(sim && error.empty());
   CHECK(fresh.mission.file_name == s.mission);
+  auto viewed_save = s; viewed_save.selection = {1}; viewed_save.local_side = 7;
+  auto viewed_world = initial_world();
+  auto viewed = replay_save(viewed_save, viewed_world, rules, s.content_hash, "", error);
+  CHECK(viewed && viewed_world.selection.ids == viewed_save.selection && viewed_world.local_side == 7);
+  CHECK(viewed->state_hash(viewed_world) == s.hash);
+  viewed_save.selection = {2};
+  viewed_world = initial_world(); viewed_world.selection.ids = {1};
+  CHECK(!replay_save(viewed_save, viewed_world, rules, s.content_hash, "", error));
+  CHECK(error == "Save selection contains an invalid object" && viewed_world.selection.ids == std::vector<uint32_t>{1});
   for (unsigned i = 0; i < 300; ++i) {
     advance(fresh, *sim, 1, true); advance(uninterrupted, original, 1, true);
     CHECK(sim->state_hash(fresh) == original.state_hash(uninterrupted));
