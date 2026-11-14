@@ -45,6 +45,32 @@ only), **G** = guess. This is the result of a first pass over `0x451c30`, `0x452
 
 - V: top level tick for a tactic; its body was not read in this pass.
 
+## Second pass (Haiku reading, constants spot-checked in the decompilation)
+
+Evidence date: 2026-11-14. The constants below were confirmed by searching the decompiled
+text; the descriptions of the loops are model readings and stay **G** unless stated.
+
+- V: the global pass is gated by `0x42e8c0(0x32)`, the local pass by `0x42e8c0(0x32)` too,
+  and the tactic think by `0x42e8c0(0x31)` (a nonzero result returns early).
+- V (local pass `0x452c70`): enemy records are 0x19c bytes with the enemy pointer at work
+  block `+0x190`; best score starts at -25600000 (`0xFE796000`); a unit that already has a
+  chosen enemy (virtual `+0xbc`) takes it and stops; the commit writes `best << 8` into
+  the unit's slot (`+0xa28c + index*4`) and `0x100` into the enemy's flag word `+0x198`.
+  G: a weight of 1.5 or 1.0 (double constants `0x3ff80000` and `0x3ff00000`) is chosen by
+  the enemy flag.
+- G (global pass loops): `enemy_loop` repeatedly picks the unclaimed enemy row with the
+  highest sum of its matrix cells over free member slots and marks it `0x100`;
+  `assignment_loop` then gives it the free slot with the highest cell, checks airborne
+  (virtual `+0xa4`) and a distance threshold (virtual `+0xc`), and releases the member
+  (virtual `+0xd0`) on failure. One loop counter appears never to be incremented in the
+  decompiled text; that may be a decompiler artefact.
+- V (tactic think `0x454820`): timer `+0x64`, a call to `_rand`, counters `+0x54`
+  (compared with 0x13 and 0x14) and `+0x88` (compared with 0x24), and the global
+  `DAT_00515720` set to 1 in one branch. G: when the timer expires it is reseeded to 15 to
+  22 ticks, a focus object (`+0x80`) is re-picked, and a state byte at `+0x20` selects
+  1 = start, 2 = wait for all members ready (byte `+0x14`), 3 = waypoint walk over the
+  table at `+0x38` using the tile map at side `+0x690`.
+
 ## What is still open
 
 - The numeric rules behind `enemy_loop` and `assignment_loop` (how scores turn into
