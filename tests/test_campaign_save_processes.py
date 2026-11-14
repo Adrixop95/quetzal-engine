@@ -115,8 +115,8 @@ class CampaignSaveTests(unittest.TestCase):
                     self.assertEqual(rows[-1]['camera'], camera)
                     menu = root / 'menu.txt'
                     menu_trace = root / 'menu.jsonl'
-                    menu.write_text('0 move 310 470\n0 down\n1 up\n2 move 310 210\n2 down\n3 up\n'
-                                    '4 keydown Return\n5 keyup Return\n6 keydown Return\n', encoding='ascii')
+                    menu.write_text('0 move 160 540\n0 down\n1 up\n2 move 160 58\n2 down\n3 up\n'
+                                    '4 move 300 158\n4 down\n5 up\n6 keydown Return\n7 keyup Return\n8 keydown Return\n', encoding='ascii')
                     frontend = subprocess.run([*common, '--software', '--no-audio', '--size', '800x600',
                                                '--menu-script', str(menu), '--menu-trace', str(menu_trace)],
                                               env=env, capture_output=True, text=True, timeout=10)

@@ -13,6 +13,8 @@ class Font {
   ~Font();
   // Draws at (x, y); the built-in fallback maps lower-case to upper-case.
   void draw(SDL_Renderer* r, int x, int y, const std::string& s, int scale, SDL_Color c, bool shadow = true) const;
+  // Front-end control states use the installed font palette (1 normal, 2 hover/held, 3 disabled).
+  void draw_state(SDL_Renderer* r, int x, int y, const std::string& text, int scale, unsigned state) const;
   int width(const std::string& s, int scale) const;
   int height(int scale) const { return original_ ? 12 * eff(scale) : 5 * scale; }
   // UI callers specify a physical integer pixel multiplier for either font source.

@@ -1,6 +1,7 @@
 #include "engine/ui/frontend.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -8,6 +9,8 @@
 #include <fstream>
 
 #include "core/text.hpp"
+#include "core/strbase.hpp"
+#include "engine/ui/frontend_layout.hpp"
 #include "core/visfile.hpp"
 #include "engine/app/menu_script.hpp"
 #include "engine/app/ui_trace.hpp"
@@ -37,7 +40,7 @@ struct Layout {   // 800x600 virtual screen letterboxed into the window
   int X(int vx) const { return ox + int(vx * s); }
   int Y(int vy) const { return oy + int(vy * s); }
   int W(int vw) const { return int(vw * s); }
-  void fit(int w, int h) { s = std::min(w / 800.f, h / 600.f); ox = int((w - 800 * s) / 2); oy = int((h - 600 * s) / 2); }
+  void fit(int w, int h) { const FrontendLayout layout(w, h); s = layout.scale; ox = layout.x; oy = layout.y; }
   int msize(float k) const { return std::max(1, int(std::lround(s * k))); }   // font multiplier
 };
 
@@ -54,18 +57,20 @@ class Screen {
   Screen(Window& win, GameData& data, Options& opts) : win_(win), data_(data), opts_(opts), store_(win.renderer(), data) {
     font_.init(win.renderer(), &store_);
     cursor_.init(win.renderer(), store_);
+    strings_.load(find_file_ci(data.root(), "Res/strbase.bds"));
   }
 
   bool run(FrontendResult& out, const std::string& open_briefing);
 
  private:
-  enum class Mode { Main, Campaign, Custom, Briefing, Options, Audio, Modifications, Load };
+  enum class Mode { Main, Campaign, Custom, Briefing, Options, Audio, Modifications, Load, Credits, Controls };
   static const char* mode_name(Mode mode) {
-    static const char* names[] = {"main", "campaign", "custom", "briefing", "options", "audio", "modifications", "load"};
+    static const char* names[] = {"main", "campaign", "custom", "briefing", "options", "audio", "modifications", "load", "credits", "controls"};
     return names[int(mode)];
   }
 
   void background(uint32_t id) {
+    background_image_ = id;
     const StoredSprite& s = store_.get(common_key(id));
     SDL_Renderer* r = win_.renderer();
     SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
@@ -85,11 +90,9 @@ class Screen {
     SDL_Renderer* r = win_.renderer();
     SDL_Rect d{L_.X(b.x), L_.Y(b.y), L_.W(b.w), L_.W(b.h)};
     bool h = hover(b) && enabled;
-    SDL_SetRenderDrawColor(r, h ? 70 : 30, h ? 45 : 22, 15, 210);
-    SDL_RenderFillRect(r, &d);
-    SDL_SetRenderDrawColor(r, h ? 255 : 190, h ? 220 : 150, h ? 120 : 80, 255);
-    SDL_RenderDrawRect(r, &d);
-    int m = L_.msize(1.5f);
+    const bool held = h && in_.buttons[SDL_BUTTON_LEFT] && armed_x_ >= b.x && armed_y_ >= b.y &&
+        armed_x_ < b.x + b.w && armed_y_ < b.y + b.h;
+    int m = L_.msize(1.f);
     while (m > 1 && font_.width(b.text, 2 * m) > d.w - 8) --m;
     const int ts = 2 * m;
     auto lines = font_.wrap(b.text, ts, std::max(1, d.w - 8));
@@ -99,9 +102,13 @@ class Screen {
       label = (shortened.empty() ? "" : shortened.front()) + "...";
     }
     int tw = font_.width(label, ts), th = font_.height(ts);
-    font_.draw(r, d.x + (d.w - tw) / 2, d.y + (d.h - th) / 2, label, ts, enabled ? (h ? SDL_Color{255, 240, 170, 255} : SDL_Color{235, 215, 160, 255}) : SDL_Color{130, 120, 110, 255});
+    font_.draw_state(r, d.x + (d.w - tw) / 2, d.y + (d.h - th) / 2,
+                     label, ts, !enabled ? 3 : h || held ? 2 : 1);
   }
-  bool clicked(const Button& b) const { return click_ && hover(b); }
+  bool clicked(const Button& b) const {
+    return click_ && hover(b) && armed_x_ >= b.x && armed_y_ >= b.y &&
+        armed_x_ < b.x + b.w && armed_y_ < b.y + b.h;
+  }
 
   void load_lists();
   void enter_briefing(const std::string& spec);
@@ -113,6 +120,12 @@ class Screen {
   Options& opts_;
   SpriteStore store_;
   Font font_;
+  StrBase strings_;
+  std::string label(int ordinal, const char* fallback) const {
+    const auto& value = strings_.get(ordinal);
+    return value.empty() ? fallback : value;
+  }
+  Button control(SDL_Rect rect, std::string title) const { return {rect.x, rect.y, rect.w, rect.h, std::move(title)}; }
   Cursor cursor_;
   Layout L_;
   Input in_;
@@ -123,16 +136,21 @@ class Screen {
 
   struct Entry { std::string spec, title; };
   std::vector<Entry> campaign_, custom_;
-  int custom_page_ = 0;
+  int custom_page_ = 0, campaign_page_ = 0, campaign_selected_ = -1;
+  int armed_x_ = -1, armed_y_ = -1;
   CampaignProgress progress_;
   AudioOptions audio_options_;
   ModificationOptions modification_options_;
   SaveLoadMenu slots_;
+  TextOverlay credits_;
   std::string resume_save_;
   // briefing
   std::string brief_spec_, brief_text_, brief_avi_;
+  std::array<std::string, 3> brief_sections_;
+  int brief_section_ = 1;
   bool brief_campaign_ = false;
   int brief_scroll_ = 0;
+  bool brief_reading_ = false;
   bool quit_ = false;
   std::string chosen_;
   PlaytestScript capture_script_;
@@ -145,6 +163,7 @@ class Screen {
   std::ofstream trace_;
   struct ObservedButton { Button button; bool enabled, hover; };
   std::vector<ObservedButton> observed_buttons_;
+  uint32_t background_image_ = 0;
   int frame_ = 0;
   Mode rendered_mode_ = Mode::Main;
   const char* rendered_load_id_ = "load-empty";
@@ -173,10 +192,7 @@ void Screen::load_lists() {
     std::string mp = find_file_ci(data_.maps_dir(), spec + ".mp");
     if (mp.empty()) continue;
     MissionDef m;
-    std::string title = load_mission(mp, m) && !m.title.empty() ? m.title : spec;
-    std::vector<BriefingSection> bs;
-    std::string mit = find_file_ci(data_.maps_dir(), spec + ".mit");
-    if (!mit.empty() && load_briefing(mit, bs) && !bs.empty() && !bs[0].title.empty()) title = cp1250_to_utf8(bs[0].title);
+    std::string title = load_mission(mp, m) && !m.title.empty() ? m.title : label(34, "Mission") + " " + std::to_string(n);
     campaign_.push_back({spec, title});
   }
   for (const std::string& st : stems) {
@@ -192,6 +208,7 @@ void Screen::enter_briefing(const std::string& spec) {
   brief_text_.clear();
   brief_avi_.clear();
   brief_scroll_ = 0;
+  brief_reading_ = false;
   brief_campaign_ = campaign_number(spec) != 0;
   std::string mp = resolve_mission(data_.maps_dir(), spec);
   MissionDef m;
@@ -199,6 +216,13 @@ void Screen::enter_briefing(const std::string& spec) {
     brief_avi_ = m.avi;
   }
   brief_text_ = mission_briefing(data_, spec);
+  brief_sections_.fill(brief_text_);
+  std::vector<BriefingSection> sections;
+  const auto stem = fs::path(mp).stem().string();
+  if (load_briefing(find_file_ci(data_.maps_dir(), stem + ".mit"), sections)) {
+    for (size_t i = 0; i < std::min(sections.size(), brief_sections_.size()); ++i)
+      brief_sections_[i] = cp1250_to_utf8(sections[i].title) + "\n" + cp1250_to_utf8(sections[i].text);
+  }
   mode_ = Mode::Briefing;
 }
 
@@ -225,9 +249,11 @@ void Screen::frame_begin() {
   rendered_load_id_ = slots_.screen_id();
   win_.output_size(ow_, oh_);
   L_.fit(ow_, oh_);
-  mx_ = int((in_.mx - L_.ox) / L_.s);
-  my_ = int((in_.my - L_.oy) / L_.s);
-  click_ = in_.pressed[SDL_BUTTON_LEFT];
+  const auto mouse = FrontendLayout(ow_, oh_).virtual_point(in_.mx, in_.my);
+  mx_ = mouse.x; my_ = mouse.y;
+  if (!in_.focused) { armed_x_ = armed_y_ = -1; }
+  else if (in_.pressed[SDL_BUTTON_LEFT]) { armed_x_ = mx_; armed_y_ = my_; }
+  click_ = in_.focused && in_.released[SDL_BUTTON_LEFT];
   if (in_.quit) quit_ = true;
   if (in_.hit(SDL_SCANCODE_F11)) win_.cycle_borderless();
   if (in_.hit(SDL_SCANCODE_RETURN) && in_.alt) win_.toggle_fullscreen();
@@ -264,7 +290,7 @@ void Screen::frame_end() {
   }
   const uint32_t cursor_ms = scripted_ ? uint32_t(capture_frame_ * 1000 / 12)
       : opts_.menu_script.empty() ? SDL_GetTicks() : uint32_t(uint64_t(frame_) * 1000 / 60);
-  cursor_.draw(win_.renderer(), store_, in_.mx, in_.my, CursorKind::Arrow, std::max(1, int(std::lround(L_.s))), cursor_ms);
+  cursor_.draw(win_.renderer(), store_, in_.mx, in_.my, CursorKind::Menu, std::max(1, int(std::lround(L_.s))), cursor_ms);
   if (!capture_shot_.empty()) save_png(win_.renderer(), capture_shot_);
   ++capture_frame_;
   if (!request_.shot.empty() && !save_png(win_.renderer(), request_.shot)) {
@@ -278,7 +304,7 @@ void Screen::frame_end() {
            << "],\"left_down\":" << (in_.buttons[SDL_BUTTON_LEFT] ? "true" : "false")
            << ",\"pressed\":" << (in_.pressed[SDL_BUTTON_LEFT] ? "true" : "false")
            << ",\"released\":" << (in_.released[SDL_BUTTON_LEFT] ? "true" : "false")
-           << ",\"cursor\":\"arrow\",\"cursor_ms\":" << cursor_ms << ",\"buttons\":[";
+           << ",\"cursor\":\"mace\",\"cursor_ms\":" << cursor_ms << ",\"buttons\":[";
     for (size_t i = 0; i < observed_buttons_.size(); ++i) {
       const auto& b = observed_buttons_[i];
       trace_ << (i ? "," : "") << "{\"label\":"; trace_string(trace_, b.button.text);
@@ -300,11 +326,12 @@ void Screen::frame_end() {
            << ",\"subtitles\":" << (opts_.subtitles ? "true" : "false") << '}';
     trace_ << ",\"quit\":" << (quit_ ? "true" : "false") << ",\"capture\":";
     trace_string(trace_, request_.shot);
-    trace_ << ",\"audio_observed\":false}\n";
+    trace_ << ",\"background_image\":" << background_image_ << ",\"audio_observed\":false}\n";
     trace_.flush();
     if (!trace_) { std::fprintf(stderr, "Cannot write menu trace\n"); failed_ = quit_ = true; }
   }
   SDL_RenderPresent(win_.renderer());
+  if (in_.released[SDL_BUTTON_LEFT] || mode_ != rendered_mode_) armed_x_ = armed_y_ = -1;
   ++frame_;
 }
 
@@ -334,39 +361,68 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
       modification_options_.open = mode_ != Mode::Modifications;
       mode_ = modification_options_.open ? Mode::Modifications : Mode::Options;
     }
+    rendered_mode_ = mode_;
     switch (mode_) {
       case Mode::Main: {
-        background(280);
-        text(400, 70, "AZTEC EMPIRE", 4, {255, 225, 140, 255}, true);
-        Button bs[4] = {{300, 240, 200, 40, "Campaign"}, {300, 295, 200, 40, "Custom map"}, {300, 350, 200, 40, "Options"}, {300, 405, 200, 40, "Quit"}};
-        for (Button& b : bs) draw_button(b);
-        Button load{300, 460, 200, 40, "Load game"}; draw_button(load);
-        if (!opts_.frontend_notice.empty()) text(400, 530, opts_.frontend_notice, 1, gold, true);
-        if (clicked(load)) { mode_ = Mode::Load; slots_.show(false); }
-        if (clicked(bs[0])) mode_ = Mode::Campaign;
-        if (clicked(bs[1])) { mode_ = Mode::Custom; custom_page_ = 0; }
-        if (clicked(bs[2])) mode_ = Mode::Options;
-        if (clicked(bs[3]) || in_.hit(SDL_SCANCODE_ESCAPE)) quit_ = true;
+        background(284);
+        text(400, 125, label(30, "Choose Player"), 1, gold, true);
+        // G: one engine profile; importing and editing original players is unavailable.
+        Button player{140, 230, 520, 20, "Player"}; draw_button(player);
+        Button create = control(FrontendLayout::top_left, label(132, "Create Player"));
+        Button remove = control(FrontendLayout::top_middle, label(133, "Remove Player"));
+        Button credits = control(FrontendLayout::top_right, label(134, "Credits"));
+        Button accept = control(FrontendLayout::bottom_left, label(136, "Accept Player"));
+        Button quit = control(FrontendLayout::bottom_right, label(137, "Quit The Game"));
+        draw_button(create, false); draw_button(remove, false);
+        for (Button* button : {&credits, &accept, &quit}) draw_button(*button);
+        if (!opts_.frontend_notice.empty()) text(400, 480, opts_.frontend_notice, 1, gold, true);
+        if (clicked(accept) || (in_.hit(SDL_SCANCODE_RETURN) && !in_.alt)) mode_ = Mode::Campaign;
+        if (clicked(credits)) {
+          auto body = installed_credits(data_);
+          credits_.show(label(134, "Credits"), body.empty() ? "Credits unavailable" : body);
+          mode_ = Mode::Credits;
+        }
+        if (clicked(quit) || in_.hit(SDL_SCANCODE_ESCAPE)) quit_ = true;
         break;
       }
       case Mode::Campaign: {
-        background(270);
-        text(400, 22, "Campaign", 2.2f, gold, true);
-        for (size_t i = 0; i < campaign_.size(); i++) {
-          int col = int(i) / 8, row = int(i) % 8;
-          Button b{col ? 430 : 90, 100 + row * 52, 290, 44, (progress_.won(campaign_number(campaign_[i].spec)) ? "[Done] " : "") + std::to_string(campaign_number(campaign_[i].spec)) + ". " + campaign_[i].title};
-          const bool unlocked = progress_.unlocked(campaign_number(campaign_[i].spec));
-          if (!unlocked) b.text = "[Locked] " + b.text;
-          draw_button(b, unlocked);
-          if (unlocked && clicked(b)) enter_briefing(campaign_[i].spec);
+        background(284);
+        text(400, 192, label(33, "Campaign"), 1, gold, true);
+        const int pages = std::max(1, int((campaign_.size() + 8) / 9));
+        Button load = control(FrontendLayout::top_left, label(138, "Load Game"));
+        Button options = control(FrontendLayout::top_middle, label(48, "Options")); // G: shortcut
+        Button custom = control(FrontendLayout::top_right, label(37, "Custom Mission"));
+        Button play = control(FrontendLayout::bottom_left, label(139, "Play Mission"));
+        Button begin = control(FrontendLayout::bottom_middle, label(140, "Begin Campaign"));
+        Button back = control(FrontendLayout::bottom_right, label(148, "Cancel"));
+        Button previous = control(FrontendLayout::previous, "<"), next = control(FrontendLayout::next, ">");
+        for (int row = 0; row < 9; ++row) {
+          const int i = campaign_page_ * 9 + row;
+          if (i >= int(campaign_.size())) break;
+          const auto& entry = campaign_[size_t(i)];
+          Button item = control(FrontendLayout::campaign_row(row),
+              (campaign_selected_ == i ? "> " : "") + entry.title);
+          const bool unlocked = progress_.unlocked(campaign_number(entry.spec));
+          draw_button(item, unlocked);
+          if (unlocked && clicked(item)) campaign_selected_ = i;
         }
-        Button back{90, 535, 150, 36, "Back"};
-        draw_button(back);
+        for (Button* button : {&load, &options, &custom, &begin, &back}) draw_button(*button);
+        draw_button(play, campaign_selected_ >= 0);
+        draw_button(previous, campaign_page_ > 0); draw_button(next, campaign_page_ + 1 < pages);
+        if (clicked(previous) && campaign_page_ > 0) --campaign_page_;
+        if (clicked(next) && campaign_page_ + 1 < pages) ++campaign_page_;
+        if (clicked(load)) { mode_ = Mode::Load; slots_.show(false); }
+        if (clicked(options)) mode_ = Mode::Options;
+        if (clicked(custom)) { mode_ = Mode::Custom; custom_page_ = 0; }
+        if (clicked(begin) && !campaign_.empty()) enter_briefing(campaign_.front().spec);
+        if (campaign_selected_ >= 0 && (clicked(play) || (in_.hit(SDL_SCANCODE_RETURN) && !in_.alt)))
+          enter_briefing(campaign_[size_t(campaign_selected_)].spec);
         if (clicked(back) || in_.hit(SDL_SCANCODE_ESCAPE)) mode_ = Mode::Main;
         break;
       }
       case Mode::Load: {
-        slots_.draw(win_.renderer(), font_, ow_, oh_, std::max(1, int(L_.s)));
+        background_image_ = 284;
+        slots_.draw(win_.renderer(), font_, ow_, oh_, std::max(1, int(L_.s)), &store_);
         const int slot = slots_.update(in_, ow_, oh_, std::max(1, int(L_.s)));
         if (slot >= 0) {
           SaveData save;
@@ -374,34 +430,39 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
           if (read_save(resume_save_, save)) chosen_ = save.mission;
           else { resume_save_.clear(); slots_.show(false); }
         }
-        if (!slots_.open && chosen_.empty()) mode_ = Mode::Main;
+        if (!slots_.open && chosen_.empty()) mode_ = Mode::Campaign;
         break;
       }
       case Mode::Custom: {
-        background(270);
-        text(400, 22, "Custom maps", 2.2f, gold, true);
-        int per = 14, pages = std::max(1, int((custom_.size() + per - 1) / per));
+        background(284);
+        text(400, 192, label(37, "Custom Mission"), 1, gold, true);
+        const int pages = std::max(1, int((custom_.size() + 8) / 9));
         if (in_.wheel < 0) custom_page_ = std::min(pages - 1, custom_page_ + 1);
         if (in_.wheel > 0) custom_page_ = std::max(0, custom_page_ - 1);
-        for (int k = 0; k < per; k++) {
-          size_t i = size_t(custom_page_ * per + k);
-          if (i >= custom_.size()) break;
-          int col = k / 7, row = k % 7;
-          Button b{col ? 430 : 90, 100 + row * 55, 290, 44, custom_[i].title};
-          draw_button(b);
-          if (clicked(b)) enter_briefing(custom_[i].spec);
+        for (int row = 0; row < 9; ++row) {
+          const int i = custom_page_ * 9 + row;
+          if (i >= int(custom_.size())) break;
+          Button item = control(FrontendLayout::campaign_row(row), custom_[size_t(i)].title);
+          draw_button(item);
+          if (clicked(item)) enter_briefing(custom_[size_t(i)].spec);
         }
-        text(400, 500, "Page " + std::to_string(custom_page_ + 1) + "/" + std::to_string(pages) + " (wheel)", 1, {70, 40, 20, 255}, true, false);
-        Button back{90, 535, 150, 36, "Back"};
-        draw_button(back);
-        if (clicked(back) || in_.hit(SDL_SCANCODE_ESCAPE)) mode_ = Mode::Main;
+        Button previous = control(FrontendLayout::previous, "<"), next = control(FrontendLayout::next, ">");
+        Button back = control(FrontendLayout::bottom_right, label(148, "Cancel"));
+        draw_button(previous, custom_page_ > 0); draw_button(next, custom_page_ + 1 < pages); draw_button(back);
+        if (clicked(previous) && custom_page_ > 0) --custom_page_;
+        if (clicked(next) && custom_page_ + 1 < pages) ++custom_page_;
+        if (clicked(back) || in_.hit(SDL_SCANCODE_ESCAPE)) mode_ = Mode::Campaign;
         break;
       }
       case Mode::Briefing: {
-        background(290);
-        std::vector<std::string> lines = wrap_text(font_, brief_text_, L_.W(330), 2 * L_.msize(1.2f));
+        const uint32_t backgrounds[] = {270, 290, 264};
+        background(brief_reading_ ? backgrounds[brief_section_] : 285);
+        // G: text margins require native captures; section art and text are loaded independently.
+        const SDL_Rect text_boxes[] = {{140, 130, 520, 340}, {235, 205, 330, 270}, {265, 170, 230, 290}};
+        const auto box = text_boxes[brief_section_];
+        std::vector<std::string> lines = wrap_text(font_, brief_sections_[brief_section_], L_.W(box.w), 2 * L_.msize(1.2f));
         int lh = font_.height(2 * L_.msize(1.2f)) + 3;
-        const int count = std::max(1, L_.W(270) / lh);
+        const int count = std::max(1, L_.W(box.h) / lh);
         if (in_.wheel < 0 || in_.hit(SDL_SCANCODE_DOWN)) brief_scroll_++;
         if (in_.wheel > 0 || in_.hit(SDL_SCANCODE_UP)) brief_scroll_--;
         if (in_.hit(SDL_SCANCODE_PAGEDOWN)) brief_scroll_ += count;
@@ -409,25 +470,67 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
         if (in_.hit(SDL_SCANCODE_HOME)) brief_scroll_ = 0;
         if (in_.hit(SDL_SCANCODE_END)) brief_scroll_ = int(lines.size());
         brief_scroll_ = std::clamp(brief_scroll_, 0, std::max(0, int(lines.size()) - count));
-        for (int i = 0; i < count && i + brief_scroll_ < int(lines.size()); ++i)
-          font_.draw(win_.renderer(), L_.X(235), L_.Y(205) + i * lh, lines[size_t(i + brief_scroll_)], 2 * L_.msize(1.2f), {40, 25, 15, 255}, false);
-        Button start{610, 300, 170, 40, "Start"}, back{610, 400, 170, 40, "Back"}, vid{610, 350, 170, 40, "Intro video"};
-        draw_button(start);
-        draw_button(back);
-        bool have_video = !brief_avi_.empty();
-        if (have_video) draw_button(vid);
-        if (clicked(start) || (in_.hit(SDL_SCANCODE_RETURN) && !in_.alt)) chosen_ = brief_spec_;
-        if (clicked(back) || in_.hit(SDL_SCANCODE_ESCAPE)) mode_ = brief_campaign_ ? Mode::Campaign : Mode::Custom;
-        if (have_video && clicked(vid)) {
-          std::string vp = find_file_ci(data_.root() + "/Video", brief_avi_);
-          if (vp.empty() || !play_video(win_, vp)) std::fprintf(stderr, "note: cannot play %s (needs ffmpeg and the file)\n", brief_avi_.c_str());
+        for (int i = 0; brief_reading_ && i < count && i + brief_scroll_ < int(lines.size()); ++i)
+          font_.draw(win_.renderer(), L_.X(box.x), L_.Y(box.y) + i * lh, lines[size_t(i + brief_scroll_)], 2 * L_.msize(1.2f), {40, 25, 15, 255}, false);
+        Button start = control(FrontendLayout::briefing_start, label(150, "Start Game"));
+        Button back = control(FrontendLayout::briefing_back, label(141, "Back"));
+        Button diary = control(FrontendLayout::briefing_diary, "Diary");
+        Button order = control(FrontendLayout::briefing_order, label(34, "Mission"));
+        Button objectives = control(FrontendLayout::briefing_objectives, label(55, "Mission objectives"));
+        // V: common 256/271/272 are full-width transparent illustrated controls.
+        auto illustrated = [&](const Button& button, uint32_t image, int y) {
+          observed_buttons_.push_back({button, true, hover(button)});
+          if (!hover(button)) return;
+          const auto& sprite = store_.get(common_key(image));
+          if (!sprite.ok()) return;
+          auto source = sprite.frame_rect(0);
+          SDL_Rect dest{L_.X(0), L_.Y(y), L_.W(sprite.cw), L_.W(sprite.ch)};
+          SDL_RenderCopy(win_.renderer(), store_.atlas().page(sprite.region.page), &source, &dest);
+        };
+        illustrated(start, 256, 330); illustrated(back, 272, 0); illustrated(diary, 271, 0);
+        if (!brief_reading_) {
+          observed_buttons_.push_back({order, true, hover(order)});
+          observed_buttons_.push_back({objectives, true, hover(objectives)});
         }
+        if (clicked(start) || (in_.hit(SDL_SCANCODE_RETURN) && !in_.alt)) chosen_ = brief_spec_;
+        if (clicked(diary) || (!brief_reading_ && (clicked(order) || clicked(objectives)))) {
+          brief_section_ = clicked(diary) ? 0 : clicked(order) ? 1 : 2;
+          brief_scroll_ = 0;
+          brief_reading_ = true;
+        }
+        if (clicked(back) || in_.hit(SDL_SCANCODE_ESCAPE)) {
+          if (brief_reading_) brief_reading_ = false;
+          else mode_ = brief_campaign_ ? Mode::Campaign : Mode::Custom;
+        }
+        break;
+      }
+      case Mode::Credits: {
+        background(284);
+        credits_.update(in_);
+        credits_.draw(win_.renderer(), font_, ow_, oh_, std::max(1, int(L_.s)));
+        if (!credits_.open) mode_ = Mode::Main;
+        break;
+      }
+      case Mode::Controls: {
+        background(284);
+        text(400, 125, "Controls", 1, gold, true);
+        const char* lines[] = {"Arrow keys: scroll", "Mouse wheel: zoom", "Left mouse: select", "Right mouse: order",
+            "Escape: mission menu", "F11: borderless display", "Alt+Enter: fullscreen"};
+        for (int i = 0; i < 7; ++i) text(220, 200 + i * 30, lines[i], 1, gold);
+        Button edge{220, 420, 360, 30, std::string("Edge scrolling: ") + (opts_.edge_scroll ? "on" : "off")};
+        Button back = control(FrontendLayout::bottom_right, label(141, "Back"));
+        draw_button(edge); draw_button(back);
+        if (clicked(edge)) {
+          opts_.edge_scroll = !opts_.edge_scroll;
+          save_frontend_options(user_file("frontend-options.txt"), opts_);
+        }
+        if (clicked(back) || in_.hit(SDL_SCANCODE_ESCAPE)) mode_ = Mode::Options;
         break;
       }
       case Mode::Audio: {
         background(284);
         audio_options_.update(in_, opts_, ow_, oh_, std::max(1, int(L_.s)));
-        audio_options_.draw(win_.renderer(), font_, opts_, ow_, oh_, std::max(1, int(L_.s)));
+        audio_options_.draw(win_.renderer(), font_, opts_, ow_, oh_, std::max(1, int(L_.s)), false);
         if (!audio_options_.open) mode_ = Mode::Options;
         break;
       }
@@ -447,6 +550,8 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
         Button b4{250, 335, 300, 40, std::string("Day / night tint: ") + (opts_.light ? "on" : "off")};
         Button sound{250, 390, 300, 40, "Audio"};
         Button mods{250, 440, 300, 40, "Game modifications"};
+        Button controls{560, 495, 190, 40, "Controls"}; draw_button(controls);
+        if (clicked(controls)) mode_ = Mode::Controls;
         Button back{250, 495, 300, 40, "Back"};
         for (Button* b : {&b1, &b2, &b3, &b4, &sound, &mods, &back}) draw_button(*b);
         if (clicked(mods)) { mode_ = Mode::Modifications; modification_options_.open = true; }
@@ -460,7 +565,7 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
           if (!save_frontend_options(user_file("frontend-options.txt"), opts_))
             std::fprintf(stderr, "Cannot persist front-end options\n");
         }
-        if (clicked(back) || in_.hit(SDL_SCANCODE_ESCAPE)) mode_ = Mode::Main;
+        if (clicked(back) || in_.hit(SDL_SCANCODE_ESCAPE)) mode_ = Mode::Campaign;
         break;
       }
     }
@@ -503,10 +608,10 @@ void AudioOptions::update(const Input& in, Options& o, int w, int h, int sc) {
       std::fprintf(stderr, "Cannot persist audio options\n");
   }
 }
-void AudioOptions::draw(SDL_Renderer* r, const Font& font, const Options& o, int w, int h, int sc) const {
+void AudioOptions::draw(SDL_Renderer* r, const Font& font, const Options& o, int w, int h, int sc, bool backdrop) const {
   if (!open) return;
   SDL_Rect all{0, 0, w, h};
-  SDL_SetRenderDrawColor(r, 20, 18, 14, 255); SDL_RenderFillRect(r, &all);
+  if (backdrop) { SDL_SetRenderDrawColor(r, 20, 18, 14, 255); SDL_RenderFillRect(r, &all); }
   std::string labels[] = {"-  Effects: " + std::to_string(int(std::lround(o.sfx_volume * 100))) + "%  +",
       "-  Music: " + std::to_string(int(std::lround(o.music_volume * 100))) + "%  +",
       "-  Speech: " + std::to_string(int(std::lround(o.speech_volume * 100))) + "%  +",
@@ -584,7 +689,7 @@ bool play_video(Window& win, const std::string& path) {
   const char* redirect = " 2>/dev/null";
 #endif
   std::string cmd = "ffmpeg -loglevel quiet -i " + input +
-      " -vf scale=640:480 -r 25 -f rawvideo -pix_fmt rgb24 -" + redirect;
+      " -vf scale=576:420 -r 12 -f rawvideo -pix_fmt rgb24 -" + redirect;
 #ifdef _WIN32
   FILE* p = _popen(cmd.c_str(), "rb");  // Binary mode preserves raw pixel bytes.
 #else
@@ -592,26 +697,35 @@ bool play_video(Window& win, const std::string& path) {
 #endif
   if (!p) return false;
   SDL_Renderer* r = win.renderer();
-  SDL_Texture* tex = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, 640, 480);
-  std::vector<uint8_t> buf(640 * 480 * 3);
-  bool any = false, skip = false;
+  SDL_Texture* tex = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, 576, 420);
+  std::vector<uint8_t> buf(576 * 420 * 3);
+  if (!tex) {
+#ifdef _WIN32
+    _pclose(p);
+#else
+    pclose(p);
+#endif
+    return false;
+  }
+  bool any = false, skip = false, closed = false;
   while (!skip && std::fread(buf.data(), 1, buf.size(), p) == buf.size()) {
     any = true;
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
       win.handle_event(e);
+      if (e.type == SDL_QUIT) closed = true;
       if (e.type == SDL_QUIT || e.type == SDL_KEYDOWN || e.type == SDL_MOUSEBUTTONDOWN) skip = true;
     }
     int ow, oh;
     win.output_size(ow, oh);
-    SDL_UpdateTexture(tex, nullptr, buf.data(), 640 * 3);
+    SDL_UpdateTexture(tex, nullptr, buf.data(), 576 * 3);
     SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
     SDL_RenderClear(r);
-    float s = std::min(ow / 640.f, oh / 480.f);
-    SDL_Rect d{int((ow - 640 * s) / 2), int((oh - 480 * s) / 2), int(640 * s), int(480 * s)};
+    float s = std::min(ow / 576.f, oh / 420.f);
+    SDL_Rect d{int((ow - 576 * s) / 2), int((oh - 420 * s) / 2), int(576 * s), int(420 * s)};
     SDL_RenderCopy(r, tex, nullptr, &d);
     SDL_RenderPresent(r);
-    SDL_Delay(36);
+    SDL_Delay(83);
   }
   SDL_DestroyTexture(tex);
 #ifdef _WIN32
@@ -619,6 +733,7 @@ bool play_video(Window& win, const std::string& path) {
 #else
   pclose(p);
 #endif
+  if (closed) { SDL_Event event{}; event.type = SDL_QUIT; SDL_PushEvent(&event); }
   return any;
 }
 

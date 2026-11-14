@@ -232,7 +232,7 @@ class Measurements(unittest.TestCase):
             (maps / 'ai.mp').write_text(
                 '[Globals]\nMapSize=40,40\nSides=2\nTowns=2\nTeams=0\n'
                 '[Side0]\nStart_X=8\nStart_Y=8\n'
-                '[Side1]\nStart_X=28\nStart_Y=28\nOnlyComp=1\nMoney=12000\n'
+                '[Side1]\nStart_X=28\nStart_Y=28\nOnlyComp=1\nStartMoney=12000\n'
                 '[Town0]\nSide=0\nType=1\nRace=0\nX=8\nY=8\nUnits=1\nUnit0=8,8,11,30000\n'
                 '[Town1]\nSide=1\nType=1\nRace=0\nX=28\nY=28\nUnits=1\nUnit0=28,28,11,30000\n')
             (maps / 'ai.map').write_bytes(struct.pack('<HH', 40, 40) + bytes(6400))

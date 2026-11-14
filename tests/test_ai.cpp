@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -40,8 +41,8 @@ static void unit(const RulesData& rules) {
   CHECK(d.next.science_timer == 51 && issued(d, Pct::BuildMode)->a == 2);
   w.local_side = 1;
   CHECK(serialize_log({{1, d.commands.front()}}) == serialize_log({{1, ai::step(w, rules, 0, s, {}).commands.front()}}));
-  s.spent = 20000; CHECK(ai::build_speed(w, s, 0) == 1);
-  s.elapsed = 100; s.harvested = 40000; CHECK(ai::build_speed(w, s, 0) == 2);
+  s.spent = 20000; CHECK(ai::build_speed(w, rules, s, 0) == 1);
+  s.elapsed = 100; s.spent = 0; CHECK(ai::build_speed(w, rules, s, 0) == 2);
   CHECK(ai::development(w, rules, 0) == 1);
   for (int i = 0; i < 8; ++i) object(w, 16, 0, 0, 2 + i, 2);
   CHECK(ai::development(w, rules, 0) == 9);
@@ -278,14 +279,101 @@ static void town_orders(std::shared_ptr<const RulesData> rules) {
   // while production suspends state transitions.
   w.side_state[0].money = 0;
   w.ai_towns[0].spent = 100;
-  w.ai_towns[0].harvested = 200;
+  w.side_state[0].money = 400;
   w.ai_towns[0].elapsed = 0;
-  CHECK(ai::build_speed(w, w.ai_towns[0], 0) == 2);
-  --w.ai_towns[0].harvested;
-  CHECK(ai::build_speed(w, w.ai_towns[0], 0) == 1);
+  CHECK(ai::build_speed(w, *rules, w.ai_towns[0], 0) == 2);
+  --w.side_state[0].money;
+  CHECK(ai::build_speed(w, *rules, w.ai_towns[0], 0) == 1);
   w.begin_tick(); sim.tick(w);
   CHECK(w.town_speed[0] == 1 && w.ai_towns[0].phase == 8);
 }
+static void enemy_price_mask(std::shared_ptr<const RulesData> rules) {
+  TempDir directory;
+  const auto path = directory.path() / "diplomacy.scn";
+  std::ofstream(path) << "trigger(0) conditions localTime == 1 actions side(0).setFriendlyTo(1) end\n"
+                     << "trigger(1) conditions localTime == 2 actions side(0).setEnemyTo(1) end\n";
+  auto w = world();
+  for (auto& side : w.mission.sides) side.only_comp = false;
+  w.side_state[0].enemy_mask = UINT32_MAX;
+  GameSim sim(rules, Modifications::faithful()); CHECK(sim.attach_script(path.string())); sim.init(w);
+  CHECK(w.enemy_all(0));
+  w.begin_tick(); sim.tick(w); CHECK(!w.enemy_all(0));
+  w.begin_tick(); sim.tick(w); CHECK(w.enemy_all(0));
+}
+
+static void remembered_intelligence(const RulesData& rules) {
+  auto w = world();
+  object(w, 0, 1, 1, 26, 26);
+  w.visibility.sides[0].v.assign(1600, 152);
+  w.visibility.sides[0].v[28 * 40 + 28] = 0;
+  const auto records = ai::intelligence(w, rules, 0);
+  const auto enemy = std::find_if(records.begin(), records.end(), [](const auto& r) { return r.town == 1; });
+  CHECK(enemy != records.end() && enemy->counts[0] == 1); // one visible hall reveals the town's membership
+  w.visibility.sides[0].v.assign(1600, 152);
+  ai::TownState state; state.elapsed = 10; state.phase = 1; state.target_town = 1;
+  ai::Intelligence remembered; remembered.town = 1; remembered.counts[11] = 1;
+  state.knowledge = {remembered}; state.known_towns = {1};
+  const auto decision = ai::step(w, rules, 0, state, {});
+  CHECK(decision.next.phase == 2 && !decision.next.plan.empty());
+  CHECK(std::any_of(decision.next.knowledge.begin(), decision.next.knowledge.end(),
+      [](const auto& r) { return r.town == 1 && r.counts[11] == 1; }));
+  w.mission.towns[0].type = 0; state.phase = 9;
+  CHECK(ai::step(w, rules, 0, state, {}).next.phase == 11); // an outpost does not create an offensive plan
+}
+
+// A production plan can reserve work in an outpost without a local force request.
+static void plan_allocation(std::shared_ptr<const RulesData> rules) {
+  auto w = world();
+  w.mission.towns[1].side = w.objects[1].side = 0;
+  w.mission.towns[1].type = 0;
+  w.mission.sides[1].only_comp = false;
+  for (auto& o : w.objects) o.town_hall = true;
+  w.side_state[0].money = 0;
+  w.side_state[0].enemy_mask = UINT32_MAX;
+  GameSim sim(rules, Modifications::faithful()); sim.init(w);
+  w.ai_towns[0].phase = 14; w.ai_towns[0].remaining = 2;
+  w.ai_towns[0].plan = {{0}, {0}};
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.side_state[0].queue.size() == 2);
+  if (w.side_state[0].queue.size() != 2) return;
+  CHECK(w.ai_towns[1].phase == 0); // its queued plan request suspends local strategy
+  CHECK(w.ai_towns[0].plan[0].producer == 1 && w.ai_towns[0].plan[1].producer == 0);
+  CHECK(w.side_state[0].queue[1].plan_town == 0 && w.side_state[0].queue[1].plan_entry == 0);
+  for (int tick = 0; tick < 3; ++tick) { w.begin_tick(); sim.tick(w); }
+  CHECK(!w.side_state[0].queue[1].started && w.side_state[0].money == 0);
+  w.side_state[0].money = 500;
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.side_state[0].queue[1].started);
+  CHECK(w.side_state[0].queue[1].paid == rules->type(0).price); // outpost uses its base price
+  auto& q = w.side_state[0].queue[1];
+  q.remaining = 1; q.work_rate = rules->type(0).hp_max;
+  w.begin_tick(); sim.tick(w);
+  const uint32_t recruit = w.ai_towns[0].plan[0].object;
+  CHECK(recruit != 0 && w.find(recruit) && w.find(recruit)->town == w.mission.towns[1].index);
+  CHECK(w.ai_towns[0].plan[1].object == 0); // completed work fills its owning slot
+  if (!recruit) return;
+  w.find_mut(recruit)->alive = false;
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.ai_towns[0].plan[0].object == 0);
+  CHECK(w.side_state[0].queue.size() == 1 && w.ai_towns[0].plan[0].producer == -1);
+  // A cancelled request is made available again without a second live reservation.
+  w.ai_towns[1].phase = 0; w.ai_towns[0].spent = 0;
+  Command cancel; cancel.type = Pct::QueueKill; cancel.side = 0; cancel.a = 0;
+  sim.submit(cancel); w.begin_tick(); sim.tick(w);
+  CHECK(w.side_state[0].queue.size() == 2);
+  CHECK(w.side_state[0].queue[1].plan_entry == 0 && !w.side_state[0].queue[1].started);
+  // Old work cannot fill a replacement plan that reused the same slot number.
+  w.begin_tick(); sim.tick(w);
+  w.side_state[0].queue[1].remaining = 1;
+  ++w.ai_towns[0].plan_generation;
+  w.ai_towns[0].phase = 11;
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.ai_towns[0].plan[0].object == 0);
+  const uint64_t hash = sim.state_hash(w);
+  ++w.ai_towns[0].random; CHECK(sim.state_hash(w) != hash); --w.ai_towns[0].random;
+  w.side_state[0].enemy_mask = 0; CHECK(sim.state_hash(w) != hash);
+}
+
 static void scripted(std::shared_ptr<const RulesData> rules) {
   auto a = world(); a.objects[0].scenario = 42;
   object(a, 0, 1, 1, 25, 26, 7); object(a, 0, 1, 1, 26, 26, 8);
@@ -337,6 +425,13 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
   // Synthetic durable halls keep both producers alive through the full soak.
   // These HP values exercise sustained opposition, not campaign balance.
   for (auto& o : initial.objects) { o.hp = 10000000; o.town_hall = true; }
+  // Capture ignores hall HP. Durable script-owned guards keep this pressure
+  // fixture producing on both sides without prescribing a planner force target.
+  for (int side = 0; side < 2; ++side) {
+    const auto& town = initial.mission.towns[size_t(side)];
+    object(initial, 0, side, side, town.x + 1, town.y, 7);
+    initial.objects.back().hp = 10000000;
+  }
   auto a = initial, b = initial; b.local_side = 1;
   GameSim sa(rules, Modifications::faithful()), sb(rules, Modifications::faithful());
   CHECK(sa.attach_script(AZTEC_AI_ECONOMY_SCRIPT)); CHECK(sb.attach_script(AZTEC_AI_ECONOMY_SCRIPT));
@@ -347,6 +442,12 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
   std::array<std::array<int, 2>, 4> side_shots{}, side_recruits{}, side_purchases{};
   std::array<std::array<int, 90>, 2> wave_composition{};
   std::vector<uint64_t> hashes{sa.state_hash(a)};
+  sa.set_ai_observer([&](uint64_t tick, const AiEvent& event) {
+    if (std::string(event.kind) != "launch" || tick == 0 || tick > 14400) return;
+    const size_t interval = size_t((tick - 1) / 3600);
+    ++waves[interval]; ++side_waves[size_t(event.side)];
+    for (size_t type = 0; type < 90; ++type) wave_composition[size_t(event.side)][type] += event.composition[type];
+  });
   const int ticks = 20 * 60 * 12;
   for (int t = 0; t < ticks; ++t) {
     if (t == 100 || t == 110) {
@@ -363,28 +464,6 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
       side_purchases[size_t(t / 3600)][side] += a.ai_towns[side].spent > previous[side].spent;
     if (t == 999) CHECK(a.side_state[0].money == net_income);
     if (t == 1199) CHECK(a.side_state[0].money == cash + 2000 + net_income);
-    for (size_t ti = 0; ti < previous.size(); ++ti) {
-      if (previous[ti].phase != 2 || previous[ti].remaining != 0 || a.ai_towns[ti].phase != 11) continue;
-      const int target_index = a.ai_towns[ti].target_town;
-      CHECK(target_index >= 0 && target_index < int(a.mission.towns.size()));
-      if (target_index < 0 || target_index >= int(a.mission.towns.size())) continue;
-      const auto& target = a.mission.towns[size_t(target_index)];
-      bool released = false;
-      for (size_t i = 0; i < objects.size(); ++i) {
-        const auto& o = a.objects[i];
-        const bool member = objects[i].order == uint8_t(Order::Idle) && o.alive && o.side == int(ti) &&
-                    o.dest_x == target.x * kTilePx + kTilePx / 2 &&
-                    o.dest_y == target.y * kTilePx + kTilePx / 2 &&
-                    (o.order == uint8_t(Order::AttackMove) || o.resume == 1);
-        if (member) {
-          CHECK(o.tactic < 0 && rules->type(o.type).armed);
-          CHECK(o.type >= 0 && o.type < 90);
-          if (o.type >= 0 && o.type < 90) ++wave_composition[ti][size_t(o.type)];
-        }
-        released |= member;
-      }
-      if (released) { ++waves[size_t(t / 3600)]; ++side_waves[ti]; }
-    }
     for (size_t i = 0; i < a.objects.size(); ++i) {
       const auto& o = a.objects[i];
       if (i >= objects.size()) {
@@ -418,11 +497,17 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
     for (size_t side = 0; side < 2; ++side) {
       std::printf("  Side %zu: %d shots, %d recruits, %d purchases\n", side,
                   side_shots[i][side], side_recruits[i][side], side_purchases[i][side]);
-      CHECK(side_shots[i][side] > 0 && side_recruits[i][side] > 0 && side_purchases[i][side] > 0);
+      // Reusing surviving troops can satisfy one side's plans for an entire interval.
+      CHECK(side_shots[i][side] > 0);
     }
   }
   for (int side = 0; side < 2; ++side) {
     CHECK(a.objects[size_t(side)].alive && side_waves[size_t(side)] > 0);
+    int recruits = 0, purchases = 0;
+    for (size_t interval = 0; interval < side_recruits.size(); ++interval) {
+      recruits += side_recruits[interval][size_t(side)]; purchases += side_purchases[interval][size_t(side)];
+    }
+    CHECK(recruits > 0 && purchases > 0);
     CHECK(a.ai_towns[size_t(side)].spent > 0 && a.ai_towns[size_t(side)].harvested > 0);
     // Only the synthetic type-0 recruits are enabled. Count actual released
     // members, so phase transitions alone cannot masquerade as an attack wave.
@@ -442,6 +527,6 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
 }
 int main(int argc, char** argv) {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
-  if (argc > 1 && std::string(argv[1]) == "--smoke") smoke(rules); else { unit(*rules); reinforcements(*rules); initialization(rules); neutral_computer(rules); sparse_towns(rules); observation(rules); town_orders(rules); scripted(rules); }
+  if (argc > 1 && std::string(argv[1]) == "--smoke") smoke(rules); else { unit(*rules); reinforcements(*rules); initialization(rules); neutral_computer(rules); sparse_towns(rules); observation(rules); town_orders(rules); enemy_price_mask(rules); remembered_intelligence(*rules); plan_allocation(rules); scripted(rules); }
   return failures ? 1 : 0;
 }

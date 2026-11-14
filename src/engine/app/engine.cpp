@@ -479,6 +479,15 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       if (world.outcome != kRunning && !end_shown) {
         end_shown = true; paused = true; pause.open = false; cmdui.cancel_mode();
         consume_input();
+        // V: f_00458e40 selects the installed result movies; final follows the last victory.
+        if (!pt && o.menu_session) {
+          const auto movie = find_file_ci(data.root(), world.outcome == kVictory ? "Video/win.avi" : "Video/lose.avi");
+          if (!movie.empty()) play_video(win, movie);
+          if (world.outcome == kVictory && campaign_number(world.mission.file_name) == 15) {
+            const auto final_movie = find_file_ci(data.root(), "Video/final.avi");
+            if (!final_movie.empty()) play_video(win, final_movie);
+          }
+        }
         if (world.outcome == kVictory && o.menu_session && !pt && !world.original_save && campaign_number(world.mission.file_name)) {
           const std::string path = user_file("Saves/engine_campaign.txt");
           CampaignProgress progress;
@@ -609,9 +618,9 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       briefing.draw(win.renderer(), scene.font(), ow, oh, pscale);
       audio_options.draw(win.renderer(), scene.font(), o, ow, oh, pscale);
       modification_options.draw(win.renderer(), scene.font(), o, ow, oh, pscale);
-      slots.draw(win.renderer(), scene.font(), ow, oh, pscale);
+      slots.draw(win.renderer(), scene.font(), ow, oh, pscale, &scene.store());
       if (world.outcome != kRunning) OutcomeMenu::draw(win.renderer(), scene.font(), ow, oh, pscale,
-          world.outcome == kVictory, campaign_number(world.mission.file_name) == 15, !next_mission.empty());
+          world.outcome == kVictory, campaign_number(world.mission.file_name) == 15, !next_mission.empty(), &scene.store());
       if (notice_left > 0) draw_messages(win.renderer(), scene.font(), {{notice, 1}},
           SDL_Rect{8 * pscale, oh - 64 * pscale, ow - 16 * pscale, 60 * pscale}, pscale);
       // Cursor last, at the freshest mouse position.
@@ -726,6 +735,13 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
         if (!selected || !opts.menu_script.empty()) break;
         opts.menu_session = true;
         spec = fr.mission;
+        if (opts.script.empty() && fr.resume_save.empty()) {
+          MissionDef mission;
+          if (load_mission(resolve_mission(data.maps_dir(), spec), mission) && !mission.avi.empty()) {
+            const auto movie = find_file_ci(data.root(), "Video/" + mission.avi);
+            if (!movie.empty()) play_video(win, movie);
+          }
+        }
         opts.resume_save = fr.resume_save;
         open_brief.clear();
         menu = false;

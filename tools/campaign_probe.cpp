@@ -62,8 +62,8 @@ void force(const Event& event, GameSim& sim, World& world) {
     if (event.operation == "kill-halls" && !object.town_hall) continue;
     if ((event.operation == "kill-type" || event.operation == "move-type") && object.type != a[1]) continue;
     if ((event.operation == "kill-tactic" || event.operation == "idle-tactic" || event.operation == "hit-tactic") && object.tactic != a[1]) continue;
-    if (event.operation == "move-units" && (object.removed || !type_info(object.type) ||
-        type_info(object.type)->is_structure() || is_transport(object.type))) continue;
+    if (event.operation == "move-units" && (object.removed || !aztec::engine::type_info(object.type) ||
+        aztec::engine::type_info(object.type)->is_structure() || is_transport(object.type))) continue;
     matches.push_back(object.id);
   }
   if (matches.empty()) throw std::runtime_error("event matched no living objects");

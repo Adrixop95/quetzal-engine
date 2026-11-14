@@ -3015,16 +3015,17 @@ static void test_parallel_training() {
     initial.side_state[size_t(side)].money = 10000;
     auto w = initial; GameSim sim(rules, {false, false, count}); sim.init(w);
     w.ai_towns[0].phase = 14; w.ai_towns[0].remaining = 5;
+    w.ai_towns[0].plan.assign(5, ai::PlanEntry{0});
     // AI orders are issued after economy and start on the following tick.
     // Set the same synthetic planner state in the replay observer at tick one.
     production_steps(sim, w, 2);
     CHECK(w.side_state[size_t(side)].queue.size() == size_t(count));
-    CHECK(w.ai_towns[0].remaining == 5 - count);
+    CHECK(w.ai_towns[0].remaining == 5); // queued work remains outstanding until completed
     for (const auto& q : w.side_state[size_t(side)].queue) CHECK(q.started && q.paid > 0);
     auto restored = initial;
     auto replay = GameSim::replay(restored, rules, sim.log(), sim.tick_count(), "",
         [&restored](uint64_t tick, const World&, const GameSim&) {
-          if (tick == 1) { restored.ai_towns[0].phase = 14; restored.ai_towns[0].remaining = 5; }
+          if (tick == 1) { restored.ai_towns[0].phase = 14; restored.ai_towns[0].remaining = 5; restored.ai_towns[0].plan.assign(5, ai::PlanEntry{0}); }
         }, {false, false, count});
     CHECK(replay->state_hash(restored) == sim.state_hash(w));
   }
@@ -3060,14 +3061,14 @@ static void test_parallel_training() {
   }
 }
 
-// Pin pre-profile hashes without buildings or mission groups: formation setup is unrelated.
+// Pin replay-v8 hashes without buildings or mission groups.
 static void test_faithful_profile_hashes() {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
   World w = production_world(); production_object(w, 0, 0, 5, 5);
   GameSim sim(rules, Modifications::faithful()); sim.init(w);
   const uint64_t before_profiles[] = {
-    10966095332724573841ull, 6216605996558649658ull, 15231455327624153898ull,
-    14308430164348026918ull, 657650451907204673ull, 2755125741927956737ull};
+    8928627873794330573ull, 17401877642783630974ull, 2162791409439915310ull,
+    2118839878800042442ull, 1481097583921116893ull, 16501556699872709293ull};
   CHECK(sim.state_hash(w) == before_profiles[0]);
   Command move; move.type = Pct::Move; move.ids = {1}; move.a = 12 * 48; move.b = 12 * 48;
   sim.submit(move);

@@ -105,7 +105,7 @@ class CaptureTests(unittest.TestCase):
                 (resources / f'{name}.xbe').write_bytes(struct.pack('<I', 0))
             script = root / 'input.txt'
             before, after = root / 'main.png', root / 'options.png'
-            script.write_text(f'wait 2\nshot {before}\nmove 400 370\ndown\nup\nwait 2\nshot {after}\nquit\n')
+            script.write_text(f'wait 2\nshot {before}\nmove 160 540\ndown\nup\nmove 400 58\ndown\nup\nwait 2\nshot {after}\nquit\n')
             env = {k: v for k, v in os.environ.items() if k not in ('AZTEC_MENU_SHOT', 'AZTEC_UI_SCRIPT')}
             env.update(SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy', AZTEC_UI_SCRIPT=str(script))
             argv = [str(ENGINE), '--profile', 'faithful', '--game', str(root), '--rules-dir', str(ROOT / 'docs/data'),
@@ -222,6 +222,33 @@ class FrontendCaptureTests(unittest.TestCase):
             second = capture.capture_clone(args, spec, self.root / 'two')
         self.assertEqual(first[1], second[1])
         self.assertTrue('load-empty' in first[0])
+        observed = {Path(row['capture']).stem: row for row in first[1] if row['capture']}
+        # V: independently transcribed reference rectangles, not values imported from engine code.
+        expected = {
+            'main-normal': {'Create Player': [72, 28, 170, 60], 'Remove Player': [314, 28, 172, 60],
+                            'Credits': [556, 28, 172, 60], 'Accept Player': [72, 512, 170, 60],
+                            'Quit The Game': [556, 512, 172, 60]},
+            'campaign': {'Load Game': [72, 28, 170, 60], 'Custom Mission': [556, 28, 172, 60],
+                         'Play Mission': [72, 512, 170, 60], 'Begin Campaign': [314, 512, 172, 60],
+                         '<': [620, 230, 60, 40], '>': [620, 400, 60, 40]},
+            'briefing': {'Start Game': [643, 338, 135, 176], 'Back': [0, 0, 151, 226],
+                         'Diary': [339, 18, 256, 139], 'Mission': [158, 197, 279, 321],
+                         'Mission objectives': [462, 308, 148, 161]},
+        }
+        for screen, elements in expected.items():
+            buttons = {button['label']: button for button in observed[screen]['buttons']}
+            for label, rectangle in elements.items():
+                self.assertEqual(buttons[label]['rect'], rectangle, (screen, label))
+        self.assertEqual(observed['briefing']['background_image'], 285)
+        self.assertEqual(observed['briefing-text']['background_image'], 290)
+        self.assertEqual(observed['main-normal']['background_image'], 284)
+        self.assertEqual(observed['main-held']['next_screen'], 'main')
+        self.assertEqual(observed['main-held']['left_down'], True)
+        self.assertTrue(any(button['held'] for button in observed['main-held']['buttons']))
+        for name, path in first[0].items():
+            width, height, channels, buffer = capture.image_file(path)
+            self.assertEqual((width, height, channels, len(buffer)), (800, 600, 3, 800 * 600 * 3), name)
+
 
 
 if __name__ == '__main__':

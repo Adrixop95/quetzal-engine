@@ -71,8 +71,15 @@ int main() {
     options.mission = spec;
     // Actual campaign-button selection and briefing Start for each unlocked mission.
     options.menu = true;
-    const int x = n <= 8 ? 100 : 440, y = 110 + ((n - 1) % 8) * 52;
-    write(options.menu_script, "0 move 310 250\n0 down\n1 up\n2 move " + std::to_string(x) + " " + std::to_string(y) + "\n2 down\n3 up\n4 keydown Return\n");
+    const int y = 260 + ((n - 1) % 9) * 20;
+    std::string menu_input = "0 move 160 540\n0 down\n1 up\n";
+    int frame = 2;
+    if (n > 9) { menu_input += "2 move 645 421\n2 down\n3 up\n"; frame = 4; }
+    menu_input += std::to_string(frame) + " move 160 " + std::to_string(y) + "\n" +
+        std::to_string(frame) + " down\n" + std::to_string(frame + 1) + " up\n" +
+        std::to_string(frame + 2) + " keydown Return\n" + std::to_string(frame + 3) + " keyup Return\n" +
+        std::to_string(frame + 4) + " keydown Return\n";
+    write(options.menu_script, menu_input);
     CHECK(run_engine(options) == 0);
     CHECK(read(options.menu_trace).find("\"mission\":\"" + spec + "\"") != std::string::npos);
     CHECK(read(options.menu_trace).find("\"next_screen\":\"briefing\"") != std::string::npos);

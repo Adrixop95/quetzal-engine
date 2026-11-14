@@ -376,7 +376,8 @@ if(Python3_Interpreter_FOUND)
   set_tests_properties(render_compare PROPERTIES LABELS "unit;parity" TIMEOUT 40)
   add_test(NAME ui_capture COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ui_capture.py $<TARGET_FILE:aztec_engine>)
-  set_tests_properties(ui_capture PROPERTIES LABELS "unit;parity" TIMEOUT 30)
+  # The expanded route decodes two sets of 15 full-size screenshots on CI runners.
+  set_tests_properties(ui_capture PROPERTIES LABELS "unit;parity" TIMEOUT 90)
   add_test(NAME ui_diff COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ui_diff.py)
   set_tests_properties(ui_diff PROPERTIES LABELS "unit;parity" TIMEOUT 30)
