@@ -1809,7 +1809,7 @@ static void test_mine_construction_flow() {
     CHECK(deserialize_log(serialize_log(sim.log()), decoded));
     World replay_world = initial; auto replay = GameSim::replay(replay_world, rules, decoded, sim.tick_count());
     CHECK(replay->state_hash(replay_world) == sim.state_hash(w));
-    int cash = w.side_state[0].money, refund = w.side_state[0].queue[0].refund();
+    int cash = w.side_state[0].money, refund = sim.production_refund(w, w.side_state[0].queue[0]);
     Command cancel_work; cancel_work.type = Pct::PauseBuild; cancel_work.a = 2; cancel_work.ids = {1};
     sim.submit(cancel_work); production_steps(sim, w, 1);
     CHECK(w.side_state[0].money == cash + refund && object.removed && w.side_state[0].queue.empty());
@@ -2252,7 +2252,7 @@ static void test_mine_audit() {
     production_steps(trace_sim, trace_income, 600);
     CHECK(trace_income.side_state[0].money == 0);
 
-    // Synthetic resource removal checks accumulated credit and future zero yield.
+    // V: the accumulator retains its initial rate after synthetic resource removal.
     World depleted = production_world(); depleted.resources.v.assign(1600, 65 << 8);
     production_object(depleted, type, 0, 12, 12);
     production_object(depleted, 0, 0, 17, 12);
@@ -2260,7 +2260,7 @@ static void test_mine_audit() {
     production_steps(depletion, depleted, 50);
     depleted.resources.v.assign(1600, 0); // Test injection, not natural depletion.
     production_steps(depletion, depleted, 550);
-    CHECK(depleted.side_state[0].money == full_event / 2);
+    CHECK(depleted.side_state[0].money == 6 * full_event);
     CHECK(depleted.objects[1].alive && !depleted.objects[1].removed);
     Command move; move.type = Pct::Move; move.ids = {2}; move.a = 20 * 48; move.b = 12 * 48;
     depletion.submit(move); production_steps(depletion, depleted, 80);
@@ -2636,7 +2636,7 @@ static void test_town_production() {
   production_object(cancelled, 10, 0, 10, 10); cancelled.objects[0].town_hall = true;
   GameSim cancel_sim(rules, Modifications::faithful()); cancel_sim.init(cancelled);
   request.a = 19; cancel_sim.submit(request); production_steps(cancel_sim, cancelled, 1);
-  int cancellation_cash = cancelled.side_state[0].money + cancelled.side_state[0].queue.front().refund();
+  int cancellation_cash = cancelled.side_state[0].money + cancel_sim.production_refund(cancelled, cancelled.side_state[0].queue.front());
   cancel_sim.submit(remove); production_steps(cancel_sim, cancelled, 1);
   CHECK(cancelled.objects[0].type == 10 && cancelled.mission.towns[0].type == 0);
   CHECK(cancelled.side_state[0].money == cancellation_cash && item(cancel_sim, cancelled, 0, 24).enabled);
@@ -2651,7 +2651,7 @@ static void test_town_production() {
   Command buy; buy.type = Pct::Build; buy.a = 12; buy.ids = {999};
   sim.submit(buy); production_steps(sim, w, 1); CHECK(w.side_state[0].queue.empty());
   buy.ids = {1}; sim.submit(buy); production_steps(sim, w, 1);
-  int refund = w.side_state[0].queue[0].refund();
+  int refund = sim.production_refund(w, w.side_state[0].queue[0]);
   // A dead hall suspends its timer without spawning at an unrelated side start.
   int remaining = w.side_state[0].queue[0].remaining;
   sim.script_kill(w, 1); production_steps(sim, w, 200);
@@ -2949,7 +2949,7 @@ static void test_parallel_training() {
     Command pause; pause.type = Pct::PauseBuild; pause.ids = {1}; pause.a = 1; pause.b = 2;
     sim.submit(pause); production_steps(sim, w, 9);
     CHECK(w.side_state[0].queue[0].remaining == 90 && w.side_state[0].queue[1].remaining == 99);
-    const int refund = w.side_state[0].queue[1].refund();
+    const int refund = sim.production_refund(w, w.side_state[0].queue[1]);
     Command cancel; cancel.type = Pct::QueueKill; cancel.a = 4;
     sim.submit(cancel); production_steps(sim, w, 1); CHECK(w.side_state[0].money == 50);
     cancel.a = 1; sim.submit(cancel); production_steps(sim, w, 1);
@@ -3061,14 +3061,14 @@ static void test_parallel_training() {
   }
 }
 
-// Pin replay-v8 hashes without buildings or mission groups.
+// Pin faithful movement hashes for replay semantics 10, including cached harvest rates.
 static void test_faithful_profile_hashes() {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
   World w = production_world(); production_object(w, 0, 0, 5, 5);
   GameSim sim(rules, Modifications::faithful()); sim.init(w);
   const uint64_t before_profiles[] = {
-    8928627873794330573ull, 17401877642783630974ull, 2162791409439915310ull,
-    2118839878800042442ull, 1481097583921116893ull, 16501556699872709293ull};
+    2731272105683802453ull, 7559610720850594014ull, 6940664026669715686ull,
+    11972851150484976922ull, 5791383722115172085ull, 5544993050283501421ull};
   CHECK(sim.state_hash(w) == before_profiles[0]);
   Command move; move.type = Pct::Move; move.ids = {1}; move.a = 12 * 48; move.b = 12 * 48;
   sim.submit(move);
@@ -3263,7 +3263,7 @@ static void test_mixed_production_queue() {
   CHECK(sim.log().back().cmd.type == Pct::PauseBuild && sim.log().back().cmd.b == 4);
   CHECK(!w.side_state[0].queue[3].paused && w.side_state[0].queue[3].remaining == paused_remaining - 1);
   const uint32_t cancelled = w.side_state[0].queue[3].object;
-  int cash = w.side_state[0].money, refund = w.side_state[0].queue[3].refund();
+  int cash = w.side_state[0].money, refund = sim.production_refund(w, w.side_state[0].queue[3]);
   click(3, false); production_steps(sim, w, 1);
   CHECK(sim.log().back().cmd.type == Pct::QueueKill && sim.log().back().cmd.a == 3);
   CHECK(w.side_state[0].money == cash + refund && w.find(cancelled)->removed);
@@ -3301,7 +3301,7 @@ static void test_mixed_production_queue() {
     CHECK(poor.side_state[0].money == 0 && poor.side_state[0].queue[0].started);
     // Cancellation of a paid item returns only its unbuilt fraction, once.
     production_steps(ps, poor, poor.side_state[0].queue[0].remaining - 50);
-    CHECK(poor.side_state[0].queue[0].refund() == 50);
+    CHECK(ps.production_refund(poor, poor.side_state[0].queue[0]) == 50);
     ps.submit(cancel); production_steps(ps, poor, 1);
     ps.submit(cancel); production_steps(ps, poor, 1);
     CHECK(poor.side_state[0].queue.empty() && poor.side_state[0].money == 50);
@@ -3423,8 +3423,22 @@ static void test_payment_clock() {
   CHECK(w.side_state[0].queue.size() == 1 && w.side_state[0].queue[0].started);
   production_steps(sim, w, 7);
   CHECK(w.objects.size() == 3 && w.side_state[0].queue.empty() && w.side_state[0].money == 26);
-  auto replay = GameSim::replay(initial, rules, sim.log(), sim.tick_count());
-  CHECK(replay->state_hash(initial) == sim.state_hash(w));
+  World restored = initial;
+  auto replay = GameSim::replay(restored, rules, sim.log(), sim.tick_count());
+  CHECK(replay->state_hash(restored) == sim.state_hash(w));
+
+  // V formula, invented values: 14/101 work and 98/101 work are not 1/8 and 7/8 time.
+  for (auto [ticks, expected] : {std::pair{1, 31}, std::pair{7, 1}}) {
+    World cancelled = initial;
+    GameSim cs(rules, Modifications::faithful()); cs.init(cancelled);
+    cs.submit(buy); cs.submit(buy); production_steps(cs, cancelled, ticks);
+    CHECK(cs.production_refund(cancelled, cancelled.side_state[0].queue[0]) == expected);
+    CHECK(cs.production_refund(cancelled, cancelled.side_state[0].queue[1]) == 0);
+    Command cancel; cancel.type = Pct::QueueKill;
+    cs.submit(cancel); production_steps(cs, cancelled, 1);
+    // The waiting successor pays once on the same tick that cancellation frees the lane.
+    CHECK(cancelled.side_state[0].money == 100 - 2 * 37 + expected);
+  }
 
   World building = production_world();
   building.mission.towns.resize(1);
@@ -3436,7 +3450,10 @@ static void test_payment_clock() {
   construction.submit(place); production_steps(construction, building, 3);
   CHECK(building.side_state[0].money == 57 && building.objects.size() == 2);
   CHECK(building.objects[1].hp == 12856); // three increments of 4285, initial HP 1
+  CHECK(construction.production_refund(building, building.side_state[0].queue[0]) == 24);
   building.objects[1].hp -= 5000;
+  // Damage changes the live HP fraction before another production tick.
+  CHECK(construction.production_refund(building, building.side_state[0].queue[0]) == 31);
   Command pause; pause.type = Pct::PauseBuild; pause.a = 1; pause.ids = {1};
   construction.submit(pause); production_steps(construction, building, 3);
   CHECK(building.objects[1].hp == 7856 && building.side_state[0].money == 57);
@@ -3447,6 +3464,84 @@ static void test_payment_clock() {
   production_steps(construction, building, 1);
   CHECK(building.objects[1].hp == 30000 && building.objects[1].progress == 1000);
   CHECK(building.side_state[0].queue.empty() && building.side_state[0].money == 57);
+
+  World cancelled = initial;
+  GameSim cs(rules, Modifications::faithful()); cs.init(cancelled);
+  cs.submit(place); production_steps(cs, cancelled, 3);
+  cancelled.objects[1].hp -= 5000;
+  Command cancel; cancel.type = Pct::QueueKill; cs.submit(cancel);
+  production_steps(cs, cancelled, 1);
+  CHECK(cancelled.side_state[0].money == 88 && cancelled.objects[1].removed);
+  cs.submit(cancel); production_steps(cs, cancelled, 1);
+  CHECK(cancelled.side_state[0].money == 88); // cancellation cannot refund twice
+}
+
+// Invented descriptors and terrain: no original maps, scripts or descriptor dumps.
+static void test_harvest_rate_lifecycle() {
+  TempDir directory;
+  std::ofstream(directory.path() / "types.csv") <<
+      "id,ugi,kind,param,unit_price,build_time,dev_level\n"
+      "12,FARM,Building,0,43,7,1\n13,MINE,Building,1,43,7,1\n";
+  {
+    std::ofstream out(directory.path() / "desc_building.csv");
+    out << "param";
+    for (int i = 0; i <= 320; ++i) out << ",d" << i;
+    out << '\n';
+    for (int param = 0; param < 2; ++param) {
+      std::array<int, 321> descriptor{};
+      descriptor[1] = 1001; descriptor[4] = descriptor[5] = 48;
+      descriptor[6 + 24] = descriptor[6 + 25] = 2;
+      descriptor[59] = 256; descriptor[60] = 25; descriptor[61] = 50;
+      descriptor[62] = 100; descriptor[63] = param == 0;
+      descriptor[64] = param == 0 ? 2 : 7;
+      descriptor[65] = 3; descriptor[66] = 11; descriptor[320] = 3;
+      out << param;
+      for (int value : descriptor) out << ',' << value;
+      out << '\n';
+    }
+  }
+  auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(directory.path().string()));
+  for (int type : {12, 13}) for (bool partial : {false, true}) {
+    World fresh = production_world();
+    fresh.resources.v.assign(1600, 0);
+    fresh.resources.v[10 * 40 + 10] = uint16_t(40 | (80 << 8));
+    if (!partial) fresh.resources.v[10 * 40 + 11] = uint16_t(40 | (80 << 8));
+    production_object(fresh, type, 0, 10, 10);
+    World live = fresh; GameSim sim(rules, Modifications::faithful()); sim.init(live);
+    production_steps(sim, live, 2);
+    CHECK(live.objects[0].gold_harvest.rate == (partial ? 100 : 200));
+    CHECK(live.objects[0].repair_harvest.rate == 256);
+    auto hash = sim.state_hash(live);
+    ++live.objects[0].gold_harvest.rate;
+    CHECK(sim.state_hash(live) != hash);
+    --live.objects[0].gold_harvest.rate;
+    ++live.objects[0].repair_harvest.rate;
+    CHECK(sim.state_hash(live) != hash);
+    --live.objects[0].repair_harvest.rate;
+    SaveData saved; saved.mission = "invented-rate-lifecycle"; saved.tick = sim.tick_count();
+    saved.hash = sim.state_hash(live); saved.log = sim.log();
+    SaveData loaded; CHECK(deserialize_save(serialize_save(saved), loaded));
+    World restored = fresh;
+    auto replay = GameSim::replay(restored, rules, loaded.log, loaded.tick);
+    CHECK(replay->state_hash(restored) == loaded.hash);
+    // Removing resources in one branch must not change either frozen rate or money.
+    live.resources.v.assign(1600, 0);
+    for (int tick = 3; tick <= 21; ++tick) {
+      production_steps(sim, live, 1); production_steps(*replay, restored, 1);
+      int expected = type == 13 ? (tick / 7) * (partial ? 3 : 5) :
+          (tick < 11 ? (partial ? 1 : 2) : (partial ? 4 : 8));
+      CHECK(live.side_state[0].money == expected && restored.side_state[0].money == expected);
+      CHECK(sim.income_total(0) == expected && replay->income_total(0) == expected);
+      CHECK(live.objects[0].gold_harvest.rate == (partial ? 100 : 200));
+      CHECK(live.objects[0].repair_harvest.accumulated == (tick % 3) * 256);
+    }
+    // A newly initialized dry producer samples zero; adding resources later cannot start income.
+    World dry = fresh; dry.resources.v.assign(1600, 0);
+    GameSim ds(rules, Modifications::faithful()); ds.init(dry); production_steps(ds, dry, 2);
+    dry.resources = fresh.resources; production_steps(ds, dry, 19);
+    CHECK(dry.objects[0].gold_harvest.rate == 0 && dry.side_state[0].money == 0);
+    CHECK(ds.income_total(0) == 0);
+  }
 }
 
 static void test_mission_unit_health() {
@@ -3874,6 +3969,7 @@ int main(int argc, char** argv) {
     test_mission_unit_health();
     test_scenario_controllers();
     test_payment_clock();
+    test_harvest_rate_lifecycle();
     test_siege_ranged();
     test_descriptor_combat();
     test_script_animation_clocks();

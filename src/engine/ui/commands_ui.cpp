@@ -595,7 +595,7 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
         SDL_SetRenderDrawColor(r, q.paused ? 230 : 90, q.paused ? 180 : 210, 90, 255);
         SDL_RenderFillRect(r, &status);
       }
-      if (contains(rect, mx, my)) tip = type_display_name(strings, q.type) + " " + std::to_string(pct) + "%\nTime remaining: " + std::to_string(q.remaining) + "\nClick to cancel; refund: " + std::to_string(q.refund()) + (q.paused ? "\nPaused" : !q.started ? "\nWaiting; unpaid" : "") + "\nScroll to view waiting orders";
+      if (contains(rect, mx, my)) tip = type_display_name(strings, q.type) + " " + std::to_string(pct) + "%\nTime remaining: " + std::to_string(q.remaining) + "\nClick to cancel; refund: " + std::to_string(sim_->production_refund(w, q)) + (q.paused ? "\nPaused" : !q.started ? "\nWaiting; unpaid" : "") + "\nScroll to view waiting orders";
       if (contains(rect, mx, my) && q.started)
         tip += q.paused ? "\nShift-click to resume item" : "\nIn progress; Shift-click to pause";
     }

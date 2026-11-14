@@ -887,10 +887,24 @@ bool GameSim::can_place(const World& w, int side, int type, int tx, int ty, cons
   return !cells.empty();
 }
 
+int GameSim::production_refund(const World& w, const QueueItem& item) const {
+  if (!item.started) return 0;
+  int64_t work = int64_t(item.total - item.remaining) * item.work_rate;
+  int maximum = rules_->type(item.type).hp_max;
+  if (item.object) {
+    const Object* construction = w.find(item.object);
+    if (!construction || !construction->alive || construction->removed) return 0;
+    work = construction->hp;
+    maximum = construction->hp_max;
+  }
+  // V: cancellation uses completed HP/work in 256 parts, not elapsed time.
+  const int completed = int(std::clamp<int64_t>(work * 256 / std::max(1, maximum), 0, 256));
+  return int(int64_t(item.paid) * (256 - completed) / 256);
+}
+
 void GameSim::cancel_production(World& w, SideState& side, size_t index) {
   const auto q = side.queue[index];
-  const Object* construction = w.find(q.object);
-  if (!q.object || (construction && construction->alive && !construction->removed)) side.money += q.refund();
+  side.money += production_refund(w, q);
   if (Object* o = w.find_mut(q.object); o && o->alive && !o->removed) {
     block_footprint(rules_->type(o->type), px(o->cur_x) / kTilePx, px(o->cur_y) / kTilePx, -1);
     o->alive = false; o->removed = true; o->hp = 0;
@@ -1040,28 +1054,30 @@ void GameSim::economy(World& w) {
       o.hp = std::min(o.hp_max, o.hp + std::max(1, int(int64_t(o.hp_max) * o.build_elapsed / total)) - before);
       if (o.progress >= 1000) { o.anim_state = kAnimIdle; o.anim_tick = 0; o.body_tick = -1; }
     } else if (o.side >= 0 && o.side < int(w.side_state.size())) {
+      const auto& h = r.harvest;
       if (!o.harvest_ready) {
         // The first active tick follows creation/completion of the accumulator.
         o.gold_harvest.last_clock = o.repair_harvest.last_clock = (w.day_clock + kDayTicks - 1) % kDayTicks;
+        int rate = int(((int64_t(h.rate_a) * 65536 / 100) + 128) >> 8);
+        if (h.terrain) {
+          int64_t sum = 0;
+          int count = 0;
+          int ca = int(((int64_t(h.rate_a) * 65536 / 100) * 2 + 256) >> 8);
+          int cb = int(((int64_t(h.rate_b) * 65536 / 100) * 2 + 256) >> 8);
+          for (int cell = 0; cell < 49; ++cell) if (h.occupancy[cell] == 2) {
+            int x = px(o.cur_x) / kTilePx + cell % 7 - 3;
+            int y = px(o.cur_y) / kTilePx + cell / 7 - 3;
+            uint16_t v = w.resources.in(x, y) ? w.resources.at(x, y) : 0;
+            sum += 2 * (v & 255) * ca + 2 * (v >> 8) * cb;
+            ++count;
+          }
+          rate = count ? int((sum / count) >> 8) : 0;
+        }
+        o.gold_harvest.rate = rate;
+        o.repair_harvest.rate = int(((int64_t(h.repair_rate) * 65536 / 100) + 128) >> 8);
         o.harvest_ready = true;
       }
-      const auto& h = r.harvest;
-      int rate = int(((int64_t(h.rate_a) * 65536 / 100) + 128) >> 8);
-      if (h.terrain) {
-        int64_t sum = 0;
-        int count = 0;
-        int ca = int(((int64_t(h.rate_a) * 65536 / 100) * 2 + 256) >> 8);
-        int cb = int(((int64_t(h.rate_b) * 65536 / 100) * 2 + 256) >> 8);
-        for (int cell = 0; cell < 49; ++cell) if (h.occupancy[cell] == 2) {
-          int x = px(o.cur_x) / kTilePx + cell % 7 - 3;
-          int y = px(o.cur_y) / kTilePx + cell / 7 - 3;
-          uint16_t v = w.resources.in(x, y) ? w.resources.at(x, y) : 0;
-          sum += 2 * (v & 255) * ca + 2 * (v >> 8) * cb;
-          ++count;
-        }
-        rate = count ? int((sum / count) >> 8) : 0;
-      }
-      int gain = harvest_tick(o.gold_harvest, rate, w.day_clock, h.period, h.scheduled ? &h.dates : nullptr);
+      int gain = harvest_tick(o.gold_harvest, o.gold_harvest.rate, w.day_clock, h.period, h.scheduled ? &h.dates : nullptr);
       if (o.town >= 0 && (o.type == 12 || o.type == 39 || o.type == 65)) {
         bool warehouse = false;
         for (const auto& other : w.objects)
@@ -1073,8 +1089,7 @@ void GameSim::economy(World& w) {
       }
       w.side_state[o.side].money += gain;
       if (o.side < 8) income_total_[o.side] += gain;
-      int repair_rate = int(((int64_t(h.repair_rate) * 65536 / 100) + 128) >> 8);
-      int credits = harvest_tick(o.repair_harvest, repair_rate, w.day_clock, h.repair_period);
+      int credits = harvest_tick(o.repair_harvest, o.repair_harvest.rate, w.day_clock, h.repair_period);
       for (size_t ti = 0; ti < w.mission.towns.size(); ++ti)
         if (w.mission.towns[ti].index == o.town && w.mission.towns[ti].side == o.side) {
           w.repair_credits[ti] += credits * 100;
@@ -1740,7 +1755,7 @@ uint64_t GameSim::state_hash(const World& w) const {
   for (const Object& o : w.objects) {
     mix(uint8_t(o.source)); mix(uint32_t(o.prev_x)); mix(uint32_t(o.prev_y));
     mix(uint32_t(o.town)); mix(o.harvest_ready);
-    for (const auto* h : {&o.gold_harvest, &o.repair_harvest}) { mix(h->accumulated); mix(h->last_clock); mix(h->cursor); }
+    for (const auto* h : {&o.gold_harvest, &o.repair_harvest}) { mix(h->accumulated); mix(h->rate); mix(h->last_clock); mix(h->cursor); }
     mix(o.id); mix(uint32_t(o.type)); mix(uint32_t(o.side)); mix(uint32_t(o.hp)); mix(uint32_t(o.cur_x)); mix(uint32_t(o.cur_y));
     // Transport state joins the digest only when present, preserving pinned hashes of non-transport worlds.
     const bool vessel_state = is_transport(o.type) || o.carrier || o.boarding || !o.vessel_enabled ||

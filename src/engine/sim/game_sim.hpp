@@ -64,6 +64,7 @@ class GameSim : public Simulation {
 
   // Queries for the UI.
   std::vector<MenuItem> menu(const World& w, int side, int town = -1) const;
+  int production_refund(const World& w, const QueueItem& item) const;
   bool can_place(const World& w, int side, int type, int tx, int ty, const char** why = nullptr, const QueueItem* reservation = nullptr, int town = -1) const;
   std::vector<PlacementCell> placement_cells(const World& w, int side, int type, int tx, int ty,
       int town = -1, const QueueItem* reservation = nullptr) const;

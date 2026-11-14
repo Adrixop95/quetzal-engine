@@ -26,6 +26,7 @@ struct HarvestRule {
 
 struct HarvestState {
   int64_t accumulated = 0;
+  int rate = 0; // V: fixed when the building creates its accumulator; see task 118
   int last_clock = 0;
   size_t cursor = 0;
 };
