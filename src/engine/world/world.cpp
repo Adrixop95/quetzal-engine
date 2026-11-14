@@ -87,9 +87,9 @@ bool load_world(const GameData& data, const std::string& spec, World& w, std::st
     for (int b = 0; b < 8; b++) w.relation[a][b] = a == b ? kFriend : kEnemy;
   for (const SideDef& sd : w.mission.sides)
     if (sd.neutral && sd.index >= 0 && sd.index < 8)
-      for (int b = 0; b < 8; b++) if (b != sd.index) w.relation[sd.index][b] = w.relation[b][sd.index] = kNeutral;
+      for (int b = 0; b < 8; b++) if (b != sd.index) w.relation[sd.index][b] = kEnemy;
   for (const SideDef& sd : w.mission.sides)
-    if (sd.index >= 0 && sd.index < int(w.side_state.size())) w.side_state[sd.index].money = sd.money;
+    if (sd.index >= 0 && sd.index < int(w.side_state.size())) { w.side_state[sd.index].money = sd.money; w.side_state[sd.index].enemy_mask = sd.neutral ? UINT32_MAX : 0; }
   return true;
 }
 

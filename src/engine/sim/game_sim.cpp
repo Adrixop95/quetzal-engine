@@ -768,12 +768,9 @@ std::vector<MenuItem> GameSim::menu(const World& w, int side, int town) const {
   for (const BuildItem& it : rules_->build_list(t.race, t.type)) {
     const TypeRules& r = rules_->type(it.type);
     MenuItem m;
-    bool computer = false, hostile_all = true, have_other = false;
-    for (const auto& sd : w.mission.sides) {
-      if (sd.index == side) computer = sd.only_comp;
-      else { have_other = true; if (!w.hostile(side, sd.index)) hostile_all = false; }
-    }
-    hostile_all = hostile_all && have_other;
+    bool computer = false;
+    for (const auto& sd : w.mission.sides) if (sd.index == side) computer = sd.only_comp;
+    const bool hostile_all = w.enemy_all(side);
     int speed = ti < int(w.town_speed.size()) ? w.town_speed[ti] : 1;
     m.type = it.type; m.construct = it.construct;
     m.place = r.structure && upgrade_level(t.race, it.type) < 0;
@@ -983,6 +980,7 @@ void GameSim::economy(World& w) {
             uint32_t id = spawn(w, q.type, int(s), x, y, 0, false);
             w.find_mut(id)->town = w.mission.towns[size_t(q.town)].index;
             w.find_mut(id)->tactic = w.mission.towns[size_t(q.town)].scenario_id;
+            q.object = id;
             ++spawn_counter_; return true;
           };
           const int slot = int(spawn_counter_ % 5);
@@ -998,6 +996,13 @@ void GameSim::economy(World& w) {
         }
       }
       if (finished) {
+        if (q.plan_town >= 0 && q.plan_town < int(w.ai_towns.size())) {
+          auto& owner = w.ai_towns[size_t(q.plan_town)];
+          if (owner.plan_generation == q.plan_generation && q.plan_entry >= 0 && q.plan_entry < int(owner.plan.size())) {
+            auto& entry = owner.plan[size_t(q.plan_entry)];
+            if (entry.type == q.type && entry.producer == q.town) entry.object = q.object;
+          }
+        }
         const int town = q.town;
         ss.queue.erase(ss.queue.begin() + i);
         // Completing the current object frees this town's lane immediately.
@@ -1706,6 +1711,11 @@ uint64_t GameSim::state_hash(const World& w) const {
   for (const auto& s : w.ai_towns) {
     mix(s.phase); mix(s.science_timer); mix(s.target_town); mix(s.remaining);
     mix(s.defence_enabled); mix(s.elapsed); mix(s.harvested); mix(s.spent); mix(s.last_alert);
+    mix(s.random); mix(s.plan_generation);
+    mix(s.knowledge.size());
+    for (const auto& record : s.knowledge) { mix(record.town); for (int n : record.counts) mix(n); }
+    mix(s.plan.size());
+    for (const auto& entry : s.plan) { mix(entry.type); mix(entry.producer); mix(entry.object); }
     mix(s.known_towns.size()); for (int town : s.known_towns) mix(town);
   }
   mix(w.town_speed.size()); for (int speed : w.town_speed) mix(speed);
@@ -1755,7 +1765,8 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(uint32_t(s.selected_tactic));
     mix(s.selected_ids.size()); for (uint32_t id : s.selected_ids) mix(id);
     mix(uint32_t(s.money)); mix(s.queue.size());
-    for (const QueueItem& q : s.queue) { mix(uint32_t(q.type)); mix(uint32_t(q.remaining)); mix(uint32_t(q.total)); mix(uint32_t(q.town)); mix(uint32_t(q.paid));
+    mix(s.enemy_mask);
+    for (const QueueItem& q : s.queue) { mix(uint32_t(q.type)); mix(uint32_t(q.remaining)); mix(uint32_t(q.total)); mix(uint32_t(q.town)); mix(uint32_t(q.paid)); mix(q.plan_town); mix(q.plan_entry); mix(q.plan_generation);
       mix(q.started); mix(q.paused); mix(uint32_t(q.tile_x)); mix(uint32_t(q.tile_y)); mix(q.object); mix(uint32_t(q.work_rate)); }
     for (const auto& g : s.groups) { mix(g.size()); for (uint32_t id : g) mix(id); }
   }

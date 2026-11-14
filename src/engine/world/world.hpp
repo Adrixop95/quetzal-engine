@@ -104,6 +104,8 @@ struct QueueItem {
   int tile_x = -1, tile_y = -1; // explicit map placement; negative for automatic production
   uint32_t object = 0;         // live placeholder, created when placement is accepted
 
+  int plan_town = -1, plan_entry = -1; // owning AI request; training objects are created at completion
+  uint64_t plan_generation = 0;
   int work_rate = 0;          // frozen integer HP/work increment per active tick
 
   int refund() const {
@@ -114,6 +116,7 @@ struct QueueItem {
 
 // Per-side economy and command state.
 struct SideState {
+  uint32_t enemy_mask = 0; // V: preserve the all-enemies sentinel independently of listed opponents
   int money = 0;
   int32_t selected_tactic = -1; // deterministic command selection; separate from local UI selection
   std::vector<uint32_t> selected_ids; // command selection; local viewing side does not affect it
@@ -181,6 +184,7 @@ struct World {
     return side;
   }
   // Ids are 1-based indices into `objects` (objects are never erased, only marked `removed`).
+  bool enemy_all(int side) const { return side >= 0 && side < int(side_state.size()) && side_state[size_t(side)].enemy_mask == UINT32_MAX; }
   bool hostile(int a, int b) const { return a >= 0 && b >= 0 && a < 8 && b < 8 && a != b && relation[a][b] == kEnemy; }
   const Object* find(uint32_t id) const { return id >= 1 && id <= objects.size() ? &objects[id - 1] : nullptr; }
   Object* find_mut(uint32_t id) { return id >= 1 && id <= objects.size() ? &objects[id - 1] : nullptr; }
