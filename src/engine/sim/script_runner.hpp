@@ -17,6 +17,7 @@ class GameSim;
 
 struct TacticState {
   bool locked = false;
+  int attacked_side = -1;
   int path = -1, path_index = 0;
   bool cycled = false, inverted = false;
 };
@@ -50,6 +51,7 @@ class ScriptRunner {
   void tick(GameSim& sim, World& w);
   // Condition helpers are public for tests.
   bool eval(const World& w, const script::Condition& c) const;
+  void notify_attack(const World& w, const Object& target, int source_side);
   uint64_t state_hash() const;
   static bool supports(script::ActKind kind);
   size_t unsupported() const { return unsupported_; }

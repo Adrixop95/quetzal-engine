@@ -129,6 +129,131 @@ static void reinforcements(const RulesData& rules) {
   w.objects[3].teleport(tile_center_fixed(16), tile_center_fixed(8));
   CHECK(!issued(ai::step(w, rules, 0, s, {}), Pct::Attack));
 }
+
+static void threatened_plan(const RulesData& rules) {
+  auto w = world();
+  object(w, 0, 0, 0, 9, 8);
+  object(w, 0, 1, 1, 10, 8);
+  object(w, 0, 1, 1, 10, 9);
+  w.objects[0].last_hit_by = 4;
+  ai::TownState s; s.phase = 22; s.remaining = 3; s.last_alert = 5; s.spent = 20000;
+  s.plan = {{0}, {0}, {0}}; s.plan_generation = 7;
+  auto d = ai::step(w, rules, 0, s, {{0, 100, 0, 0, true}, {12, 100, 13, 8, true}});
+  // Production remains with the side allocator; the planner must not buy a farm
+  // or consume outstanding requests while waiting for the threatened recruits.
+  CHECK(d.next.phase == 22 && d.next.remaining == 3);
+  CHECK(!issued(d, Pct::Build));
+  CHECK(std::equal(d.next.plan.begin(), d.next.plan.end(), s.plan.begin(), s.plan.end(),
+      [](const auto& a, const auto& b) { return a.type == b.type && a.producer == b.producer && a.object == b.object; }));
+  CHECK(d.next.plan_generation == s.plan_generation);
+  CHECK(issued(d, Pct::Attack) && issued(d, Pct::Attack)->a == 4);
+  // A changed raider must not discard the remaining threatened production plan.
+  w.objects[0].last_hit_by = 5;
+  d = ai::step(w, rules, 0, d.next, {{0, 100, 0, 0, true}});
+  CHECK(d.next.phase == 22 && d.next.remaining == 3);
+  CHECK(std::equal(d.next.plan.begin(), d.next.plan.end(), s.plan.begin(), s.plan.end(),
+      [](const auto& a, const auto& b) { return a.type == b.type && a.producer == b.producer && a.object == b.object; }));
+  CHECK(d.next.plan_generation == s.plan_generation);
+  CHECK(!issued(d, Pct::Build));
+  s = d.next; s.remaining = 0;
+  d = ai::step(w, rules, 0, s, {{12, 100, 13, 8, true}});
+  CHECK(d.next.phase == 20 && d.next.plan.empty() && !issued(d, Pct::Build));
+  // Normal local-plan progress retains its economic detour.
+  s.phase = 14; s.remaining = 3;
+  d = ai::step(w, rules, 0, s, {{12, 100, 13, 8, true}});
+  CHECK(d.next.phase == 14 && d.next.remaining == 3);
+  CHECK(issued(d, Pct::Build) && issued(d, Pct::Build)->a == 12);
+  w.objects[3].alive = w.objects[4].alive = false;
+  s = d.next; s.phase = 16;
+  d = ai::step(w, rules, 0, s, {});
+  CHECK(d.next.phase == 0 && d.next.remaining == 0 && d.next.last_alert == 0);
+  s = {}; s.phase = 9; s.elapsed = 1; s.known_towns = {1};
+  w.mission.towns[1].type = 0;
+  CHECK(ai::step(w, rules, 0, s, {}).next.phase == 1);
+  w.relation[0][1] = kNeutral;
+  CHECK(ai::step(w, rules, 0, s, {}).next.phase == 1);
+  w.relation[0][1] = kFriend;
+  CHECK(ai::step(w, rules, 0, s, {}).next.phase == 11);
+  w.relation[0][1] = kEnemy;
+  w.mission.towns[0].type = 0; w.mission.towns[1].type = 1;
+  CHECK(ai::step(w, rules, 0, s, {}).next.phase == 11);
+}
+
+// Invented worlds exercise complete simulation orders, construction and replay.
+// Their timings and composition are G engine policies, not original measurements.
+static void army_scenarios(std::shared_ptr<const RulesData> rules) {
+  auto initial = world();
+  initial.resources.v.assign(1600, 128); // clear mineral deposits for ordinary building placement
+  initial.mission.sides[1].only_comp = false;
+  for (auto& o : initial.objects) { o.town_hall = true; o.hp = 1000000; }
+  for (int type = 0; type < 90; ++type)
+    if (type != 0 && type != 11) initial.mission.sides[0].disabled.push_back(type);
+  auto wave_initial = initial;
+  // The intelligence-driven planner sizes the wave from known enemy membership.
+  // Give it several defenders to counter while keeping the source army empty.
+  for (int x = 27; x <= 29; ++x) object(wave_initial, 0, 1, 1, x, 29, 7);
+  auto w = wave_initial;
+  GameSim wave(rules, Modifications::faithful()); wave.init(w);
+  int productions = 0, launches = 0, released = 0;
+  wave.set_ai_observer([&](uint64_t, const AiEvent& event) {
+    if (event.side != 0) return;
+    if (std::string(event.kind) == "production") ++productions;
+    if (std::string(event.kind) == "launch") { ++launches; released += event.composition[0]; }
+  });
+  while (!launches && wave.tick_count() < 4000) { w.begin_tick(); wave.tick(w); }
+  std::printf("Army scenario: %d productions, %d launches, %d released recruits\n", productions, launches, released);
+  CHECK(productions > 1 && launches == 1 && released > 1);
+  auto restored = wave_initial;
+  auto replay = GameSim::replay(restored, rules, wave.log(), wave.tick_count());
+  CHECK(replay->state_hash(restored) == wave.state_hash(w));
+
+  auto raid_initial = initial;
+  raid_initial.objects[0].tactic = 77;
+  object(raid_initial, 0, 0, 0, 11, 10);
+  object(raid_initial, 0, 1, 1, 9, 8);
+  TempDir raid_directory;
+  const auto raid_script = raid_directory.path() / "raid-notification.scn";
+  std::ofstream(raid_script) << "trigger(0) conditions side(0).tactic(77).attacked == 1 actions side(0).addMoney(7) trigger(0).disable end";
+  w = raid_initial;
+  GameSim raid(rules, Modifications::faithful());
+  CHECK(raid.attach_script(raid_script.string())); raid.init(w);
+  int defenders = 0;
+  raid.set_ai_observer([&](uint64_t, const AiEvent& event) {
+    if (event.side == 0 && std::string(event.kind) == "defence") defenders += event.composition[0];
+  });
+  Command attack; attack.type = Pct::Attack; attack.side = 1; attack.ids = {4}; attack.a = 1;
+  raid.submit(attack);
+  for (int tick = 0; tick < 100 && !defenders; ++tick) { w.begin_tick(); raid.tick(w); }
+  CHECK(w.objects[0].hp < 1000000 && defenders > 0);
+  CHECK(w.objects[2].order == uint8_t(Order::Attack) && w.objects[2].target == 4);
+  CHECK(!raid.script().trigger_enabled(0));
+  restored = raid_initial;
+  replay = GameSim::replay(restored, rules, raid.log(), raid.tick_count(), raid_script.string());
+  CHECK(replay->state_hash(restored) == raid.state_hash(w));
+
+  auto rebuild_initial = initial;
+  rebuild_initial.mission.sides[0].disabled.clear();
+  for (int type = 0; type < 90; ++type)
+    if (type != 0 && type != 11 && type != 14) rebuild_initial.mission.sides[0].disabled.push_back(type);
+  object(rebuild_initial, 14, 0, 0, 13, 8, 22);
+  TempDir directory;
+  const auto script = directory.path() / "destroy-building.scn";
+  std::ofstream(script) << "trigger(0) conditions localTime == 1 actions side(0).tactic(22).kill trigger(0).disable end";
+  w = rebuild_initial;
+  GameSim rebuild(rules, Modifications::faithful());
+  CHECK(rebuild.attach_script(script.string())); rebuild.init(w);
+  bool replaced = false;
+  for (int tick = 0; tick < 5000 && !replaced; ++tick) {
+    w.begin_tick(); rebuild.tick(w);
+    for (const auto& o : w.objects)
+      if (o.id != 3 && o.type == 14 && o.side == 0 && o.town == 0 && o.alive && o.progress == 1000) replaced = true;
+  }
+  CHECK(!w.objects[2].alive && replaced);
+  CHECK(ai::development(w, *rules, 0) == ai::development(rebuild_initial, *rules, 0));
+  restored = rebuild_initial;
+  replay = GameSim::replay(restored, rules, rebuild.log(), rebuild.tick_count(), script.string());
+  CHECK(replay->state_hash(restored) == rebuild.state_hash(w));
+}
 // Initialization must provide both planner state and town-command hall identities.
 static void neutral_computer(std::shared_ptr<const RulesData> rules) {
   auto initial = world();
@@ -527,6 +652,6 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
 }
 int main(int argc, char** argv) {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
-  if (argc > 1 && std::string(argv[1]) == "--smoke") smoke(rules); else { unit(*rules); reinforcements(*rules); initialization(rules); neutral_computer(rules); sparse_towns(rules); observation(rules); town_orders(rules); enemy_price_mask(rules); remembered_intelligence(*rules); plan_allocation(rules); scripted(rules); }
+  if (argc > 1 && std::string(argv[1]) == "--smoke") smoke(rules); else { unit(*rules); reinforcements(*rules); threatened_plan(*rules); army_scenarios(rules); initialization(rules); neutral_computer(rules); sparse_towns(rules); observation(rules); town_orders(rules); enemy_price_mask(rules); remembered_intelligence(*rules); plan_allocation(rules); scripted(rules); }
   return failures ? 1 : 0;
 }

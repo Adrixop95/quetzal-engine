@@ -151,6 +151,13 @@ static bool cmp(Cmp c, int64_t a, int64_t b) {
   return false;
 }
 
+void ScriptRunner::notify_attack(const World& w, const Object& target, int source_side) {
+  // V: attacked stores the notifying enemy's side, independently of its lifetime.
+  // G: positive hostile combat hits supply notifications until tactic scans are modeled.
+  if (target.tactic >= 0 && w.hostile(target.side, source_side))
+    tactics_[{target.side, target.tactic}].attacked_side = source_side;
+}
+
 bool ScriptRunner::eval(const World& w, const Condition& c) const {
   int side = resolve_side(w, c.side);
   auto in_rect = [&](const Object& o) {
@@ -208,11 +215,13 @@ bool ScriptRunner::eval(const World& w, const Condition& c) const {
     case CondKind::TacticIdle:
     case CondKind::TacticLocked: {
       std::vector<uint32_t> m = tactic_members(w, side, c.id);
+      // V: an absent tactic does not satisfy idle/attacked/locked comparisons.
+      if (m.empty() && c.kind != CondKind::TacticValid) return false;
       int64_t v = 0;
       if (c.kind == CondKind::TacticValid) v = m.empty() ? 0 : 1;
       else if (c.kind == CondKind::TacticAttacked) {
-        v = -1;
-        for (uint32_t id : m) if (w.find(id)->last_hit_by) { v = int64_t(w.find(id)->last_hit_by); break; }
+        const auto it = tactics_.find({side, c.id});
+        v = it == tactics_.end() ? -1 : it->second.attacked_side;
       } else if (c.kind == CondKind::TacticIdle) {
         v = 1;
         for (uint32_t id : m) if (w.find(id)->order != uint8_t(Order::Idle)) v = 0;
@@ -395,6 +404,7 @@ uint64_t ScriptRunner::state_hash() const {
   for (const auto& t : tactics_) {
     mix(uint64_t(t.first.first)); mix(uint64_t(t.first.second));
     mix(t.second.locked); mix(uint64_t(t.second.path + 1)); mix(uint64_t(t.second.path_index));
+    mix(uint32_t(t.second.attacked_side));
     mix(t.second.cycled); mix(t.second.inverted);
   }
   return h;
