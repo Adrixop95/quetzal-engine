@@ -89,11 +89,11 @@ weaker.
 | `0x09` | setPath | `0x17` | setEnemyTo |
 | `0x0a` | setCycledPath | `0x18` | giftToSide |
 | `0x0b` | setInvertedPath | `0x19` | printString |
-| `0x0c` | setCycledInvertedPath | `0x1a` | ? (parser also near setCycledPath) |
+| `0x0c` | setCycledInvertedPath | `0x1a` | tactic lock (V) |
 | `0x0d` | activate | `0x1b` | unlock |
-| `0x0e` | ? (no word matched in `0x4378a0`) | `0x1c` | addMoney |
+| `0x0e` | submarine go (V, `docs/script_codes_and_ai_purchase.md`) | `0x1c` | addMoney |
 | `0x0f` | enable | `0x1d` | takeMoney |
-| `0x10` | disable | `0x1e` | ? (second giftToSide variant) |
+| `0x10` | disable | `0x1e` | tactic kill (V; there is no second giftToSide) |
 | `0x1f`, `0x20` | disable, enable (second form, `0x438c50`) | `0x21` | cameraDeactivate |
 
 So V/G for the handlers above: 0x15 to 0x17 are the three relation commands
@@ -101,4 +101,4 @@ So V/G for the handlers above: 0x15 to 0x17 are the three relation commands
 set); 0x19 is printString; 0x1c and 0x1d are addMoney and takeMoney, so the counter at
 side struct `+0x698` is money (V by name, floored at zero); 0x21 destroys the camera
 object (cameraDeactivate).
-- Open: codes 0x0e, 0x1a, 0x1e (and which giftToSide variant maps to which of 0x18, 0x1e).
+- Resolved later from the disassembly: 0x0e, 0x1a and 0x1e, see `docs/script_codes_and_ai_purchase.md`.
