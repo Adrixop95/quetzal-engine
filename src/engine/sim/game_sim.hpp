@@ -116,6 +116,7 @@ class GameSim : public Simulation {
   void run_orders(World& w);
   void transport_tick(World& w);
   void unload(World& w, Object& vessel, int tx, int ty);
+  void request_unload(World& w, Object& vessel, int tx, int ty);
   void follow_tactics(World& w);
   void advance_effects(World& w);
   void fire(World& w, const Object& source, Object& target, int damage);

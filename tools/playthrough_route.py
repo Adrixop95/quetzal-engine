@@ -105,7 +105,8 @@ class Detectors:
                         self.add('order-ignored', tick, obj, 'Board command produced no boarding or embarkation', tick)
                 elif kind == 0x55:
                     old = before.get(oid)
-                    if obj['type'] not in (84, 88) or (old and old['cargo'] and obj['cargo'] == old['cargo']):
+                    if obj['type'] not in (84, 88) or (old and old['cargo'] and obj['cargo'] == old['cargo']
+                                                     and not obj.get('unload_pending', False)):
                         self.add('order-ignored', tick, obj, 'Unload released no passengers; invalid selection, blocked shore or target out of range', tick)
                 elif kind == 0x50:
                     self.goals.pop(oid, None)

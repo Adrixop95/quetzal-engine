@@ -302,10 +302,24 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
         else { wx = cam.to_world_x(float(in.mx)); wy = cam.to_world_y(float(in.my)); }
         const Object* t = in_world ? pick_object(w, wx, wy, alpha, 24.f / cam.zoom + 8) : nullptr;
         Command c;
+        // Split vessels out before object picking can turn a landing click into Attack.
+        const int tx = int(wx) / kTilePx, ty = int(wy) / kTilePx;
+        const bool land = tx >= 0 && ty >= 0 && tx < w.passability.w && ty < w.passability.h &&
+                          w.passability.at(tx, ty) != 0;
+        if (land) {
+          Command landing; landing.type = Pct::Unload; landing.side = uint8_t(w.local_side);
+          landing.a = int(wx); landing.b = int(wy);
+          for (auto id : w.selection.ids) if (const auto* o = w.find(id); o && is_transport(o->type)) landing.ids.push_back(id);
+          if (!landing.ids.empty()) sim_->submit(std::move(landing));
+        }
         if (t && t->side == w.local_side && is_transport(t->type)) { c.type = Pct::Board; c.a = int(t->id); }
         else if (t && t->side != w.local_side && t->alive && !t->removed && t->type >= 0) { c.type = Pct::Attack; c.a = int(t->id); }
         else { c.type = Pct::Move; c.a = int(wx); c.b = int(wy); }
-        issue_to_selection(w, c);
+        if (land) {
+          c.side = uint8_t(w.local_side);
+          for (auto id : w.selection.ids) if (const auto* o = w.find(id); o && !is_transport(o->type)) c.ids.push_back(id);
+          if (!c.ids.empty()) sim_->submit(std::move(c));
+        } else issue_to_selection(w, c);
       }
     }
     right_moved_ = false;

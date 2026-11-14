@@ -27,7 +27,7 @@ enum class Pct : uint8_t {
 // Field use per type:
 //   Board: ids = own land passengers, a = own vessel ID.
 //   Unload: ids = vessels, a,b = landing pixels; c=1 chooses nearby land.
-//   Move to land with a vessel also unloads within three tiles.
+//   Move to land with a loaded vessel sails to reachable shore and unloads.
 //   Move/AttackMove: ids, a,b = world px.   Attack: ids, a = target object id.   Stop: ids.
 //   AttackMode: a = 0 direct / 1 defensive / 2 aggressive / 3 balanced; ids = owned mobile members.
 //     Also updates living mobile members of their nonnegative tactics on the same side.

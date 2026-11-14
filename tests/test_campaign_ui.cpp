@@ -311,7 +311,7 @@ int main(int argc, char** argv) {
       "key Escape\nexpect tick == 0\nclick 400 452\nclick 400 310\nexpect tick == 0\nkey Escape\nclick 400 200\nexpect tick == 0\n"
       "key M\nwait 2\nexpect tick == 0\nkey Escape\n"
       "click 400 238\nexpect tick == 0\nclick 590 270\nwait 2\nexpect tick == 0\n"
-      "click 400 410\nclick 400 160\nexpect tick == 1\nwait 10\n"
+      "click 400 410\nclick 400 160\nexpect tick == 2\nwait 10\n"
       "expect outcome == 1\nexpect tick == 6\nkey M\nwait 2\nexpect tick == 6\nquit\n");
   Options options; options.modifications_file = (root / "mission-modifications.ini").string(); options.game_dir = root.string(); options.mission = "1";
   options.rules_dir = AZTEC_TEST_RULES_DIR; options.menu_session = true;

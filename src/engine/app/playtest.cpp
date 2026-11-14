@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -240,6 +241,7 @@ void PlaytestScript::observe(const World& w, const GameSim* sim) {
         << ",\"alive\":" << (o.alive && (!o.removed || o.carrier) ? "true" : "false") << ",\"position\":[" << o.cur_x / 256 << ',' << o.cur_y / 256
         << "],\"order\":" << int(o.order) << ",\"destination\":[" << o.dest_x << ',' << o.dest_y << "],\"target\":" << o.target
         << ",\"carrier\":" << o.carrier << ",\"boarding\":" << o.boarding << ",\"progress\":" << o.progress
+        << ",\"unload_pending\":" << (o.unload_pending ? "true" : "false")
         << ",\"mobile\":" << (sim->rules().type(o.type).mobile ? "true" : "false")
         << ",\"path_failures\":" << sim->path_failures(o) << ",\"cargo\":[";
     for (size_t i = 0; i < o.cargo.size(); ++i) observations_ << (i ? "," : "") << o.cargo[i];
@@ -278,6 +280,8 @@ void PlaytestScript::finish(const World& w) {
 
 bool PlaytestScript::step(Input& in, World& w, GameSim* sim, PlaytestRequest& req) {
   if (limit_reached(w)) { req.quit = true; return false; }
+  const bool mouse_release = release_left_ || release_right_ || release_middle_;
+  // Deliver the release through the UI before consuming a following run/expect.
   // frame after a click / key press: release
   if (release_left_) { in.buttons[SDL_BUTTON_LEFT] = false; in.released[SDL_BUTTON_LEFT] = true; release_left_ = false; }
   if (release_right_) { in.buttons[SDL_BUTTON_RIGHT] = false; in.released[SDL_BUTTON_RIGHT] = true; release_right_ = false; }
@@ -285,6 +289,11 @@ bool PlaytestScript::step(Input& in, World& w, GameSim* sim, PlaytestRequest& re
   for (SDL_Scancode key : release_keys_) in.key_down[key] = false;
   release_keys_.clear();
   update_modifiers(in);
+  if (mouse_release) { settle_mouse_ = true; return true; }
+  if (settle_mouse_) {
+    settle_mouse_ = false;
+    if (sim && sim->has_pending_commands()) return true;
+  }
   if (until_tick_ && w.tick < until_tick_ && w.outcome == kRunning) return true;
   until_tick_ = 0;
   if (drag_phase_ > 0) {
@@ -382,6 +391,25 @@ bool PlaytestScript::step(Input& in, World& w, GameSim* sim, PlaytestRequest& re
       std::printf("tick %llu hash %016llx money %d outcome %d units %d/%d selection %zu\n", (unsigned long long)w.tick,
                   sim ? (unsigned long long)sim->state_hash(w) : 0ull, w.side_state.empty() ? 0 : w.side_state[size_t(w.local_side)].money,
                   w.outcome, units[0], units[1], w.selection.ids.size());
+      continue;
+    }
+    if (l.cmd == "dump") {
+      int side = -1, type = -1;
+      auto filter = [](const std::string& arg, int& value) {
+        auto [end, ec] = std::from_chars(arg.data(), arg.data() + arg.size(), value);
+        return ec == std::errc{} && end == arg.data() + arg.size() && value >= -1;
+      };
+      if (l.args.size() > 2 || (!l.args.empty() && !filter(l.args[0], side)) ||
+          (l.args.size() > 1 && !filter(l.args[1], type))) {
+        std::fprintf(stderr, "playtest line %d: dump requires optional integer side/type filters (-1 for all)\n", l.src_line);
+        failures_++; continue;
+      }
+      for (const Object& o : w.objects) {
+        if (!o.alive || (o.removed && !o.carrier) || (side >= 0 && side != o.side) || (type >= 0 && type != o.type)) continue;
+        std::printf("obj %u type %d side %d tile %d,%d hp %d cargo %zu carrier %u\n",
+                    o.id, o.type, o.side, int(o.cur_x >> 8) / kTilePx, int(o.cur_y >> 8) / kTilePx,
+                    o.hp, o.cargo.size(), o.carrier);
+      }
       continue;
     }
     if (l.cmd == "expect") { if (!evaluate(w, sim, l)) failures_++; continue; }

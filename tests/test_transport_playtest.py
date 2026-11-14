@@ -31,4 +31,19 @@ with tempfile.TemporaryDirectory(prefix="aztec-transport-") as directory:
         capture_output=True, text=True, timeout=45)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "FAIL" not in result.stdout, result.stdout
+    rows = [line for line in result.stdout.splitlines() if line.startswith("obj ")]
+    assert len(rows) == 3, result.stdout
+    assert "type 84 side 0" in rows[0] and "cargo 1 carrier 0" in rows[0], rows
+    assert "type 0 side 0" in rows[1] and "cargo 0 carrier 2" in rows[1], rows
+    assert "type 84 side 0" in rows[2] and "cargo 0 carrier 0" in rows[2], rows
     print(result.stdout)
+
+    invalid = root / "invalid.txt"
+    invalid.write_text("dump invalid\ndump 0 invalid\ndump 0 0 0\nquit\n", encoding="ascii")
+    command = list(result.args)
+    command[command.index("--script") + 1] = str(invalid)
+    rejected = subprocess.run(command, env=dict(os.environ, SDL_VIDEODRIVER="dummy",
+                              SDL_AUDIODRIVER="dummy", AZTEC_USER_DIR=str(root / "invalid-profile")),
+                              capture_output=True, text=True, timeout=45)
+    assert rejected.returncode == 3, rejected.stdout + rejected.stderr
+    assert rejected.stderr.count("dump requires") == 3, rejected.stderr

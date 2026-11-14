@@ -62,6 +62,8 @@ struct Object {
   uint32_t carrier = 0, boarding = 0;
   bool vessel_enabled = true, vessel_route = false, vessel_arrived = false;
   int landing_x = 0, landing_y = 0;
+  bool unload_pending = false;
+  int unload_x = 0, unload_y = 0;
   uint32_t target = 0;         // object id for attack orders (0 = none)
   int32_t dest_x = 0, dest_y = 0;  // order destination, world px
   int32_t cooldown = 0;        // ticks until the next shot

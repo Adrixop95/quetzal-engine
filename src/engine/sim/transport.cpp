@@ -1,6 +1,7 @@
 // Independent transport policies. Evidence and fallback choices: docs/transport_rules.md.
 #include "engine/sim/game_sim.hpp"
 #include <algorithm>
+#include <climits>
 #include <tuple>
 
 namespace aztec::engine {
@@ -25,14 +26,23 @@ bool occupied(const World& w, const Object& passenger, int x, int y, const Rules
 
 void GameSim::unload(World& w, Object& vessel, int tx, int ty) {
   int bx = tile(vessel.cur_x), by = tile(vessel.cur_y);
-  if (std::abs(tx - bx) > 3 || std::abs(ty - by) > 3) return;
+  // Expand onto connected shore, including safe tiles behind a narrow edge.
+  std::vector<path::Cell> shore;
+  for (int y = by - 1; y <= by + 1; ++y) for (int x = bx - 1; x <= bx + 1; ++x)
+    if (!nav_.blocked(x, y, path::MoveClass::Small)) shore.push_back({x,y});
+  if (shore.empty()) {
+    if (!vessel.cargo.empty()) w.messages.push_back({"Cannot unload: no adjacent land", 72});
+    return;
+  }
+  path::FlowField land;
+  land.build(nav_, path::MoveClass::Small, shore.data(), int(shore.size()));
   while (!vessel.cargo.empty()) {
     auto* passenger = w.find_mut(vessel.cargo.front());
     if (!passenger || !passenger->alive) { vessel.cargo.erase(vessel.cargo.begin()); continue; }
     const auto& r = rules_->type(passenger->type);
     std::vector<std::tuple<int, int, int>> candidates;
-    for (int y = by - 2; y <= by + 2; ++y) for (int x = bx - 2; x <= bx + 2; ++x) {
-      if (nav_.blocked(x, y, land_class(r))) continue;
+    for (int y = by - 6; y <= by + 6; ++y) for (int x = bx - 6; x <= bx + 6; ++x) {
+      if (nav_.blocked(x, y, land_class(r)) || !land.reachable(x,y)) continue;
       if (nav_.disc_hits({tile_center_fixed(x), tile_center_fixed(y)}, r.radius_px * 256, land_class(r))) continue;
       if (!occupied(w, *passenger, x, y, *rules_)) candidates.emplace_back((x-tx)*(x-tx)+(y-ty)*(y-ty), y, x);
     }
@@ -49,6 +59,38 @@ void GameSim::unload(World& w, Object& vessel, int tx, int ty) {
     }
     vessel.cargo.erase(vessel.cargo.begin());
   }
+  if (!vessel.cargo.empty()) w.messages.push_back({"Cannot unload all passengers: shore is blocked", 72});
+}
+
+void GameSim::request_unload(World& w, Object& vessel, int tx, int ty) {
+  if (vessel.cargo.empty()) { w.messages.push_back({"Ferry has no passengers", 72}); return; }
+  if (!nav_.in_bounds(tx,ty) || nav_.terrain(tx,ty) == 0 || vessel.mover < 0) {
+    w.messages.push_back({"Cannot unload: select reachable land", 72}); return;
+  }
+  path::Cell start{tile(vessel.cur_x),tile(vessel.cur_y)}, target{tx,ty};
+  path::FlowField water, land;
+  water.build(nav_, path::MoveClass::Water, &start, 1);
+  land.build(nav_, path::MoveClass::Small, &target, 1);
+  std::tuple<int, uint32_t, int, int> best{INT_MAX, UINT32_MAX, 0, 0};
+  bool found = false;
+  for (int y=0; y<nav_.height(); ++y) for (int x=0; x<nav_.width(); ++x) {
+    if (!water.reachable(x,y) || nav_.disc_hits({tile_center_fixed(x),tile_center_fixed(y)},
+        rules_->type(vessel.type).radius_px * 256, path::MoveClass::Water)) continue;
+    bool adjacent = false;
+    for (int dy=-1; dy<=1; ++dy) for (int dx=-1; dx<=1; ++dx)
+      if (land.reachable(x+dx,y+dy)) adjacent = true;
+    if (!adjacent) continue;
+    auto score = std::tuple{(x-tx)*(x-tx)+(y-ty)*(y-ty),water.cost(x,y),y,x};
+    if (!found || score < best) { found = true; best = score; }
+  }
+  if (!found) { w.messages.push_back({"Cannot unload: no reachable shore", 72}); return; }
+  const auto [distance,cost,y,x] = best; (void)distance; (void)cost;
+  script_stop(w,{vessel.id});
+  vessel.unload_pending = true; vessel.unload_x = tx; vessel.unload_y = ty;
+  vessel.dest_x = x*kTilePx+kTilePx/2; vessel.dest_y = y*kTilePx+kTilePx/2;
+  vessel.order = uint8_t(Order::Move);
+  uint32_t agent = uint32_t(vessel.mover);
+  mover_->order_move(&agent,1,{tile_center_fixed(x),tile_center_fixed(y)});
 }
 
 bool GameSim::activate_vessel(World& w, int scenario, ObjectSource source, bool enabled) {
@@ -89,6 +131,18 @@ void GameSim::transport_tick(World& w) {
       }
       unload(w, boat, boat.landing_x, boat.landing_y);
     }
+  }
+  for (auto& boat : w.objects) {
+    if (!boat.alive || boat.removed || !boat.unload_pending || boat.mover < 0) continue;
+    const int64_t dx = int64_t(boat.cur_x) - boat.dest_x * 256;
+    const int64_t dy = int64_t(boat.cur_y) - boat.dest_y * 256;
+    const bool arrived = dx*dx+dy*dy <= int64_t(12*256)*(12*256);
+    const auto& agent = mover_->agents()[size_t(boat.mover)];
+    if (!arrived && agent.state == path::AgentState::Moving) continue;
+    const int tx = boat.unload_x, ty = boat.unload_y;
+    script_stop(w,{boat.id});
+    if (arrived) unload(w,boat,tx,ty);
+    else w.messages.push_back({"Cannot unload: sailing route is blocked",72});
   }
   // Object IDs define simultaneous boarding order, independent of selection order.
   for (auto& o : w.objects) {

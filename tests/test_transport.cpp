@@ -70,9 +70,9 @@ static void occupied_shore() {
   World w=river(); GameSim sim(rules()); sim.init(w);
   command(sim,Pct::Board,{2},1); ticks(sim,w,240); CHECK(w.objects[0].cargo.size()==1);
   // Deliberate blockers have no agents: the unload occupancy query must reject them itself.
-  for (int y=5;y<=9;++y) for (int x=3;x<=4;++x) add(w,0,x,y);
+  for (int y=1;y<=13;++y) for (int x=0;x<=4;++x) add(w,0,x,y);
   command(sim,Pct::Unload,{1},4*48+24,7*48+24); ticks(sim,w,1);
-  CHECK(w.objects[0].cargo.size()==1 && w.objects[1].removed);
+  CHECK(w.objects[0].cargo.size()==1 && w.objects[1].removed); CHECK(!w.messages.empty());
   for (size_t i=2;i<w.objects.size();++i) w.objects[i].removed=true;
   command(sim,Pct::Unload,{1},4*48+24,7*48+24); ticks(sim,w,1);
   CHECK(w.objects[0].cargo.empty() && !w.objects[1].removed);
@@ -135,7 +135,77 @@ static void unload_button() {
   CHECK(!sim.pending_commands().empty()); CHECK(sim.pending_commands().back().type==Pct::Unload);
   ticks(sim,w,1); CHECK(w.objects[0].cargo.empty());
 }
+static void landing_requests() {
+  World w=river(2), fresh=w; auto r=rules(); GameSim sim(r); sim.init(w);
+  command(sim,Pct::Board,{2,3},1); ticks(sim,w,240);
+  CHECK(w.objects[0].cargo.size()==2);
+  command(sim,Pct::Move,{1},14*48+24,12*48+24); ticks(sim,w,1);
+  CHECK(w.objects[0].unload_pending && w.objects[0].cargo.size()==2);
+  auto hash=sim.state_hash(w); w.objects[0].unload_x++; CHECK(sim.state_hash(w)!=hash); w.objects[0].unload_x--;
+  World pending_world=fresh; auto pending=GameSim::replay(pending_world,r,sim.log(),sim.tick_count());
+  CHECK(pending_world.objects[0].unload_pending && pending->state_hash(pending_world)==sim.state_hash(w));
+  ticks(sim,w,240); CHECK(w.objects[0].cargo.empty()); CHECK((w.objects[0].cur_x>>8)/48==10);
+  CHECK((w.objects[1].cur_x>>8)/48>=11 && (w.objects[2].cur_x>>8)/48>=11);
+  auto replay=GameSim::replay(fresh,r,sim.log(),sim.tick_count()); CHECK(replay->state_hash(fresh)==sim.state_hash(w));
+  World cancel=river(); GameSim cs(r); cs.init(cancel);
+  command(cs,Pct::Board,{2},1); ticks(cs,cancel,240);
+  command(cs,Pct::Move,{1},14*48+24,12*48+24); ticks(cs,cancel,1);
+  command(cs,Pct::Stop,{1}); ticks(cs,cancel,240);
+  CHECK(!cancel.objects[0].unload_pending && cancel.objects[0].cargo.size()==1);
+  // No-water connection: rejected requests preserve an existing sailing order.
+  World isolated=river();
+  for (int y=0;y<16;++y) isolated.passability.v[size_t(y)*16+8]=2;
+  GameSim is(r); is.init(isolated);
+  command(is,Pct::Board,{2},1); ticks(is,isolated,240);
+  command(is,Pct::Move,{1},6*48+24,12*48+24); ticks(is,isolated,1);
+  auto dest=isolated.objects[0].dest_x;
+  command(is,Pct::Move,{1},14*48+24,12*48+24); ticks(is,isolated,1);
+  CHECK(!isolated.messages.empty()); CHECK(isolated.objects[0].dest_x==dest);
+}
+static void landing_over_enemy() {
+  World w=river(); auto r=rules(); GameSim sim(r); sim.init(w);
+  command(sim,Pct::Board,{2},1); ticks(sim,w,240);
+  add(w,0,12,7,1); // Picking this enemy must not consume the vessel landing click.
+  w.selection.ids={1}; CommandsUi ui(&sim); Camera cam; Minimap mm;
+  Input in; in.focused=true; in.mx=12*48+24; in.my=7*48+24;
+  in.buttons[SDL_BUTTON_RIGHT]=true; in.pressed[SDL_BUTTON_RIGHT]=true;
+  ui.update(in,w,cam,1,mm,true,SDL_Rect{});
+  in.buttons[SDL_BUTTON_RIGHT]=false; in.pressed[SDL_BUTTON_RIGHT]=false; in.released[SDL_BUTTON_RIGHT]=true;
+  ui.update(in,w,cam,1,mm,true,SDL_Rect{});
+  CHECK(sim.pending_commands().size()==1 && sim.pending_commands()[0].type==Pct::Unload);
+  ticks(sim,w,240); CHECK(w.objects[0].cargo.empty());
+  CHECK(!w.objects[1].carrier && (w.objects[1].cur_x>>8)/48>=11);
+  World building=river(); add(building,14,12,7,1); GameSim bs(r); bs.init(building);
+  command(bs,Pct::Board,{2},1); ticks(bs,building,240);
+  command(bs,Pct::Move,{1},12*48+24,7*48+24); ticks(bs,building,240);
+  CHECK(building.objects[0].cargo.empty() && !building.objects[1].carrier);
+}
+static void bizon_pursuit() {
+  World w; w.terrain.w=64; w.terrain.h=16; w.terrain.cells.resize(64*16);
+  w.passability.w=64; w.passability.h=16; w.passability.v.assign(64*16,2); w.side_state.resize(8);
+  add(w,32,2,7,1); add(w,0,40,7); w.objects[1].hp=6000;
+  GameSim sim(rules()); sim.init(w);
+  Command attack; attack.type=Pct::Attack; attack.side=1; attack.ids={1}; attack.a=2; sim.submit(attack);
+  ticks(sim,w,1); CHECK(w.objects[0].target==0 && w.objects[0].cur_x==tile_center_fixed(2)); // beyond the V Marine pursuit limit
+  sim.teleport(w,2,20*48+24,7*48+24); sim.submit(attack);
+  ticks(sim,w,1); CHECK(w.objects[0].target==2); // a reachable land enemy is still pursued
+}
+static void ferry_combat() {
+  World w=river(); add(w,32,4,7,1); w.relation[0][1]=w.relation[1][0]=kFriend;
+  auto r=rules(); GameSim sim(r); sim.init(w);
+  command(sim,Pct::Board,{2},1); ticks(sim,w,240);
+  CHECK(w.objects[0].alive && w.objects[0].cargo.size()==1);
+  w.relation[0][1]=w.relation[1][0]=kEnemy; ticks(sim,w,120);
+  CHECK(w.objects[0].alive && w.objects[0].cargo.size()==1);
+  CHECK(w.objects[2].target!=1); // G: automatic acquisition excludes the ferry only.
+  Command attack; attack.type=Pct::Attack; attack.side=1; attack.ids={3}; attack.a=1; sim.submit(attack);
+  ticks(sim,w,120); CHECK(!w.objects[0].alive && !w.objects[1].alive);
+  World johnka=river(0); add(johnka,88,6,7); add(johnka,32,4,7,1);
+  johnka.objects[1].hp=johnka.objects[2].hp=100000;
+  GameSim js(r); js.init(johnka); ticks(js,johnka,8);
+  CHECK(johnka.objects[2].target==2); CHECK(johnka.objects[0].alive);
+}
 int main(int argc,char** argv) {
   if (argc==3 && std::string(argv[1])=="--campaign") { campaign_sites(argv[2]); return 0; }
-  crossing(); limits(); occupied_shore(); eligibility(); script_arrivals(); unload_button(); std::puts("Transport scenarios passed");
+  landing_requests(); landing_over_enemy(); bizon_pursuit(); ferry_combat(); crossing(); limits(); occupied_shore(); eligibility(); script_arrivals(); unload_button(); std::puts("Transport scenarios passed");
 }
