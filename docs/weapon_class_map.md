@@ -17,7 +17,7 @@ routine `0x43ea30`.
 | `0x495130` | `0x46dfe0` | `0x46e0d0` | 13 (Hypno, hypno tower) | V: direct damage through `+0x124`, optional damage-over-time helper only when the record carries a duration (not for Hypno); no side change |
 | `0x494f98` | `0x46ec90` | `0x46ed00` | 10 (Jaguar) | V: 1800 base, 1125 against non-organic or structure, 1.25 for two category flags, zero against air; the effect deals the damage and then calls the attacker's virtual `+0x104` with damage divided by 3 (likely a heal or recoil, O) |
 | `0x495020` | `0x46ead0` | `0x46eb10` | 6 (Snowman) | V: 18000, 9000 against non-organic, zero against air; the effect deals the damage and then applies a status through virtual `+0x9c` with value `0x12` to every non-allied, non-airborne object of the two Marine categories within about 96 px of the target (an area freeze or slow, status meaning O) |
-| `0x4950a8` | `0x46e580` | `0x46e8b0` | 4 and 5 (Knight, Ninja) | formula V (3000, 1500, reload 19, range 72); effect O |
+| `0x4950a8` | `0x46e580` | `0x46e8b0` | 4 and 5 (Knight, Ninja) | formula V (3000, 1500, reload 19, range 72); effect V (sweep, see below) |
 | `0x494430` | `0x44c8d0` | `0x44ca60` | 7 (Demolisher and the distance based weapons ids 3, 17, 18, 25, 29, 37, 38, 41, 42, 49, 53) | O: "unread (distance based)" |
 | `0x48f63c` | base | base | arrow family (class 1) and projectile objects | formula V; secondary weapon rec[12] O |
 
@@ -184,3 +184,22 @@ The unit rule behind it: the weapon getter drops any weapon whose damage against
 is not positive, so a zero airborne multiplier means the unit does not attack air targets at
 all. The clone must reproduce this list (it determines which armies can defend against the
 Eagle, Deltaplan, Paraplan and Zeppelin waves of the missions that use them).
+
+## Knight and Ninja sweep effect (`0x46e8b0`)
+
+Evidence date: 2026-11-14. **V** = read from the decompilation (function address only).
+
+- The effect asks the owner's object pool (virtual `+0x100` on the owner's world) for the
+  facing angle (0x00 to 0xff scale) and runs three sector queries through `0x470440` with
+  the sector argument `0x60` (a width byte).
+- Query 1 is centred on the facing angle with radius `0x14` (20 px). Every victim found
+  receives the full weapon damage, taken from the weapon virtual `+0x5c` (3000, or 1500
+  against non-organic and structures) through the victim virtual `+0x124`.
+- Queries 2 and 3 are centred on the facing angle minus `0x19` and plus `0x19` (about
+  35 degrees to each side) with radius `0x1e` (30 px). Victims there receive half of the
+  weapon damage (integer division by 2).
+- G: a victim that sits in both the frontal sector and a side sector may be hit more than
+  once, because the three result lists are walked independently; a live test would settle
+  it.
+- The fire helper `0x42a010` is not in the decompilation corpus (no function at that
+  address was exported); it is still open and needs a targeted Ghidra pass.
