@@ -8,6 +8,7 @@
 #include "engine/render/png.hpp"
 #include "engine/ui/campaign.hpp"
 #include "engine/ui/frontend.hpp"
+#include "engine/ui/frontend_layout.hpp"
 #include "engine/app/engine.hpp"
 #include "engine/app/menu_script.hpp"
 #include "engine/sim/savegame.hpp"
@@ -110,6 +111,20 @@ int main(int argc, char** argv) {
   mod_menu.update(mod_click, mod_options, 800, 600, 1);
   CHECK(!mod_menu.open);
   GameData data; std::string error; CHECK(data.open(root.string(), error));
+  CHECK(installed_credits(data).empty());
+  // Invented PE data: text may be read from data sections, never executable sections.
+  std::string pe(1024, '\0');
+  auto put16 = [&](size_t offset, uint16_t value) { aztec::write_le<uint16_t>(reinterpret_cast<uint8_t*>(pe.data()) + offset, value); };
+  auto put32 = [&](size_t offset, uint32_t value) { aztec::write_le<uint32_t>(reinterpret_cast<uint8_t*>(pe.data()) + offset, value); };
+  pe[0] = 'M'; pe[1] = 'Z'; put32(60, 128); put32(128, 0x4550); put16(134, 1);
+  put32(164, 0xa9760); put32(168, 512); put32(172, 512);
+  const auto invented_credits = std::string(12, '\n') + "Invented credit text";
+  pe.replace(512, invented_credits.size(), invented_credits);
+  write(root / "Aztec.exe", pe); CHECK(installed_credits(data) == invented_credits);
+  put32(188, 0x20000000); write(root / "Aztec.exe", pe); CHECK(installed_credits(data).empty());
+  put32(188, 0); put32(168, 2048); write(root / "Aztec.exe", pe); CHECK(installed_credits(data).empty());
+  write(root / "Aztec.exe", "MZ"); CHECK(installed_credits(data).empty());
+  std::filesystem::remove(root / "Aztec.exe");
   CHECK(campaign_number("MISSION_15.MP") == 15);
   CHECK(campaign_number("/private/Maps/mission_4.mp") == 4);
   CHECK(campaign_number("1") == 1);
@@ -207,6 +222,15 @@ int main(int argc, char** argv) {
     SDL_Renderer* renderer = SDL_CreateSoftwareRenderer(surface); CHECK(renderer);
     {
       Font font; CHECK(font.init(renderer));
+      // Independent expected coordinates from the reference constructor, projected into this buffer.
+      const FrontendLayout layout(w, h);
+      const auto confirm_rect = SaveLoadMenu::row(9, w, h, sc);
+      const auto expected_confirm = layout.physical({150, 328, 72, 60});
+      CHECK(confirm_rect.x == expected_confirm.x && confirm_rect.y == expected_confirm.y &&
+            confirm_rect.w == expected_confirm.w && confirm_rect.h == expected_confirm.h);
+      CHECK(SaveLoadMenu::row(8, w, h, sc).y < confirm_rect.y);
+      CHECK(SaveLoadMenu::slot_path(8).find("engine_slot9.azs") != std::string::npos);
+      CHECK(SaveLoadMenu::slot_path(9).empty());
       SaveLoadMenu slots; slots.show(true);
       Input slot_click; auto slot_rect = SaveLoadMenu::row(1, w, h, sc);
       slot_click.mx = slot_rect.x + 1; slot_click.my = slot_rect.y + 1; slot_click.pressed[SDL_BUTTON_LEFT] = true;
@@ -295,9 +319,9 @@ int main(int argc, char** argv) {
   options.window.width = 800; options.window.height = 600; options.window.software = true; options.window.vsync = false;
   CHECK(run_engine(options) == 0);
   write(root / "save-controls.txt",
-      "key Escape\nexpect tick == 0\nclick 400 270\nclick 400 250\nkey Return\nexpect tick == 0\n"
+      "key Escape\nexpect tick == 0\nclick 400 270\nclick 400 178\nkey Return\nexpect tick == 0\n"
       "key Escape\nexpect tick == 0\nkey Return\nkey Return\nexpect tick == 0\n"
-      "key Escape\nclick 400 310\nclick 400 250\nkey Return\nkey Return\nexpect tick == 0\nquit\n");
+      "key Escape\nclick 400 310\nclick 400 178\nkey Return\nkey Return\nexpect tick == 0\nquit\n");
   options.script = (root / "save-controls.txt").string();
   options.ui_trace = (root / "save-ui.jsonl").string();
   CHECK(run_engine(options) == 0);
@@ -318,8 +342,8 @@ int main(int argc, char** argv) {
   };
   const auto capture = (root / "menu.png").string();
   write(options.menu_script,
-      "0 shot " + capture + "\n1 move 310 250\n1 down\n2 up\n3 keydown Escape\n4 keyup Escape\n"
-      "5 move 310 360\n5 down\n6 up\n7 move 310 400\n8 down\n9 up\n"
+      "0 shot " + capture + "\n1 move 160 540\n1 down\n2 up\n3 move 0 0\n4 keyup Escape\n"
+      "5 move 400 58\n5 down\n6 up\n7 move 310 400\n8 down\n9 up\n"
       "10 keydown Escape\n11 keyup Escape\n12 keydown Escape\n13 keyup Escape\n14 close\n");
   CHECK(run_engine(options) == 0);
   const auto first_trace = read(options.menu_trace), first_capture = read(capture);
@@ -330,21 +354,21 @@ int main(int argc, char** argv) {
   CHECK(first_trace.find("\"quit\":true") != std::string::npos);
   CHECK(run_engine(options) == 0);
   CHECK(read(options.menu_trace) == first_trace && read(capture) == first_capture);
-  write(options.menu_script, "0 move 310 250\n0 down\n1 up\n2 move 100 110\n2 down\n3 up\n4 keydown Return\n");
+  write(options.menu_script, "0 move 160 540\n0 down\n1 up\n2 move 160 260\n2 down\n3 up\n4 keydown Return\n5 keyup Return\n6 keydown Return\n");
   CHECK(run_engine(options) == 0); // choosing a mission ends automation before simulation
   CHECK(read(options.menu_trace).find("\"mission\":\"mission_1\"") != std::string::npos);
   // Locked mission 2 must remain on the campaign screen until mission 1 is won.
-  write(options.menu_script, "0 move 310 250\n0 down\n1 up\n2 move 100 160\n2 down\n3 up\n4 close\n");
+  write(options.menu_script, "0 move 160 540\n0 down\n1 up\n2 move 160 280\n2 down\n3 up\n4 keydown Return\n5 close\n");
   CHECK(run_engine(options) == 0);
-  CHECK(read(options.menu_trace).find("[Locked]") != std::string::npos);
+  CHECK(read(options.menu_trace).find("\"enabled\":false") != std::string::npos);
   CHECK(read(options.menu_trace).find("\"next_screen\":\"briefing\"") == std::string::npos);
   CampaignProgress unlock; unlock.record("mission_1", true);
   CHECK(unlock.save(user_file("Saves/engine_campaign.txt")));
   CHECK(run_engine(options) == 0);
   CHECK(read(options.menu_trace).find("\"next_screen\":\"briefing\"") != std::string::npos);
   // Main-menu loading uses the same slot selection and explicit confirmation.
-  write(options.menu_script, "0 move 310 470\n0 down\n1 up\n2 move 310 250\n2 down\n3 up\n"
-      "4 keydown Return\n5 keyup Return\n6 keydown Return\n");
+  write(options.menu_script, "0 move 160 540\n0 down\n1 up\n2 move 160 58\n2 down\n3 up\n"
+      "4 move 300 178\n4 down\n5 up\n6 keydown Return\n7 keyup Return\n8 keydown Return\n");
   CHECK(run_engine(options) == 0);
   CHECK(read(options.menu_trace).find("load-confirmation") != std::string::npos);
   write(options.menu_script, "0 shot " + (root / "missing/capture.png").string() + "\n");

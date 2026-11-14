@@ -15,6 +15,7 @@ enum class CursorKind {
   Move,       // animated amulet (common 2)
   Pan,        // crossed axes (common 5), used while dragging the map
   ScrollN, ScrollNE, ScrollE, ScrollSE, ScrollS, ScrollSW, ScrollW, ScrollNW,  // edge-scroll arrows (common 6..13)
+  Menu,       // mace (common 4), outside a mission
   Count
 };
 
