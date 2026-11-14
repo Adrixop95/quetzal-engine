@@ -49,6 +49,29 @@ structs at `0x4dd2f4`, stride 0x69c).
 - The clone should model a script gift as an ownership change that creates a new group on
   the receiving side, with the town case running the full town side change (members move
   with it).
-- Unread: the neighbouring handlers 0x14 to 0x1e (for example 0x17 `0x402ca0` calls
-  `0x447770(side, dword 0x0c)`, 0x1b `0x402d10` forwards to virtual `+0x108` of the found
-  object); the mapping of script command names to codes beyond 0x14, 0x18, 0x19 is open.
+## Other handlers read (second pass)
+
+Payload dword 0 is the acting side index in all of them below. **V** unless marked.
+
+| Code | Handler | What it does |
+| --- | --- | --- |
+| `0x14` | `0x402b00` | Camera jump: tile x = payload dword 2, tile y = dword 3; the camera origin becomes `tile * 0x30 - viewport / 2`, clamped to zero and to the map size (`map * 0x30 - viewport - 4` horizontally, `- 1` vertically), under the render mutex |
+| `0x15` | `0x402c40` | `0x4476b0(side, payload dword 0x0c)`: side relation call with a second side (G: set or change a relation or mark; not read) |
+| `0x16` | `0x402c70` | `0x447710(side, payload dword 0x0c)`: the matching reverse call (G) |
+| `0x17` | `0x402ca0` | `0x447770(side, payload dword 0x0c)`: third call of the same family (G) |
+| `0x18` | `0x402d50` | gift to side, see above |
+| `0x19` | `0x402df0` | `0x462760(payload + 0x38)`: takes a string at payload byte 0x38 (print or message path, G) |
+| `0x1a` | `0x402cd0` | finds the side's designated object (`0x447100`) and calls its virtual `+0x104` |
+| `0x1b` | `0x402d10` | same lookup, virtual `+0x108` |
+| `0x1c` | `0x402e10` | adds payload dword 0x0d to the side's counter at side struct `+0x698`, floored at 0 |
+| `0x1d` | `0x402e70` | subtracts payload dword 0x0d from the same counter, floored at 0 |
+| `0x1e` | `0x402ed0` | same lookup, virtual `+0x13c` |
+| `0x1f` | `0x401c30` | object from `0x4467b0(payload dword 0x0c, 1)`, virtual `+0x30` |
+| `0x20` | `0x401c50` | same lookup, virtual `+0x2c` |
+| `0x21` | `0x402f10` | takes the side's object from `0x4470a0`, finds its entry in the list at `0x4cc3d0` by pointer (`field +0x10`), destroys it (virtual `+0x04`, flag 1) and clears the field |
+
+- G: the counter at side struct `+0x698` is the side's money or resource stock (commands
+  0x1c and 0x1d are the script "add" and "subtract" actions, both floored at zero); this
+  matches the economy code but has not been checked against a live value in this pass.
+- Open: the exact names of the script commands that produce codes 0x15 to 0x17, 0x1a, 0x1b,
+  0x1e to 0x20 (needs the parser table near `0x4382c0` and `0x4388e0`).
