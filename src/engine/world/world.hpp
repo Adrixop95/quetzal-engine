@@ -65,6 +65,8 @@ struct Object {
   bool unload_pending = false;
   int unload_x = 0, unload_y = 0;
   uint32_t target = 0;         // object id for attack orders (0 = none)
+  uint32_t release_target = 0; // retained while a resource-driven Marine attack animation runs
+  uint8_t attack_facing = 0;  // direction selected at attack start
   int32_t dest_x = 0, dest_y = 0;  // order destination, world px
   int32_t cooldown = 0;        // ticks until the next shot
   int32_t corpse_ticks = 0;    // ticks since death

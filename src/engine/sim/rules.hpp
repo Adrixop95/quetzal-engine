@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+namespace aztec::data { class SpriteDb; }
+
 namespace aztec::engine {
 
 struct SightData;
@@ -61,6 +63,9 @@ struct TypeRules {
   Src class_src = Src::Placeholder;
   int speed = 0;      Src speed_src = Src::Placeholder;   // fixed 24.8 px per tick; descriptor preferred over historical averages
   int radius_px = 14; Src radius_src = Src::Placeholder;
+  // V: VisibleThing rectangle, overridden by Building/Defence descriptor bounds.
+  std::array<int, 4> combat_bounds{-28, -48, 28, 16};
+  int combat_radius() const { return (combat_bounds[2] - combat_bounds[0]) / 2; }
   int vision_mask = 0; Src sight_src = Src::Placeholder;
   int range_px = 56;  Src range_src = Src::Placeholder;
   int dmg = 500, reload = 12; Src dmg_src = Src::Placeholder;  // placeholder only when no descriptor weapon is loaded
@@ -82,10 +87,18 @@ struct BuildItem {
 struct WeaponResult {
   int damage = 0, reload = 0, range_px = 0, projectile_speed = 0;
   bool damage_known = false, getters_known = false; // reload/range only; excludes projectile/animation delay
+  bool edge_range = false; // subtract both combat radii; centre-to-aim otherwise
+};
+
+struct AttackFrame {
+  bool known = false, active = false, fire = false;
+  int dx = 0, dy = 0;
 };
 
 // Each matching category is applied separately, rounding down after each 8.8 product.
 int category_damage(int base, const std::vector<int>& multipliers);
+// V: reference integer distance metric, shared by combat range, blast and pursuit checks.
+int64_t combat_distance(int64_t dx, int64_t dy);
 // Positive service countdown selects full HP; natural recovery uses the lower threshold.
 int regenerated_hp(const TypeRules& type, int hp, bool serviced);
 // Hypno estimates use secondary HP; unavailable damage/getters return -1.
@@ -104,6 +117,10 @@ class RulesData {
   bool load_dir(const std::string& dir);
   // Load the user's light masks, animation light sources and daylight keys.
   bool load_sight(const std::string& game_dir);
+  // Independent of daylight/executable availability; reads only the user's animation archive.
+  bool load_combat_animations(const std::string& units_xbe);
+  // V: Marine attack slots and per-tick fire/displacement flags. Other kinds remain unresolved here.
+  AttackFrame attack_frame(int type, int facing, int64_t elapsed) const;
   void set_sight(std::shared_ptr<const SightData> data) { sight_ = std::move(data); }
   const SightData* sight() const { return sight_.get(); }
   // Built-in defaults only (tests, missing data).
@@ -121,6 +138,7 @@ class RulesData {
 
  private:
   std::shared_ptr<const SightData> sight_;
+  std::shared_ptr<const data::SpriteDb> combat_animations_;
   struct WeaponRecord { int kind = -1; std::vector<int> data; };
   WeaponResult weapon_impl(int id, const TypeRules& target, bool allied, int depth) const;
   std::map<int, WeaponRecord> weapons_;

@@ -267,6 +267,7 @@ int run_headless(int argc, char** argv) {
     auto rules = std::make_shared<RulesData>();
     if (!rules->load_dir(rules_dir)) throw std::runtime_error("cannot load rules from " + rules_dir);
     rules->load_sight(data.root());
+    rules->load_combat_animations(find_file_ci(data.root() + "/Res", "Units.xbe"));
     auto session = std::make_unique<GameSim>(rules, modifications);
     Script script;
     const std::string scn = data.map_file(world.mission.file_name, "scn");

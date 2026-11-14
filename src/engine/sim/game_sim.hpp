@@ -119,6 +119,7 @@ class GameSim : public Simulation {
   void request_unload(World& w, Object& vessel, int tx, int ty);
   void follow_tactics(World& w);
   void advance_effects(World& w);
+  void advance_attack(World& w, Object& source);
   void fire(World& w, const Object& source, Object& target, int damage);
   void fire_weapon(World& w, const WeaponRules& weapon, const Object& source, Object& target, int damage);
   void apply_blast(World& w, const Effect& effect);
