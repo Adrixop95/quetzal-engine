@@ -1,5 +1,6 @@
 #include "engine/sim/savegame.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <cmath>
@@ -41,11 +42,14 @@ template <class T> bool get(const std::vector<uint8_t>& v, size_t& o, T& x) {
   x = read_le<T>(v.data() + o); o += sizeof(T); return true;
 }
 bool valid_save(const SaveData& s) {
-  if (s.mission.empty() || s.mission.size() > 128 || s.tick > kMaxSaveTicks ||
+  if (s.mission.empty() || s.mission.size() > 128 || s.tick > kMaxSaveTicks || s.local_side >= 8 || s.selection.size() > kMaxCommandIds ||
       s.mission.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != std::string::npos ||
       !std::isfinite(s.cam_x) || !std::isfinite(s.cam_y) || !std::isfinite(s.cam_zoom) ||
       std::fabs(s.cam_x) > 10000000 || std::fabs(s.cam_y) > 10000000 || s.cam_zoom < 0.125f || s.cam_zoom > 8.f)
     return false;
+  auto ids = s.selection;
+  std::sort(ids.begin(), ids.end());
+  if ((!ids.empty() && !ids.front()) || std::adjacent_find(ids.begin(), ids.end()) != ids.end()) return false;
   return s.log.empty() || s.log.back().tick <= s.tick;
 }
 bool hash_file(const std::string& path, uint64_t& h) {
@@ -70,29 +74,50 @@ std::vector<uint8_t> serialize_save(const SaveData& s) {
   scalar(v, s.cam_x); scalar(v, s.cam_y); scalar(v, s.cam_zoom);
   scalar(v, uint32_t(log.size()));
   v.insert(v.end(), log.begin(), log.end());
+  scalar(v, s.local_side); scalar(v, uint32_t(s.selection.size()));
+  for (uint32_t id : s.selection) scalar(v, id);
   scalar(v, s.modifications.bits());
   scalar(v, checksum(v, v.size()));
   return v;
 }
 
-bool deserialize_save(const std::vector<uint8_t>& v, SaveData& out) {
-  if (v.size() < 84 || v.size() > kMaxSaveBytes || std::memcmp(v.data(), "AZS3", 4) != 0 ||
-      read_le<uint64_t>(v.data() + v.size() - 8) != checksum(v, v.size() - 8)) return false;
-  size_t o = 4;
-  uint32_t version, replay, n, ln, modifications;
-  if (!get(v, o, version) || version != kSaveFormatVersion || !get(v, o, replay) || replay != kSaveReplayVersion ||
-      !get(v, o, n) || !n || n > 128 || n > v.size() - o) return false;
+bool deserialize_save(const std::vector<uint8_t>& v, SaveData& out, std::string* error) {
+  if (error) *error = "Corrupt or truncated save";
+  if (v.size() < 4 || v.size() > kMaxSaveBytes) return false;
+  if (std::memcmp(v.data(), "AZS2", 4) == 0) {
+    if (error) *error = "Unsupported save format: AZS2";
+    return false;
+  }
+  if (std::memcmp(v.data(), "AZS3", 4) != 0 || v.size() < 12) return false;
+  const auto version = read_le<uint32_t>(v.data() + 4);
+  const auto replay = read_le<uint32_t>(v.data() + 8);
+  if (version != kSaveFormatVersion || replay != kSaveReplayVersion) {
+    if (error) *error = "Unsupported save version (format " + std::to_string(version) +
+        ", replay " + std::to_string(replay) + "); expected " + std::to_string(kSaveFormatVersion) +
+        "/" + std::to_string(kSaveReplayVersion);
+    return false;
+  }
+  if (v.size() < 92 || read_le<uint64_t>(v.data() + v.size() - 8) != checksum(v, v.size() - 8)) return false;
+  size_t o = 12;
+  uint32_t n, ln, count, modifications;
+  if (!get(v, o, n) || !n || n > 128 || n > v.size() - o) return false;
   SaveData parsed;
   parsed.mission.assign(reinterpret_cast<const char*>(v.data() + o), n); o += n;
   if (!get(v, o, parsed.tick) || !get(v, o, parsed.hash) || !get(v, o, parsed.script_hash) ||
       !get(v, o, parsed.content_hash) || !get(v, o, parsed.cam_x) || !get(v, o, parsed.cam_y) ||
-      !get(v, o, parsed.cam_zoom) || !get(v, o, ln) || o > v.size() - 12 || ln != v.size() - 12 - o) return false;
-  std::vector<uint8_t> log(v.begin() + o, v.end() - 12);
+      !get(v, o, parsed.cam_zoom) || !get(v, o, ln) || ln > kMaxLogBytes ||
+      o > v.size() - 20 || ln > v.size() - 20 - o) return false;
+  std::vector<uint8_t> log(v.begin() + o, v.begin() + o + ln);
   o += ln;
+  if (!get(v, o, parsed.local_side) || !get(v, o, count) || count > kMaxCommandIds ||
+      o > v.size() - 12 || size_t(count) * 4 != v.size() - 12 - o) return false;
+  parsed.selection.resize(count);
+  for (auto& id : parsed.selection) if (!get(v, o, id)) return false;
   if (!get(v, o, modifications) || !Modifications::valid(modifications)) return false;
   parsed.modifications = Modifications::from_bits(modifications);
   if (!deserialize_log(log, parsed.log) || !valid_save(parsed)) return false;
   out = std::move(parsed);
+  if (error) error->clear();
   return true;
 }
 
@@ -173,17 +198,21 @@ bool save_content_hash(const std::vector<std::pair<std::string, std::string>>& f
   return true;
 }
 
-bool read_save(const std::string& path, SaveData& out) {
+bool read_save(const std::string& path, SaveData& out, std::string* error) {
+  if (error) *error = "Cannot read save file";
   // Check length before allocation, then reject concurrent growth or short reads.
   std::ifstream f(path, std::ios::binary | std::ios::ate);
   if (!f) return false;
   auto size = f.tellg();
-  if (size < 0 || uint64_t(size) > kMaxSaveBytes) return false;
+  if (size < 0 || uint64_t(size) > kMaxSaveBytes) {
+    if (error) *error = "Save file exceeds size limit";
+    return false;
+  }
   std::vector<uint8_t> v(static_cast<size_t>(size));
   f.seekg(0);
   if (!f.read(reinterpret_cast<char*>(v.data()), std::streamsize(v.size())) ||
       f.peek() != std::char_traits<char>::eof() || f.bad()) return false;
-  return deserialize_save(v, out);
+  return deserialize_save(v, out, error);
 }
 
 std::unique_ptr<GameSim> replay_save(const SaveData& s, World& fresh,
@@ -204,6 +233,11 @@ std::unique_ptr<GameSim> replay_save(const SaveData& s, World& fresh,
   if (sim->tick_count() != s.tick || sim->state_hash(candidate) != s.hash) {
     error = "Save replay hash mismatch"; return {};
   }
+  for (uint32_t id : s.selection) {
+    if (!candidate.find(id)) { error = "Save selection contains an invalid object"; return {}; }
+  }
+  candidate.selection.ids = s.selection;
+  candidate.local_side = int(s.local_side);
   fresh = std::move(candidate);
   return sim;
 }

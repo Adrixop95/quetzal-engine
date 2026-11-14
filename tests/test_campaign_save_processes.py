@@ -1,4 +1,4 @@
-"""Invented missions 1-3: fresh-process continuation and graphical save cameras.
+"""Invented missions 1-15: fresh-process continuation and graphical save cameras.
 
 No original saves or assets are read. This test also runs on native Windows;
 it deliberately does not launch the Linux-only reference harness.
@@ -13,11 +13,10 @@ import tempfile
 import unittest
 
 ENGINE = Path(sys.argv.pop(1)).resolve()
-ROOT = Path(__file__).resolve().parents[1]
 
 
 class CampaignSaveTests(unittest.TestCase):
-    def test_three_generated_missions(self):
+    def test_fifteen_generated_missions(self):
         with tempfile.TemporaryDirectory(prefix='quetzal-campaign-save-') as temporary:
             root = Path(temporary)
             game = root / 'invented game'
@@ -27,7 +26,10 @@ class CampaignSaveTests(unittest.TestCase):
             resources.mkdir()
             for name in ('Pal', 'Units', 'Tiles0', 'Tiles1', 'common', 'fnts', 'light'):
                 (resources / f'{name}.xbe').write_bytes(struct.pack('<I', 0))
-            for mission in (1, 2, 3):
+            rules = root / 'rules'
+            rules.mkdir()
+            (rules / 'types.csv').write_text('id,name,kind,param\n7,air,3,0\n', encoding='ascii')
+            for mission in range(1, 16):
                 with self.subTest(mission=mission):
                     stem = f'mission_{mission}'
                     (maps / f'{stem}.mp').write_text(
@@ -39,14 +41,14 @@ class CampaignSaveTests(unittest.TestCase):
                     (maps / f'{stem}.map').write_bytes(struct.pack('<HH1024I', 32, 32, *([0] * 1024)))
                     finish = 30 + mission
                     (maps / f'{stem}.scn').write_text(
-                        'trigger(0) conditions localTime == 3 actions trigger(0).disable end\n'
+                        'trigger(0) conditions localTime == 3 actions centerView(12,12) trigger(0).disable end\n'
                         f'trigger(1) conditions localTime == {finish} actions side(local).victory end\n',
                         encoding='ascii')
                     profile = root / f'profile-{mission}'
                     profile.mkdir()
                     env = dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy',
                                AZTEC_USER_DIR=str(profile))
-                    common = [str(ENGINE), '--profile', 'faithful', '--game', str(game), '--rules-dir', str(ROOT / 'docs/data')]
+                    common = [str(ENGINE), '--profile', 'faithful', '--game', str(game), '--rules-dir', str(rules)]
 
                     def run(args):
                         command = [*common, *args, str(mission)]
@@ -81,20 +83,36 @@ class CampaignSaveTests(unittest.TestCase):
                     trace = root / 'ui.jsonl'
                     graphical = ['--software', '--no-audio', '--no-light', '--no-vsync',
                                  '--size', '800x600', '--script', str(script), '--ui-trace', str(trace)]
-                    script.write_text('until 5\nkey ctrl+S\nexpect tick == 6\nquit\n', encoding='ascii')
-                    self.assertTrue('saved game (tick 5)' in run([*graphical, '--cam', '14,12', '--zoom', '1.5']).stdout)
+                    script.write_text('until 4\nkey Right\nuntil 6\nkey ctrl+S\nexpect tick == 7\nquit\n', encoding='ascii')
+                    self.assertTrue('saved game (tick 6)' in run([*graphical, '--cam', '1,1', '--zoom', '1.5', '--select', '0,0,800,600']).stdout)
                     rows = [json.loads(line) for line in trace.read_text().splitlines()]
-                    camera = next(row['camera'] for row in rows if row['tick'] == 5)
+                    camera = next(row['camera'] for row in rows if row['tick'] == 6)
                     self.assertEqual(camera[2], 1.5)
+                    self.assertNotEqual(camera, next(row['camera'] for row in rows if row['tick'] == 3))
+                    self.assertTrue(any(row['selection'] for row in rows))
+                    selection = next(row['selection'] for row in rows if row['tick'] == 6)
                     ui_slot = profile / 'Saves/engine_slot1.azs'
                     saved = ui_slot.read_bytes()
-                    script.write_text(f'key ctrl+L\nexpect tick == 6\nuntil {finish}\n'
+                    script.write_text(f'key ctrl+L\nexpect tick == 7\nuntil {finish}\n'
                                       f'expect outcome == 1\nexpect tick == {finish}\nquit\n', encoding='ascii')
-                    self.assertTrue('loaded game (tick 5)' in run(graphical).stdout)
+                    self.assertTrue('loaded game (tick 6)' in run(graphical).stdout)
                     rows = [json.loads(line) for line in trace.read_text().splitlines()]
                     self.assertEqual(rows[0]['camera'], camera)
+                    self.assertEqual(rows[0]['selection'], selection)
                     self.assertTrue(any(row['outcome'] == 1 and row['tick'] == finish for row in rows))
                     self.assertEqual(ui_slot.read_bytes(), saved)
+                    # Exercise the actual pause-menu save and load confirmations.
+                    script.write_text('key ctrl+L\nkey Escape\nclick 400 270\nclick 400 210\n'
+                                      'key Return\nkey Return\nkey Escape\nclick 400 310\n'
+                                      'click 400 210\nkey Return\nkey Return\nquit\n', encoding='ascii')
+                    menu_result = run([*graphical, '--menu-session'])
+                    self.assertIn('saved game (tick 7)', menu_result.stdout)
+                    self.assertIn('loaded game (tick 7)', menu_result.stdout)
+                    rows = [json.loads(line) for line in trace.read_text().splitlines()]
+                    screens = {row['screen'] for row in rows}
+                    self.assertTrue({'save-confirmation', 'load-confirmation'} <= screens)
+                    self.assertEqual(rows[-1]['selection'], selection)
+                    self.assertEqual(rows[-1]['camera'], camera)
                     menu = root / 'menu.txt'
                     menu_trace = root / 'menu.jsonl'
                     menu.write_text('0 move 160 540\n0 down\n1 up\n2 move 160 58\n2 down\n3 up\n'
@@ -106,6 +124,17 @@ class CampaignSaveTests(unittest.TestCase):
                     menu_rows = [json.loads(line) for line in menu_trace.read_text().splitlines()]
                     self.assertTrue(any(row['rendered_screen'] == 'load-confirmation' for row in menu_rows))
                     self.assertEqual(menu_rows[-1]['mission'], stem)
+                    valid = ui_slot.read_bytes()
+                    for contents, message in ((b'AZS2', 'Unsupported save format'),
+                                              (b'AZS3', 'Corrupt or truncated save'),
+                                              (valid[:4] + struct.pack('<I', 4) + valid[8:], 'Unsupported save version')):
+                        ui_slot.write_bytes(contents)
+                        script.write_text('key ctrl+L\nexpect tick == 1\nquit\n', encoding='ascii')
+                        refused = run(graphical)
+                        self.assertIn(message, refused.stderr)
+                        self.assertNotIn('loaded game', refused.stdout)
+                        self.assertEqual(ui_slot.read_bytes(), contents)
+                    ui_slot.write_bytes(valid)
                     # Automation intentionally never awards campaign progress.
                     self.assertFalse((profile / 'Saves/engine_campaign.txt').exists())
 

@@ -300,7 +300,7 @@ int run_headless(int argc, char** argv) {
     if (resume_path.empty()) session->init(world);
     else {
       SaveData saved;
-      if (!read_save(resume_path, saved)) throw std::runtime_error("cannot read resume save");
+      if (!read_save(resume_path, saved, &error)) throw std::runtime_error(error);
       if (save_tick && uint64_t(save_tick) <= saved.tick) throw std::runtime_error("new save tick must follow resume tick");
       if (saved.tick >= uint64_t(max_ticks)) throw std::runtime_error("resume tick must precede run limit");
       session = replay_save(saved, world, rules, content, scn, error);
@@ -440,7 +440,7 @@ int run_headless(int argc, char** argv) {
       hash_row();
       if (tick == save_tick) {
         SaveData saved;
-        saved.mission = world.mission.file_name;
+        saved.mission = world.mission.file_name; saved.selection = world.selection.ids; saved.local_side = uint32_t(world.local_side);
         saved.tick = sim.tick_count(); saved.hash = report.hash;
         saved.script_hash = file_hash(scn); saved.content_hash = content; saved.log = sim.log(); saved.modifications = sim.initial_modifications();
         if (!write_save(save_path, saved)) throw std::runtime_error("cannot write mid-mission save");

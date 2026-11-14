@@ -241,6 +241,19 @@ set_tests_properties(ai_unit PROPERTIES LABELS "unit")
 set_tests_properties(ai_skirmish PROPERTIES LABELS "smoke" TIMEOUT 180
   ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
 
+# Full-state save continuation uses generated rules, scripts and river worlds only.
+add_executable(test_save_state tests/test_save_state.cpp)
+target_link_libraries(test_save_state PRIVATE aztec_engine_lib)
+aztec_warnings(test_save_state)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME save_state_processes COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_SOURCE_DIR}/tests/test_save_state_processes.py $<TARGET_FILE:test_save_state>)
+  set_tests_properties(save_state_processes PROPERTIES LABELS "unit" TIMEOUT 90)
+  add_test(NAME save_roundtrip_controls COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_SOURCE_DIR}/tests/test_save_roundtrip.py)
+  set_tests_properties(save_roundtrip_controls PROPERTIES LABELS "unit" TIMEOUT 20)
+endif()
+
 # Original-save adapter checks: synthetic stream plus optional private installation.
 add_executable(aztec_save_probe tools/savegame/probe.cpp)
 target_link_libraries(aztec_save_probe PRIVATE aztec_engine_lib)

@@ -11,12 +11,13 @@ load it. Imported original-save worlds cannot use this replay format.
 
 ## Compatibility and encoding
 
-New writes use AZS3. AZS2 and unknown format or replay versions are refused;
+New writes use AZS3. AZS2, older AZS3 layouts and unknown format or replay versions are refused with
+an explicit unsupported-version message;
 there is no automatic migration. `kSaveFormatVersion` describes the byte layout.
 `kSaveReplayVersion` must change whenever engine simulation semantics or hashing
 change incompatibly, even if the byte layout remains the same. This is an
-explicit compatibility policy, not a guarantee that the pending V03 audit has
-found every future-affecting state field.
+explicit compatibility policy. The current field audit and its limits are in
+[savegame_roundtrip_all_state.md](savegame_roundtrip_all_state.md).
 
 All multibyte values are little-endian, without native padding. Camera values are
 IEEE-754 binary32. The layout, in order, is:
@@ -24,12 +25,14 @@ IEEE-754 binary32. The layout, in order, is:
 | Field | Encoding |
 | --- | --- |
 | Magic | Four bytes `AZS3` |
-| Format version, replay version | Two u32 values, currently 4 and 4 |
+| Format version, replay version | Two u32 values, currently 5 and 7 |
 | Mission length, mission | u32 byte count, then ASCII basename bytes without a terminator |
 | Tick, state hash, script hash, content hash | Four u64 values |
 | Camera x, y, zoom | Three binary32 values |
 | Command-log length, log | u32 byte count, then an AZC1 log |
-| Initial modifications | u32 bitset (bit 0: parallel construction); unknown bits refused |
+| Viewing side | u32, 0 through 7 |
+| Local UI selection | u32 count, then that many u32 object IDs in selection order |
+| Initial modifications | Validated u32 modification bitset; unknown combinations refused |
 | Integrity checksum | u64 over every preceding byte |
 
 AZC1 contains its four-byte magic, a u32 command count, then records containing
@@ -65,8 +68,10 @@ zero/decreasing command ticks, commands after the save tick, trailing data and
 truncated or oversized counts fail. Equal command ticks retain submission order.
 Limits apply on writing as well as reading:
 
-- Save file: at most 32 MiB + 512 bytes; command log: at most 32 MiB.
+- Save file: at most 32 MiB + 16 KiB + 512 bytes; command log: at most 32 MiB.
 - At most 200,000 commands and 4,096 object IDs per command.
+- At most 4,096 selected IDs; zero and duplicate IDs are refused. Replay also
+  requires every selected ID to exist in the reconstructed world.
 - At most 1,036,800 ticks (24 hours at 12 Hz), bounding replay work. Replay time
   still depends on mission complexity; saves restore by replaying from tick zero.
 - Mission basename: 1-128 ASCII letters, digits, underscores or hyphens.
@@ -76,7 +81,9 @@ Limits apply on writing as well as reading:
 Failed deserialization leaves the destination unchanged. `replay_save` checks
 mission, content and script identity, rejects script parse failure, and replays
 in a private world. It returns success only if both tick and state hash match.
-The UI then replaces the world/simulation and restores the camera. On refusal,
+The UI then replaces the world/simulation and restores the camera, viewing side and local UI selection. Historical script
+camera events reconstructed during replay are treated as consumed, so they do
+not override the saved camera on the next frame. On refusal,
 the active simulation, camera, audio and command UI remain intact. Replay
 restores the currently implemented script outcomes, including victory, rather
 than persisting a separate campaign profile. A matching partial state hash is
@@ -106,7 +113,9 @@ uninterrupted synthetic run. Camera and mission metadata roundtrip. On POSIX,
 a file-size resource limit injects a real short write: the old slot must remain
 byte-identical and the temporary file must be removed. These tests use no assets.
 
-V16 remains open: V03's full state/ordering audit, every new state producer,
+The synthetic full-state and 15-mission collector checks are documented in
+[savegame_roundtrip_all_state.md](savegame_roundtrip_all_state.md).
+V16 remains open: every new state producer,
 long campaign saves, frontend/progression acceptance and native Linux/Windows
 campaign continuation still require evidence. The tests are registered with the
 `unit` label for the existing platform CI matrix; registration is not a native
