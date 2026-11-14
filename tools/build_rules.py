@@ -17,10 +17,10 @@ speed = {int(r['type']): float(r['mean_px_per_tick_midrun']) for r in rd('speed_
 # per-kind labeled field indices: name -> (index, status)
 L = {'marine': {'anim_id': (0, 'verified'), 'hp_initial': (1, 'verified'), 'regen_per_tick': (2, 'verified'), 'regen_cap_alt': (3, 'verified'), 'hp_max': (1, 'verified'), 'secondary_hp_initial': (4, 'verified'),
                 'speed_px_per_tick': (5, 'verified'), 'sight_mask_id': (6, 'verified'), 'weapon_id': (7, 'verified'), 'flags_bytes': (11, 'verified'), 'armor_fire': (12, 'verified'), 'armor_physical': (13, 'verified'), 'armor_d14': (14, 'guess')},
-     'headtruck': {'hp_initial': (3, 'verified'), 'hp_max': (6, 'verified'), 'speed_px_per_tick': (7, 'verified'), 'sight_mask_id': (8, 'verified'), 'weapon_id': (9, 'guess'), 'armor_fire': (14, 'guess'), 'armor_physical': (15, 'guess')},
-     'spider': {'hp_initial': (3, 'verified'), 'hp_max': (6, 'verified'), 'speed_px_per_tick': (7, 'verified'), 'sight_mask_id': (8, 'verified'), 'weapon_id': (9, 'guess')},
+     'headtruck': {'hp_initial': (3, 'verified'), 'hp_max': (3, 'verified'), 'secondary_hp_initial': (6, 'verified'), 'speed_px_per_tick': (7, 'verified'), 'sight_mask_id': (8, 'verified'), 'weapon_id': (9, 'verified'), 'armor_fire': (14, 'verified'), 'armor_physical': (15, 'verified')},
+     'spider': {'hp_initial': (3, 'verified'), 'hp_max': (3, 'verified'), 'secondary_hp_initial': (6, 'verified'), 'armor_fire': (14, 'verified'), 'armor_physical': (15, 'verified'), 'speed_px_per_tick': (7, 'verified'), 'sight_mask_id': (8, 'verified'), 'weapon_id': (9, 'verified')},
      'zeppelin': {'hp_initial': (1, 'verified'), 'sight_mask_id': (7, 'verified'), 'speed_px_per_tick': (5, 'verified')},
-     'truck': {'hp_initial': (4, 'guess'), 'sight_mask_id': (6, 'verified'), 'speed_px_per_tick': (5, 'verified')},
+     'truck': {'hp_initial': (1, 'verified'), 'hp_max': (1, 'verified'), 'secondary_hp_initial': (4, 'verified'), 'armor_fire': (11, 'verified'), 'armor_physical': (12, 'verified'), 'sight_mask_id': (6, 'verified'), 'speed_px_per_tick': (5, 'verified')},
      'bird': {'hp_initial': (1, 'verified'), 'sight_mask_id': (8, 'verified')},
      'cannon': {'sight_mask_id': (6, 'verified')},
      'defence': {'hp_initial': (3, 'verified'), 'sight_mask_id': (58, 'verified'), 'weapon_id': (59, 'verified')},
