@@ -120,8 +120,23 @@ static void conditions_and_identity() {
     CHECK(condition(r, w, std::string("side(local).money ") + op));
   CHECK(!condition(r, w, "side(8).isEnemy(1) == 1"));
   CHECK(!condition(r, w, "side(local).unitsInRect(4,5,3,4) > 0"));
+  const auto quiet_hash = r.state_hash();
   w.objects[0].last_hit_by = 5;
-  CHECK(condition(r, w, "side(local).tactic(10).attacked == 5"));
+  r.notify_attack(w, w.objects[0], w.objects[4].side);
+  CHECK(condition(r, w, "side(local).tactic(10).attacked == 1"));
+  CHECK(!condition(r, w, "side(local).tactic(10).attacked == 5"));
+  const auto attacked_hash = r.state_hash();
+  CHECK(attacked_hash != quiet_hash);
+  r.notify_attack(w, w.objects[1], 2); // friendly damage leaves notification unchanged
+  CHECK(r.state_hash() == attacked_hash);
+  w.objects[0].alive = false; w.objects[4].alive = false;
+  CHECK(condition(r, w, "side(local).tactic(10).attacked == 1"));
+  w.objects[0].alive = true; w.objects[4].alive = true;
+  CHECK(!condition(r, w, "side(local).tactic(99).idle == 1"));
+  CHECK(!condition(r, w, "side(local).tactic(99).idle == 0"));
+  CHECK(!condition(r, w, "side(local).tactic(99).attacked == -1"));
+  r.notify_attack(w, w.objects[1], 0);
+  CHECK(condition(r, w, "side(local).tactic(10).attacked == 0"));
   // An ordinary team tower with a colliding scenario ID is not the scripted defence.
   w.objects[3].defence = false; CHECK(condition(r, w, "side(local).defence(42).valid == 0"));
   w.objects[3].defence = true; w.objects[3].alive = false;
@@ -193,7 +208,8 @@ static void actions_and_outcomes() {
       "side(local).setNeutralTo(1) trigger(0).disable end "
       "trigger(1) conditions localTime == 2 actions side(local).setEnemyTo(1) side(local).tactic(6).kill end");
   next.tick(sim, w); CHECK(w.objects[0].tactic == 6 && w.relation[2][1] == kNeutral);
-  CHECK(condition(next, w, "side(local).tactic(5).locked == 0"));
+  CHECK(!condition(next, w, "side(local).tactic(5).locked == 0"));
+  CHECK(condition(next, w, "side(local).tactic(6).locked == 0"));
   next.tick(sim, w); CHECK(!w.objects[0].alive && w.relation[2][1] == kEnemy);
   CHECK(r.unsupported() == 0 && next.unsupported() == 0);
   auto unsupported = runner(w,

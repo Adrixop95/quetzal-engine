@@ -258,7 +258,7 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
     for (const auto& record : s.knowledge) s.known_towns.push_back(record.town);
   }
   auto enemy = [&](int ti) {
-    return ti >= 0 && ti < int(w.mission.towns.size()) && w.mission.towns[ti].type != 0 &&
+    return ti >= 0 && ti < int(w.mission.towns.size()) &&
            w.mission.towns[ti].side != t.side && w.relation[t.side][w.mission.towns[ti].side] != kFriend &&
            std::find(s.known_towns.begin(), s.known_towns.end(), ti) != s.known_towns.end() &&
            std::any_of(w.objects.begin(), w.objects.end(), [&](const auto& o) { return live(o) && o.town == w.mission.towns[ti].index && o.side == w.mission.towns[ti].side; });
@@ -278,7 +278,8 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
           (rules.type(o.type).mobile || rules.type(o.type).flier) && rules.type(o.type).armed &&
           rules.attack(o.type, attacker->type).damage > 0) c.ids.push_back(o.id);
     if (!c.ids.empty()) d.commands.push_back(c);
-    if (new_alert) { s.phase = 16; s.remaining = 0; }
+    // V: threat entry interrupts the normal branch, not an existing threatened plan.
+    if (new_alert && s.phase < 16) { s.phase = 16; s.remaining = 0; }
     s.last_alert = attacker->id;
   }
   if (!attacker) s.last_alert = 0;
@@ -318,8 +319,8 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
     const int target = offensive ? s.target_town : town;
     return std::any_of(s.knowledge.begin(), s.knowledge.end(), [&](const auto& r) { return r.town == target; });
   };
-  auto progress = [&](int done) {
-    if (poor && economy()) return;
+  auto progress = [&](int done, bool allow_economy = true) {
+    if (allow_economy && poor && economy()) return;
     if (s.remaining > 0) return; // The side allocator owns outstanding production.
     s.plan.clear();
     s.remaining = 0; s.phase = done;
@@ -350,6 +351,7 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
       break;
     case 6: case 8: s.phase = 11; break;
     case 7: economy(); s.phase = 8; break;
+    // V: the non-outpost gate concerns the source town, not the target town.
     case 9: s.phase = t.type != 0 && enemy(s.target_town) ? 1 : 11; break;
     case 10: s.phase = s.science_timer <= 100 * (dev + 1) ? 13 : 3; break;
     case 11: s.phase = poor ? 7 : 12; break;
@@ -362,7 +364,8 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
     case 19: s.phase = 16; break;
     case 20: s.phase = s.defence_enabled && defences < dev ? 18 : 16; break;
     case 21: s.phase = forces < 7 * (dev + 1) ? 23 : 20; break;
-    case 22: progress(20); break;
+    // V: the threatened plan progresses without the economic detour in states 2/14.
+    case 22: progress(20, false); break;
     case 23: s.phase = prepare(false) ? 22 : 20; break;
     default: s.phase = 0; break;
   }

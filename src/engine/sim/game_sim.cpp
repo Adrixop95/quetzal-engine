@@ -1346,6 +1346,7 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
     trace_combat("impact", hit);
     trace_combat("damage", hit, target.id, target.hp, target.hp - damage);
     target.hp -= damage; target.last_hit_by = source.id;
+    if (damage > 0 && script_.loaded()) script_.notify_attack(w, target, source.side);
     if (target.hp <= 0) kill(w, target);
     if (weapon.klass == 10) {
       // V: life drain uses one third of calculated damage, including overkill,
@@ -1408,6 +1409,7 @@ void GameSim::apply_blast(World& w, const Effect& e) {
     if (damage <= 0) { trace_combat("miss", e, o.id, o.hp, o.hp); continue; }
     trace_combat("damage", e, o.id, o.hp, o.hp - damage);
     o.hp -= damage; o.last_hit_by = e.source;
+    if (script_.loaded()) script_.notify_attack(w, o, e.side);
     if (o.hp <= 0) kill(w, o);
   }
 }
@@ -1469,6 +1471,7 @@ void GameSim::advance_effects(World& w) {
       }
       trace_combat("damage", e, o.id, o.hp, o.hp - e.damage);
       o.hp -= e.damage; o.last_hit_by = e.source;
+      if (e.damage > 0 && script_.loaded()) script_.notify_attack(w, o, e.side);
       if (o.hp <= 0) kill(w, o);
     }
   }
