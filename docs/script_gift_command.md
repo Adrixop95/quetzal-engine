@@ -70,8 +70,35 @@ Payload dword 0 is the acting side index in all of them below. **V** unless mark
 | `0x20` | `0x401c50` | same lookup, virtual `+0x2c` |
 | `0x21` | `0x402f10` | takes the side's object from `0x4470a0`, finds its entry in the list at `0x4cc3d0` by pointer (`field +0x10`), destroys it (virtual `+0x04`, flag 1) and clears the field |
 
-- G: the counter at side struct `+0x698` is the side's money or resource stock (commands
-  0x1c and 0x1d are the script "add" and "subtract" actions, both floored at zero); this
-  matches the economy code but has not been checked against a live value in this pass.
-- Open: the exact names of the script commands that produce codes 0x15 to 0x17, 0x1a, 0x1b,
-  0x1e to 0x20 (needs the parser table near `0x4382c0` and `0x4388e0`).
+## Script command names per code (second look at the parser)
+
+Evidence date: 2026-11-14. **V** for the pairing, taken from the parser functions
+(`0x4375e0`, `0x437720`, `0x4378a0`, `0x4379e0`, `0x437fb0`, `0x4382c0`, `0x4388e0`,
+`0x438c50`, `0x436f00`) that match a script word and then enqueue a code with `0x45f3b0`.
+The pairing is read as "the last word matched before the enqueue"; entries marked ? are
+weaker.
+
+| Code | Script word | Code | Script word |
+| --- | --- | --- | --- |
+| `0x00` | victory | `0x11` | UGI_CAMERA |
+| `0x01` | defeat | `0x12` | moveCommand |
+| `0x02` | attackTown | `0x13` | cameraActivate |
+| `0x03` | moveTo | `0x14` | centerView |
+| `0x04` | joinTactic | `0x15` | setFriendlyTo |
+| `0x05` to `0x08` | start (four variants) | `0x16` | setNeutralTo |
+| `0x09` | setPath | `0x17` | setEnemyTo |
+| `0x0a` | setCycledPath | `0x18` | giftToSide |
+| `0x0b` | setInvertedPath | `0x19` | printString |
+| `0x0c` | setCycledInvertedPath | `0x1a` | ? (parser also near setCycledPath) |
+| `0x0d` | activate | `0x1b` | unlock |
+| `0x0e` | ? (no word matched in `0x4378a0`) | `0x1c` | addMoney |
+| `0x0f` | enable | `0x1d` | takeMoney |
+| `0x10` | disable | `0x1e` | ? (second giftToSide variant) |
+| `0x1f`, `0x20` | disable, enable (second form, `0x438c50`) | `0x21` | cameraDeactivate |
+
+So V/G for the handlers above: 0x15 to 0x17 are the three relation commands
+(friendly, neutral, enemy towards the second side, the handlers differ by the relation they
+set); 0x19 is printString; 0x1c and 0x1d are addMoney and takeMoney, so the counter at
+side struct `+0x698` is money (V by name, floored at zero); 0x21 destroys the camera
+object (cameraDeactivate).
+- Open: codes 0x0e, 0x1a, 0x1e (and which giftToSide variant maps to which of 0x18, 0x1e).
