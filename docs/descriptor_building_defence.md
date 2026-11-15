@@ -52,7 +52,7 @@ Records are filled by the static initialiser `0x41b9d0`.
 | 1 | `+0x04` | sprite variant index | V | `0x41d300` (virtual `+0x80`: section 7 entry `index + word1*4`) | 1 for records 0 and 7, which share a sprite file with records 1 and 2/8. New |
 | 2 | `+0x08` | turret (second layer) sprite resource id, 0 = none | V | `0x41cce0`, `0x41cf00` | 51, 52, 55. New |
 | 3 | `+0x0c` | maximum hit points | V | `0x41d1a0`, `0x41cf00`, `0x41cbe0` (heal clamp) | |
-| 4 | `+0x10` | turret turn step per tick, in 1/256 of a circle | V | `0x41d790` | also `256/word4` = number of facings (32, 8, 2); the tower may fire once the remaining turn is below half of that. New |
+| 4 | `+0x10` | turret turn step per tick, in 1/256 of a circle | V | `0x41d790` | also `256/word4` = number of facings (32, 8, 2); the tower fires once the heading error is below one full step (half of `256/word4` is only the early re-acquire window during reload, see `docs/towers_air_specials.md`). New |
 | 5 | `+0x14` | hit rectangle x1 | V | `0x41e220` (virtual `+0x1c`) | |
 | 6 | `+0x18` | hit rectangle y1 | V (partial) | `0x41e220` | read lost to a register, as in Building word 3 |
 | 7 | `+0x1c` | hit rectangle x2 | V | `0x41e220` | |
