@@ -80,12 +80,12 @@ weaker.
 
 | Code | Script word | Code | Script word |
 | --- | --- | --- | --- |
-| `0x00` | victory | `0x11` | UGI_CAMERA |
+| `0x00` | victory | `0x11` | side(n).buildCommand (V; UGI_CAMERA is unit type 0x59, not a command) |
 | `0x01` | defeat | `0x12` | moveCommand |
 | `0x02` | attackTown | `0x13` | cameraActivate |
 | `0x03` | moveTo | `0x14` | centerView |
 | `0x04` | joinTactic | `0x15` | setFriendlyTo |
-| `0x05` to `0x08` | start (four variants) | `0x16` | setNeutralTo |
+| `0x05` to `0x08` | timer set / stop / start / kill (V, `docs/script_conditions_flow.md`) | `0x16` | setNeutralTo |
 | `0x09` | setPath | `0x17` | setEnemyTo |
 | `0x0a` | setCycledPath | `0x18` | giftToSide |
 | `0x0b` | setInvertedPath | `0x19` | printString |
