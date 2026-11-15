@@ -42,6 +42,31 @@ int64_t weapon_reach(const TypeRules& source, const TypeRules& target, const Wea
 bool weapon_in_range(const TypeRules& source, int64_t dx, int64_t dy, int64_t reach) {
   return source.weapon_id < 0 ? dx * dx + dy * dy <= reach * reach : combat_distance(dx, dy) <= reach;
 }
+// V mode distances; the clone's pixel-circle geometry and anchor approximation
+// are G. See docs/group_reach.md for the reference tile-distance contract.
+int group_reach_px(AttackMode mode) {
+  constexpr int tiles[] = {4, 8, 8, 6};
+  return tiles[static_cast<unsigned>(mode)] * kTilePx;
+}
+std::pair<int, int> idle_anchor(const World& w, const Object& o) {
+  int64_t x = 0, y = 0, count = 0;
+  for (const auto& member : w.objects) {
+    if (member.removed || !member.alive || member.type < 0 || member.side != o.side) continue;
+    const bool same_group = member.source == o.source &&
+        ((o.tactic >= 0 && member.tactic == o.tactic) ||
+         (o.source == ObjectSource::Town && o.town >= 0 && member.town == o.town));
+    if (member.id != o.id && !same_group) continue;
+    x += member.idle_anchor_x >= 0 ? member.idle_anchor_x : px(member.cur_x);
+    y += member.idle_anchor_y >= 0 ? member.idle_anchor_y : px(member.cur_y);
+    ++count;
+  }
+  return count ? std::pair{int(x / count), int(y / count)} : std::pair{px(o.cur_x), px(o.cur_y)};
+}
+bool within_group_reach(const Object& target, int x, int y, AttackMode mode, int64_t firing_reach = 0) {
+  const int64_t dx = px(target.cur_x) - x, dy = px(target.cur_y) - y;
+  const int64_t reach = group_reach_px(mode) + firing_reach;
+  return dx * dx + dy * dy <= reach * reach;
+}
 // 8-direction facing from a vector: 0 = east, counter-clockwise (2 = north), as used by the animation tables.
 int facing_from(int dx, int dy) {
   if (dx == 0 && dy == 0) return -1;
@@ -86,6 +111,9 @@ void GameSim::block_footprint(const TypeRules& r, int tx, int ty, int delta) {
 }
 
 void GameSim::attach_agent(Object& o) {
+  if (o.idle_anchor_x < 0 || o.idle_anchor_y < 0) {
+    o.idle_anchor_x = px(o.cur_x); o.idle_anchor_y = px(o.cur_y);
+  }
   const TypeRules& r = rules_->type(o.type);
   if (is_ferry(o) || !r.mobile || r.flier || !mover_) { o.mover = -1; return; }
   o.mover = int32_t(mover_->add_agent({o.cur_x, o.cur_y}, r.radius_px * 256, std::max(256, r.speed),
@@ -104,6 +132,9 @@ void GameSim::init(World& w) {
   w.town_speed.assign(w.mission.towns.size(), 1);
   w.repair_credits.assign(w.mission.towns.size(), 0);
   w.effects.clear();
+  w.script_cameras.clear();
+  w.messages.clear();
+  w.message_retirement = 0;
   // Reference computer intelligence starts with visibility value 24 (rules_ai.md).
   // Imported saves retain their recorded fog instead of restarting intelligence.
   if (!w.original_save) {
@@ -352,10 +383,9 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o) const {
   const bool mask_sight = rules_->sight() != nullptr;
   if (mask_sight && (o.side < 0 || o.side >= int(w.visibility.sides.size()))) return nullptr;
   const Object* best = nullptr;
-  // Preserve asset-free simulation combat when the user's lighting inputs are
-  // unavailable. This six-tile fallback remains a placeholder, not a sight fact.
-  constexpr int64_t fallback_radius = 6 * kTilePx;
-  int64_t bd = mask_sight ? std::numeric_limits<int64_t>::max() : fallback_radius * fallback_radius;
+  const auto [anchor_x, anchor_y] = o.order == uint8_t(Order::Idle) ? idle_anchor(w, o) :
+      std::pair{px(o.cur_x), px(o.cur_y)};
+  int64_t bd = std::numeric_limits<int64_t>::max();
   path::FlowField reachable;
   bool have_reachable = false;
   // G: scripted ferries are excluded from automatic combat assignment; direct damage remains possible.
@@ -366,19 +396,15 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o) const {
     const auto shot = rules_->attack(o.type, t.type, !w.hostile(o.side, t.side));
     if (!shot.damage_known || !shot.getters_known || shot.damage <= 0) continue;
     int64_t d = d2(o, t);
-    // G: provisional acquisition radius, not a verified reference chase leash.
-    // Startup walking captures do not establish a one/two-tile tactic radius.
-    const bool idle_hold = o.order == uint8_t(Order::Idle) && o.attack_mode != AttackMode::Aggressive;
-    if (o.attack_mode == AttackMode::Direct || idle_hold) {
-      const auto& tr = rules_->type(t.type);
-      int64_t reach = weapon_reach(rules_->type(o.type), tr, shot);
-      if (idle_hold && o.attack_mode != AttackMode::Direct) reach += 2 * kTilePx;
-      if (!weapon_in_range(rules_->type(o.type), int64_t(px(t.cur_x)) - px(o.cur_x),
-                           int64_t(px(t.cur_y)) - px(o.cur_y), reach)) continue;
-    }
-    if (d >= bd && !(d == bd && best && t.id < best->id)) continue;
     const auto& source = rules_->type(o.type);
     const int64_t reach = weapon_reach(source, rules_->type(t.type), shot);
+    if (o.attack_mode == AttackMode::Direct) {
+      if (!weapon_in_range(source, int64_t(px(t.cur_x)) - px(o.cur_x),
+                           int64_t(px(t.cur_y)) - px(o.cur_y), reach)) continue;
+    } else if (!within_group_reach(t, anchor_x, anchor_y, o.attack_mode, source.flier ? 0 : reach)) {
+      continue;
+    }
+    if (d >= bd && !(d == bd && best && t.id < best->id)) continue;
     if (o.mover >= 0 && !source.flier &&
         !weapon_in_range(source, int64_t(px(t.cur_x)) - px(o.cur_x), int64_t(px(t.cur_y)) - px(o.cur_y), reach)) {
       // Automatic pursuit needs reachable firing ground. Side-wide visibility
@@ -467,7 +493,7 @@ void GameSim::apply(World& w, const Command& c) {
       for (Object* o : own_ids(true)) {
         if (o->id == t->id || !rules_->type(o->type).armed) continue;
         o->boarding = 0;
-        o->order = uint8_t(Order::Attack); o->target = t->id; o->resume = 0;
+        o->order = uint8_t(Order::Attack); o->target = t->id; o->resume = 0; o->idle_attack = false;
         o->follow_tactic = -1;
         if (o->attack_mode == AttackMode::Direct && o->mover >= 0) mover_->stop(uint32_t(o->mover));
       }
@@ -488,6 +514,7 @@ void GameSim::apply(World& w, const Command& c) {
         o.attack_mode = AttackMode(c.a);
         // Clear combat assignment on a mode change; preserve the movement destination.
         if (o.order == uint8_t(Order::Attack)) {
+          o.idle_attack = false;
           finish_attack(o);
         }
       }
@@ -1158,10 +1185,13 @@ void GameSim::follow_tactics(World& w) {
 
 void GameSim::finish_attack(Object& o) {
   o.order = uint8_t(resumed_order(o.resume));
-  o.target = 0; o.resume = 0;
+  const bool return_to_anchor = o.idle_attack && o.attack_mode != AttackMode::Direct;
+  o.target = 0; o.resume = 0; o.idle_attack = false;
   if (o.mover < 0) return;
   const uint32_t aid = uint32_t(o.mover);
-  if (o.order == uint8_t(Order::Idle)) mover_->stop(aid);
+  if (o.order == uint8_t(Order::Idle) && return_to_anchor)
+    mover_->order_move(&aid, 1, {to_fixed(o.idle_anchor_x), to_fixed(o.idle_anchor_y)});
+  else if (o.order == uint8_t(Order::Idle)) mover_->stop(aid);
   else mover_->order_move(&aid, 1, {to_fixed(o.dest_x), to_fixed(o.dest_y)});
 }
 
@@ -1204,6 +1234,11 @@ void GameSim::run_orders(World& w) {
       continue;
     }
 
+    if (o.order == uint8_t(Order::Move) || o.order == uint8_t(Order::AttackMove) ||
+        o.order == uint8_t(Order::Follow)) {
+      o.idle_anchor_x = px(o.cur_x); o.idle_anchor_y = px(o.cur_y);
+      o.idle_attack = false;
+    }
     if ((o.order == uint8_t(Order::Move) ||
          (r.flier && (o.order == uint8_t(Order::AttackMove) || o.order == uint8_t(Order::Follow)))) && !moving) {
       if (r.flier) {
@@ -1234,6 +1269,7 @@ void GameSim::run_orders(World& w) {
                            o.order == uint8_t(Order::Follow)))) {
       if ((tick_ + o.id) % 4 == 0) {
         if (const Object* e = nearest_enemy(w, o)) {
+          o.idle_attack = o.order == uint8_t(Order::Idle);
           o.resume = o.order == uint8_t(Order::Follow) ? 3 :
               o.order == uint8_t(Order::Move) ? 2 : o.order == uint8_t(Order::AttackMove) ? 1 : 0;
           o.order = uint8_t(Order::Attack);
@@ -1245,7 +1281,15 @@ void GameSim::run_orders(World& w) {
     Object* t = w.find_mut(o.target);
     const bool lost_chase = t && r.kind == 0 &&
         (pursuit_distance(o,*t) > 1152 || (rules_->sight() && !object_visible(w,o.side,*t)));
-    if (!t || t->removed || !t->alive || !damageable(*t) || ferry_protected(*t) || lost_chase) {
+    const auto [anchor_x, anchor_y] = idle_anchor(w, o);
+    int64_t target_reach = 0;
+    if (t && t->type >= 0) {
+      const auto target_shot = rules_->attack(o.type, t->type, !w.hostile(o.side, t->side));
+      target_reach = weapon_reach(r, rules_->type(t->type), target_shot);
+    }
+    const bool leashed = o.idle_attack && t &&
+        !within_group_reach(*t, anchor_x, anchor_y, o.attack_mode, r.flier ? 0 : target_reach);
+    if (!t || t->removed || !t->alive || !damageable(*t) || ferry_protected(*t) || lost_chase || leashed) {
       finish_attack(o);
       continue;
     }
@@ -1280,19 +1324,23 @@ void GameSim::run_orders(World& w) {
     } else if (o.attack_mode != AttackMode::Direct && ag && ((tick_ + o.id) % 6 == 0 || !moving)) {
       uint32_t aid = uint32_t(o.mover);
       path::Vec2 goal{t->cur_x, t->cur_y};
-      if (r.weapon.klass == 0 || r.weapon.klass == 3) {
-        // Choose a reachable firing tile even when the target's tile is blocked.
+      if (o.idle_attack || r.weapon.klass == 0 || r.weapon.klass == 3) {
+        // Idle attacks need a firing position inside the stable group leash.
+        // Ordered melee also needs a reachable tile beside a blocked target.
         path::FlowField field;
         path::Cell start{px(o.cur_x) / kTilePx, px(o.cur_y) / kTilePx};
         field.build(nav_, ag->cls, &start, 1);
         uint32_t best = path::FlowField::kInf;
         bool found = false;
         const int tx = px(t->cur_x), ty = px(t->cur_y);
+        const int64_t leash = group_reach_px(o.attack_mode);
         for (int y = std::max(0, int((ty - reach) / kTilePx)); y <= std::min(nav_.height() - 1, int((ty + reach) / kTilePx)); ++y)
           for (int x = std::max(0, int((tx - reach) / kTilePx)); x <= std::min(nav_.width() - 1, int((tx + reach) / kTilePx)); ++x) {
             path::Vec2 candidate{tile_center_fixed(x), tile_center_fixed(y)};
             const int64_t dx = px(candidate.x) - tx, dy = px(candidate.y) - ty;
-            if (combat_distance(dx, dy) > reach || !field.reachable(x, y) ||
+            const int64_t ax = px(candidate.x) - anchor_x, ay = px(candidate.y) - anchor_y;
+            if (o.idle_attack && ax * ax + ay * ay > leash * leash) continue;
+            if (!weapon_in_range(r, dx, dy, reach) || !field.reachable(x, y) ||
                 nav_.disc_hits(candidate, ag->radius, ag->cls)) continue;
             if (field.cost(x, y) < best) { best = field.cost(x, y); goal = candidate; found = true; }
           }
@@ -1628,6 +1676,9 @@ void GameSim::update_fog(World& w) {
       if (o.source == ObjectSource::Boat || o.source == ObjectSource::Johnka) mask = 71;
       stamp_sight(vision, mw, mh, inputs->mask(mask), px(o.cur_x), px(o.cur_y), true);
     }
+    for (const auto& camera : w.script_cameras)
+      if (camera.active && camera.side == int(side))
+        stamp_sight(vision, mw, mh, inputs->mask(camera.mask), camera.x, camera.y, true);
     for (size_t i = 0; i < glow.size(); i++) {
       uint8_t nv = uint8_t(std::max(std::min(int(l.v[i]), 32), std::max(0, int(glow[i]) - vision[i])));
       if (nv != l.v[i]) { l.v[i] = nv; changed = true; }
@@ -1710,6 +1761,8 @@ void GameSim::script_stop(World& w, const std::vector<uint32_t>& ids) {
     o->vessel_route = false;
     o->boarding = 0;
     o->order = uint8_t(Order::Idle); o->target = 0; o->resume = 0;
+    o->idle_attack = false;
+    o->idle_anchor_x = px(o->cur_x); o->idle_anchor_y = px(o->cur_y);
     o->follow_tactic = -1;
     if (o->mover >= 0) mover_->stop(uint32_t(o->mover));
   }
@@ -1786,6 +1839,7 @@ void GameSim::teleport(World& w, uint32_t id, int pxx, int pyy) {
   const auto& r = rules_->type(o->type);
   if (r.structure && o->alive && !o->removed) block_footprint(r, px(o->cur_x) / kTilePx, px(o->cur_y) / kTilePx, -1);
   o->teleport(to_fixed(pxx), to_fixed(pyy));
+  o->idle_anchor_x = pxx; o->idle_anchor_y = pyy;
   if (r.structure && o->alive && !o->removed) block_footprint(r, pxx / kTilePx, pyy / kTilePx, +1);
   if (o->mover >= 0) {
     path::Agent& a = mover_->agents_mut()[size_t(o->mover)];
@@ -1806,6 +1860,13 @@ uint64_t GameSim::state_hash(const World& w) const {
   for (const auto& s : w.mission.sides) {
     mix(s.index); mix(s.race); mix(s.start_x); mix(s.start_y); mix(s.neutral); mix(s.only_comp);
     mix(s.disabled.size()); for (int type : s.disabled) mix(type);
+    mix(s.cameras.size());
+    for (const auto& camera : s.cameras) for (int value : camera) mix(value);
+  }
+  mix(w.script_cameras.size());
+  for (const auto& camera : w.script_cameras) {
+    mix(camera.side); mix(camera.index); mix(camera.x); mix(camera.y); mix(camera.mask);
+    mix(camera.ticks_left); mix(camera.active); mix(camera.latest);
   }
   mix(w.mission.paths.size());
   for (const auto& path : w.mission.paths) {
@@ -1856,6 +1917,7 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(o.body_tick); mix(o.attack_tick); mix(o.body_moving); mix(o.anim_tick);
     mix(uint32_t(o.body_angle)); mix(uint32_t(o.turret_angle));
     mix(o.facing); mix(o.anim_state); mix(uint32_t(o.corpse_ticks));
+    mix(uint32_t(o.idle_anchor_x)); mix(uint32_t(o.idle_anchor_y)); mix(o.idle_attack);
     mix(uint32_t(o.dest_x)); mix(uint32_t(o.dest_y)); mix(o.resume); mix(uint32_t(o.build_elapsed)); mix(uint32_t(o.build_total));
     mix(uint32_t(o.town)); mix(o.town_hall); mix(o.defence);
     mix(uint32_t(o.secondary_hp)); mix(uint32_t(o.regen_service_ticks));

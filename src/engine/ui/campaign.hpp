@@ -13,6 +13,7 @@ std::string next_campaign_mission(const GameData& data, const std::string& spec)
 std::string mission_briefing(const GameData& data, const std::string& spec);
 // Optional credits text from the supported installation's read-only PE data section.
 std::string installed_credits(const GameData& data);
+std::string mission_objectives(const GameData& data, const std::string& spec);
 
 // A separate engine profile; original .plr files are never modified.
 struct CampaignProgress {

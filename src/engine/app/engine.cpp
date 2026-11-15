@@ -269,7 +269,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
     ModificationOptions modification_options;
     SaveLoadMenu slots;
     std::string save_path = SaveLoadMenu::slot_path(0);
-    const std::string briefing_text = mission_briefing(data, world.mission.file_name);
+    const std::string objectives_text = mission_objectives(data, world.mission.file_name);
     const std::string next_mission = world.original_save ? "" : next_campaign_mission(data, world.mission.file_name);
     std::string notice;
     double notice_left = 0;
@@ -325,6 +325,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       if (in.hit(SDL_SCANCODE_F11)) win.cycle_borderless();
       if (in.hit(SDL_SCANCODE_RETURN) && in.alt) win.toggle_fullscreen();
       notice_left = std::max(0.0, notice_left - dt);
+      advance_messages(world, dt);
       if (in.hit(SDL_SCANCODE_F9) && !in.ctrl && !briefing.open && !audio_options.open && !slots.open) {
         modification_options.open = !modification_options.open;
         if (modification_options.open) pause.open = true;
@@ -364,7 +365,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       if (panel.update_menu(in, world.outcome == kRunning && o.menu_session && show_panel && !pause.open && !submodal)) pause.open = true;
       {
         PauseMenu::Action pa = world.outcome == kRunning && !submodal ? pause.update(in, ow, oh, pscale) : PauseMenu::Action::None;
-        if (pa == PauseMenu::Action::Briefing) briefing.show("Briefing / objectives", briefing_text);
+        if (pa == PauseMenu::Action::Briefing) briefing.show("Mission objectives", objectives_text);
         if (pa == PauseMenu::Action::Audio) audio_options.open = true;
         if (pa == PauseMenu::Action::Modifications) {
           modification_options.open = true;
@@ -476,7 +477,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       }
       float alpha = (paused || pause.open) ? 1.f : float(stepper.alpha());
 
-      // Script requests: centerView / cameraActivate, mission end.
+      // Script view jumps and mission end. Vision cameras do not control UI input.
       if (world.center_serial != seen_center) { seen_center = world.center_serial; cam.center_on(float(world.center_x), float(world.center_y)); }
       if (world.outcome != kRunning && !end_shown) {
         end_shown = true; paused = true; pause.open = false; cmdui.cancel_mode();
@@ -580,7 +581,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       selui.draw_box(win.renderer());
       {  // script messages (printString) and end-of-mission banner
         draw_messages(win.renderer(), scene.font(), world.messages,
-                      SDL_Rect{8 * pscale, 40 * pscale, view_w - 16 * pscale, oh / 4}, pscale);
+                      SDL_Rect{10 * pscale, 20 * pscale, view_w - 20 * pscale, oh / 2}, pscale, true);
         if (audio && !audio->subtitle().empty()) draw_messages(win.renderer(), scene.font(), {{audio->subtitle(), 1}},
             SDL_Rect{8 * pscale, oh - 150 * pscale, view_w - 16 * pscale, 60 * pscale}, pscale);
       }

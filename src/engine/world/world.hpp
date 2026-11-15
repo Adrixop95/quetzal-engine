@@ -67,6 +67,9 @@ struct Object {
   int ferry_phase = 0, ferry_wait = 0, ferry_direction = 1;
   Fixed ferry_dock_x = 0, ferry_dock_y = 0;
   int ferry_request = -1, ferry_destination = -1, ferry_group_side = -1;
+  // Stable idle origins prevent autonomous pursuit from moving its own leash.
+  int32_t idle_anchor_x = -1, idle_anchor_y = -1; // world pixels; initialized on attachment
+  bool idle_attack = false;   // autonomous attack acquired without a movement order
   uint32_t target = 0;         // object id for attack orders (0 = none)
   uint32_t release_target = 0; // retained while a resource-driven Marine attack animation runs
   uint8_t attack_facing = 0;  // direction selected at attack start
@@ -149,7 +152,19 @@ struct TownState {
 enum Relation : uint8_t { kEnemy = 0, kFriend = 1, kNeutral = 2 };
 enum Outcome : uint8_t { kRunning = 0, kVictory = 1, kDefeat = 2 };
 
-struct Message { std::string text; int ticks_left = 0; };
+struct Message {
+  std::string text;
+  int ticks_left = 0;
+  // Presentation time for script prints; negative means a simulation-timed notice.
+  double seconds_left = -1;
+};
+
+// V: cameraActivate creates stationary side vision, separate from the view camera.
+struct ScriptCamera {
+  int side = 0, index = 0, x = 0, y = 0, mask = 64, ticks_left = 0;
+  // Keep the latest record after expiry: deactivate must not remove an older activation.
+  bool active = true, latest = true;
+};
 
 struct Selection {
   std::vector<uint32_t> ids;
@@ -179,7 +194,9 @@ struct World {
   uint8_t outcome = kRunning;           // mission result for the local side (scripts: side(local).victory / defeat)
   uint8_t side_outcome[8] = {};         // victory / defeat flags per side
   std::vector<Message> messages;        // printString texts (UTF-8), shown for a few seconds
-  bool center_view = false;             // centerView / cameraActivate request for the UI (consumed by the engine loop)
+  double message_retirement = 0;        // presentation-only spacing between expired prints
+  std::vector<ScriptCamera> script_cameras;
+  bool center_view = false;             // centerView request for the UI (consumed by the engine loop)
   int center_x = 0, center_y = 0;       // world px
   uint32_t center_serial = 0;
   Selection selection;           // local player's selected objects (UI state, not simulation state)

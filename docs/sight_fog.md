@@ -1,5 +1,9 @@
 # Sight and fog validation (2026-10-28)
 
+The [group reach update](group_reach.md) supersedes the historical six-tile
+asset-free acquisition fallback described below. Missing lighting inputs now
+use the mode-dependent combat envelope; the loaded brightness predicate is unchanged.
+
 **V inspected facts / independent implementation:** sight is a light-mask ID,
 not a radius in pixels. The simulation loads these existing descriptor fields:
 

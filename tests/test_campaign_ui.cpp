@@ -139,6 +139,16 @@ int main(int argc, char** argv) {
   CHECK(briefing.find("Diary\nFirst section") != std::string::npos);
   CHECK(briefing.find("Objectives\nReach the exit") != std::string::npos);
   CHECK(mission_briefing(data, "missing").find("No briefing") == 0);
+  CHECK(mission_objectives(data, "mission_2").find("Reach the exit") != std::string::npos);
+  CHECK(mission_objectives(data, "mission_2").find("First section") == std::string::npos);
+  CHECK(mission_objectives(data, "missing") == "No mission objectives are available.");
+  write(root / "Maps/custom.mp", "[Globals]\nNotes=1\nNote0=Invented map goal\n");
+  CHECK(mission_objectives(data, "custom") == "Invented map goal\n");
+  write(root / "Maps/custom.mit", "~Diary\nStory without a goals section\n~~\n");
+  CHECK(mission_objectives(data, "custom") == "Invented map goal\n");
+  write(root / "Maps/custom.mit", "~Diary\nStory\n~~\n~Orders\nOrders text\n~~\n~Goals\nInvented final goal\n~~\n");
+  CHECK(mission_objectives(data, "custom") == "Goals\nInvented final goal\n");
+  CHECK(mission_briefing(data, "custom").find("Orders text") != std::string::npos);
   CampaignProgress progress;
   CHECK(progress.unlocked(1) && !progress.unlocked(2) && !progress.unlocked(0) && !progress.unlocked(16));
   progress.record("mission_1", false); CHECK(!progress.won(1));

@@ -101,6 +101,8 @@ void GameSim::unload(World& w, Object& boat, int, int) {
         passenger->teleport(x,y);
         passenger->order = uint8_t(Order::Idle); passenger->target = 0; passenger->resume = 0;
         passenger->follow_tactic = -1;
+        passenger->idle_attack = false;
+        passenger->idle_anchor_x = passenger->cur_x / 256; passenger->idle_anchor_y = passenger->cur_y / 256;
         if (passenger->mover < 0) attach_agent(*passenger);
         if (passenger->mover >= 0) {
           auto& agent = mover_->agents_mut()[size_t(passenger->mover)];

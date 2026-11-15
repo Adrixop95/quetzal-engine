@@ -456,6 +456,9 @@ bool MoveSystem::cooperate(Agent& a) {
   Vec2 forward = a.slot - a.pos;
   for (Agent& b : agents_) {
     if (b.id == a.id || b.team != a.team || b.radius <= 0 || b.hold || b.state == AgentState::Moving) continue;
+    // Settled members of this order already occupy its arrival area. Moving
+    // them repeatedly to side bays disperses a dense group after arrival.
+    if (b.state == AgentState::Arrived && b.order == a.order) continue;
     Vec2 delta = b.pos - a.pos;
     if (len2(delta) > (i64)kTileFix * kTileFix * 3 || dot(forward, delta) <= 0) continue;
     // Prefer a side bay, leaving the blocker's order/state intact. The bay must
@@ -491,6 +494,18 @@ void MoveSystem::recover(Agent& a) {
   else ++a.unstick_ticks;
   if (a.unstick_ticks && a.unstick_ticks % 12 == 0) {
     ++stats.stuck_events;
+    // A displaced settled neighbour can occupy an assigned slot. Accept a
+    // clear nearby position instead of repeatedly evacuating the whole group.
+    if (distance <= kTileFix && free_position(a, a.pos)) {
+      for (const Agent& b : agents_) {
+        if (b.id == a.id || !b.enabled || b.team != a.team || b.order != a.order || b.state != AgentState::Arrived) continue;
+        i64 reach = i64(a.radius) + b.radius + cfg_.slot_gap;
+        if (len2(b.pos - a.slot) > reach * reach) continue;
+        a.slot = a.pos; a.state = AgentState::Arrived; a.vel = {};
+        a.local_path.clear(); a.target_until = 0;
+        return;
+      }
+    }
     if (cooperate(a)) a.local_path.clear();
     local_repath(a);
   }
@@ -502,6 +517,26 @@ void MoveSystem::recover(Agent& a) {
   const FlowField& ff = orders_[a.order]->ff[(int)a.cls];
   int sx = floor_div(a.pos.x, kTileFix), sy = floor_div(a.pos.y, kTileFix);
   Vec2 best{}; i64 best_distance = -1; bool best_progress = false;
+  // Close to a crowded goal, recovery must finish at a free arrival position
+  // instead of returning to the shared-field anchor and chasing the same slot.
+  const Vec2 goal = orders_[a.order]->goal;
+  const bool arriving = length(a.pos - goal) <= 3 * kTileFix;
+  if (arriving) {
+    const int gx = floor_div(goal.x, kTileFix), gy = floor_div(goal.y, kTileFix);
+    for (int y = gy - 3; y <= gy + 3; ++y) for (int x = gx - 3; x <= gx + 3; ++x) {
+      if (!grid_.in_bounds(x, y) || !ff.reachable(x, y)) continue;
+      Vec2 p = tile_center(x, y);
+      if (length(p - goal) > 3 * kTileFix || length(p - a.slot) > 2 * kTileFix || !free_position(a, p)) continue;
+      i64 d = len2(p - a.pos);
+      if (best_distance < 0 || d < best_distance) { best = p; best_distance = d; }
+    }
+    if (best_distance >= 0) {
+      a.pos = a.prev_pos = a.slot = best; a.state = AgentState::Arrived;
+      a.vel = {}; a.target_until = 0; a.local_path.clear();
+      a.unstick_ticks = 0; a.unstick_best = 0; ++stats.relocations;
+      return;
+    }
+  }
   for (int y = 0; y < grid_.height(); ++y) for (int x = 0; x < grid_.width(); ++x) {
     if ((x == sx && y == sy) || !ff.reachable(x, y)) continue;
     Vec2 p = tile_center(x, y);

@@ -41,11 +41,11 @@ enum class ActKind {
   SubmarineGo,                     // id
   TimerSet, TimerStart, TimerStop, TimerKill,  // id (+ value for set)
   CenterView,                      // a=x, b=y
-  PrintString, PrintStringR,       // text (English / Russian, cp1251)
+  PrintString, PrintStringR,       // text; V: alternate form is discarded by the inspected parser
   SideVictory, SideDefeat,
   SideBuildCommand,                // ugi + args
   SideMoveCommand,                 // a=x, b=y
-  SideCameraActivate,              // a=camera index, b=value
+  SideCameraActivate,              // a=vision camera index, b=lifetime in updates (nonpositive: indefinite)
   SideCameraDeactivate,            // a (index)
   SideSetFriendlyTo, SideSetNeutralTo, SideSetEnemyTo,  // a = other side (may be kLocal)
   SideAddMoney, SideTakeMoney,     // a

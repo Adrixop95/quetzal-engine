@@ -189,7 +189,7 @@ def execute(args, output, game, mission, script, *, launcher=('unshare', '-rn'))
 
     def command_for(directory, input_path, periodic):
         command = [*launcher, str(args.engine), '--game', str(game), str(mission), '--rules-dir', str(args.rules_dir),
-                   '--profile', 'faithful', '--script', str(input_path), '--frames', str(args.max_ticks + 1),
+                   '--profile', getattr(args, 'profile', 'faithful'), '--script', str(input_path), '--frames', str(args.max_ticks + 1),
                    '--size', '800x600', '--software', '--no-audio', '--no-light', '--no-fog',
                    '--ui-trace', str(directory / 'ui.jsonl')]
         if periodic:
@@ -240,7 +240,8 @@ def execute(args, output, game, mission, script, *, launcher=('unshare', '-rn'))
     report = dict(schema=1, outcome=outcome, ticks=last['tick'], anomalies=detector.anomalies,
                   process=result, scenario_sha256=hashlib.sha256(script.encode()).hexdigest(),
                   engine_sha256=hashlib.sha256(args.engine.read_bytes()).hexdigest(),
-                  bounds=detector.bounds, mode=args.mode, capture_replay=None, script_complete=end_record.get('script_complete', False),
+                  bounds=detector.bounds, mode=args.mode, profile=getattr(args, 'profile', 'faithful'),
+                  capture_replay=None, script_complete=end_record.get('script_complete', False),
                   engine_outcome={0: 'running', 1: 'won', 2: 'lost'}[last['outcome']],
                   pending_goals=[dict(object=oid, since=start, destination=target)
                                  for oid, (start, target) in detector.goals.items()])
@@ -324,6 +325,7 @@ def main(argv=None):
     parser.add_argument('--timeout', type=positive, default=120)
     parser.add_argument('--capture-every', type=positive)
     parser.add_argument('--mode', choices=('headless', 'xvfb'), default='headless')
+    parser.add_argument('--profile', choices=('faithful', 'enhanced'), default='faithful')
     for flag, default in (('goal-ticks', 600), ('stuck-ticks', 240), ('idle-ticks', 1200), ('economy-ticks', 1200), ('path-failures', 3)):
         parser.add_argument('--' + flag, type=positive, default=default)
     args = parser.parse_args(argv)
