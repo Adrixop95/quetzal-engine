@@ -20,7 +20,9 @@ struct HudInfo {
 // Returns the object nearest to world point (wx, wy) within `radius` px, or nullptr.
 const Object* pick_object(const World& w, float wx, float wy, float alpha, float radius);
 
-void draw_messages(SDL_Renderer* r, const Font& font, const std::vector<Message>& messages, const SDL_Rect& area, int scale);
+// Advance wall-clock script prints even while the simulation is paused. Hash-neutral.
+void advance_messages(World& w, double seconds);
+void draw_messages(SDL_Renderer* r, const Font& font, const std::vector<Message>& messages, const SDL_Rect& area, int scale, bool left_align = false);
 
 void draw_hud(SDL_Renderer* r, const Font& font, const World& w, const Camera& cam, const HudInfo& info, int scale);
 

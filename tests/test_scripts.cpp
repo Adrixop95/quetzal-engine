@@ -9,6 +9,8 @@
 
 #include "core/script.hpp"
 #include "engine/sim/game_sim.hpp"
+#include "engine/sim/sight.hpp"
+#include "engine/ui/hud.hpp"
 #include "temp_dir.hpp"
 
 using namespace aztec;
@@ -153,6 +155,10 @@ static void timers() {
   r.tick(sim, w); CHECK(condition(r, w, "timer(1) == -1"));
   CHECK(condition(r, w, "localTime == 7") && condition(r, w, "globalTime == 7"));
   CHECK(condition(r, w, "timer(99) == 0")); // absent timer policy remains explicit
+  auto stopped = runner(w,
+      "trigger(0) conditions localTime == 1 actions timer(2).set(9) timer(2).stop timer(2).set(20) trigger(0).disable end");
+  stopped.tick(sim, w); stopped.tick(sim, w);
+  CHECK(condition(stopped, w, "timer(2) == 20"));
 }
 
 static void conditions_and_identity() {
@@ -257,8 +263,8 @@ static void actions_and_outcomes() {
   CHECK(condition(r, w, "side(local).tactic(5).locked == 1"));
   CHECK(w.objects[0].dest_x == 10 * kTilePx + kTilePx / 2);
   CHECK(w.relation[2][1] == kFriend && w.relation[1][2] == kEnemy);
-  CHECK(w.side_state[2].money == 0 && w.center_serial == 2);
-  CHECK(w.center_x == 7 * kTilePx + kTilePx / 2 && w.center_y == 8 * kTilePx + kTilePx / 2);
+  CHECK(w.side_state[2].money == 0 && w.center_serial == 1);
+  CHECK(w.center_x == 5 * kTilePx && w.center_y == 6 * kTilePx);
   CHECK(w.messages.size() == 1 && w.messages[0].text == "Synthetic message");
   CHECK(w.outcome == kDefeat && w.side_outcome[2] == kDefeat && w.side_outcome[1] == kVictory);
   CHECK(r.outcome_origin() && r.outcome_origin()->trigger == 0 && r.outcome_origin()->tick == w.tick);
@@ -282,8 +288,8 @@ static void actions_and_outcomes() {
       "trigger(0) conditions always actions boat(1).activate johnka(1).enable johnka(1).disable submarine(1).go "
       "side(local).buildCommand(UGI_FOOTMAN,1,2) side(local).moveCommand(1,2) side(local).cameraDeactivate(0) end");
   for (const auto& a : unsupported_script.triggers[0].actions)
-    CHECK(ScriptRunner::supports(a.kind) == (a.kind == ActKind::BoatActivate || a.kind == ActKind::JohnkaEnable || a.kind == ActKind::JohnkaDisable || a.kind == ActKind::SubmarineGo));
-  unsupported.tick(sim, w); CHECK(unsupported.unsupported() == 3);
+    CHECK(ScriptRunner::supports(a.kind) == (a.kind == ActKind::BoatActivate || a.kind == ActKind::JohnkaEnable || a.kind == ActKind::JohnkaDisable || a.kind == ActKind::SubmarineGo || a.kind == ActKind::SideCameraDeactivate));
+  unsupported.tick(sim, w); CHECK(unsupported.unsupported() == 2);
   unsupported.init(w); CHECK(unsupported.unsupported() == 0);
   CHECK(!ScriptRunner::supports(static_cast<ActKind>(999)));
 }
@@ -320,8 +326,7 @@ static void defence_loading() {
 
 static void action_observation_contracts() {
   // Each unresolved grammar branch must remain visible both before and after dispatch.
-  for (const auto& method : {"side(local).buildCommand(UGI_FOOTMAN,1,2)", "side(local).moveCommand(1,2)",
-                            "side(local).cameraDeactivate(0)"}) {
+  for (const auto& method : {"side(local).buildCommand(UGI_FOOTMAN,1,2)", "side(local).moveCommand(1,2)"}) {
     World w = world(); GameSim sim(rules(), Modifications::faithful()); sim.init(w);
     auto r = runner(w,
         "trigger(7) conditions localTime == 2 actions " + std::string(method) + " trigger(7).disable end\n"
@@ -362,12 +367,14 @@ static void action_observation_contracts() {
 static void replay() {
   TempDir dir; const auto path = dir.path() / "synthetic.scn";
   { std::ofstream f(path); f <<
-      "trigger(0) conditions localTime == 1 actions timer(3).set(0) side(local).tactic(5).setCycledPath(0) end\n"
+      "trigger(0) conditions localTime == 1 actions timer(3).set(0) side(local).cameraActivate(0,180) printString(\"Replay notice\") side(local).tactic(5).setCycledPath(0) end\n"
       "trigger(1) conditions timer(3) == 10 actions trigger(2).enable timer(3).kill end\n"
       "trigger(2) conditions always actions side(local).tactic(5).giftToSide(1) trigger(2).disable side(1).setFriendlyTo(local) end\n"
       "trigger(3) conditions localTime == 200 actions side(1).victory end\n"; }
   World initial = world(); object(initial, 0, 2, 5, 3, 4);
   initial.mission.paths = {{{6, 7}, {8, 9}}};
+  SideDef camera_side; camera_side.index = 2; camera_side.cameras.push_back({12, 13, 6});
+  initial.mission.sides.push_back(camera_side);
   World a = initial, b = initial; b.local_side = 7;
   auto data = rules(); GameSim first(data, Modifications::faithful()), second(data, Modifications::faithful());
   CHECK(first.attach_script(path.string()) && second.attach_script(path.string())); first.init(a); second.init(b);
@@ -399,6 +406,67 @@ static void replay() {
     }
   }
   CHECK(a.side_outcome[1] == kVictory && a.outcome == kRunning && first.script().unsupported() == 0);
+}
+
+static void presentation_contracts() {
+  World w = world();
+  SideDef side; side.index = 2; side.cameras = {{12, 13, 6}, {4, 5, -100}, {6, 7, 100}};
+  w.mission.sides.push_back(side);
+  auto data = rules();
+  auto sight = std::make_shared<SightData>();
+  for (auto& day : sight->daylight) day.fill(80);
+  for (int id : {64, 65, 71}) {
+    auto& mask = sight->masks[id]; mask.assign(404, 152);
+    mask[0] = mask[2] = 20; mask[1] = mask[3] = 0;
+    for (int y : {9, 10}) for (int x : {9, 10}) mask[4 + y * 20 + x] = 0;
+  }
+  data->set_sight(sight);
+  GameSim sim(data, Modifications::faithful()); sim.init(w);
+  auto r = runner(w,
+      "trigger(0) conditions localTime == 1 actions side(local).cameraActivate(0,2) "
+      "side(local).cameraActivate(1,0) side(local).cameraActivate(2,-1) "
+      "printString(\"First invented notice\") printStringR(\"Discarded alternate\") trigger(0).disable end");
+  r.tick(sim, w); CHECK(w.script_cameras.size() == 3 && w.center_serial == 0);
+  CHECK(w.script_cameras[0].mask == 65 && w.script_cameras[0].ticks_left == 2);
+  CHECK(w.script_cameras[1].mask == 64 && w.script_cameras[2].mask == 71);
+  CHECK(w.messages.size() == 1 && w.messages[0].seconds_left == 4);
+  // Fog stamps the owning side even when another side is being viewed.
+  sim.tick(w);
+  const auto& own = w.visibility.sides[2];
+  CHECK(own.v[size_t(13) * own.w + 12] > 32);
+  CHECK(w.visibility.sides[0].v[size_t(13) * own.w + 12] == 0);
+  r.tick(sim, w); CHECK(w.script_cameras[0].active && w.script_cameras[0].ticks_left == 1);
+  r.tick(sim, w); CHECK(!w.script_cameras[0].active);
+  CHECK(w.script_cameras[1].active && w.script_cameras[2].active);
+  sim.tick(w); CHECK(w.visibility.sides[2].v[size_t(13) * own.w + 12] <= 32);
+  // Invalid indices/sides do nothing; deactivation affects only its side and latest activation.
+  auto repeat = runner(w,
+      "trigger(0) conditions localTime == 1 actions side(local).cameraActivate(0,0) "
+      "side(local).cameraActivate(0,1) side(7).cameraDeactivate(0) "
+      "side(local).cameraActivate(99,1) side(99).cameraActivate(0,1) trigger(0).disable end "
+      "trigger(1) conditions localTime == 2 actions side(local).cameraDeactivate(0) trigger(1).disable end");
+  repeat.tick(sim, w);
+  CHECK(w.script_cameras.size() == 5);
+  repeat.tick(sim, w);
+  CHECK(w.script_cameras[w.script_cameras.size() - 2].active);
+  CHECK(!w.script_cameras.back().active); // expired latest does not address older indefinite source
+  CHECK(repeat.unsupported() == 0);
+  auto h = sim.state_hash(w); ++w.script_cameras.front().mask; CHECK(sim.state_hash(w) != h);
+  --w.script_cameras.front().mask; h = sim.state_hash(w);
+  ++w.mission.sides[0].cameras[0][2]; CHECK(sim.state_hash(w) != h);
+  --w.mission.sides[0].cameras[0][2]; h = sim.state_hash(w);
+  advance_messages(w, 3.5); CHECK(w.messages.size() == 1);
+  CHECK(w.messages[0].seconds_left == 0.5 && sim.state_hash(w) == h);
+  advance_messages(w, 0.5); CHECK(w.messages.empty() && sim.state_hash(w) == h);
+  auto flood = runner(w, "trigger(0) conditions always actions printString(\"Queue notice\") end");
+  for (int i = 0; i < 20; ++i) flood.tick(sim, w);
+  CHECK(w.messages.size() == 15);
+  for (const auto& message : w.messages) CHECK(message.seconds_left == 4); // simulation speed does not age prints
+  advance_messages(w, 4); CHECK(w.messages.size() == 14);
+  advance_messages(w, 0.5); CHECK(w.messages.size() == 14);
+  advance_messages(w, 0.5); CHECK(w.messages.size() == 13);
+  advance_messages(w, -10); CHECK(w.messages.size() == 13);
+  sim.init(w); CHECK(w.script_cameras.empty() && w.messages.empty() && w.message_retirement == 0);
 }
 
 static void campaign_gates() {
@@ -493,6 +561,7 @@ static void pending_path_is_not_idle() {
 }
 
 int main() {
+  presentation_contracts();
   campaign_gates(); town_tactics_and_capture(); embarked_script_identity(); pending_path_is_not_idle();
   attacked_notification();
   source_locations(); order_and_enablement(); timers(); conditions_and_identity(); paths_and_gifts(); actions_and_outcomes(); defence_loading(); action_observation_contracts(); replay();

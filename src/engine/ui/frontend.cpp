@@ -223,6 +223,7 @@ void Screen::enter_briefing(const std::string& spec) {
     for (size_t i = 0; i < std::min(sections.size(), brief_sections_.size()); ++i)
       brief_sections_[i] = cp1250_to_utf8(sections[i].title) + "\n" + cp1250_to_utf8(sections[i].text);
   }
+  brief_sections_[2] = mission_objectives(data_, spec);
   mode_ = Mode::Briefing;
 }
 
@@ -759,7 +760,7 @@ void PauseMenu::draw(SDL_Renderer* r, const Font& font, int ow, int oh, int sc) 
   SDL_Rect all{0, 0, ow, oh};
   SDL_SetRenderDrawColor(r, 0, 0, 0, 150);
   SDL_RenderFillRect(r, &all);
-  static const char* labels[9] = {"Resume", "Briefing / objectives", "Audio", "Save game", "Load game", "Restart mission", "Main menu", "Quit", "Game modifications"};
+  static const char* labels[9] = {"Resume", "Mission objectives", "Audio", "Save game", "Load game", "Restart mission", "Main menu", "Quit", "Game modifications"};
   int mx, my;
   SDL_GetMouseState(&mx, &my);
   for (int i = 0; i < 9; i++) {

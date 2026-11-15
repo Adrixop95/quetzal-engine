@@ -48,7 +48,7 @@ int main() {
     const auto base = root / "Maps" / ("mission_" + std::to_string(n));
     write(base.string() + ".mp", "[Globals]\nMapSize=8,8\nSides=1\nTeams=1\n[Side0]\nStart_X=1\nStart_Y=1\n[Team0]\nSide=0\nUnits=1\nUnit0=1,1,0,100\n");
     write(base.string() + ".map", terrain);
-    write(base.string() + ".mit", "~Synthetic mission " + std::to_string(n) + "\nWait for the fixture outcome\n~~\n");
+    write(base.string() + ".mit", "~Synthetic mission " + std::to_string(n) + "\nInvented narrative\n~~\n~Orders\nReview the objective\n~~\n~Goals\nWait for the fixture outcome\n~~\n");
     write(base.string() + ".scn", "trigger(0) conditions localTime == 6 actions side(local).victory end\n");
   }
   Options options;
@@ -78,11 +78,17 @@ int main() {
     menu_input += std::to_string(frame) + " move 160 " + std::to_string(y) + "\n" +
         std::to_string(frame) + " down\n" + std::to_string(frame + 1) + " up\n" +
         std::to_string(frame + 2) + " keydown Return\n" + std::to_string(frame + 3) + " keyup Return\n" +
-        std::to_string(frame + 4) + " keydown Return\n";
+        std::to_string(frame + 4) + " move 500 350\n" +
+        std::to_string(frame + 4) + " down\n" + std::to_string(frame + 5) + " up\n" +
+        std::to_string(frame + 6) + " keydown Escape\n" + std::to_string(frame + 7) + " keyup Escape\n" +
+        std::to_string(frame + 8) + " keydown Return\n";
     write(options.menu_script, menu_input);
     CHECK(run_engine(options) == 0);
     CHECK(read(options.menu_trace).find("\"mission\":\"" + spec + "\"") != std::string::npos);
     CHECK(read(options.menu_trace).find("\"next_screen\":\"briefing\"") != std::string::npos);
+    CHECK(read(options.menu_trace).find("\"background_image\":264") != std::string::npos); // objectives view
+    CHECK(read(options.menu_trace).find("\"background_image\":285",
+        read(options.menu_trace).find("\"background_image\":264")) != std::string::npos); // return to briefing
     options.menu = false;
     write(options.menu_script, "0 keydown Return\n1 close\n");
     // Objective review is modal; the fixture reaches victory through the normal script runner.

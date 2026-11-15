@@ -89,6 +89,21 @@ std::string installed_credits(const GameData& data) {
   return {};
 }
 
+std::string mission_objectives(const GameData& data, const std::string& spec) {
+  const auto mp = resolve_mission(data.maps_dir(), spec);
+  const auto stem = std::filesystem::path(mp).stem().string();
+  std::vector<BriefingSection> sections;
+  // G: use the final section as goals when a briefing has multiple sections.
+  // The private campaign documents follow this layout; native UI loading is unverified.
+  if (load_briefing(find_file_ci(data.maps_dir(), stem + ".mit"), sections) && sections.size() >= 2)
+    return cp1250_to_utf8(sections.back().title) + "\n" + cp1250_to_utf8(sections.back().text);
+  // G: custom maps without sectioned briefings may supply editor notes as goals.
+  MissionDef mission;
+  std::string text;
+  if (load_mission(mp, mission)) for (const auto& note : mission.notes) text += note + "\n";
+  return text.empty() ? "No mission objectives are available." : text;
+}
+
 bool CampaignProgress::won(int n) const { return n >= 1 && n <= 15 && (completed & (1u << (n - 1))); }
 bool CampaignProgress::unlocked(int n) const {
   return n >= 1 && n <= 15 && (n == 1 || won(n) || won(n - 1));

@@ -100,6 +100,9 @@ void GameSim::init(World& w) {
   w.town_speed.assign(w.mission.towns.size(), 1);
   w.repair_credits.assign(w.mission.towns.size(), 0);
   w.effects.clear();
+  w.script_cameras.clear();
+  w.messages.clear();
+  w.message_retirement = 0;
   // Reference computer intelligence starts with visibility value 24 (rules_ai.md).
   // Imported saves retain their recorded fog instead of restarting intelligence.
   if (!w.original_save) {
@@ -1607,6 +1610,9 @@ void GameSim::update_fog(World& w) {
       if (o.source == ObjectSource::Boat || o.source == ObjectSource::Johnka) mask = 71;
       stamp_sight(vision, mw, mh, inputs->mask(mask), px(o.cur_x), px(o.cur_y), true);
     }
+    for (const auto& camera : w.script_cameras)
+      if (camera.active && camera.side == int(side))
+        stamp_sight(vision, mw, mh, inputs->mask(camera.mask), camera.x, camera.y, true);
     for (size_t i = 0; i < glow.size(); i++) {
       uint8_t nv = uint8_t(std::max(std::min(int(l.v[i]), 32), std::max(0, int(glow[i]) - vision[i])));
       if (nv != l.v[i]) { l.v[i] = nv; changed = true; }
@@ -1786,6 +1792,13 @@ uint64_t GameSim::state_hash(const World& w) const {
   for (const auto& s : w.mission.sides) {
     mix(s.index); mix(s.race); mix(s.start_x); mix(s.start_y); mix(s.neutral); mix(s.only_comp);
     mix(s.disabled.size()); for (int type : s.disabled) mix(type);
+    mix(s.cameras.size());
+    for (const auto& camera : s.cameras) for (int value : camera) mix(value);
+  }
+  mix(w.script_cameras.size());
+  for (const auto& camera : w.script_cameras) {
+    mix(camera.side); mix(camera.index); mix(camera.x); mix(camera.y); mix(camera.mask);
+    mix(camera.ticks_left); mix(camera.active); mix(camera.latest);
   }
   mix(w.mission.paths.size());
   for (const auto& path : w.mission.paths) {
