@@ -15,7 +15,7 @@ simulation, engine save/load and Linux/Windows release requirements.
 
 ## Project status
 
-Estimated 2026-11-14 (revised after the descriptor, script command and AI surveys). These are **the maintainers' estimates**, not measured values; there
+Estimated 2026-11-15 (revised after the movement, economy, script, fog, tower and AI surveys). These are **the maintainers' estimates**, not measured values; there
 is no single progress metric. Three things are kept apart: how much of the original's
 behaviour is understood, how much of it the engine implements, and how much has been checked
 against the running original or by playing. Update this table when a major finding or merge
@@ -26,19 +26,19 @@ changes it (see `docs/gap_recon.md` for the open items behind each row).
 | Data tables, raw values (90 types, 60 weapon records, build tree, prices) | ~100% | ~85% | partial |
 | Descriptor fields (meaning of each of the 201 data-carrying words) | ~90% (about 180 named, some as guesses) | ~20% | ~10% |
 | Weapon and damage formulas | ~90% (weapon graph, anti-air table, effects, fire, Knight sweep) | ~50% | ~25% |
-| Movement and path finding | ~60% | ~55% | ~30% |
-| Unit behaviour (states, acquisition, groups) | ~50% | ~45% | ~25% |
-| Economy and construction | ~60% | ~60% | ~30% |
-| Computer players (purchases, waves, defence) | ~50% (production gate, price factors, assignment structure; scoring formulas open) | ~30% | ~10% |
-| Mission scripts (conditions, actions, flow) | ~85% (all 34 command codes and handlers) | ~85% | forced-state tests only |
+| Movement and path finding | ~85% (wave search, tie breaking, passability, side steps, speed arithmetic) | ~55% | ~30% |
+| Unit behaviour (states, acquisition, groups) | ~80% (idle scan, chase, leash, retaliation, group anchor and formation) | ~45% | ~25% |
+| Economy and construction | ~85% (placement, progress, refunds, income, production lane, build tree flags) | ~60% | ~30% |
+| Computer players (purchases, waves, defence) | ~75% (production gate, plan builder, target score, threat rule; some tables open) | ~30% | ~10% |
+| Mission scripts (conditions, actions, flow) | ~95% (all action codes, 22 condition codes, trigger timing, victory flow) | ~85% | forced-state tests only |
 | Transport (ferries) | ~93% (control flow, request conditions, passenger rule, tick timeline) | ~35% (model to be replaced) | one measured cycle |
-| Special mechanics (towers, air units, fire, town capture) | ~60% (capture rule, ownership mechanism, hypno resolved) | ~30% | ~15% |
+| Special mechanics (towers, air units, fire, town capture) | ~80% (capture rule, ownership mechanism, hypno resolved) | ~30% | ~15% |
 | Saves and resume | ~60% | ~65% | ~20% |
 | Interface and menus | ~40% | ~55% | ~15% |
 | Audio | ~40% | ~50% | ~10% |
 | Campaign (missions 1 to 15) | ~30% | ~70% (scripts) | ~7% (one mission played honestly) |
 
-Overall (rough): about 70% of the original's rules understood, about 45 to 50% implemented,
+Overall (rough): about 82% of the original's rules understood, about 45 to 50% implemented,
 about 15 to 20% checked against the original or by play. The reference oracle (the original
 executable running headless under an observer, plus its decompilation) covers about 35% of
 the logic so far; the decompilation corpus now holds 5468 functions with an index of one-line annotations used as leads, not as truth; missions 4 to 15 have not been measured.
