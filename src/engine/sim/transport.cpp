@@ -52,6 +52,8 @@ void GameSim::unload(World& w, Object& vessel, int tx, int ty) {
     passenger->carrier = 0; passenger->removed = false; passenger->boarding = 0;
     passenger->teleport(tile_center_fixed(x), tile_center_fixed(y));
     passenger->order = uint8_t(Order::Idle); passenger->target = 0; passenger->resume = 0;
+    passenger->idle_attack = false;
+    passenger->idle_anchor_x = passenger->cur_x >> 8; passenger->idle_anchor_y = passenger->cur_y >> 8;
     if (passenger->mover < 0) attach_agent(*passenger);
     else {
       auto& agent = mover_->agents_mut()[size_t(passenger->mover)];

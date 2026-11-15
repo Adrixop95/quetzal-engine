@@ -65,6 +65,9 @@ struct Object {
   int landing_x = 0, landing_y = 0;
   bool unload_pending = false;
   int unload_x = 0, unload_y = 0;
+  // Stable idle origins prevent autonomous pursuit from moving its own leash.
+  int32_t idle_anchor_x = -1, idle_anchor_y = -1; // world pixels; initialized on attachment
+  bool idle_attack = false;   // autonomous attack acquired without a movement order
   uint32_t target = 0;         // object id for attack orders (0 = none)
   uint32_t release_target = 0; // retained while a resource-driven Marine attack animation runs
   uint8_t attack_facing = 0;  // direction selected at attack start
