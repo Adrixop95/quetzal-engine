@@ -3106,20 +3106,20 @@ static void test_parallel_training() {
   }
 }
 
-// Pin faithful movement hashes for replay semantics 10, including cached harvest rates.
+// Pin replay semantics 11 hashes, including cached harvest rates and script cameras.
 static void test_faithful_profile_hashes() {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
   World w = production_world(); production_object(w, 0, 0, 5, 5);
   GameSim sim(rules, Modifications::faithful()); sim.init(w);
-  const uint64_t before_profiles[] = {
-    2731272105683802453ull, 7559610720850594014ull, 6940664026669715686ull,
-    11972851150484976922ull, 5791383722115172085ull, 5544993050283501421ull};
-  CHECK(sim.state_hash(w) == before_profiles[0]);
+  const uint64_t expected_hashes[] = {
+    6621025790133735591ull, 13105542295381728414ull, 6755400696489453904ull,
+    9343662878975202030ull, 6803637512504481071ull, 15355181150993627237ull};
+  CHECK(sim.state_hash(w) == expected_hashes[0]);
   Command move; move.type = Pct::Move; move.ids = {1}; move.a = 12 * 48; move.b = 12 * 48;
   sim.submit(move);
   for (int tick = 1; tick <= 5; ++tick) {
     production_steps(sim, w, 1);
-    CHECK(sim.state_hash(w) == before_profiles[tick]);
+    CHECK(sim.state_hash(w) == expected_hashes[tick]);
   }
 }
 

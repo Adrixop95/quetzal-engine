@@ -26,7 +26,6 @@ bool ScriptRunner::supports(ActKind kind) {
   switch (kind) {
     case ActKind::SideBuildCommand:
     case ActKind::SideMoveCommand:
-    case ActKind::SideCameraDeactivate:
       return false;
     case ActKind::BoatActivate:
     case ActKind::JohnkaEnable:
@@ -44,6 +43,7 @@ bool ScriptRunner::supports(ActKind kind) {
     case ActKind::SideVictory:
     case ActKind::SideDefeat:
     case ActKind::SideCameraActivate:
+    case ActKind::SideCameraDeactivate:
     case ActKind::SideSetFriendlyTo:
     case ActKind::SideSetNeutralTo:
     case ActKind::SideSetEnemyTo:
@@ -269,25 +269,52 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
     }
     case ActKind::TriggerEnable: enabled_[a.id] = true; break;
     case ActKind::TriggerDisable: enabled_[a.id] = false; break;
-    case ActKind::TimerSet: timers_[a.id] = {true, a.a, true}; break;
+    case ActKind::TimerSet: {
+      auto& timer = timers_[a.id];
+      if (!timer.exists) timer = Timer{};
+      // V: setting the counter does not clear an existing timer's stop flag.
+      timer.value = a.a;
+      break;
+    }
     case ActKind::TimerStart: { Timer& t = timers_[a.id]; t.running = true; t.exists = true; break; }
     case ActKind::TimerStop: timers_[a.id].running = false; break;
     case ActKind::TimerKill: timers_[a.id].exists = false; break;
     case ActKind::CenterView:
-      w.center_view = true; w.center_x = std::clamp(a.a, 0, w.terrain.w - 1) * kTilePx + kTilePx / 2; w.center_y = std::clamp(a.b, 0, w.terrain.h - 1) * kTilePx + kTilePx / 2; w.center_serial++;
+      // V: centerView uses tile origins; the view camera clamps its viewport.
+      w.center_view = true;
+      w.center_x = std::clamp(a.a, 0, std::max(0, w.terrain.w - 1)) * kTilePx;
+      w.center_y = std::clamp(a.b, 0, std::max(0, w.terrain.h - 1)) * kTilePx;
+      w.center_serial++;
       break;
     case ActKind::SideCameraActivate: {
       for (const SideDef& sd : w.mission.sides)
         if (sd.index == side && a.a >= 0 && a.a < int(sd.cameras.size())) {
-          w.center_view = true;
-          w.center_x = sd.cameras[size_t(a.a)][0] * kTilePx + kTilePx / 2;
-          w.center_y = sd.cameras[size_t(a.a)][1] * kTilePx + kTilePx / 2;
-          w.center_serial++;
+          const auto& camera = sd.cameras[size_t(a.a)];
+          // V: repeated activation creates another source; deactivate addresses the latest.
+          for (auto& previous : w.script_cameras)
+            if (previous.side == side && previous.index == a.a) previous.latest = false;
+          const int x = std::clamp(camera[0], 0, std::max(0, w.terrain.w - 1)) * kTilePx + kTilePx / 2;
+          const int y = std::clamp(camera[1], 0, std::max(0, w.terrain.h - 1)) * kTilePx + kTilePx / 2;
+          // V: camera size selects one of the eight vision masks. Widen before adding.
+          const int mask = int(std::clamp(int64_t(camera[2]) + 59, int64_t(64), int64_t(71)));
+          w.script_cameras.push_back({side, a.a, x, y, mask, a.b});
         }
       break;
     }
-    case ActKind::PrintString: w.messages.push_back({cp1250_to_utf8(a.text), 12 * 6}); break;
-    case ActKind::PrintStringR: break;  // Russian variant: the English one is shown
+    case ActKind::SideCameraDeactivate:
+      for (auto& camera : w.script_cameras)
+        if (camera.side == side && camera.index == a.a && camera.latest) camera.active = false;
+      break;
+    case ActKind::PrintString: {
+      // V: the reference ring retains at most fifteen prints, with four-second deadlines.
+      if (std::count_if(w.messages.begin(), w.messages.end(), [](const Message& m) { return m.seconds_left >= 0; }) >= 15) {
+        const auto oldest = std::find_if(w.messages.begin(), w.messages.end(), [](const Message& m) { return m.seconds_left >= 0; });
+        w.messages.erase(oldest);
+      }
+      w.messages.push_back({cp1250_to_utf8(a.text), 0, 4});
+      break;
+    }
+    case ActKind::PrintStringR: break;  // V: parsed and discarded in this executable revision.
     case ActKind::SideVictory: case ActKind::SideDefeat: {
       uint8_t r = a.kind == ActKind::SideVictory ? kVictory : kDefeat;
       if (side >= 0 && side < 8 && w.side_outcome[side] == kRunning) w.side_outcome[side] = r;
@@ -352,7 +379,7 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
       }
       break;
     }
-    default: // build/move commands and camera deactivate remain unsupported
+    default: // build/move commands remain unsupported
       unsupported_++;
       break;
   }
@@ -413,6 +440,11 @@ uint64_t ScriptRunner::state_hash() const {
 }
 
 void ScriptRunner::tick(GameSim& sim, World& w) {
+  // G: age existing sources before this tick's actions; native creation/update phase needs measurement.
+  for (auto& camera : w.script_cameras)
+    if (camera.active && camera.ticks_left > 0 && --camera.ticks_left == 0) camera.active = false;
+  w.script_cameras.erase(std::remove_if(w.script_cameras.begin(), w.script_cameras.end(),
+      [](const ScriptCamera& camera) { return !camera.active && !camera.latest; }), w.script_cameras.end());
   local_time_++;
   for (auto& kv : timers_)
     if (kv.second.exists && kv.second.running) kv.second.value++;
@@ -435,8 +467,8 @@ void ScriptRunner::tick(GameSim& sim, World& w) {
     }
   }
   follow_paths(sim, w);
-  for (Message& m : w.messages) m.ticks_left--;
-  w.messages.erase(std::remove_if(w.messages.begin(), w.messages.end(), [](const Message& m) { return m.ticks_left <= 0; }), w.messages.end());
+  for (Message& m : w.messages) if (m.seconds_left < 0) m.ticks_left--;
+  w.messages.erase(std::remove_if(w.messages.begin(), w.messages.end(), [](const Message& m) { return m.seconds_left < 0 && m.ticks_left <= 0; }), w.messages.end());
 }
 
 }  // namespace aztec::engine

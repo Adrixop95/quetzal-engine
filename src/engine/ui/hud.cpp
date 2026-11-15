@@ -21,7 +21,22 @@ const Object* pick_object(const World& w, float wx, float wy, float alpha, float
   return best;
 }
 
-void draw_messages(SDL_Renderer* r, const Font& font, const std::vector<Message>& messages, const SDL_Rect& area, int scale) {
+void advance_messages(World& w, double seconds) {
+  if (!std::isfinite(seconds) || seconds < 0) return;
+  w.message_retirement = std::max(0.0, w.message_retirement - seconds);
+  for (auto& message : w.messages)
+    if (message.seconds_left >= 0) message.seconds_left = std::max(0.0, message.seconds_left - seconds);
+  // V: drawing retires at most one expired print per second; later prints remain visible.
+  if (w.message_retirement > 0) return;
+  const auto expired = std::find_if(w.messages.begin(), w.messages.end(),
+      [](const Message& message) { return message.seconds_left == 0; });
+  if (expired != w.messages.end()) {
+    w.messages.erase(expired);
+    w.message_retirement = 1;
+  }
+}
+
+void draw_messages(SDL_Renderer* r, const Font& font, const std::vector<Message>& messages, const SDL_Rect& area, int scale, bool left_align) {
   const int ts = font.ui_scale(scale), line_height = font.height(ts) + 3 * scale;
   if (area.w <= 0 || area.h < line_height) return;
   std::vector<std::string> lines;
@@ -38,7 +53,7 @@ void draw_messages(SDL_Renderer* r, const Font& font, const std::vector<Message>
   SDL_RenderSetClipRect(r, &clip);
   int y = area.y;
   for (size_t i = first; i < lines.size(); ++i) {
-    font.draw(r, area.x + (area.w - font.width(lines[i], ts)) / 2, y, lines[i], ts, {255, 255, 200, 255});
+    font.draw(r, left_align ? area.x : area.x + (area.w - font.width(lines[i], ts)) / 2, y, lines[i], ts, {255, 255, 200, 255});
     y += line_height;
   }
   SDL_RenderSetClipRect(r, clipped ? &previous : nullptr);

@@ -136,7 +136,19 @@ struct TownState {
 enum Relation : uint8_t { kEnemy = 0, kFriend = 1, kNeutral = 2 };
 enum Outcome : uint8_t { kRunning = 0, kVictory = 1, kDefeat = 2 };
 
-struct Message { std::string text; int ticks_left = 0; };
+struct Message {
+  std::string text;
+  int ticks_left = 0;
+  // Presentation time for script prints; negative means a simulation-timed notice.
+  double seconds_left = -1;
+};
+
+// V: cameraActivate creates stationary side vision, separate from the view camera.
+struct ScriptCamera {
+  int side = 0, index = 0, x = 0, y = 0, mask = 64, ticks_left = 0;
+  // Keep the latest record after expiry: deactivate must not remove an older activation.
+  bool active = true, latest = true;
+};
 
 struct Selection {
   std::vector<uint32_t> ids;
@@ -166,7 +178,9 @@ struct World {
   uint8_t outcome = kRunning;           // mission result for the local side (scripts: side(local).victory / defeat)
   uint8_t side_outcome[8] = {};         // victory / defeat flags per side
   std::vector<Message> messages;        // printString texts (UTF-8), shown for a few seconds
-  bool center_view = false;             // centerView / cameraActivate request for the UI (consumed by the engine loop)
+  double message_retirement = 0;        // presentation-only spacing between expired prints
+  std::vector<ScriptCamera> script_cameras;
+  bool center_view = false;             // centerView request for the UI (consumed by the engine loop)
   int center_x = 0, center_y = 0;       // world px
   uint32_t center_serial = 0;
   Selection selection;           // local player's selected objects (UI state, not simulation state)
