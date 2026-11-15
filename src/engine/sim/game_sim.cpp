@@ -16,6 +16,10 @@ namespace aztec::engine {
 namespace {
 constexpr int kAnimIdle = 0, kAnimMove = 1, kAnimAttack = 2, kAnimDie = 3;
 inline int px(Fixed f) { return f >> 8; }
+// F-TRANSPORT-COMBAT: zero-maximum vessel controllers are not ordinary damage
+// recipients. Native eligibility still needs measurement; script cleanup remains
+// available without inventing vessel health. See playthrough_missions_1_5.md.
+bool damageable(const Object& o) { return !is_transport(o.type) || o.hp_max > 0; }
 inline int64_t d2(const Object& a, const Object& b) {
   int64_t dx = px(a.cur_x) - px(b.cur_x), dy = px(a.cur_y) - px(b.cur_y);
   return dx * dx + dy * dy;
@@ -348,9 +352,11 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o) const {
   // unavailable. This six-tile fallback remains a placeholder, not a sight fact.
   constexpr int64_t fallback_radius = 6 * kTilePx;
   int64_t bd = mask_sight ? std::numeric_limits<int64_t>::max() : fallback_radius * fallback_radius;
+  path::FlowField reachable;
+  bool have_reachable = false;
   // G: scripted ferries are excluded from automatic combat assignment; direct damage remains possible.
   for (const Object& t : w.objects) {
-    if (t.removed || !t.alive || t.type < 0 || t.type == 84 || !w.hostile(o.side, t.side) || t.progress < 1000) continue;
+    if (t.removed || !t.alive || !damageable(t) || t.type < 0 || t.type == 84 || !w.hostile(o.side, t.side) || t.progress < 1000) continue;
     if (rules_->type(o.type).kind == 0 && pursuit_distance(o,t) > 1152) continue;
     if (mask_sight && !position_visible(w, o.side, px(t.cur_x), px(t.cur_y))) continue;
     const auto shot = rules_->attack(o.type, t.type, !w.hostile(o.side, t.side));
@@ -366,7 +372,30 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o) const {
       if (!weapon_in_range(rules_->type(o.type), int64_t(px(t.cur_x)) - px(o.cur_x),
                            int64_t(px(t.cur_y)) - px(o.cur_y), reach)) continue;
     }
-    if (d < bd || (d == bd && best && t.id < best->id)) { bd = d; best = &t; }
+    if (d >= bd && !(d == bd && best && t.id < best->id)) continue;
+    const auto& source = rules_->type(o.type);
+    const int64_t reach = weapon_reach(source, rules_->type(t.type), shot);
+    if (o.mover >= 0 && !source.flier &&
+        !weapon_in_range(source, int64_t(px(t.cur_x)) - px(o.cur_x), int64_t(px(t.cur_y)) - px(o.cur_y), reach)) {
+      // Automatic pursuit needs reachable firing ground. Side-wide visibility
+      // alone must not repeatedly send land units across disconnected water.
+      const auto& agent = mover_->agents()[size_t(o.mover)];
+      if (!have_reachable) {
+        path::Cell start{px(o.cur_x) / kTilePx, px(o.cur_y) / kTilePx};
+        reachable.build(nav_, agent.cls, &start, 1); have_reachable = true;
+      }
+      bool can_fire = false;
+      const int tx = px(t.cur_x), ty = px(t.cur_y);
+      for (int y = std::max(0, int((ty - reach) / kTilePx)); !can_fire && y <= std::min(nav_.height() - 1, int((ty + reach) / kTilePx)); ++y)
+        for (int x = std::max(0, int((tx - reach) / kTilePx)); x <= std::min(nav_.width() - 1, int((tx + reach) / kTilePx)); ++x) {
+          const path::Vec2 candidate{tile_center_fixed(x), tile_center_fixed(y)};
+          const int64_t dx = px(candidate.x) - tx, dy = px(candidate.y) - ty;
+          if (weapon_in_range(source, dx, dy, reach) && reachable.reachable(x, y) &&
+              !nav_.disc_hits(candidate, agent.radius, agent.cls)) { can_fire = true; break; }
+        }
+      if (!can_fire) continue;
+    }
+    bd = d; best = &t;
   }
   return best;
 }
@@ -442,7 +471,7 @@ void GameSim::apply(World& w, const Command& c) {
     }
     case Pct::Attack: {
       const Object* t = w.find(uint32_t(c.a));
-      if (!t || t->removed || !t->alive ||
+      if (!t || t->removed || !t->alive || !damageable(*t) ||
           (w.visibility_brightness && !object_visible(w, c.side, *t))) break;
       for (Object* o : own_ids(true)) {
         if (o->id == t->id || !rules_->type(o->type).armed) continue;
@@ -1225,7 +1254,7 @@ void GameSim::run_orders(World& w) {
     Object* t = w.find_mut(o.target);
     const bool lost_chase = t && r.kind == 0 &&
         (pursuit_distance(o,*t) > 1152 || (rules_->sight() && !object_visible(w,o.side,*t)));
-    if (!t || t->removed || !t->alive || lost_chase) {
+    if (!t || t->removed || !t->alive || !damageable(*t) || lost_chase) {
       finish_attack(o);
       continue;
     }
@@ -1319,6 +1348,7 @@ void GameSim::fire(World& w, const Object& source, Object& target, int damage) {
 }
 
 void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& source, Object& target, int damage) {
+  if (!damageable(target)) return;
   if (weapon.klass == 7) {
     // V: a standalone area hit resolves at the target position plus two pixels
     // vertically. It has no travelling projectile or hostile-only victim gate.
@@ -1421,7 +1451,7 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
 
 void GameSim::apply_blast(World& w, const Effect& e) {
   for (auto& o : w.objects) {
-    if (!o.alive || o.removed) continue;
+    if (!o.alive || o.removed || !damageable(o)) continue;
     const int distance = int(combat_distance(int64_t(o.cur_x / 256) - e.x / 256,
                                            int64_t(o.cur_y / 256) - e.y / 256));
     const int damage = rules_->blast_damage(e.payload_id, rules_->type(o.type), distance);
@@ -1472,7 +1502,7 @@ void GameSim::advance_effects(World& w) {
     if (e.shockwave == data::kShockwaveAnim) decoration(w, e.shockwave, 0, e.x, e.y, 0, e.side);
     if (e.payload_id >= 0) { apply_blast(w, e); continue; }
     for (auto& o : w.objects) {
-      if (!o.alive || o.removed) continue;
+      if (!o.alive || o.removed || !damageable(o)) continue;
       int64_t dx = int64_t(o.cur_x) - e.x, dy = int64_t(o.cur_y) - e.y;
       bool splash = e.splash_px > 0 && w.hostile(e.side, o.side) &&
                     dx * dx + dy * dy <= int64_t(e.splash_px * 256) * (e.splash_px * 256);

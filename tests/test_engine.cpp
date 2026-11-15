@@ -895,6 +895,12 @@ static void test_siege_ranged() {
   source.hp = 10000; source.cooldown = 100; source.teleport(to_fixed(800), to_fixed(800));
   blast.objects.push_back(source);
   blast.relation[0][1] = blast.relation[1][0] = kEnemy;
+  // F-TRANSPORT-COMBAT also applies to spatial payloads, not just targeted shots.
+  for (int type : {84, 88}) {
+    Object vessel; vessel.id = uint32_t(blast.objects.size() + 1); vessel.type = type;
+    vessel.cooldown = 100; // Isolate blast damage from the armed vessel's own attacks.
+    vessel.teleport(to_fixed(200), to_fixed(200)); blast.objects.push_back(vessel);
+  }
   GameSim blast_sim(rules, Modifications::faithful()); blast_sim.init(blast);
   Effect impact; impact.kind = data::EffectClass::BallExpl; impact.flight = true;
   impact.source = 5; impact.payload_id = 3;
@@ -908,6 +914,10 @@ static void test_siege_ranged() {
   CHECK(blast.objects[0].last_hit_by == 5);
   CHECK(blast.tactic_attacked_by.at({0, 10}) == 1);
   CHECK(blast.tactic_attacked_by.count({1, 10}) == 0);
+  for (size_t i : {size_t(5), size_t(6)}) {
+    CHECK(blast.objects[i].hp_max == 0 && blast.objects[i].hp == 0);
+    CHECK(blast.objects[i].alive && !blast.objects[i].last_hit_by);
+  }
 }
 
 static void test_standalone_area_attack() {
