@@ -280,6 +280,22 @@ static void test_unstick_relocation() {
   CHECK(mover.agents()[id].local_path.empty() && mover.agents()[id].unstick_ticks == 0);
 }
 
+static void test_dense_unstick_arrival() {
+  NavGrid grid(40, 28); MoverConfig config; config.unit_unstick = true;
+  MoveSystem mover(grid, config);
+  std::vector<u32> ids;
+  for (int y = 10; y < 14; ++y) for (int x = 3; x < 7; ++x)
+    ids.push_back(mover.add_agent({(x * 48 + 24) * kFix, (y * 48 + 24) * kFix}, 14 * kFix, 8 * kFix, MoveClass::Small));
+  const Vec2 goal{1560 * kFix, 600 * kFix};
+  mover.order_move(ids.data(), int(ids.size()), goal);
+  for (int tick = 0; tick < 900; ++tick) mover.tick();
+  for (const Agent& a : mover.agents()) {
+    CHECK(a.state == AgentState::Arrived);
+    CHECK(length(a.pos - goal) <= 3 * kTileFix);
+    CHECK(!grid.disc_hits(a.pos, a.radius, a.cls));
+  }
+}
+
 int main() {
   test_math(); test_field_vs_astar(); test_no_corner_cut(); test_courses(); test_determinism(); test_unreachable_goal(); test_large_class(); test_dynamic_block();
   const u64 wall_run = run_goal_beside_wall();
@@ -292,6 +308,7 @@ int main() {
     for (bool enabled : {false, true}) CHECK(run_unstick(name, enabled) == run_unstick(name, enabled));
   test_unstick_route_choice();
   test_unstick_relocation();
+  test_dense_unstick_arrival();
   test_random_stress();
   printf("%d checks, %d failed\n", g_checks, g_fail);
   return g_fail ? 1 : 0;

@@ -484,4 +484,7 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME playthrough_framework COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_SOURCE_DIR}/tests/test_playthrough_framework.py $<TARGET_FILE:aztec_engine>)
   set_tests_properties(playthrough_framework PROPERTIES LABELS "unit" TIMEOUT 60)
+  add_test(NAME pathing_stress COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_SOURCE_DIR}/tests/test_pathing_stress.py $<TARGET_FILE:aztec_engine>)
+  set_tests_properties(pathing_stress PROPERTIES LABELS "unit" TIMEOUT 120)
 endif()

@@ -67,6 +67,11 @@ internal repeatability. The pre-existing campaign sweep/save/replay driver is
 described in [playthrough.md](playthrough.md); it does not accept this richer
 script format through its older `--orders` interface.
 
+The route runner defaults to `--profile faithful`; use `--profile enhanced` to
+exercise the recovery helpers. Reports record the profile, and capture replay
+uses the same selection. Synthetic pathing courses and their measurement limits
+are documented in [pathing-regression-from-playthroughs.md](pathing-regression-from-playthroughs.md).
+
 The default mode is `--mode headless`: dummy SDL video/audio, software rendering,
 no fog and no lighting. It renders offscreen so captures and UI clicks remain
 available; it uses virtual time rather than the separate engine `--headless`
