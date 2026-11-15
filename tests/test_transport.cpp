@@ -252,7 +252,9 @@ static void reachable_automatic_pursuit() {
     w.passability={32,16,std::vector<uint8_t>(512,2)};
     for (int y=0;y<16;++y) for (int x=13;x<=18;++x)
       if (!bridge || y!=7) w.passability.v[size_t(y)*32+x]=0;
-    add(w,0,10,7); add(w,0,21,7,1); add(w,89,23,7);
+    // Keep the enemy inside aggressive group reach plus melee reach, so only
+    // the bridge determines whether automatic pursuit has reachable firing ground.
+    add(w,0,12,7); add(w,0,21,7,1); add(w,89,23,7);
     w.objects[0].hp=w.objects[1].hp=10000;
     w.objects[0].attack_mode=AttackMode::Aggressive;
     w.side_state.resize(8);

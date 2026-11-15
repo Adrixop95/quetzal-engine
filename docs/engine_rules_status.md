@@ -79,7 +79,7 @@ and `engine` checks pass with the complete private map copy under dummy SDL in
 | Weapon reload getters and cooldown | V getters / partial scheduling | Ball/Axe use d2/d3 for reload/range; class 12 uses its first child. Siege launch cooldown uses reload, following Truck/Headtruck decrement-before-check; other weapons retain reload+1. Animation-marker launch delays and exact hit intervals remain unverified |
 | Projectile and unresolved weapon behavior | partial | Ball/Axe and paired siege launchers now fire descriptor payloads; class 9 supplies chained category damage. Ball impacts evaluate a spatial blast per victim. Standalone FireThrow and burn scheduling remain disabled. See the siege investigation below for evidence and remaining approximations |
 | Weapon range | V getters / P geometry and fallback | Established weapon getters replace generic ranges; Euclidean centre distance plus mobile source radius and placeholder target radius/footprint remains. Types without loaded weapon descriptors retain 56/288/336 px placeholders |
-| Sight data and visibility predicate | V facts / synthetic checks | Descriptor mask IDs replace the scalar radius. Per-side interpolated brightness must exceed 32; daylight and frame glow contribute. User lighting resources enable these rules; asset-free acquisition retains a P six-tile fallback. See the [sight and fog notes](sight_fog.md) |
+| Sight data and visibility predicate | V facts / synthetic checks | Descriptor mask IDs replace the scalar radius. Per-side interpolated brightness must exceed 32; daylight and frame glow contribute. User lighting resources enable these rules; asset-free acquisition uses the mode-dependent combat envelope (G geometry). See the [sight and fog notes](sight_fog.md) |
 | Auto-attack of visible enemies (idle and attack-moving units) | V visibility gate / P tactic integration | Side brightness >32, hostility and known weapon eligibility gate candidates. Nearest enemy, lower-id ties and four-tick per-object scanning remain placeholders; original tactic bounds, 100-entry arrays and 15..23-tick scans are not implemented |
 | Death and corpses | P / V effect metadata | Marine corpses remain 480 ticks; vehicles spawn 152 and ground debris 113, known-radius structures select rubble 116/115/114 for 250 ticks; unknown radii retain provisional rubble 116. Airborne altitude remains open |
 | Simulation fog brightness and exploration | V formulas / synthetic checks | Every active tick: global daylight plus saturated glow (maximum 152), minimum side vision darkness, nonnegative difference; previous exploration capped at 32. Raw brightness replaces invented 0/96/152 states. Renderer integration remains separate |
@@ -220,8 +220,12 @@ movement and resume it after target death. Explicit attack orders remain availab
 The range geometry, four-tick acquisition cadence and nearest-enemy policy remain
 existing approximations. This is a useful partial integration, not full tactic
 parity: aggressive/balanced currently share that policy. Attached-tactic graphs,
-group centres, mode-specific group distance enforcement, formation return and
-mode inheritance across later tactic joins/spawns still require the tactic model.
+reference group centres and mode inheritance across later tactic joins/spawns
+still require the tactic model. The [group reach update](group_reach.md) replaces
+the fixed two-tile idle allowance with mode distances and bounded firing-position
+search, stable idle origins and return after target escape. Centroid origins,
+pixel-circle geometry and return timing remain G approximations; live acceptance
+is pending.
 
 Task 13 has removed the unsupported AI-only 80-unit cutoff in develop. This patch
 preserves that planner rather than modifying its superseded adapter. Human and computer production

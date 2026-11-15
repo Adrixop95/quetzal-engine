@@ -250,16 +250,16 @@ static void test_sight() {
   for (int ambient : {32, 33}) {
     for (auto& day : inputs->daylight) day.fill(uint8_t(ambient));
     World duel = initial;
-    duel.objects[0].attack_mode = AttackMode::Aggressive;  // visibility gate test: aggressive units pursue, balanced ones hold
+    duel.objects[0].attack_mode = AttackMode::Aggressive;  // visibility gate test: mode 2 has an eight-tile group reach
     GameSim combat(rules, Modifications::faithful()); combat.init(duel);
     for (int t = 0; t < 3; ++t) { duel.begin_tick(); combat.tick(duel); }
     CHECK(duel.objects[0].target == (ambient == 33 ? 2u : 0u));
     CHECK(object_visible(duel, 0, duel.objects[1]) == (ambient == 33));
     // Balanced units hold their ground: the same lit enemy 400 px away is not chased (regression for the
     // mission 1 march: idle units used to attack any enemy the side could see, starting the scripted counterattack).
-    for (AttackMode mode : {AttackMode::Balanced, AttackMode::Defensive}) {
+    {
       World hold = initial;
-      hold.objects[0].attack_mode = mode;
+      hold.objects[0].attack_mode = AttackMode::Balanced;
       hold.objects[1].attack_mode = AttackMode::Direct;
       const auto start_x = hold.objects[0].cur_x, start_y = hold.objects[0].cur_y;
       GameSim hold_sim(rules, Modifications::faithful()); hold_sim.init(hold);
@@ -304,13 +304,13 @@ static void test_sight() {
     // Local mouse selection does not rewrite deterministic command selection.
     CHECK(duel.side_state[0].selected_ids == std::vector<uint32_t>{1});
   }
-  // Clean checkouts have no private masks. Their combat remains functional,
-  // using the bounded placeholder instead of silently disabling acquisition.
+  // Clean checkouts have no private masks. Group reach still bounds combat
+  // instead of silently disabling acquisition.
   rules->set_sight(nullptr);
   CHECK(initial.visibility.sides.empty());
-  for (int distance : {200, 400}) {
+  for (int distance : {200, 500}) {
     World duel = initial;
-    duel.objects[0].attack_mode = AttackMode::Aggressive;  // bounded placeholder radius test, not the idle leash
+    duel.objects[0].attack_mode = AttackMode::Aggressive;  // eight-tile leash plus firing reach
     duel.objects[1].teleport(to_fixed(20 * 48 + distance), to_fixed(20 * 48));
     GameSim combat(rules, Modifications::faithful()); combat.init(duel);
     for (int t = 0; t < 3; ++t) { duel.begin_tick(); combat.tick(duel); }
@@ -1513,6 +1513,94 @@ static void production_object(World& w, int type, int town, int x, int y) {
 
 static void production_steps(GameSim& sim, World& w, int ticks) {
   for (int t = 0; t < ticks; ++t) { w.begin_tick(); sim.tick(w); }
+}
+
+// Synthetic behavior checks; reference norm/formation boundaries need live runs.
+static void test_group_reach() {
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  World initial = production_world();
+  initial.relation[0][1] = kEnemy;
+  production_object(initial, 0, -1, 10, 10);
+  production_object(initial, 0, -1, 16, 10);
+  initial.objects[1].side = 1;
+  initial.objects[1].attack_mode = AttackMode::Direct;
+  const int origin_x = initial.objects[0].cur_x >> 8;
+  const int origin_y = initial.objects[0].cur_y >> 8;
+
+  // A six-tile melee target is pursued in modes 1/2/3, never in direct control.
+  // This also distinguishes the rule from weapon range plus two tiles.
+  for (int mode = 0; mode < 4; ++mode) {
+    World w = initial;
+    w.objects[0].attack_mode = AttackMode(mode);
+    GameSim sim(rules, Modifications::faithful()); sim.init(w);
+    production_steps(sim, w, 4);
+    CHECK((w.objects[0].target == 2) == (mode != 0));
+  }
+  // Descriptor combat radii can extend melee reach beyond one tile. Place the
+  // target outside the Balanced envelope but inside modes 1 and 2.
+  const auto shot = rules->attack(0, 0, false);
+  const int firing_reach = shot.range_px + (shot.edge_range ? 2 * rules->type(0).combat_radius() : 0);
+  const int beyond_balanced = 6 * kTilePx + firing_reach + 24;
+  for (int mode : {1, 2, 3}) {
+    World w = initial;
+    w.objects[0].attack_mode = AttackMode(mode);
+    w.objects[1].teleport(to_fixed(origin_x + beyond_balanced), to_fixed(origin_y));
+    GameSim sim(rules, Modifications::faithful()); sim.init(w);
+    production_steps(sim, w, 4);
+    CHECK((w.objects[0].target == 2) == (mode != 3));
+  }
+  // A ground unit may approach a target just outside the anchor radius if it
+  // can shoot from inside. It must not follow that target farther afterwards.
+  for (int mode : {1, 2, 3}) {
+    const int radius = (mode == 3 ? 6 : 8) * kTilePx;
+    World w = initial;
+    w.objects[0].attack_mode = AttackMode(mode);
+    w.objects[1].teleport(to_fixed(origin_x + radius + 30), to_fixed(origin_y));
+    GameSim sim(rules, Modifications::faithful()); sim.init(w);
+    production_steps(sim, w, 20);
+    CHECK(w.objects[0].target == 2 && w.objects[0].idle_attack);
+    CHECK(w.objects[0].cur_x > to_fixed(origin_x));
+    CHECK(w.objects[0].idle_anchor_x == origin_x);
+    sim.teleport(w, 2, origin_x + radius + 100, origin_y);
+    production_steps(sim, w, 1);
+    CHECK(w.objects[0].target == 0 && w.objects[0].order == uint8_t(Order::Idle));
+    production_steps(sim, w, 160);
+    CHECK(w.objects[0].target == 0);
+    CHECK(std::abs((w.objects[0].cur_x >> 8) - origin_x) < 16);
+    CHECK(w.objects[0].idle_anchor_x == origin_x);
+    // Explicit orders can pursue outside the idle envelope.
+    Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
+    sim.submit(attack); production_steps(sim, w, 4);
+    CHECK(w.objects[0].target == 2 && !w.objects[0].idle_attack);
+    const auto hash = sim.state_hash(w);
+    ++w.objects[0].idle_anchor_x;
+    CHECK(sim.state_hash(w) != hash);
+    --w.objects[0].idle_anchor_x;
+    w.objects[0].idle_attack = true;
+    CHECK(sim.state_hash(w) != hash);
+  }
+  // Same-side tactic members share an origin; a forward member cannot stretch
+  // the leash by measuring from itself. Foreign tactic numbers are independent.
+  World group = initial;
+  group.objects[0].tactic = group.objects[1].tactic = 7;
+  production_object(group, 0, -1, 14, 10);
+  group.objects[2].tactic = 7;
+  group.objects[1].teleport(to_fixed(origin_x + 2 * kTilePx + beyond_balanced), to_fixed(origin_y));
+  GameSim grouped(rules, Modifications::faithful()); grouped.init(group);
+  production_steps(grouped, group, 4);
+  CHECK(group.objects[0].target == 0 && group.objects[2].target == 0);
+
+  // A new movement destination establishes a new idle origin, including replay.
+  World moved = initial;
+  moved.objects[1].side = 0;
+  GameSim moving(rules, Modifications::faithful()); moving.init(moved);
+  Command move; move.type = Pct::Move; move.ids = {1}; move.a = origin_x + 3 * kTilePx; move.b = origin_y;
+  moving.submit(move); production_steps(moving, moved, 120);
+  CHECK(std::abs(moved.objects[0].idle_anchor_x - move.a) < 16);
+  World replayed = initial; replayed.objects[1].side = 0;
+  auto replay = GameSim::replay(replayed, rules, moving.log(), moving.tick_count());
+  CHECK(replay->state_hash(replayed) == moving.state_hash(moved));
 }
 
 // Task 47 reproductions: geometry, mines, mixed preview colours and damaged work.
@@ -3106,14 +3194,14 @@ static void test_parallel_training() {
   }
 }
 
-// Pin replay semantics 11 hashes, including cached harvest rates and script cameras.
+// Pin replay hashes including idle origins, cached harvest rates and script cameras.
 static void test_faithful_profile_hashes() {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
   World w = production_world(); production_object(w, 0, 0, 5, 5);
   GameSim sim(rules, Modifications::faithful()); sim.init(w);
   const uint64_t expected_hashes[] = {
-    6621025790133735591ull, 13105542295381728414ull, 6755400696489453904ull,
-    9343662878975202030ull, 6803637512504481071ull, 15355181150993627237ull};
+    5365837229744924559ull, 17846443464013651846ull, 7334857790600743194ull,
+    7251567528696558682ull, 1591863276331069751ull, 15948428330348253207ull};
   CHECK(sim.state_hash(w) == expected_hashes[0]);
   Command move; move.type = Pct::Move; move.ids = {1}; move.a = 12 * 48; move.b = 12 * 48;
   sim.submit(move);
@@ -4025,6 +4113,7 @@ int main(int argc, char** argv) {
     test_audio_pure();
     test_commands_ui();
     test_population_difficulty_modes();
+    test_group_reach();
     test_group_follow_commands();
   } else {
     std::string dir = test_game_dir(argc, argv);
