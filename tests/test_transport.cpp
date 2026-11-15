@@ -1,6 +1,7 @@
 // Generated river scenarios exercise engine policies, not original-game parity.
 #include "engine/sim/game_sim.hpp"
 #include "engine/sim/savegame.hpp"
+#include "engine/sim/sight.hpp"
 #include "engine/ui/commands_ui.hpp"
 #include "engine/ui/hud.hpp"
 #include "engine/ui/selection_ui.hpp"
@@ -193,6 +194,8 @@ static void bizon_pursuit() {
 static void ferry_combat() {
   World w=river(); add(w,32,4,7,1); w.relation[0][1]=w.relation[1][0]=kFriend;
   auto r=rules(); GameSim sim(r); sim.init(w);
+  // Positive health isolates ferry acquisition policy from the controller damage guard.
+  w.objects[0].hp_max=w.objects[0].hp=1000;
   command(sim,Pct::Board,{2},1); ticks(sim,w,240);
   CHECK(w.objects[0].alive && w.objects[0].cargo.size()==1);
   w.relation[0][1]=w.relation[1][0]=kEnemy; ticks(sim,w,120);
@@ -200,12 +203,67 @@ static void ferry_combat() {
   CHECK(w.objects[2].target!=1); // G: automatic acquisition excludes the ferry only.
   Command attack; attack.type=Pct::Attack; attack.side=1; attack.ids={3}; attack.a=1; sim.submit(attack);
   ticks(sim,w,120); CHECK(!w.objects[0].alive && !w.objects[1].alive);
-  World johnka=river(0); add(johnka,88,6,7); add(johnka,32,4,7,1);
+  // A positive-health Johnka within shore firing range remains eligible.
+  World johnka=river(0); add(johnka,88,5,8); add(johnka,32,4,7,1);
   johnka.objects[1].hp=johnka.objects[2].hp=100000;
-  GameSim js(r); js.init(johnka); ticks(js,johnka,8);
+  GameSim js(r); js.init(johnka);
+  johnka.objects[1].hp_max=johnka.objects[1].hp=100000;
+  ticks(js,johnka,8);
   CHECK(johnka.objects[2].target==2); CHECK(johnka.objects[0].alive);
+}
+static void zero_maximum_combat_fallback() {
+  for (int type : {84, 88}) {
+    World w=river(0); w.objects[0].type=type;
+    add(w,27,4,7,1); add(w,0,3,7);
+    w.objects[1].hp=w.objects[2].hp=10000;
+    GameSim sim(rules()); sim.init(w);
+    CHECK(w.objects[0].hp_max==0 && w.objects[0].hp==0);
+    Command attack; attack.side=1; attack.type=Pct::Attack; attack.ids={2}; attack.a=1;
+    sim.submit(attack); ticks(sim,w,12);
+    CHECK(w.objects[0].alive && w.objects[0].hp==0);
+    CHECK(w.objects[1].target!=1); // automatic acquisition also excludes the controller
+    CHECK(w.objects[2].hp<10000); // ordinary recipients still take direct damage
+
+    World impact=river(0); impact.objects[0].type=type;
+    add(impact,0,3,7); impact.objects[1].hp=10000;
+    GameSim projectiles(rules()); projectiles.init(impact);
+    Effect shot; shot.flight=true; shot.target=1; shot.side=1; shot.damage=700;
+    shot.x=shot.end_x=impact.objects[0].cur_x; shot.y=shot.end_y=impact.objects[0].cur_y;
+    shot.speed=256; shot.splash_px=200; impact.effects.push_back(shot);
+    ticks(projectiles,impact,1);
+    CHECK(impact.objects[0].alive && impact.objects[0].hp==0);
+    CHECK(impact.objects[1].hp==9300); // splash must not become globally harmless
+
+    // Positive-health synthetic vessels retain ordinary combat semantics.
+    impact.objects[0].hp_max=impact.objects[0].hp=1000;
+    impact.effects.push_back(shot); ticks(projectiles,impact,1);
+    CHECK(impact.objects[0].hp==300 && impact.objects[0].alive);
+    projectiles.script_kill(impact,1); CHECK(!impact.objects[0].alive);
+  }
+}
+static void reachable_automatic_pursuit() {
+  auto r=rules();
+  auto sight=std::make_shared<SightData>();
+  for (auto& day:sight->daylight) day.fill(80);
+  sight->masks[0].assign(404,0); sight->masks[0][0]=sight->masks[0][2]=20;
+  r->set_sight(sight);
+  for (bool bridge : {false,true}) {
+    World w; w.terrain.w=32; w.terrain.h=16; w.terrain.cells.resize(512);
+    w.passability={32,16,std::vector<uint8_t>(512,2)};
+    for (int y=0;y<16;++y) for (int x=13;x<=18;++x)
+      if (!bridge || y!=7) w.passability.v[size_t(y)*32+x]=0;
+    add(w,0,10,7); add(w,0,21,7,1); add(w,89,23,7);
+    w.objects[0].hp=w.objects[1].hp=10000;
+    w.objects[0].attack_mode=AttackMode::Aggressive;
+    w.side_state.resize(8);
+    GameSim sim(r); sim.init(w); ticks(sim,w,4);
+    CHECK(w.objects[0].target==(bridge ? 2u : 0u));
+    ticks(sim,w,20);
+    CHECK(sim.path_failures(w.objects[0])==0);
+  }
 }
 int main(int argc,char** argv) {
   if (argc==3 && std::string(argv[1])=="--campaign") { campaign_sites(argv[2]); return 0; }
-  landing_requests(); landing_over_enemy(); bizon_pursuit(); ferry_combat(); crossing(); limits(); occupied_shore(); eligibility(); script_arrivals(); unload_button(); std::puts("Transport scenarios passed");
+  landing_requests(); landing_over_enemy(); bizon_pursuit(); ferry_combat();
+  crossing(); limits(); occupied_shore(); eligibility(); script_arrivals(); unload_button(); zero_maximum_combat_fallback(); reachable_automatic_pursuit(); std::puts("Transport scenarios passed");
 }
