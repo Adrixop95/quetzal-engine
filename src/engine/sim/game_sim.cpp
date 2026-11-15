@@ -356,14 +356,13 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o) const {
     const auto shot = rules_->attack(o.type, t.type, !w.hostile(o.side, t.side));
     if (!shot.damage_known || !shot.getters_known || shot.damage <= 0) continue;
     int64_t d = d2(o, t);
-    // An idle unit holds its ground: it engages what its weapon reaches plus a short leash. The original keeps
-    // idle units within one or two tiles of their tactic anchor (live mission 1 to 3 measurement); chasing any
-    // enemy the side can see made the clone's own units walk to the enemy base and start the scripted counterattack.
+    // G: provisional acquisition radius, not a verified reference chase leash.
+    // Startup walking captures do not establish a one/two-tile tactic radius.
     const bool idle_hold = o.order == uint8_t(Order::Idle) && o.attack_mode != AttackMode::Aggressive;
     if (o.attack_mode == AttackMode::Direct || idle_hold) {
       const auto& tr = rules_->type(t.type);
       int64_t reach = weapon_reach(rules_->type(o.type), tr, shot);
-      if (idle_hold && o.attack_mode != AttackMode::Direct) reach += 2 * kTilePx;  // Balanced and Defensive hold their ground
+      if (idle_hold && o.attack_mode != AttackMode::Direct) reach += 2 * kTilePx;
       if (!weapon_in_range(rules_->type(o.type), int64_t(px(t.cur_x)) - px(o.cur_x),
                            int64_t(px(t.cur_y)) - px(o.cur_y), reach)) continue;
     }
@@ -469,13 +468,7 @@ void GameSim::apply(World& w, const Command& c) {
         o.attack_mode = AttackMode(c.a);
         // Clear combat assignment on a mode change; preserve the movement destination.
         if (o.order == uint8_t(Order::Attack)) {
-          o.order = uint8_t(resumed_order(o.resume));
-          o.target = 0; o.resume = 0;
-          if (o.mover >= 0) {
-            uint32_t aid = uint32_t(o.mover);
-            if (o.order == uint8_t(Order::Idle)) mover_->stop(aid);
-            else mover_->order_move(&aid, 1, {to_fixed(o.dest_x), to_fixed(o.dest_y)});
-          }
+          finish_attack(o);
         }
       }
       break;
@@ -1143,6 +1136,27 @@ void GameSim::follow_tactics(World& w) {
   }
 }
 
+void GameSim::finish_attack(Object& o) {
+  o.order = uint8_t(resumed_order(o.resume));
+  o.target = 0; o.resume = 0;
+  if (o.mover < 0) return;
+  const uint32_t aid = uint32_t(o.mover);
+  if (o.order == uint8_t(Order::Idle)) mover_->stop(aid);
+  else mover_->order_move(&aid, 1, {to_fixed(o.dest_x), to_fixed(o.dest_y)});
+}
+
+void GameSim::record_hit(World& w, Object& target, uint32_t source) {
+  target.last_hit_by = source;
+  const Object* attacker = w.find(source);
+  // V: defence towers, friendly sources and sources without a tactic do
+  // not pass the enemy-notification path (see unit_automatic_behaviour.md).
+  if (!attacker || attacker->type < 0 || rules_->type(attacker->type).kind == 7 ||
+      attacker->tactic < 0 || target.tactic < 0 || attacker->side < 0 || attacker->side >= 8 ||
+      target.side < 0 || target.side >= 8 || attacker->side == target.side ||
+      w.relation[target.side][attacker->side] == kFriend) return;
+  script_.notify_attack(w, target, attacker->side);
+}
+
 void GameSim::run_orders(World& w) {
   follow_tactics(w);
   for (size_t i = 0; i < w.objects.size(); i++) {
@@ -1212,17 +1226,7 @@ void GameSim::run_orders(World& w) {
     const bool lost_chase = t && r.kind == 0 &&
         (pursuit_distance(o,*t) > 1152 || (rules_->sight() && !object_visible(w,o.side,*t)));
     if (!t || t->removed || !t->alive || lost_chase) {
-      o.target = 0;
-      if (o.resume) {
-        o.order = uint8_t(resumed_order(o.resume)); o.resume = 0;
-        if (ag) {
-          uint32_t aid = uint32_t(o.mover);
-          mover_->order_move(&aid, 1, {to_fixed(o.dest_x), to_fixed(o.dest_y)});
-        }
-      } else {
-        o.order = uint8_t(Order::Idle);
-        if (lost_chase && ag) mover_->stop(uint32_t(o.mover));
-      }
+      finish_attack(o);
       continue;
     }
     const TypeRules& tr = rules_->type(t->type);
@@ -1360,8 +1364,8 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
     hit.x = target.cur_x; hit.y = target.cur_y;
     trace_combat("impact", hit);
     trace_combat("damage", hit, target.id, target.hp, target.hp - damage);
-    target.hp -= damage; target.last_hit_by = source.id;
-    if (damage > 0 && script_.loaded()) script_.notify_attack(w, target, source.side);
+    target.hp -= damage;
+    if (damage > 0) record_hit(w, target, source.id);
     if (target.hp <= 0) kill(w, target);
     if (weapon.klass == 10) {
       // V: life drain uses one third of calculated damage, including overkill,
@@ -1423,8 +1427,7 @@ void GameSim::apply_blast(World& w, const Effect& e) {
     const int damage = rules_->blast_damage(e.payload_id, rules_->type(o.type), distance);
     if (damage <= 0) { trace_combat("miss", e, o.id, o.hp, o.hp); continue; }
     trace_combat("damage", e, o.id, o.hp, o.hp - damage);
-    o.hp -= damage; o.last_hit_by = e.source;
-    if (script_.loaded()) script_.notify_attack(w, o, e.side);
+    o.hp -= damage; record_hit(w, o, e.source);
     if (o.hp <= 0) kill(w, o);
   }
 }
@@ -1485,8 +1488,8 @@ void GameSim::advance_effects(World& w) {
         continue;
       }
       trace_combat("damage", e, o.id, o.hp, o.hp - e.damage);
-      o.hp -= e.damage; o.last_hit_by = e.source;
-      if (e.damage > 0 && script_.loaded()) script_.notify_attack(w, o, e.side);
+      o.hp -= e.damage;
+      if (e.damage > 0) record_hit(w, o, e.source);
       if (o.hp <= 0) kill(w, o);
     }
   }
@@ -1850,6 +1853,12 @@ uint64_t GameSim::state_hash(const World& w) const {
   for (const TownState& t : w.town_state) {
     mix(uint32_t(t.index)); mix(uint32_t(t.side)); mix(t.hall); mix(uint8_t(t.repair_mode)); mix(t.marked.size());
     for (uint32_t id : t.marked) mix(id);
+  }
+  if (!w.tactic_attacked_by.empty()) {
+    mix(0x61747461636b6564ULL); mix(w.tactic_attacked_by.size());
+    for (const auto& [tactic, side] : w.tactic_attacked_by) {
+      mix(uint32_t(tactic.first)); mix(uint32_t(tactic.second)); mix(uint32_t(side));
+    }
   }
   mix(w.side_state.size());
   for (const SideState& s : w.side_state) {

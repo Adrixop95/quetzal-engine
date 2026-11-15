@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <map>
 #include "core/savegame.hpp"
 #include <string>
 #include <vector>
@@ -75,7 +76,7 @@ struct Object {
   int32_t tactic = -1;         // team (tactic) number for Team objects, changed by joinTactic
   int32_t follow_tactic = -1;  // side-local leader tactic, independent of combat target
   int32_t scenario = -1;       // ScenarioID of defences / vessels (script references)
-  uint32_t last_hit_by = 0;    // id of the last attacker (script condition tactic(N).attacked)
+  uint32_t last_hit_by = 0;    // object attribution for damage and AI threat tracking
   uint8_t resume = 0;          // interrupted movement: 1 = attack-move, 2 = move, 3 = follow, 0 = idle
   int32_t build_elapsed = 0, build_total = 0;  // construction timer (ticks)
   int32_t progress = 1000;     // construction 0..1000 (1000 = finished); buildings only
@@ -158,6 +159,9 @@ struct World {
   std::vector<Effect> effects;
   std::vector<TownState> town_state;
   std::vector<SideState> side_state;   // indexed by side number
+  // V: attacked is the notifying nonfriendly side, retained by the side-local tactic.
+  // G: numeric tactic identities stand in for reference tactic lifetimes.
+  std::map<std::pair<int, int>, int> tactic_attacked_by;
   uint8_t relation[8][8] = {};          // relation[a][b]: how side a regards side b (enemy / friend / neutral)
   uint8_t outcome = kRunning;           // mission result for the local side (scripts: side(local).victory / defeat)
   uint8_t side_outcome[8] = {};         // victory / defeat flags per side

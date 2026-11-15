@@ -115,6 +115,8 @@ class GameSim : public Simulation {
   void capture_towns(World& w);
   bool mark_eligible(const Object& o, const TownState& town) const;
   void run_orders(World& w);
+  void finish_attack(Object& o);
+  void record_hit(World& w, Object& target, uint32_t source);
   void transport_tick(World& w);
   void unload(World& w, Object& vessel, int tx, int ty);
   void request_unload(World& w, Object& vessel, int tx, int ty);

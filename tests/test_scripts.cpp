@@ -48,6 +48,68 @@ static void source_locations() {
   CHECK(s.triggers[0].actions[0].line == 8);
 }
 
+static void attacked_notification() {
+  // Invented projectile impacts exercise notifications independently of weapons.
+  // V: attacked returns a side and belongs to the tactic, not the damaged member.
+  for (int source_side : {0, 1, 2}) for (int source_kind : {0, 17, -1})
+      for (auto relation : {kEnemy, kNeutral, kFriend}) {
+    World w = world();
+    object(w, source_kind == 17 ? 17 : 0, source_side, source_kind < 0 ? -1 : 20, 25, 25);
+    object(w, 0, 2, 10, 3, 3);
+    object(w, 0, 2, 10, 5, 3);
+    object(w, 0, 0, 10, 7, 3); // same number on another side is independent
+    if (source_side != 2) w.relation[2][source_side] = relation;
+    for (auto& o : w.objects) o.attack_mode = AttackMode::Direct;
+    GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+    auto r = runner(w, "trigger(1) conditions side(local).tactic(10).attacked == 1 "
+        "actions side(local).addMoney(7) trigger(1).disable end");
+    CHECK(condition(r, w, "side(local).tactic(10).attacked == -1"));
+    auto hit = [&](int damage) {
+      Effect e; e.kind = data::EffectClass::Arrow; e.flight = true;
+      e.source = 1; e.target = 2; e.side = source_side; e.damage = damage;
+      e.x = e.end_x = w.objects[1].cur_x; e.y = e.end_y = w.objects[1].cur_y;
+      w.effects.push_back(e); w.begin_tick(); sim.tick(w);
+    };
+    hit(0);
+    CHECK(w.tactic_attacked_by.empty());
+    hit(1);
+    CHECK(w.objects[1].last_hit_by == 1);
+    const bool notified = source_side != 2 && source_kind == 0 && relation != kFriend;
+    const int expected = notified ? source_side : -1;
+    CHECK(condition(r, w, "side(local).tactic(10).attacked == " + std::to_string(expected)));
+    CHECK(condition(r, w, "side(0).tactic(10).attacked == -1"));
+    if (notified) {
+      const auto hash = sim.state_hash(w);
+      w.tactic_attacked_by[{2, 10}] = 6;
+      CHECK(sim.state_hash(w) != hash);
+      w.tactic_attacked_by[{2, 10}] = source_side;
+    }
+    // Keep the notification after the hit member dies and the attacker leaves.
+    hit(1000);
+    CHECK(!w.objects[1].alive && w.objects[2].alive);
+    w.objects[0].removed = true;
+    CHECK(condition(r, w, "side(local).tactic(10).attacked == " + std::to_string(expected)));
+    r.tick(sim, w);
+    CHECK(w.side_state[2].money == (notified && source_side == 1 ? 7 : 0));
+  }
+
+  // Direct weapon damage produces the same notification and replays it.
+  World initial = world();
+  object(initial, 0, 1, 20, 3, 3);
+  object(initial, 0, 2, 10, 4, 3);
+  initial.objects[1].hp = 2000;
+  auto w = initial;
+  auto definitions = rules();
+  GameSim sim(definitions, Modifications::faithful()); sim.init(w);
+  Command attack; attack.side = 1; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
+  sim.submit(attack); w.begin_tick(); sim.tick(w);
+  CHECK(w.objects[1].last_hit_by == 1);
+  CHECK(w.tactic_attacked_by.at({2, 10}) == 1);
+  auto replay_world = initial;
+  auto replay = GameSim::replay(replay_world, definitions, sim.log(), sim.tick_count());
+  CHECK(replay->state_hash(replay_world) == sim.state_hash(w));
+}
+
 static void order_and_enablement() {
   World w = world(); GameSim sim(rules(), Modifications::faithful()); sim.init(w);
   auto r = runner(w,
@@ -120,15 +182,16 @@ static void conditions_and_identity() {
     CHECK(condition(r, w, std::string("side(local).money ") + op));
   CHECK(!condition(r, w, "side(8).isEnemy(1) == 1"));
   CHECK(!condition(r, w, "side(local).unitsInRect(4,5,3,4) > 0"));
-  const auto quiet_hash = r.state_hash();
   w.objects[0].last_hit_by = 5;
+  const auto quiet_hash = sim.state_hash(w);
+  CHECK(condition(r, w, "side(local).tactic(10).attacked == -1"));
   r.notify_attack(w, w.objects[0], w.objects[4].side);
   CHECK(condition(r, w, "side(local).tactic(10).attacked == 1"));
   CHECK(!condition(r, w, "side(local).tactic(10).attacked == 5"));
-  const auto attacked_hash = r.state_hash();
+  const auto attacked_hash = sim.state_hash(w);
   CHECK(attacked_hash != quiet_hash);
   r.notify_attack(w, w.objects[1], 2); // friendly damage leaves notification unchanged
-  CHECK(r.state_hash() == attacked_hash);
+  CHECK(sim.state_hash(w) == attacked_hash);
   w.objects[0].alive = false; w.objects[4].alive = false;
   CHECK(condition(r, w, "side(local).tactic(10).attacked == 1"));
   w.objects[0].alive = true; w.objects[4].alive = true;
@@ -431,6 +494,7 @@ static void pending_path_is_not_idle() {
 
 int main() {
   campaign_gates(); town_tactics_and_capture(); embarked_script_identity(); pending_path_is_not_idle();
+  attacked_notification();
   source_locations(); order_and_enablement(); timers(); conditions_and_identity(); paths_and_gifts(); actions_and_outcomes(); defence_loading(); action_observation_contracts(); replay();
   std::puts("Synthetic script contracts passed.");
 }
