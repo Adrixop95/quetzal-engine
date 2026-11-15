@@ -1,20 +1,18 @@
+# Generated river fixture; one right click drives an entire shuttle cycle.
 wait 3
-# Generated 16x16 river fixture: tests/test_transport_playtest.py.
-# 1000x768 window, no panel, camera centered at -116,0, zoom 1.
 click 236 168
 expect selection == 1
 rclick 380 360
-run 240
+wait 3
+run 80
 expect units 0 == 1
 dump 0 84
 dump 0 0
-click 380 360
-expect selection == 1
-rclick 620 360
-run 180
-rclick 668 360
-run 2
+run 320
 expect units 0 == 2
 dump -1 84
+click 380 360
+wait 3
+expect selection == 0
 print
 quit

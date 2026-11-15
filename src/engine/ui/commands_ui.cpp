@@ -155,11 +155,7 @@ bool CommandsUi::action_enabled(PanelAction action, const World& w, const RulesD
     const Object* o = w.find(id);
     if (!o || !o->alive || o->removed || o->side != w.local_side || o->type < 0) continue;
     const TypeInfo* ti = type_info(o->type);
-    if (action == PanelAction::Garrison && is_transport(o->type)) {
-      if (o->vessel_enabled && !o->cargo.empty()) return true;
-      continue;
-    }
-    if (is_transport(o->type) && !o->vessel_enabled) continue;
+    if (is_ferry(*o) || (is_transport(o->type) && !o->vessel_enabled)) continue;
     if (action == PanelAction::Garrison || action == PanelAction::Repair) {
       if (o->town_hall && o->town >= 0) return true;
       continue;
@@ -212,7 +208,7 @@ void CommandsUi::issue_to_selection(const World& w, Command c) const {
   c.side = uint8_t(w.local_side);
   for (uint32_t id : w.selection.ids) {
     const Object* o = w.find(id);
-    if (o && o->alive && !o->removed && o->side == w.local_side) c.ids.push_back(id);
+    if (o && o->alive && !o->removed && !is_ferry(*o) && o->side == w.local_side) c.ids.push_back(id);
   }
   if (c.type == Pct::DestroyHere) {
     for (const TownState& town : w.town_state) {
@@ -232,11 +228,6 @@ void CommandsUi::activate(PanelAction action, const World& w) {
   if (action == PanelAction::Move) mode_ = TargetMode::Move;
   else if (action == PanelAction::Attack) mode_ = TargetMode::Attack;
   else if (action == PanelAction::Garrison || action == PanelAction::Repair) {
-    if (action == PanelAction::Garrison) {
-      Command unload; unload.type = Pct::Unload; unload.c = 1;
-      for (auto id : w.selection.ids) if (auto* o = w.find(id); o && is_transport(o->type)) unload.ids.push_back(id);
-      if (!unload.ids.empty()) { unload.side = uint8_t(w.local_side); sim_->submit(unload); return; }
-    }
     for (uint32_t id : w.selection.ids) {
       const Object* o = w.find(id);
       if (!o || !o->town_hall || !o->alive || o->removed || o->side != w.local_side) continue;
@@ -259,7 +250,7 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
   }
   ++ui_frame_;
   w.selection.ids.erase(std::remove_if(w.selection.ids.begin(), w.selection.ids.end(), [&](uint32_t id) {
-    const Object* o = w.find(id); return !o || o->removed || !o->alive;
+    const Object* o = w.find(id); return !o || o->removed || !o->alive || is_ferry(*o);
   }), w.selection.ids.end());
   if (selection_ != w.selection.ids) {
     cancel_mode();
@@ -302,24 +293,10 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
         else { wx = cam.to_world_x(float(in.mx)); wy = cam.to_world_y(float(in.my)); }
         const Object* t = in_world ? pick_object(w, wx, wy, alpha, 24.f / cam.zoom + 8) : nullptr;
         Command c;
-        // Split vessels out before object picking can turn a landing click into Attack.
-        const int tx = int(wx) / kTilePx, ty = int(wy) / kTilePx;
-        const bool land = tx >= 0 && ty >= 0 && tx < w.passability.w && ty < w.passability.h &&
-                          w.passability.at(tx, ty) != 0;
-        if (land) {
-          Command landing; landing.type = Pct::Unload; landing.side = uint8_t(w.local_side);
-          landing.a = int(wx); landing.b = int(wy);
-          for (auto id : w.selection.ids) if (const auto* o = w.find(id); o && is_transport(o->type)) landing.ids.push_back(id);
-          if (!landing.ids.empty()) sim_->submit(std::move(landing));
-        }
-        if (t && t->side == w.local_side && is_transport(t->type)) { c.type = Pct::Board; c.a = int(t->id); }
+        if (t && is_ferry(*t) && (t->side == w.local_side || (t->side >= 0 && t->side < 8 && w.relation[w.local_side][t->side] == kFriend))) { c.type = Pct::Attack; c.a = int(t->id); }
         else if (t && t->side != w.local_side && t->alive && !t->removed && t->type >= 0) { c.type = Pct::Attack; c.a = int(t->id); }
         else { c.type = Pct::Move; c.a = int(wx); c.b = int(wy); }
-        if (land) {
-          c.side = uint8_t(w.local_side);
-          for (auto id : w.selection.ids) if (const auto* o = w.find(id); o && !is_transport(o->type)) c.ids.push_back(id);
-          if (!c.ids.empty()) sim_->submit(std::move(c));
-        } else issue_to_selection(w, c);
+        issue_to_selection(w, c);
       }
     }
     right_moved_ = false;
@@ -478,7 +455,7 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
   };
   if (!w.selection.ids.empty()) {
     const Object* o = w.find(w.selection.ids.front());
-    if (o) {
+    if (o && !is_ferry(*o)) {
       draw_icon(o->type, true, l.portrait, true, o->side);
       const auto lines = font.wrap(type_display_name(strings, o->type), ts, l.summary.w);
       int y = l.summary.y;
@@ -493,17 +470,13 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
     }
   } else font.draw(r, l.summary.x, l.summary.y + 12 * sc, "No selection", ts, {210, 200, 180, 255});
   if (!sim_) return {};
-  bool vessel_selected = false;
-  for (auto id : w.selection.ids) if (auto* o = w.find(id); o && is_transport(o->type)) vessel_selected = true;
   for (size_t i = 0; i < l.commands.size(); i++) {
     const auto state = button_state(PanelAction(i), w);
     bool enabled = state.enabled, hover = contains(l.commands[i], mx, my);
     SpriteKey k; k.archive = ArchiveId::Common; k.index = kButtons[i]; k.shade = 0;
-    const bool unload_button = i == 4 && vessel_selected;
-    if (unload_button) font.draw(r, l.commands[i].x, l.commands[i].y + 8 * sc, "Unload", ts, enabled ? SDL_Color{255,240,190,255} : SDL_Color{120,120,120,255});
-    else if (!blit(r, store, k, l.commands[i], state.frame, enabled)) font.draw(r, l.commands[i].x, l.commands[i].y, kLabels[i], ts, {220, 210, 180, 255});
+    if (!blit(r, store, k, l.commands[i], state.frame, enabled)) font.draw(r, l.commands[i].x, l.commands[i].y, kLabels[i], ts, {220, 210, 180, 255});
     if (hover) {
-      tip = unload_button ? "Unload passengers onto nearby free land" : kLabels[i];
+      tip = kLabels[i];
       const char* action = i == 3 ? "Repair" : i == 4 ? "Garrison" : i == 5 ? "Destroy" : nullptr;
       if (action) {
         int id = key_action_id(action);
@@ -522,7 +495,7 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
           tip += std::string("\nCurrent service: ") + modes[int(w.town_state[size_t(selected)].repair_mode)];
         }
       }
-      else if (i == 4 && !vessel_selected) tip += "\nExtract the selected town's troops";
+      else if (i == 4) tip += "\nExtract the selected town's troops";
       else if (i == 5) tip += "\nToggle buildings in the town's active repairer list";
       else if (!enabled) tip += "\nSelect an owned unit";
       else if (i == 1) tip += "\nClick an enemy to attack, or terrain to attack-move";

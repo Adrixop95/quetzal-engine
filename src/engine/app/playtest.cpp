@@ -216,7 +216,8 @@ bool PlaytestScript::player_command(World& w, GameSim* sim, const Line& l) {
         if (l.args.size() != 1) throw std::invalid_argument("context requires object ID");
         const auto* target = w.find(uint32_t(number(0)));
         if (!target || !target->alive || target->removed) throw std::invalid_argument("missing context target");
-        if (target->side == w.local_side && is_transport(target->type)) { c.type = Pct::Board; c.a = int(target->id); }
+        if (is_ferry(*target) && (target->side == w.local_side ||
+            (target->side >= 0 && target->side < 8 && w.relation[w.local_side][target->side] == kFriend))) { c.type = Pct::Attack; c.a = int(target->id); }
         else if (target->side != w.local_side && target->type >= 0) { c.type = Pct::Attack; c.a = int(target->id); }
         else { c.type = Pct::Move; c.a = target->cur_x / 256; c.b = target->cur_y / 256; }
       } else throw std::invalid_argument("unsupported action");
@@ -241,7 +242,7 @@ void PlaytestScript::observe(const World& w, const GameSim* sim) {
         << ",\"alive\":" << (o.alive && (!o.removed || o.carrier) ? "true" : "false") << ",\"position\":[" << o.cur_x / 256 << ',' << o.cur_y / 256
         << "],\"order\":" << int(o.order) << ",\"destination\":[" << o.dest_x << ',' << o.dest_y << "],\"target\":" << o.target
         << ",\"carrier\":" << o.carrier << ",\"boarding\":" << o.boarding << ",\"progress\":" << o.progress
-        << ",\"unload_pending\":" << (o.unload_pending ? "true" : "false")
+        << ",\"ferry_phase\":" << o.ferry_phase
         << ",\"mobile\":" << (sim->rules().type(o.type).mobile ? "true" : "false")
         << ",\"path_failures\":" << sim->path_failures(o) << ",\"cargo\":[";
     for (size_t i = 0; i < o.cargo.size(); ++i) observations_ << (i ? "," : "") << o.cargo[i];

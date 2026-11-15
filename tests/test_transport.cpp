@@ -29,72 +29,170 @@ static void ticks(GameSim& sim, World& w, int n) { while (n--) { w.begin_tick();
 static void command(GameSim& sim, Pct pct, std::vector<uint32_t> ids, int a=0, int b=0, int c=0) {
   Command cmd; cmd.type=pct; cmd.ids=ids; cmd.a=a; cmd.b=b; cmd.c=c; sim.submit(cmd);
 }
+static void until(GameSim& sim, World& w, const auto& predicate, int limit = 1800) {
+  while (!predicate() && limit-- > 0) ticks(sim,w,1);
+  if (!predicate()) for (const auto& o : w.objects)
+    std::fprintf(stderr,"id=%u pos=%d,%d phase=%d cargo=%zu boarding=%u tactic=%d order=%u dest=%d,%d\n",o.id,o.cur_x/256,o.cur_y/256,o.ferry_phase,o.cargo.size(),o.boarding,o.tactic,o.order,o.dest_x,o.dest_y);
+  CHECK(predicate());
+}
 static void crossing() {
-  auto r=rules(); World w=river(2), fresh=w; GameSim sim(r); sim.init(w);
-  command(sim,Pct::Board,{3,2},1); ticks(sim,w,240);
-  CHECK(w.objects[0].cargo.size()==2);
-  CHECK(w.objects[1].removed && w.objects[1].carrier == 1);
-  auto loaded_hash=sim.state_hash(w); std::swap(w.objects[0].cargo[0],w.objects[0].cargo[1]);
+  auto r=rules(); World w=river(3), fresh=w; GameSim sim(r); sim.init(w);
+  const auto dock_x=w.objects[0].cur_x, dock_y=w.objects[0].cur_y;
+  command(sim,Pct::Attack,{2,3,4},1);
+  until(sim,w,[&]{ return w.objects[0].ferry_phase==3; });
+  CHECK(w.objects[0].cargo.size()==3);
+  CHECK(w.objects[1].removed && w.objects[1].carrier==1);
+  const auto loaded_hash=sim.state_hash(w);
+  std::swap(w.objects[0].cargo[0],w.objects[0].cargo[1]);
   CHECK(sim.state_hash(w)!=loaded_hash); std::swap(w.objects[0].cargo[0],w.objects[0].cargo[1]);
-  auto restored=GameSim::replay(fresh,r,sim.log(),sim.tick_count());
-  CHECK(restored->state_hash(fresh)==sim.state_hash(w)); CHECK(fresh.objects[0].cargo==w.objects[0].cargo);
+  for (int* field : {&w.objects[0].ferry_phase, &w.objects[0].ferry_wait, &w.objects[0].orientation,
+                    &w.objects[0].ferry_direction, &w.objects[0].ferry_destination, &w.objects[0].ferry_request, &w.objects[0].ferry_group_side}) {
+    ++*field; CHECK(sim.state_hash(w)!=loaded_hash); --*field;
+  }
+  CHECK(ferry_protected(w.objects[0])==kFerryInvulnerableWhileSailing);
+  ticks(sim,w,kFerryTravelPause);
+  CHECK(w.objects[0].cur_x==dock_x && w.objects[0].cur_y==dock_y);
+  ticks(sim,w,1);
+  CHECK(w.objects[0].cur_x==dock_x+to_fixed(5) && w.objects[0].cur_y==dock_y-to_fixed(5));
+  // Save while moving, restore through the actual command-log save format, and
+  // compare every later tick through unloading and docking.
   SaveData save; save.mission="transport"; save.tick=sim.tick_count(); save.hash=sim.state_hash(w); save.log=sim.log();
   SaveData decoded; CHECK(deserialize_save(serialize_save(save),decoded));
-  World saved_world=river(2); std::string error;
-  auto saved_sim=replay_save(decoded,saved_world,r,0,"",error); CHECK(saved_sim && error.empty());
-  CHECK(saved_world.objects[0].cargo==w.objects[0].cargo);
-  command(sim,Pct::Move,{1},10*48+24,7*48+24); ticks(sim,w,180);
-  CHECK((w.objects[0].cur_x>>8)/48==10); CHECK(w.objects[0].cargo.size()==2);
-  command(sim,Pct::Move,{1},11*48+24,7*48+24); ticks(sim,w,1);
-  CHECK(w.objects[0].cargo.empty());
-  CHECK(!w.objects[1].removed && !w.objects[2].removed && !w.objects[1].carrier);
-  CHECK((w.objects[1].cur_x>>8)/48>=11); CHECK(w.objects[1].cur_y != w.objects[2].cur_y || w.objects[1].cur_x != w.objects[2].cur_x);
-  World replayed=river(2); auto replay=GameSim::replay(replayed,r,sim.log(),sim.tick_count());
-  CHECK(replay->state_hash(replayed)==sim.state_hash(w));
+  std::string error; auto saved_sim=replay_save(decoded,fresh,r,0,"",error); CHECK(saved_sim && error.empty());
+  CHECK(saved_sim->state_hash(fresh)==sim.state_hash(w));
+  bool landed=false, returning=false;
+  for (int i=0;i<400;++i) {
+    const int previous_phase=w.objects[0].ferry_phase;
+    ticks(sim,w,1); ticks(*saved_sim,fresh,1);
+    CHECK(saved_sim->state_hash(fresh)==sim.state_hash(w));
+    if (previous_phase==3 && w.objects[0].ferry_phase==4) {
+      const int next_x=(w.objects[0].cur_x/256+5)/48, next_y=(w.objects[0].cur_y/256-5)/48;
+      CHECK(w.passability.v[size_t(next_y)*16+size_t(next_x)]!=0);
+    }
+    if (w.objects[0].ferry_phase==5) { landed=true; returning=true; CHECK(w.objects[0].cargo.empty()); }
+  }
+  CHECK(landed && returning && w.objects[0].ferry_phase==0);
+  CHECK(w.objects[0].cur_x==dock_x && w.objects[0].cur_y==dock_y && w.objects[0].orientation==0);
+  for (size_t i=1;i<w.objects.size();++i) {
+    CHECK(!w.objects[i].removed && !w.objects[i].carrier);
+    CHECK(w.objects[i].tactic==w.objects[0].ferry_destination || w.objects[0].ferry_destination==-1);
+    CHECK((w.objects[i].cur_x>>8)/48>=11);
+  }
+  // A second ordinary order starts another complete cycle at the same dock.
+  for (size_t i=1;i<w.objects.size();++i) sim.teleport(w,uint32_t(i+1),3*48+24,int(5+i)*48+24);
+  command(sim,Pct::Attack,{2,3,4},1);
+  until(sim,w,[&]{return w.objects[0].ferry_phase==3;});
+  CHECK(w.objects[0].cargo.size()==3);
+  until(sim,w,[&]{return w.objects[0].ferry_phase==0;});
+  CHECK(w.objects[0].cargo.empty() && w.objects[0].cur_x==dock_x);
 }
 static void limits() {
   auto r=rules(); World w=river(7); GameSim sim(r); sim.init(w);
-  command(sim,Pct::Board,{2,3,4,5,6,7,8},1); ticks(sim,w,800);
+  command(sim,Pct::Attack,{8,7,6,5,4,3,2},1);
+  until(sim,w,[&]{return w.objects[0].ferry_phase==3;});
   CHECK(w.objects[0].cargo.size()==kTransportCapacity);
   int outside=0; for (size_t i=1;i<w.objects.size();++i) if (!w.objects[i].removed) { ++outside; CHECK(!w.objects[i].boarding); }
   CHECK(outside==2);
   sim.script_kill(w,1); CHECK(w.objects[0].cargo.empty());
   int dead=0; for (size_t i=1;i<w.objects.size();++i) if (!w.objects[i].alive) ++dead; CHECK(dead==5);
-  World far=river(); GameSim fs(r); fs.init(far); fs.teleport(far,1,8*48+24,7*48+24);
-  command(fs,Pct::Board,{2},1); ticks(fs,far,80); CHECK(far.objects[0].cargo.empty()); CHECK(!far.objects[1].removed);
-  command(fs,Pct::Move,{1},5*48+24,7*48+24); ticks(fs,far,240); CHECK(far.objects[0].cargo.size()==1);
-  command(fs,Pct::Move,{1},8*48+24,7*48+24); ticks(fs,far,100);
-  command(fs,Pct::Unload,{1},8*48+24,7*48+24); ticks(fs,far,1); CHECK(far.objects[0].cargo.size()==1);
-  command(fs,Pct::Unload,{1},0,0); ticks(fs,far,1); CHECK(far.objects[0].cargo.size()==1);
+  World far=river(); far.objects[0].teleport(tile_center_fixed(8),tile_center_fixed(7));
+  GameSim fs(r); fs.init(far); command(fs,Pct::Attack,{2},1); ticks(fs,far,240);
+  CHECK(far.objects[0].cargo.empty() && !far.objects[1].removed); // no teleport across water
 }
 static void occupied_shore() {
   World w=river(); GameSim sim(rules()); sim.init(w);
-  command(sim,Pct::Board,{2},1); ticks(sim,w,240); CHECK(w.objects[0].cargo.size()==1);
-  // Deliberate blockers have no agents: the unload occupancy query must reject them itself.
-  for (int y=1;y<=13;++y) for (int x=0;x<=4;++x) add(w,0,x,y);
-  command(sim,Pct::Unload,{1},4*48+24,7*48+24); ticks(sim,w,1);
-  CHECK(w.objects[0].cargo.size()==1 && w.objects[1].removed); CHECK(!w.messages.empty());
-  for (size_t i=2;i<w.objects.size();++i) w.objects[i].removed=true;
-  command(sim,Pct::Unload,{1},4*48+24,7*48+24); ticks(sim,w,1);
-  CHECK(w.objects[0].cargo.empty() && !w.objects[1].removed);
+  command(sim,Pct::Board,{2},1);
+  until(sim,w,[&]{return w.objects[0].ferry_phase==4;});
+  // Block every land tile with objects that have no mover agents. Placement
+  // must check live occupants itself, then retry when they are removed.
+  const size_t first_blocker=w.objects.size();
+  for (int y=0;y<16;++y) for (int x=0;x<16;++x)
+    if (w.passability.at(x,y)) add(w,0,x,y);
+  ticks(sim,w,kFerryOpeningTicks+1);
+  CHECK(w.objects[0].ferry_phase==4 && w.objects[0].cargo.size()==1);
+  CHECK(w.objects[1].removed && w.objects[1].carrier==1);
+  for (size_t i=first_blocker;i<w.objects.size();++i) w.objects[i].removed=true;
+  ticks(sim,w,1);
+  CHECK(w.objects[0].cargo.empty() && !w.objects[1].removed && !w.objects[1].carrier);
 }
 static void eligibility() {
-  World w=river(); add(w,3,3,8); add(w,7,3,9); add(w,0,3,10,1); auto r=rules();
+  for (bool town : {false,true}) {
+    World w=river(2);
+    if (town) for (size_t i=1;i<w.objects.size();++i) w.objects[i].town=0;
+    else for (size_t i=1;i<w.objects.size();++i) w.objects[i].type=7;
+    auto start=w.objects[1].cur_x; GameSim sim(rules()); sim.init(w);
+    command(sim,Pct::Attack,{2,3},1); ticks(sim,w,300);
+    CHECK(w.objects[0].ferry_phase==0 && w.objects[0].cargo.empty());
+    if (town) CHECK(w.objects[1].cur_x==start);
+  }
+  World w=river(2); w.objects[2].type=3; add(w,7,3,8); add(w,0,3,9,1);
   for (auto& row : w.relation) for (auto& relation : row) relation=kFriend;
-  GameSim sim(r); sim.init(w);
-  command(sim,Pct::Board,{2,3,4,5},1); ticks(sim,w,500);
-  CHECK(w.objects[0].cargo.size()==2); CHECK(w.objects[2].carrier==1); // siege vehicle allowed
-  CHECK(!w.objects[3].carrier && !w.objects[4].carrier); // air and enemy rejected
+  GameSim sim(rules()); sim.init(w);
+  command(sim,Pct::Attack,{2,3,4,5},1);
+  until(sim,w,[&]{return w.objects[0].ferry_phase==3;});
+  CHECK(w.objects[0].cargo.size()==2 && !w.objects[3].carrier && !w.objects[4].carrier);
 }
 static void script_arrivals() {
-  Ini ini; CHECK(ini.parse("[Globals]\nMapWidth=16\nMapHeight=16\nSides=1\nBoats=1\nJohnkas=1\nSubmarines=1\n[Boat0]\nSide=0\nScenarioID=4\nX=14\nY=-2\nEditorX=10\nEditorY=7\nEndPosition=1\nUnits=1\nUnit0=11,7,0,100\n[Johnka0]\nSide=0\nScenarioID=5\nX=8\nY=8\nEnabled=0\n[Submarine0]\nScenarioID=6\nX=8\nY=8\n"));
-  World w=river(0); CHECK(parse_mission(ini,"transport",w.mission)); place_mission_objects(w);
-  CHECK(w.objects[0].cargo.size()==1 && w.objects[1].removed && !w.objects[2].vessel_enabled);
+  World w=river(0); w.objects[0].source=ObjectSource::Boat; w.objects[0].scenario=4;
+  add(w,0,3,7); w.objects[1].carrier=1; w.objects[1].removed=true; w.objects[0].cargo={2};
+  w.objects[1].tactic=42;
   TempDir tmp; auto file=(tmp.path()/"transport.scn").string();
-  std::ofstream(file)<<"trigger(1) conditions always actions boat(4).activate johnka(5).enable submarine(6).go trigger(1).disable end";
-  GameSim sim(rules()); CHECK(sim.attach_script(file)); sim.init(w); ticks(sim,w,250);
-  CHECK(sim.script().unsupported()==0); CHECK(w.objects[0].vessel_arrived); CHECK(w.objects[0].cargo.empty());
-  CHECK(w.objects[2].vessel_enabled); CHECK(w.objects[3].vessel_arrived);
+  std::ofstream(file)<<"trigger(1) conditions always actions boat(4).activate trigger(1).disable end";
+  GameSim sim(rules()); CHECK(sim.attach_script(file)); sim.init(w); ticks(sim,w,1);
+  CHECK(sim.script().unsupported()==0 && w.objects[0].ferry_phase==3);
+  CHECK(w.objects[0].ferry_destination==42 && w.objects[0].ferry_request==-1);
+  const auto remaining=w.objects[0].ferry_wait;
+  CHECK(sim.activate_vessel(w,4,ObjectSource::Boat)); CHECK(w.objects[0].ferry_wait==remaining);
+  until(sim,w,[&]{return w.objects[0].ferry_phase==0;});
+  CHECK(w.objects[0].cargo.empty() && !w.objects[1].removed && w.objects[1].tactic==42);
+}
+static void occupancy_order() {
+  World w=river(3);
+  w.objects[1].teleport(tile_center_fixed(4),tile_center_fixed(8));
+  w.objects[2].teleport(tile_center_fixed(4),tile_center_fixed(6));
+  w.objects[3].teleport(tile_center_fixed(4),tile_center_fixed(7));
+  GameSim sim(rules()); sim.init(w); command(sim,Pct::Attack,{4,2,3},1);
+  until(sim,w,[&]{return w.objects[0].ferry_phase==2;});
+  CHECK(w.objects[0].cargo==std::vector<uint32_t>({3,4,2}));
+}
+static void placement_and_policy() {
+  World w=river(0);
+  // Small-only land is legal for infantry but not a large siege passenger.
+  for (auto& value : w.passability.v) if (value==2) value=1;
+  w.objects[0].teleport(tile_center_fixed(10),tile_center_fixed(7));
+  add(w,0,0,0); add(w,3,0,0);
+  CHECK(!rules()->type(0).large && rules()->type(3).large);
+  for (size_t i=1;i<w.objects.size();++i) { w.objects[i].carrier=1; w.objects[i].removed=true; }
+  w.objects[0].cargo={2,3};
+  GameSim sim(rules()); sim.init(w);
+  w.objects[0].ferry_phase=4; w.objects[0].ferry_destination=23;
+  ticks(sim,w,1);
+  CHECK(!w.objects[1].removed && w.objects[1].tactic==23);
+  CHECK(w.objects[2].removed && w.objects[0].cargo==std::vector<uint32_t>{3});
+  CHECK(w.objects[0].ferry_phase==4); // blocked passenger is retained, never placed on illegal land
+  for (int ph : {3,5}) {
+    w.objects[0].ferry_phase=ph; w.objects[0].ferry_wait=10; w.objects[0].hp_max=w.objects[0].hp=100;
+    Effect shot; shot.flight=true; shot.damage=50; shot.target=1; shot.source=0;
+    shot.x=shot.end_x=w.objects[0].cur_x; shot.y=shot.end_y=w.objects[0].cur_y;
+    shot.speed=256; w.effects.push_back(shot);
+    ticks(sim,w,1); CHECK(w.objects[0].hp==(kFerryInvulnerableWhileSailing ? 100 : 50));
+    CHECK(w.objects[2].removed && w.objects[2].carrier==1);
+  }
+}
+static void reach_and_direction() {
+  for (int mode=0;mode<4;++mode) {
+    World w=river(); w.objects[1].teleport(tile_center_fixed(1),tile_center_fixed(7));
+    w.objects[1].attack_mode=AttackMode(mode);
+    GameSim sim(rules()); sim.init(w); command(sim,Pct::Attack,{2},1); ticks(sim,w,1);
+    CHECK(w.objects[0].ferry_phase==(mode==0 ? 0 : 1)); // strict distance < reach
+  }
+  World w=river(0); w.objects[0].source=ObjectSource::Boat; w.objects[0].scenario=4;
+  w.objects[0].ferry_direction=-1; w.objects[0].teleport(tile_center_fixed(10),tile_center_fixed(3));
+  GameSim sim(rules()); sim.init(w); CHECK(sim.activate_vessel(w,4,ObjectSource::Boat));
+  ticks(sim,w,kFerryTravelPause); const auto x=w.objects[0].cur_x,y=w.objects[0].cur_y;
+  ticks(sim,w,1); CHECK(w.objects[0].cur_x==x-to_fixed(5) && w.objects[0].cur_y==y+to_fixed(5));
+  until(sim,w,[&]{return w.objects[0].ferry_phase==0;});
+  CHECK(w.objects[0].ferry_direction==-1 && w.objects[0].cur_x==x && w.objects[0].cur_y==y);
 }
 static void campaign_sites(const std::string& game) {
   GameData data; std::string error; CHECK(data.open(game,error));
@@ -122,64 +220,25 @@ static void campaign_sites(const std::string& game) {
   }
   CHECK(sites==19);
 }
-static void unload_button() {
+static void no_player_control() {
   World w=river(); GameSim sim(rules()); sim.init(w);
-  command(sim,Pct::Board,{2},1); ticks(sim,w,240); CHECK(w.objects[0].cargo.size()==1);
-  w.selection.ids={1}; CommandsUi ui(&sim); Camera cam; Minimap mm;
-  SDL_Rect panel{746,0,254,700}; auto layout=CommandsUi::layout(panel,1);
-  CHECK(CommandsUi::action_enabled(PanelAction::Garrison,w,&sim.rules()));
-  Input in; in.focused=true; in.mx=layout.commands[4].x+4; in.my=layout.commands[4].y+4;
-  in.pressed[SDL_BUTTON_LEFT]=true; in.buttons[SDL_BUTTON_LEFT]=true;
-  ui.update(in,w,cam,1,mm,false,panel);
-  in.pressed[SDL_BUTTON_LEFT]=false; in.buttons[SDL_BUTTON_LEFT]=false; in.released[SDL_BUTTON_LEFT]=true;
-  ui.update(in,w,cam,1,mm,false,panel);
-  CHECK(!sim.pending_commands().empty()); CHECK(sim.pending_commands().back().type==Pct::Unload);
-  ticks(sim,w,1); CHECK(w.objects[0].cargo.empty());
-}
-static void landing_requests() {
-  World w=river(2), fresh=w; auto r=rules(); GameSim sim(r); sim.init(w);
-  command(sim,Pct::Board,{2,3},1); ticks(sim,w,240);
-  CHECK(w.objects[0].cargo.size()==2);
-  command(sim,Pct::Move,{1},14*48+24,12*48+24); ticks(sim,w,1);
-  CHECK(w.objects[0].unload_pending && w.objects[0].cargo.size()==2);
-  auto hash=sim.state_hash(w); w.objects[0].unload_x++; CHECK(sim.state_hash(w)!=hash); w.objects[0].unload_x--;
-  World pending_world=fresh; auto pending=GameSim::replay(pending_world,r,sim.log(),sim.tick_count());
-  CHECK(pending_world.objects[0].unload_pending && pending->state_hash(pending_world)==sim.state_hash(w));
-  ticks(sim,w,240); CHECK(w.objects[0].cargo.empty()); CHECK((w.objects[0].cur_x>>8)/48==10);
-  CHECK((w.objects[1].cur_x>>8)/48>=11 && (w.objects[2].cur_x>>8)/48>=11);
-  auto replay=GameSim::replay(fresh,r,sim.log(),sim.tick_count()); CHECK(replay->state_hash(fresh)==sim.state_hash(w));
-  World cancel=river(); GameSim cs(r); cs.init(cancel);
-  command(cs,Pct::Board,{2},1); ticks(cs,cancel,240);
-  command(cs,Pct::Move,{1},14*48+24,12*48+24); ticks(cs,cancel,1);
-  command(cs,Pct::Stop,{1}); ticks(cs,cancel,240);
-  CHECK(!cancel.objects[0].unload_pending && cancel.objects[0].cargo.size()==1);
-  // No-water connection: rejected requests preserve an existing sailing order.
-  World isolated=river();
-  for (int y=0;y<16;++y) isolated.passability.v[size_t(y)*16+8]=2;
-  GameSim is(r); is.init(isolated);
-  command(is,Pct::Board,{2},1); ticks(is,isolated,240);
-  command(is,Pct::Move,{1},6*48+24,12*48+24); ticks(is,isolated,1);
-  auto dest=isolated.objects[0].dest_x;
-  command(is,Pct::Move,{1},14*48+24,12*48+24); ticks(is,isolated,1);
-  CHECK(!isolated.messages.empty()); CHECK(isolated.objects[0].dest_x==dest);
-}
-static void landing_over_enemy() {
-  World w=river(); auto r=rules(); GameSim sim(r); sim.init(w);
-  command(sim,Pct::Board,{2},1); ticks(sim,w,240);
-  add(w,0,12,7,1); // Picking this enemy must not consume the vessel landing click.
-  w.selection.ids={1}; CommandsUi ui(&sim); Camera cam; Minimap mm;
-  Input in; in.focused=true; in.mx=12*48+24; in.my=7*48+24;
-  in.buttons[SDL_BUTTON_RIGHT]=true; in.pressed[SDL_BUTTON_RIGHT]=true;
-  ui.update(in,w,cam,1,mm,true,SDL_Rect{});
-  in.buttons[SDL_BUTTON_RIGHT]=false; in.pressed[SDL_BUTTON_RIGHT]=false; in.released[SDL_BUTTON_RIGHT]=true;
-  ui.update(in,w,cam,1,mm,true,SDL_Rect{});
-  CHECK(sim.pending_commands().size()==1 && sim.pending_commands()[0].type==Pct::Unload);
-  ticks(sim,w,240); CHECK(w.objects[0].cargo.empty());
-  CHECK(!w.objects[1].carrier && (w.objects[1].cur_x>>8)/48>=11);
-  World building=river(); add(building,14,12,7,1); GameSim bs(r); bs.init(building);
-  command(bs,Pct::Board,{2},1); ticks(bs,building,240);
-  command(bs,Pct::Move,{1},12*48+24,7*48+24); ticks(bs,building,240);
-  CHECK(building.objects[0].cargo.empty() && !building.objects[1].carrier);
+  CHECK(w.objects[0].mover==-1);
+  const auto x=w.objects[0].cur_x, y=w.objects[0].cur_y;
+  command(sim,Pct::Move,{1},10*48,3*48); command(sim,Pct::Unload,{1}); command(sim,Pct::Stop,{1}); ticks(sim,w,1);
+  CHECK(w.objects[0].cur_x==x && w.objects[0].cur_y==y && w.objects[0].ferry_phase==0);
+  w.selection.ids={1};
+  for (auto action : {PanelAction::Move,PanelAction::Attack,PanelAction::Garrison})
+    CHECK(!CommandsUi::action_enabled(action,w,&sim.rules()));
+  // Both single picking and drag selection reject the ferry; picking for a right
+  // click still finds it so that an ordinary group can follow it.
+  Camera cam; SelectionUi ui; Input in; in.focused=true;
+  in.mx=int(cam.to_screen_x(float(x/256))); in.my=int(cam.to_screen_y(float(y/256)));
+  CHECK(pick_object(w,float(x/256),float(y/256),1,10)->id==1);
+  in.pressed[SDL_BUTTON_LEFT]=true; in.buttons[SDL_BUTTON_LEFT]=true; ui.update(in,w,cam,1,true);
+  in.pressed[SDL_BUTTON_LEFT]=false; in.buttons[SDL_BUTTON_LEFT]=false; in.released[SDL_BUTTON_LEFT]=true; ui.update(in,w,cam,1,true);
+  CHECK(w.selection.ids.empty());
+  command(sim,Pct::CreateGroup,{1},0); command(sim,Pct::SelectGroup,{},0); ticks(sim,w,1);
+  CHECK(w.side_state[0].selected_ids.empty());
 }
 static void bizon_pursuit() {
   World w; w.terrain.w=64; w.terrain.h=16; w.terrain.cells.resize(64*16);
@@ -196,7 +255,7 @@ static void ferry_combat() {
   auto r=rules(); GameSim sim(r); sim.init(w);
   // Positive health isolates ferry acquisition policy from the controller damage guard.
   w.objects[0].hp_max=w.objects[0].hp=1000;
-  command(sim,Pct::Board,{2},1); ticks(sim,w,240);
+  w.objects[0].cargo={2}; w.objects[1].carrier=1; w.objects[1].removed=true;
   CHECK(w.objects[0].alive && w.objects[0].cargo.size()==1);
   w.relation[0][1]=w.relation[1][0]=kEnemy; ticks(sim,w,120);
   CHECK(w.objects[0].alive && w.objects[0].cargo.size()==1);
@@ -264,6 +323,6 @@ static void reachable_automatic_pursuit() {
 }
 int main(int argc,char** argv) {
   if (argc==3 && std::string(argv[1])=="--campaign") { campaign_sites(argv[2]); return 0; }
-  landing_requests(); landing_over_enemy(); bizon_pursuit(); ferry_combat();
-  crossing(); limits(); occupied_shore(); eligibility(); script_arrivals(); unload_button(); zero_maximum_combat_fallback(); reachable_automatic_pursuit(); std::puts("Transport scenarios passed");
+  bizon_pursuit(); ferry_combat(); zero_maximum_combat_fallback(); reachable_automatic_pursuit();
+  crossing(); limits(); occupied_shore(); eligibility(); script_arrivals(); occupancy_order(); placement_and_policy(); reach_and_direction(); no_player_control(); std::puts("Transport scenarios passed");
 }

@@ -27,6 +27,7 @@ void place_mission_objects(World& w) {
     o.teleport(tile_center_fixed(p.x), tile_center_fixed(p.y));
     o.vessel_enabled = p.vessel_enabled; o.orientation = p.up ? 1 : 0;
     o.landing_x = p.landing_x; o.landing_y = p.landing_y;
+    o.ferry_direction = p.loaded ? -1 : 1;
     const uint32_t vessel = o.id;
     w.objects.push_back(o);
     for (const auto& unit : p.passengers) {

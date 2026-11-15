@@ -24,14 +24,14 @@ bool SelectionUi::update(const Input& in, World& w, const Camera& cam, float alp
       float ax = cam.to_world_x(float(std::min(x0_, x1_))), bx = cam.to_world_x(float(std::max(x0_, x1_)));
       float ay = cam.to_world_y(float(std::min(y0_, y1_))), by = cam.to_world_y(float(std::max(y0_, y1_)));
       for (const Object& o : w.objects) {
-        if (o.removed || !o.alive || o.side != w.local_side || o.type < 0) continue;
+        if (o.removed || !o.alive || o.side != w.local_side || o.type < 0 || is_ferry(o)) continue;
         const TypeInfo* ti = type_info(o.type);
         if (ti && ti->is_structure()) continue;  // box select picks units only
         Vec2f p = o.interpolated(alpha);
         if (p.x >= ax && p.x <= bx && p.y >= ay && p.y <= by) hit.push_back(o.id);
       }
     } else if (const Object* o = pick_object(w, cam.to_world_x(float(in.mx)), cam.to_world_y(float(in.my)), alpha, 24.f / cam.zoom + 8)) {
-      if (o->side == w.local_side && o->type >= 0) hit.push_back(o->id);
+      if (o->side == w.local_side && o->type >= 0 && !is_ferry(*o)) hit.push_back(o->id);
     }
     if (!in.shift) w.selection.clear();
     for (uint32_t id : hit)

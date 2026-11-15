@@ -110,7 +110,8 @@ class Detectors:
                         self.add('order-ignored', tick, obj, 'Unload released no passengers; invalid selection, blocked shore or target out of range', tick)
                 elif kind == 0x50:
                     self.goals.pop(oid, None)
-                elif kind == 0x18 and obj['target'] != command['a']:
+                elif kind == 0x18 and not (obj['target'] == command['a'] or
+                                          obj['boarding'] == command['a'] or obj['carrier'] == command['a']):
                     self.add('order-ignored', tick, obj, 'Attack command did not retain its target', tick)
             if kind in (0x1c, 0x52):
                 prior = Counter(o['type'] for o in before.values() if o['alive'])
@@ -298,7 +299,7 @@ def demo_game(destination):
         for y in range(24) for x in range(32)))
     base.with_suffix('.rm').write_bytes(struct.pack('<HH', 32, 24) + bytes([255, 0]) * (32 * 24))
     base.with_suffix('.scn').write_text(
-        'trigger(0) conditions side(local).unitsInRect(25,11,27,13) == 3 actions side(local).victory end\n')
+        'trigger(0) conditions side(local).unitsInRect(25,11,27,13) == 1 actions side(local).victory end\n')
     return destination
 
 

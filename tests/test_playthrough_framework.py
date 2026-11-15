@@ -46,12 +46,12 @@ class FrameworkTests(unittest.TestCase):
         left, right = [list(route.read_observations(p / 'observations.jsonl')) for p in (output, other)]
         self.assertEqual(left, right)
         commands = [c['type'] for r in left for c in r['commands']]
-        for kind in (0x1c, 0x52, 0x15, 0x16, 0x17, 0x54, 0x55, 0x51):
+        for kind in (0x1c, 0x52, 0x15, 0x16, 0x17, 0x18, 0x51):
             self.assertIn(kind, commands)
         self.assertGreater(left[-1]['income'], 0)
         embarked = [o for r in left for o in r['objects'] if o['carrier']]
         self.assertTrue(embarked)
-        self.assertTrue(any(o['unload_pending'] for r in left for o in r['objects']))
+        self.assertTrue(any(o['ferry_phase'] == 4 for r in left for o in r['objects']))
         self.assertTrue(all(o['alive'] for o in embarked))
         # Run the same input with telemetry disabled and compare the ordinary final hash.
         direct = self.root / 'direct.txt'
@@ -114,7 +114,7 @@ class FrameworkTests(unittest.TestCase):
         report, _ = self.run_route('train 0 50 3\nwait 10\nquit\n')
         # Production may queue unpaid work; completion still has to be explicitly witnessed.
         self.assertEqual(report['outcome'], 'scenario-failed')
-        report, _ = self.run_route('select id 2\ncontext 2\nwait 10\nquit\n')
+        report, _ = self.run_route('select id 3\ncontext 2\nwait 10\nquit\n')
         self.assertIn('order-ignored', [a['kind'] for a in report['anomalies']])
 
     def test_enemy_ai_commands_are_not_player_order_failures(self):

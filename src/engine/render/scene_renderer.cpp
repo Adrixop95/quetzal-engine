@@ -193,7 +193,7 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
   // Selection rings go on the ground, under bodies.
   mod_ = {255, 255, 255, 255};
   for (const Item& it : items) {
-    if (it.effect || it.tree || !it.primary || !world_.selection.contains(it.o->id)) continue;
+    if (it.effect || it.tree || !it.primary || is_ferry(*it.o) || !world_.selection.contains(it.o->id)) continue;
     const TypeInfo* ti = type_info(it.o->type);
     SpriteKey k;
     k.archive = ArchiveId::Common; k.group = 0x44c; k.shade = 0;
@@ -287,7 +287,7 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
   mod_ = body_mod;
   // Health bars of selected objects.
   for (const Item& it : items) {
-    if (it.effect || it.tree || !it.primary || !world_.selection.contains(it.o->id) || it.o->type < 0) continue;
+    if (it.effect || it.tree || !it.primary || is_ferry(*it.o) || !world_.selection.contains(it.o->id) || it.o->type < 0) continue;
     const TypeInfo* ti = type_info(it.o->type);
     bool structure = ti && ti->is_structure();
     int hpmax = it.o->hp_max;
