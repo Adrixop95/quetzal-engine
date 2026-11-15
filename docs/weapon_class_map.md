@@ -167,7 +167,7 @@ Corrections to the open list from `gap_recon.md`:
 - **Johnka (88)** has no descriptor weapon: its getter (`0x42d950`) returns the prototype at
   `0x515b98`, which is **weapon 54**, only when the target is not airborne.
 - **Class 8 is a rocket volley:** `rec[0]` is the id of the explosion weapon (class 7), `rec[1]`
-  the scatter radius (96 px), `rec[2]` the range and `rec[3]` the number of rockets. Weapon
+  the scatter radius (96 px), `rec[2]` the range and `rec[3]` the reload in ticks (`0x4039b0`; corrected, not a rocket count). Weapon
   19 (Katusha trucks and wheels) fires explosion 17 (80 rockets, range 200), weapon 20 (the
   Chinese air tower) fires explosion 18 (50 rockets, range 200), weapon 54 (Johnka) fires
   explosion 53 (30 rockets, range 300). Explosions 17 and 53 are ground-only; **explosion 18
@@ -226,3 +226,11 @@ only), **G** = guess.
 - Consequence: burn damage per hit is about 2000 times the fire armor value of the victim
   (the armor value is a 256 based multiplier), a quarter of that for allies, and zero
   against air units.
+
+## Corrections from the towers, air units and specials pass (2026-11-14)
+
+- V: the Snowman status value 0x12 added through virtual `+0x9c` (`0x471220`) goes into the
+  Marine attack reload countdown (`+0x84`, `0x433db0`): it is an 18 tick attack delay, not a
+  stun or a knockback, and it does not turn the facing.
+- V: volley class 8 always releases 16 explosions, each at `rand % 10` ticks within the
+  scatter radius (96 px); `rec[3]` (80, 50, 30) is the reload.
