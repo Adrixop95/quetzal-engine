@@ -115,7 +115,7 @@ void GameSim::attach_agent(Object& o) {
     o.idle_anchor_x = px(o.cur_x); o.idle_anchor_y = px(o.cur_y);
   }
   const TypeRules& r = rules_->type(o.type);
-  if (!r.mobile || r.flier || !mover_) { o.mover = -1; return; }
+  if (is_ferry(o) || !r.mobile || r.flier || !mover_) { o.mover = -1; return; }
   o.mover = int32_t(mover_->add_agent({o.cur_x, o.cur_y}, r.radius_px * 256, std::max(256, r.speed),
                                       is_transport(o.type) ? path::MoveClass::Water : r.large ? path::MoveClass::Large : path::MoveClass::Small, o.side));
 }
@@ -174,6 +174,10 @@ void GameSim::init(World& w) {
       o.body_angle = o.facing * 32; o.turret_angle = o.body_angle;
     }
     if (o.removed || !o.alive) continue;
+    if (is_ferry(o)) {
+      o.ferry_dock_x = o.cur_x; o.ferry_dock_y = o.cur_y;
+      continue;
+    }
     attach_agent(o);
     if (o.mover < 0) mover_->block_formation_tile({px(o.cur_x) / kTilePx, px(o.cur_y) / kTilePx});
     if (r.structure) {
@@ -386,7 +390,7 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o) const {
   bool have_reachable = false;
   // G: scripted ferries are excluded from automatic combat assignment; direct damage remains possible.
   for (const Object& t : w.objects) {
-    if (t.removed || !t.alive || !damageable(t) || t.type < 0 || t.type == 84 || !w.hostile(o.side, t.side) || t.progress < 1000) continue;
+    if (t.removed || !t.alive || !damageable(t) || ferry_protected(t) || t.type < 0 || t.type == 84 || !w.hostile(o.side, t.side) || t.progress < 1000) continue;
     if (rules_->type(o.type).kind == 0 && pursuit_distance(o,t) > 1152) continue;
     if (mask_sight && !position_visible(w, o.side, px(t.cur_x), px(t.cur_y))) continue;
     const auto shot = rules_->attack(o.type, t.type, !w.hostile(o.side, t.side));
@@ -435,7 +439,7 @@ void GameSim::apply(World& w, const Command& c) {
     std::vector<Object*> v;
     for (uint32_t id : command_ids) {
       Object* o = w.find_mut(id);
-      if (!o || o->removed || !o->alive || o->side != c.side || o->type < 0 || (is_transport(o->type) && !o->vessel_enabled)) continue;
+      if (!o || o->removed || !o->alive || o->side != c.side || o->type < 0 || is_ferry(*o) || (is_transport(o->type) && !o->vessel_enabled)) continue;
       const TypeRules& r = rules_->type(o->type);
       if (need_mobile && !(r.mobile || r.flier)) continue;
       if (std::find(v.begin(), v.end(), o) == v.end()) v.push_back(o);
@@ -456,25 +460,11 @@ void GameSim::apply(World& w, const Command& c) {
     case Pct::PauseOn: paused_ = true; break;
     case Pct::PauseOff: paused_ = false; break;
     case Pct::Board: {
-      Object* vessel = w.find_mut(uint32_t(c.a));
-      if (!vessel || !vessel->alive || vessel->removed || !is_transport(vessel->type) ||
-          vessel->side != c.side || !vessel->vessel_enabled) break;
-      for (auto* o : own_ids(true)) {
-        const auto& r = rules_->type(o->type);
-        if (r.flier || is_transport(o->type) || o->carrier) continue;
-        script_stop(w, {o->id}); o->boarding = vessel->id;
-      }
+      auto* ferry = w.find_mut(uint32_t(c.a));
+      if (ferry && is_ferry(*ferry)) ferry_follow(w, command_ids, c.side, *ferry);
       break;
     }
-    case Pct::Unload:
-      for (auto* o : own_ids(true)) if (is_transport(o->type)) {
-        if (c.c == 1) {
-          script_stop(w, {o->id});
-          unload(w, *o, px(o->cur_x) / kTilePx, px(o->cur_y) / kTilePx);
-        } else request_unload(w, *o, std::clamp(c.a, 0, w.width_px()-1) / kTilePx,
-                              std::clamp(c.b, 0, w.height_px()-1) / kTilePx);
-      }
-      break;
+    case Pct::Unload: break; // Retired player transport command; shuttles unload themselves.
     case Pct::Move:
     case Pct::AttackMove: {
       std::vector<Object*> v = own_ids(true);
@@ -482,10 +472,6 @@ void GameSim::apply(World& w, const Command& c) {
       // Coordinates come from untrusted command packets: clamp into the map before any fixed-point conversion.
       const int cx = std::clamp(c.a, 0, std::max(0, w.width_px() - 1)), cy = std::clamp(c.b, 0, std::max(0, w.height_px() - 1));
       for (Object* o : v) {
-        if (is_transport(o->type) && nav_.in_bounds(cx / kTilePx, cy / kTilePx) && nav_.terrain(cx / kTilePx, cy / kTilePx) != 0) {
-          request_unload(w, *o, cx / kTilePx, cy / kTilePx); continue;
-        }
-        if (is_transport(o->type)) script_stop(w, {o->id});
         o->boarding = 0; o->vessel_route = false;
         o->order = uint8_t(c.type == Pct::Move ? Order::Move : Order::AttackMove);
         o->dest_x = cx; o->dest_y = cy; o->target = 0; o->resume = 0;
@@ -497,7 +483,12 @@ void GameSim::apply(World& w, const Command& c) {
     }
     case Pct::Attack: {
       const Object* t = w.find(uint32_t(c.a));
-      if (!t || t->removed || !t->alive || !damageable(*t) ||
+      if (t && is_ferry(*t) && (t->side == c.side ||
+          (c.side < 8 && t->side >= 0 && t->side < 8 && w.relation[c.side][t->side] == kFriend))) {
+        ferry_follow(w, command_ids, c.side, *w.find_mut(t->id));
+        break;
+      }
+      if (!t || t->removed || !t->alive || !damageable(*t) || ferry_protected(*t) ||
           (w.visibility_brightness && !object_visible(w, c.side, *t))) break;
       for (Object* o : own_ids(true)) {
         if (o->id == t->id || !rules_->type(o->type).armed) continue;
@@ -587,7 +578,7 @@ void GameSim::apply(World& w, const Command& c) {
       std::vector<uint32_t> ids;
       for (uint32_t id : ss->groups[c.a]) {
         const Object* o = w.find(id);
-        if (o && o->alive && !o->removed && o->type >= 0 && o->side == c.side) ids.push_back(id);
+        if (o && o->alive && !o->removed && o->type >= 0 && !is_ferry(*o) && o->side == c.side) ids.push_back(id);
       }
       select(std::move(ids));
       break;
@@ -596,7 +587,7 @@ void GameSim::apply(World& w, const Command& c) {
       if (!ss || c.a < 0 || c.b != 0) break;
       std::vector<uint32_t> ids;
       for (const Object& o : w.objects)
-        if (o.alive && !o.removed && o.type >= 0 && o.side == c.side && o.tactic == c.a) ids.push_back(o.id);
+        if (o.alive && !o.removed && o.type >= 0 && !is_ferry(o) && o.side == c.side && o.tactic == c.a) ids.push_back(o.id);
       if (!ids.empty()) select(std::move(ids));
       break;
     }
@@ -1298,7 +1289,7 @@ void GameSim::run_orders(World& w) {
     }
     const bool leashed = o.idle_attack && t &&
         !within_group_reach(*t, anchor_x, anchor_y, o.attack_mode, r.flier ? 0 : target_reach);
-    if (!t || t->removed || !t->alive || !damageable(*t) || lost_chase || leashed) {
+    if (!t || t->removed || !t->alive || !damageable(*t) || ferry_protected(*t) || lost_chase || leashed) {
       finish_attack(o);
       continue;
     }
@@ -1396,7 +1387,7 @@ void GameSim::fire(World& w, const Object& source, Object& target, int damage) {
 }
 
 void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& source, Object& target, int damage) {
-  if (!damageable(target)) return;
+  if (!damageable(target) || target.carrier || ferry_protected(target)) return;
   if (weapon.klass == 7) {
     // V: a standalone area hit resolves at the target position plus two pixels
     // vertically. It has no travelling projectile or hostile-only victim gate.
@@ -1499,7 +1490,7 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
 
 void GameSim::apply_blast(World& w, const Effect& e) {
   for (auto& o : w.objects) {
-    if (!o.alive || o.removed || !damageable(o)) continue;
+    if (!o.alive || o.removed || !damageable(o) || ferry_protected(o)) continue;
     const int distance = int(combat_distance(int64_t(o.cur_x / 256) - e.x / 256,
                                            int64_t(o.cur_y / 256) - e.y / 256));
     const int damage = rules_->blast_damage(e.payload_id, rules_->type(o.type), distance);
@@ -1550,7 +1541,7 @@ void GameSim::advance_effects(World& w) {
     if (e.shockwave == data::kShockwaveAnim) decoration(w, e.shockwave, 0, e.x, e.y, 0, e.side);
     if (e.payload_id >= 0) { apply_blast(w, e); continue; }
     for (auto& o : w.objects) {
-      if (!o.alive || o.removed || !damageable(o)) continue;
+      if (!o.alive || o.removed || !damageable(o) || ferry_protected(o)) continue;
       int64_t dx = int64_t(o.cur_x) - e.x, dy = int64_t(o.cur_y) - e.y;
       bool splash = e.splash_px > 0 && w.hostile(e.side, o.side) &&
                     dx * dx + dy * dy <= int64_t(e.splash_px * 256) * (e.splash_px * 256);
@@ -1635,7 +1626,7 @@ void GameSim::update_animation_state(World& w) {
     // resource phases complete; absent resources never imply an instant phase.
     const bool boat = r.kind == 8 || o.source == ObjectSource::Boat;
     const auto* inputs = rules_->sight();
-    if (boat && inputs && inputs->sprites.boat_phase_complete(o.transport_phase, o.orientation, o.anim_tick)) {
+    if (boat && !is_ferry(o) && inputs && inputs->sprites.boat_phase_complete(o.transport_phase, o.orientation, o.anim_tick)) {
       if (o.transport_phase == int(data::BoatPhase::Opening)) o.transport_phase = int(data::BoatPhase::Open);
       else {
         if (o.transport_phase == int(data::BoatPhase::Turning)) o.orientation ^= 1;
@@ -1748,7 +1739,7 @@ void GameSim::script_order(World& w, const std::vector<uint32_t>& ids, int pxx, 
   std::vector<uint32_t> agents;
   for (uint32_t id : ids) {
     Object* o = w.find_mut(id);
-    if (!o || o->removed || !o->alive) continue;
+    if (!o || o->removed || !o->alive || is_ferry(*o)) continue;
     const TypeRules& r = rules_->type(o->type);
     if (!(r.mobile || r.flier)) continue;
     o->order = uint8_t(attack_move ? Order::AttackMove : Order::Move);
@@ -1762,13 +1753,12 @@ void GameSim::script_order(World& w, const std::vector<uint32_t>& ids, int pxx, 
 void GameSim::script_stop(World& w, const std::vector<uint32_t>& ids) {
   for (uint32_t id : ids) {
     Object* o = w.find_mut(id);
-    if (!o || o->removed || !o->alive) continue;
+    if (!o || o->removed || !o->alive || is_ferry(*o)) continue;
     if (o->vessel_route && o->mover >= 0) {
       auto& agent = mover_->agents_mut()[size_t(o->mover)];
       agent.enabled = true; agent.pos = agent.prev_pos = {o->cur_x, o->cur_y};
     }
     o->vessel_route = false;
-    o->unload_pending = false;
     o->boarding = 0;
     o->order = uint8_t(Order::Idle); o->target = 0; o->resume = 0;
     o->idle_attack = false;
@@ -1915,9 +1905,11 @@ uint64_t GameSim::state_hash(const World& w) const {
     if (vessel_state) {
       mix(o.carrier); mix(o.boarding); mix(o.vessel_enabled); mix(o.vessel_route); mix(o.vessel_arrived);
       mix(o.landing_x); mix(o.landing_y); mix(o.cargo.size());
+      mix(o.ferry_phase); mix(o.ferry_wait); mix(o.ferry_direction); mix(o.ferry_dock_x); mix(o.ferry_dock_y);
+      mix(o.ferry_request); mix(o.ferry_destination); mix(o.ferry_group_side);
+      mix(kFerryInvulnerableWhileSailing);
       for (auto id : o.cargo) mix(id);
     }
-    if (is_transport(o.type)) { mix(o.unload_pending); if (o.unload_pending) { mix(uint32_t(o.unload_x)); mix(uint32_t(o.unload_y)); } }
     mix(uint8_t(o.attack_mode)); mix(uint32_t(o.follow_tactic)); mix(o.order); mix(o.target); mix(uint32_t(o.cooldown)); mix(o.alive); mix(o.removed); mix(uint32_t(o.progress));
     if (o.release_target) { mix(o.release_target); mix(o.attack_facing); }
     mix(uint32_t(o.render_height)); mix(uint32_t(o.destruction_radius));

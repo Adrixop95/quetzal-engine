@@ -35,12 +35,12 @@ class StressTests(unittest.TestCase):
                             self.assertLess(unit['time_ratio'], 4, unit)
                         for row in rows:
                             for obj in row['objects']:
-                                if obj['type'] not in (0, 1, 84):
+                                if obj['type'] not in (0, 1, 88):
                                     continue
                                 x, y = (v // stress.TILE for v in obj['position'])
                                 self.assertTrue(0 <= x < stress.WIDTH and 0 <= y < stress.HEIGHT, obj)
                                 terrain = spec['terrain'][y][x]
-                                self.assertTrue(terrain == 0 if obj['type'] == 84 else terrain >= 1, obj)
+                                self.assertTrue(terrain == 0 if obj['type'] == 88 else terrain >= 1, obj)
                                 if name == 'construction':
                                     self.assertFalse(19 <= x <= 20 and 12 <= y <= 13, obj)
                         if name == 'construction':

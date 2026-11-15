@@ -118,8 +118,8 @@ class GameSim : public Simulation {
   void finish_attack(Object& o);
   void record_hit(World& w, Object& target, uint32_t source);
   void transport_tick(World& w);
+  void ferry_follow(World& w, const std::vector<uint32_t>& ids, int side, Object& ferry);
   void unload(World& w, Object& vessel, int tx, int ty);
-  void request_unload(World& w, Object& vessel, int tx, int ty);
   void follow_tactics(World& w);
   void advance_effects(World& w);
   void advance_attack(World& w, Object& source);

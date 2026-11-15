@@ -13,14 +13,11 @@ select group 1
 checkpoint selection == 3
 order-move 14 12
 wait 220
+select id 1
 context 2
-await 500 cargo 2 == 3
-select id 2
-order-move 21 12
-await 500 tile 2 21 12 == 1
-unload 24 12
-await 200 cargo 2 == 0
-select group 1
+await 500 cargo 2 == 1
+await 500 cargo 2 == 0
+select id 1
 attack-move 26 12
 await 300 outcome == 1
 checkpoint count 0 == 3

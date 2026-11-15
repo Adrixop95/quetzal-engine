@@ -1,184 +1,279 @@
-// Independent transport policies. Evidence and fallback choices: docs/transport_rules.md.
+// Independently implemented shuttle policies; evidence: docs/ferry_shuttle.md.
 #include "engine/sim/game_sim.hpp"
+#include "engine/data/animation_slots.hpp"
 #include <algorithm>
-#include <climits>
+#include <limits>
 #include <tuple>
 
 namespace aztec::engine {
 namespace {
-int tile(Fixed p) { return (p >> 8) / kTilePx; }
+int tile(Fixed p) {
+  // Floor division matters for scenario entries outside the map.
+  const int pixels = p / 256;
+  return pixels >= 0 ? pixels / kTilePx : (pixels - kTilePx + 1) / kTilePx;
+}
 path::MoveClass land_class(const TypeRules& r) {
   return r.large ? path::MoveClass::Large : path::MoveClass::Small;
 }
-bool occupied(const World& w, const Object& passenger, int x, int y, const RulesData& rules) {
+int anchor_distance(int x, int y) {
+  const int major = std::max(std::abs(x), std::abs(y));
+  const int minor = std::min(std::abs(x), std::abs(y));
+  const int scaled = minor + minor / 2;
+  return major + scaled / 4 + scaled / 64 - major / 128 - major / 32;
+}
+void phase(Object& boat, int controller, data::BoatPhase animation, int wait) {
+  boat.ferry_phase = controller; boat.ferry_wait = wait;
+  boat.transport_phase = int(animation); boat.anim_tick = 0;
+  boat.vessel_route = controller != 0;
+}
+bool occupied(const World& w, const Object& passenger, Fixed x, Fixed y, const RulesData& rules) {
   for (const auto& other : w.objects) {
     if (!other.alive || other.removed || other.id == passenger.id || other.type < 0) continue;
     const auto& r = rules.type(other.type);
     if (r.flier || is_transport(other.type)) continue;
-    int64_t dx = (other.cur_x >> 8) - (x * kTilePx + kTilePx / 2);
-    int64_t dy = (other.cur_y >> 8) - (y * kTilePx + kTilePx / 2);
-    int radius = r.radius_px + rules.type(passenger.type).radius_px + 4;
+    const int64_t dx = (other.cur_x - x) / 256, dy = (other.cur_y - y) / 256;
+    const int radius = r.radius_px + rules.type(passenger.type).radius_px + 4;
     if (dx * dx + dy * dy < int64_t(radius) * radius) return true;
   }
   return false;
 }
 }
 
-void GameSim::unload(World& w, Object& vessel, int tx, int ty) {
-  int bx = tile(vessel.cur_x), by = tile(vessel.cur_y);
-  // Expand onto connected shore, including safe tiles behind a narrow edge.
-  std::vector<path::Cell> shore;
-  for (int y = by - 1; y <= by + 1; ++y) for (int x = bx - 1; x <= bx + 1; ++x)
-    if (!nav_.blocked(x, y, path::MoveClass::Small)) shore.push_back({x,y});
-  if (shore.empty()) {
-    if (!vessel.cargo.empty()) w.messages.push_back({"Cannot unload: no adjacent land", 72});
-    return;
+void GameSim::ferry_follow(World& w, const std::vector<uint32_t>& ids, int side, Object& boat) {
+  if (!boat.alive || boat.removed || !is_ferry(boat) || side < 0 || side >= 8 ||
+      boat.side < 0 || boat.side >= 8 || (side != boat.side && w.relation[side][boat.side] != kFriend)) return;
+  std::vector<uint32_t> members;
+  int group = -1;
+  bool same_group = true;
+  for (auto id : ids) {
+    const auto* o = w.find(id);
+    if (!o || !o->alive || o->removed || o->side != side || o->type < 0 || is_transport(o->type)) continue;
+    const auto& r = rules_->type(o->type);
+    if (!(r.mobile || r.flier) || r.structure) continue;
+    if (!members.empty() && o->tactic != group) same_group = false;
+    if (members.empty()) group = o->tactic;
+    if (std::find(members.begin(), members.end(), id) == members.end()) members.push_back(id);
   }
-  path::FlowField land;
-  land.build(nav_, path::MoveClass::Small, shore.data(), int(shore.size()));
-  while (!vessel.cargo.empty()) {
-    auto* passenger = w.find_mut(vessel.cargo.front());
-    if (!passenger || !passenger->alive) { vessel.cargo.erase(vessel.cargo.begin()); continue; }
-    const auto& r = rules_->type(passenger->type);
-    std::vector<std::tuple<int, int, int>> candidates;
-    for (int y = by - 6; y <= by + 6; ++y) for (int x = bx - 6; x <= bx + 6; ++x) {
-      if (nav_.blocked(x, y, land_class(r)) || !land.reachable(x,y)) continue;
-      if (nav_.disc_hits({tile_center_fixed(x), tile_center_fixed(y)}, r.radius_px * 256, land_class(r))) continue;
-      if (!occupied(w, *passenger, x, y, *rules_)) candidates.emplace_back((x-tx)*(x-tx)+(y-ty)*(y-ty), y, x);
-    }
-    if (candidates.empty()) break; // preserve cargo and its order when the shore is full
-    std::sort(candidates.begin(), candidates.end());
-    const auto [distance, y, x] = candidates.front(); (void)distance;
-    passenger->carrier = 0; passenger->removed = false; passenger->boarding = 0;
-    passenger->teleport(tile_center_fixed(x), tile_center_fixed(y));
-    passenger->order = uint8_t(Order::Idle); passenger->target = 0; passenger->resume = 0;
-    passenger->idle_attack = false;
-    passenger->idle_anchor_x = passenger->cur_x >> 8; passenger->idle_anchor_y = passenger->cur_y >> 8;
-    if (passenger->mover < 0) attach_agent(*passenger);
-    else {
-      auto& agent = mover_->agents_mut()[size_t(passenger->mover)];
-      agent.enabled = true; agent.pos = agent.prev_pos = {passenger->cur_x, passenger->cur_y};
-    }
-    vessel.cargo.erase(vessel.cargo.begin());
+  if (members.empty()) return;
+  // A town controller accepts the follow fields but does not execute field-group movement.
+  for (auto id : members) if (w.find(id)->town >= 0) return;
+  if (!same_group || group < 0) {
+    int64_t next = 0;
+    for (const auto& o : w.objects) next = std::max(next, int64_t(o.tactic) + 1);
+    if (next > std::numeric_limits<int32_t>::max()) return;
+    group = int(next);
+    for (auto id : members) w.find_mut(id)->tactic = group;
+  } else {
+    // The order is issued to a tactic, including its unselected members.
+    members.clear();
+    for (const auto& o : w.objects)
+      if (o.alive && !o.removed && o.side == side && o.tactic == group && !is_transport(o.type)) members.push_back(o.id);
   }
-  if (!vessel.cargo.empty()) w.messages.push_back({"Cannot unload all passengers: shore is blocked", 72});
+  for (auto id : members) {
+    auto* o = w.find_mut(id);
+    script_stop(w, {id});
+    o->boarding = boat.id;
+    o->order = uint8_t(Order::Follow);
+  }
 }
 
-void GameSim::request_unload(World& w, Object& vessel, int tx, int ty) {
-  if (vessel.cargo.empty()) { w.messages.push_back({"Ferry has no passengers", 72}); return; }
-  if (!nav_.in_bounds(tx,ty) || nav_.terrain(tx,ty) == 0 || vessel.mover < 0) {
-    w.messages.push_back({"Cannot unload: select reachable land", 72}); return;
+void GameSim::unload(World& w, Object& boat, int, int) {
+  // Fitted first rings reproduce the measured 48..60 px shore spacing. Further
+  // rings are bounded by the map; blocked passengers remain aboard for a retry.
+  const int limit = (w.terrain.w + w.terrain.h + 2) * kTilePx;
+  for (int radius = 48; radius <= limit && !boat.cargo.empty(); radius += radius == 48 ? 12 : 48) {
+    const int a = radius * 3 / 5, b = radius * 4 / 5;
+    const std::pair<int, int> offsets[] = {
+      {0,-radius}, {a,-b}, {b,-a}, {radius,0}, {b,a}, {a,b},
+      {0,radius}, {-a,b}, {-b,a}, {-radius,0}, {-b,-a}, {-a,-b}
+    };
+    for (auto [dx, dy] : offsets) {
+      const Fixed x = boat.cur_x + to_fixed(dx), y = boat.cur_y + to_fixed(dy);
+      for (auto it = boat.cargo.begin(); it != boat.cargo.end();) {
+        auto* passenger = w.find_mut(*it);
+        if (!passenger || !passenger->alive) { it = boat.cargo.erase(it); continue; }
+        const auto& r = rules_->type(passenger->type);
+        const auto cls = land_class(r);
+        if (nav_.blocked(tile(x), tile(y), cls) || nav_.disc_hits({x,y}, r.radius_px * 256, cls) ||
+            occupied(w, *passenger, x, y, *rules_)) { ++it; continue; }
+        passenger->carrier = 0; passenger->removed = false; passenger->boarding = 0;
+        passenger->tactic = boat.ferry_destination;
+        passenger->teleport(x,y);
+        passenger->order = uint8_t(Order::Idle); passenger->target = 0; passenger->resume = 0;
+        passenger->follow_tactic = -1;
+        passenger->idle_attack = false;
+        passenger->idle_anchor_x = passenger->cur_x / 256; passenger->idle_anchor_y = passenger->cur_y / 256;
+        if (passenger->mover < 0) attach_agent(*passenger);
+        if (passenger->mover >= 0) {
+          auto& agent = mover_->agents_mut()[size_t(passenger->mover)];
+          agent.enabled = true; agent.pos = agent.prev_pos = {x,y};
+        }
+        boat.cargo.erase(it);
+        break; // One occupant per placement.
+      }
+    }
   }
-  path::Cell start{tile(vessel.cur_x),tile(vessel.cur_y)}, target{tx,ty};
-  path::FlowField water, land;
-  water.build(nav_, path::MoveClass::Water, &start, 1);
-  land.build(nav_, path::MoveClass::Small, &target, 1);
-  std::tuple<int, uint32_t, int, int> best{INT_MAX, UINT32_MAX, 0, 0};
-  bool found = false;
-  for (int y=0; y<nav_.height(); ++y) for (int x=0; x<nav_.width(); ++x) {
-    if (!water.reachable(x,y) || nav_.disc_hits({tile_center_fixed(x),tile_center_fixed(y)},
-        rules_->type(vessel.type).radius_px * 256, path::MoveClass::Water)) continue;
-    bool adjacent = false;
-    for (int dy=-1; dy<=1; ++dy) for (int dx=-1; dx<=1; ++dx)
-      if (land.reachable(x+dx,y+dy)) adjacent = true;
-    if (!adjacent) continue;
-    auto score = std::tuple{(x-tx)*(x-tx)+(y-ty)*(y-ty),water.cost(x,y),y,x};
-    if (!found || score < best) { found = true; best = score; }
-  }
-  if (!found) { w.messages.push_back({"Cannot unload: no reachable shore", 72}); return; }
-  const auto [distance,cost,y,x] = best; (void)distance; (void)cost;
-  script_stop(w,{vessel.id});
-  vessel.unload_pending = true; vessel.unload_x = tx; vessel.unload_y = ty;
-  vessel.dest_x = x*kTilePx+kTilePx/2; vessel.dest_y = y*kTilePx+kTilePx/2;
-  vessel.order = uint8_t(Order::Move);
-  uint32_t agent = uint32_t(vessel.mover);
-  mover_->order_move(&agent,1,{tile_center_fixed(x),tile_center_fixed(y)});
 }
 
 bool GameSim::activate_vessel(World& w, int scenario, ObjectSource source, bool enabled) {
   bool found = false;
   for (auto& o : w.objects) {
     if (!o.alive || o.removed || o.scenario != scenario || o.source != source) continue;
-    found = true;
-    o.vessel_enabled = enabled;
-    if (!enabled) { script_stop(w, {o.id}); o.vessel_route = false; continue; }
-    // Repeated enable/activate is idempotent during a route or after arrival.
-    if (o.vessel_route || o.vessel_arrived) continue;
+    found = true; o.vessel_enabled = enabled;
     if (source == ObjectSource::Submarine) {
-      // V: the original dispatch starts animation 27 at the configured point and retires its controller.
+      if (!enabled || o.vessel_arrived) continue;
       decoration(w, 27, 1, o.cur_x, o.cur_y, 0, o.side, o.id);
       o.vessel_arrived = true; o.removed = true;
-    } else if (source == ObjectSource::Boat) {
-      script_stop(w, {o.id}); o.vessel_route = true; o.transport_phase = 0;
-      if (o.mover >= 0) mover_->agents_mut()[size_t(o.mover)].enabled = false;
-    }
+    } else if (source == ObjectSource::Boat && enabled && o.ferry_phase == 0) {
+      o.ferry_request = -1;
+      o.ferry_destination = o.cargo.empty() ? -1 : w.find(o.cargo.front())->tactic;
+      o.ferry_group_side = o.side;
+      phase(o, 3, data::BoatPhase::Closed, kFerryTravelPause);
+    } else if (source == ObjectSource::Johnka && !enabled) script_stop(w, {o.id});
   }
   return found;
 }
 
 void GameSim::transport_tick(World& w) {
-  // Scripted off-map entry uses the mission landing point; player sailing uses the shared mover.
-  for (auto& boat : w.objects) {
-    if (!boat.alive || boat.removed || !boat.vessel_route) continue;
-    path::Vec2 goal{tile_center_fixed(boat.landing_x), tile_center_fixed(boat.landing_y)};
-    path::Vec2 delta{goal.x - boat.cur_x, goal.y - boat.cur_y};
-    constexpr int step = 5 * 256; // G timing fallback, original ferry visual step is five pixels
-    auto velocity = path::len2(delta) <= int64_t(step)*step ? delta : path::with_length(delta, step);
-    boat.cur_x += velocity.x; boat.cur_y += velocity.y;
-    if (boat.cur_x == goal.x && boat.cur_y == goal.y) {
-      boat.vessel_route = false; boat.vessel_arrived = true; boat.transport_phase = 2;
-      if (boat.mover >= 0) {
-        auto& a = mover_->agents_mut()[size_t(boat.mover)];
-        a.enabled = true; a.pos = a.prev_pos = goal;
-      }
-      unload(w, boat, boat.landing_x, boat.landing_y);
-    }
-  }
-  for (auto& boat : w.objects) {
-    if (!boat.alive || boat.removed || !boat.unload_pending || boat.mover < 0) continue;
-    const int64_t dx = int64_t(boat.cur_x) - boat.dest_x * 256;
-    const int64_t dy = int64_t(boat.cur_y) - boat.dest_y * 256;
-    const bool arrived = dx*dx+dy*dy <= int64_t(12*256)*(12*256);
-    const auto& agent = mover_->agents()[size_t(boat.mover)];
-    if (!arrived && agent.state == path::AgentState::Moving) continue;
-    const int tx = boat.unload_x, ty = boat.unload_y;
-    script_stop(w,{boat.id});
-    if (arrived) unload(w,boat,tx,ty);
-    else w.messages.push_back({"Cannot unload: sailing route is blocked",72});
-  }
-  // Object IDs define simultaneous boarding order, independent of selection order.
+  // Follow is generic: approach the allied target anchor, then ask a ready ferry.
+  // Group anchors are currently centroids, a documented engine approximation.
   for (auto& o : w.objects) {
-    if (o.carrier) {
-      if (auto* boat = w.find(o.carrier)) o.teleport(boat->cur_x, boat->cur_y);
-      continue;
-    }
     if (!o.boarding || !o.alive || o.removed) continue;
     auto* boat = w.find_mut(o.boarding);
-    if (!boat || !boat->alive || boat->removed || boat->side != o.side || !boat->vessel_enabled ||
-        boat->cargo.size() >= kTransportCapacity) { script_stop(w, {o.id}); o.boarding = 0; continue; }
-    if (boat->vessel_route) continue;
-    int bx = tile(boat->cur_x), by = tile(boat->cur_y);
-    auto cls = land_class(rules_->type(o.type));
-    int best = -1, gx = 0, gy = 0;
-    for (int y = by - 1; y <= by + 1; ++y) for (int x = bx - 1; x <= bx + 1; ++x) {
-      if (nav_.blocked(x, y, cls)) continue;
-      int d = (x-tile(o.cur_x))*(x-tile(o.cur_x))+(y-tile(o.cur_y))*(y-tile(o.cur_y));
-      if (best >= 0 && d >= best) continue;
-      auto route = path::astar(nav_, cls, {tile(o.cur_x), tile(o.cur_y)}, {x,y});
-      if (!route.found) continue;
-      best = d; gx = x; gy = y;
+    if (!boat || !boat->alive || boat->removed || !is_ferry(*boat) ||
+        (o.side != boat->side && w.relation[o.side][boat->side] != kFriend)) {
+      script_stop(w, {o.id}); continue;
     }
-    if (best < 0) continue; // no reachable shore yet; never teleport to a distant ferry
-    int64_t dx = o.cur_x - tile_center_fixed(gx), dy = o.cur_y - tile_center_fixed(gy);
-    if (dx*dx + dy*dy <= int64_t(20*256)*(20*256)) {
-      script_stop(w, {o.id}); o.boarding = 0;
-      o.carrier = boat->id; o.removed = true; boat->cargo.push_back(o.id);
-      if (o.mover >= 0) mover_->agents_mut()[size_t(o.mover)].enabled = false;
-      w.selection.ids.erase(std::remove(w.selection.ids.begin(), w.selection.ids.end(), o.id), w.selection.ids.end());
-    } else if (o.mover >= 0 && (o.order != uint8_t(Order::Move) ||
-               o.dest_x != gx*kTilePx+kTilePx/2 || o.dest_y != gy*kTilePx+kTilePx/2)) {
-      script_order(w, {o.id}, gx*kTilePx+kTilePx/2, gy*kTilePx+kTilePx/2, false);
+    int64_t sx = 0, sy = 0, count = 0;
+    bool airborne = true;
+    for (const auto& member : w.objects) {
+      if (!member.alive || member.removed || member.side != o.side || member.tactic != o.tactic) continue;
+      sx += member.cur_x; sy += member.cur_y; ++count;
+      airborne = airborne && rules_->type(member.type).flier;
+    }
+    if (!count) continue;
+    if (anchor_distance(tile(Fixed(sx/count)) - tile(boat->cur_x),
+                        tile(Fixed(sy/count)) - tile(boat->cur_y)) < ferry_reach(o.attack_mode)) {
+      if (airborne) { script_stop(w, {o.id}); continue; }
+      if (boat->ferry_phase == 0) {
+        boat->ferry_request = boat->ferry_destination = o.tactic;
+        boat->ferry_group_side = o.side;
+        phase(*boat, 1, data::BoatPhase::Opening, kFerryOpeningTicks);
+      }
+    }
+    // Resolve the anchor to a reachable land cell within the boarding block.
+    // This is shore routing, independent of whether the group sent its request.
+    if ((tick_ + o.id) % 6 != 0 && o.order != uint8_t(Order::Idle)) continue;
+    int gx = tile(boat->cur_x), gy = tile(boat->cur_y), best = std::numeric_limits<int>::max();
+    if (!rules_->type(o.type).flier) {
+      bool found = false;
+      const auto cls = land_class(rules_->type(o.type));
+      for (int x = tile(boat->cur_x)-1; x <= tile(boat->cur_x)+1; ++x)
+        for (int y = tile(boat->cur_y)-1; y <= tile(boat->cur_y)+1; ++y) {
+          if (nav_.blocked(x,y,cls) || nav_.disc_hits({tile_center_fixed(x),tile_center_fixed(y)},
+                                                   rules_->type(o.type).radius_px*256,cls)) continue;
+          const int dx=x-tile(o.cur_x), dy=y-tile(o.cur_y), score=dx*dx+dy*dy;
+          if (score >= best) continue;
+          const auto route = path::astar(nav_,cls,{tile(o.cur_x),tile(o.cur_y)},{x,y});
+          if (!route.found) continue;
+          gx=x; gy=y; best=score; found=true;
+        }
+      if (!found) {
+        // Follow still approaches the nearest reachable shore when no member
+        // can enter the boarding block; the water destination is resolved by
+        // the shared mover and never confers boarding eligibility.
+        gx = tile(boat->cur_x); gy = tile(boat->cur_y);
+      }
+    }
+    const int dx=gx*kTilePx+kTilePx/2, dy=gy*kTilePx+kTilePx/2;
+    if (o.dest_x != dx || o.dest_y != dy || o.order == uint8_t(Order::Idle) ||
+        (o.mover >= 0 && mover_->agents()[size_t(o.mover)].state != path::AgentState::Moving)) {
+      script_order(w, {o.id}, dx, dy, false);
+      o.order = uint8_t(Order::Follow);
     }
   }
+  for (auto& boat : w.objects) {
+    if (!is_ferry(boat) || !boat.alive || boat.removed) continue;
+    if (tile(boat.cur_x) < -7 || tile(boat.cur_y) < -7 ||
+        tile(boat.cur_x) >= w.terrain.w + 7 || tile(boat.cur_y) >= w.terrain.h + 7) {
+      script_kill(w, boat.id); continue;
+    }
+    if (boat.ferry_phase == 0) continue;
+    if (boat.ferry_wait > 0) { --boat.ferry_wait; continue; }
+    switch (boat.ferry_phase) {
+      case 1: {
+        boat.transport_phase = int(data::BoatPhase::Open);
+        // Occupancy grid semantics: x then y, at most one live ground object per
+        // tile. Stable ID breaks overlaps in the engine's continuous mover (G).
+        const int bx = tile(boat.cur_x), by = tile(boat.cur_y);
+        for (int x = bx-1; x <= bx+1 && boat.cargo.size() < kTransportCapacity; ++x)
+          for (int y = by-1; y <= by+1 && boat.cargo.size() < kTransportCapacity; ++y) {
+            Object* occupant = nullptr;
+            for (auto& candidate : w.objects) {
+              if (!candidate.alive || candidate.removed || candidate.type < 0 || is_transport(candidate.type) ||
+                  rules_->type(candidate.type).flier || tile(candidate.cur_x) != x || tile(candidate.cur_y) != y) continue;
+              occupant = &candidate; break;
+            }
+            if (!occupant || occupant->tactic != boat.ferry_request || occupant->side != boat.ferry_group_side) continue;
+            script_stop(w, {occupant->id});
+            occupant->carrier = boat.id; occupant->removed = true;
+            boat.cargo.push_back(occupant->id);
+            if (occupant->mover >= 0) mover_->agents_mut()[size_t(occupant->mover)].enabled = false;
+            auto erase_id = [&](auto& ids) { ids.erase(std::remove(ids.begin(), ids.end(), occupant->id), ids.end()); };
+            erase_id(w.selection.ids);
+            for (auto& side : w.side_state) erase_id(side.selected_ids);
+          }
+        bool remaining = false;
+        for (const auto& member : w.objects)
+          if (member.alive && !member.removed && member.side == boat.ferry_group_side && member.tactic == boat.ferry_request &&
+              !rules_->type(member.type).flier && !is_transport(member.type)) remaining = true;
+        if (boat.cargo.size() == kTransportCapacity || (!boat.cargo.empty() && !remaining)) {
+          for (auto& member : w.objects) if (member.boarding == boat.id) script_stop(w, {member.id});
+          boat.ferry_request = -1;
+          phase(boat, 2, data::BoatPhase::Closing, kFerryClosingTicks);
+        }
+        break;
+      }
+      case 2: phase(boat, 3, data::BoatPhase::Closed, kFerryTravelPause); break;
+      case 3:
+      case 5: {
+        const int sign = boat.ferry_direction;
+        const Fixed nx = boat.cur_x + sign * to_fixed(5), ny = boat.cur_y - sign * to_fixed(5);
+        const bool returning = boat.ferry_phase == 5;
+        if (returning && boat.transport_phase == int(data::BoatPhase::Turning)) {
+          boat.transport_phase = int(data::BoatPhase::Closed); boat.anim_tick = 0;
+        }
+        if (returning && std::abs(boat.cur_x - boat.ferry_dock_x) <= to_fixed(5) &&
+                         std::abs(boat.cur_y - boat.ferry_dock_y) <= to_fixed(5)) {
+          boat.cur_x = boat.ferry_dock_x; boat.cur_y = boat.ferry_dock_y;
+          boat.orientation ^= 1; boat.ferry_direction = -boat.ferry_direction;
+          boat.ferry_destination = boat.ferry_group_side = -1;
+          phase(boat, 0, data::BoatPhase::Closed, 0);
+        } else if (!nav_.in_bounds(tile(nx), tile(ny)) && !returning) {
+          // Scenario entries may start outside the map. Preserve the diagonal
+          // until entry, but never leave the map on an outbound trip.
+          if (!nav_.in_bounds(tile(boat.cur_x), tile(boat.cur_y))) { boat.cur_x = nx; boat.cur_y = ny; }
+          else phase(boat, 4, data::BoatPhase::Opening, kFerryOpeningTicks);
+        } else if (!returning && nav_.blocked(tile(nx), tile(ny), path::MoveClass::Water)) {
+          boat.vessel_arrived = true;
+          phase(boat, 4, data::BoatPhase::Opening, kFerryOpeningTicks);
+        } else if (returning && nav_.in_bounds(tile(nx), tile(ny)) &&
+                   nav_.blocked(tile(nx), tile(ny), path::MoveClass::Water)) {
+          // G: a newly obstructed return route waits and retries.
+        } else { boat.cur_x = nx; boat.cur_y = ny; }
+        break;
+      }
+      case 4:
+        unload(w, boat, tile(boat.cur_x), tile(boat.cur_y));
+        if (boat.cargo.empty()) {
+          boat.orientation ^= 1; boat.ferry_direction = -boat.ferry_direction;
+          phase(boat, 5, data::BoatPhase::Turning, kFerryTravelPause);
+        }
+        break;
+      default: break;
+    }
+  }
+  for (auto& passenger : w.objects) if (passenger.carrier)
+    if (const auto* boat = w.find(passenger.carrier)) passenger.teleport(boat->cur_x, boat->cur_y);
 }
 } // namespace aztec::engine

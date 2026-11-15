@@ -162,3 +162,63 @@ private installations and the record/replay procedure in
 
 Missing live observer/movement parity measurements do not block the playable
 engine fallback. They still block claims of timing, route or campaign parity.
+Task 129 supersedes task 105's player-controlled ferry implementation. The
+current contract and evidence boundaries are in [ferry_shuttle.md](ferry_shuttle.md).
+Read [ferry_timeline.md](ferry_timeline.md) and
+[ferry_control_flow.md](ferry_control_flow.md) before older live hypotheses.
+**V** denotes supplied original observations or inspected behavior; **G** denotes
+an engine policy or unresolved mapping. No original process was launched here.
+
+A ferry is a scenario shuttle controller, never a selectable player unit. A
+selected field group right-clicks an allied ferry to follow its anchor. It asks
+a ready ferry to board when its group anchor is strictly inside the mode-specific
+reach (V: 4, 8, 8, 6 tiles) and it is not all-airborne. There is no scenario-squad
+eligibility rule. Town garrison groups ignore follow orders in the supplied
+measured runs. The engine uses a centroid anchor and resolves walking onto a
+reachable shore cell (G); original formation-anchor parity remains incomplete.
+
+The opened ferry scans its 3 by 3 tile block, x then y, accepts live non-airborne
+members of the requesting tactic, and carries at most **five** (V). It closes,
+travels diagonally by five pixels on each axis per think (V), checks the next
+position for water, unloads with per-passenger land checks, turns and returns to
+its dock. A second request can start another trip. There are no sail or unload
+buttons. The old engine Board opcode aliases the ordinary follow request;
+Unload is retired. Johnka does not share this boarding protocol.
+
+Start and turn pauses use 28 ticks; opening/closing use eight ticks. These are
+fits to four-tick samples, not exact recovered animation durations. The first
+unload rings at 48 and 60 pixels fit the measured spacing; subsequent rings
+expand by 48 pixels. Exact original ring traversal is unresolved. DAT-zero water,
+stable-ID occupancy ties, map-bounded placement retries and exact stored-dock
+return are G policies. A blocked passenger remains aboard for retry rather than
+being placed on unsuitable terrain. Cargo is hidden, has no independent combat,
+collision or vision, and retains identity and health. Vessel cleanup destroys
+remaining cargo.
+
+`boat.activate` starts phase 3 directly without requesting boarding (V).
+The same controller handles all mission placements. Script ferry activations:
+mission 2 IDs **17, 18, 9**; mission 7 IDs **6–10**; mission 9 IDs **9–12**;
+mission 15 has **none**. Mission 15's Johnka 50/51 enable actions remain distinct.
+SubmarineGo dispatches its configured animation and retires its controller;
+JohnkaEnable/Disable toggle that separate vessel. Script scenario identity is
+independent of viewing side and object index. The old 19-site handler inventory
+includes these other vessel families; it is not 19 ferry activations or evidence
+of trigger reachability.
+
+Ferry vulnerability remains unmeasured. The switchable constant
+`kFerryInvulnerableWhileSailing`, default true, excludes ferries in phases 3/5
+from targeting and incoming damage (G). Embarked passengers cannot be targeted.
+No claim of original immunity follows from enemy-free observations.
+
+Phase, timing, passengers, direction, position, dock, requester, destination and
+side participate in deterministic hashing and command-log save replay. Replay
+semantics version **12** rejects incompatible older engine saves. Original-save
+transport continuation remains incomplete.
+
+Synthetic `transport` tests and the generated `transport_playtest` cover the
+shuttle cycle, second trip, over-capacity and ineligible groups, reverse travel,
+blocked placement, vulnerability policy, UI rejection and mid-trip save/load.
+See the [decisive run sheet](ferry_shuttle.md#decisive-original-run-sheet-needs-operator-run)
+for the pending per-tick 1/2/3/mixed-group original experiment. Synthetic agreement,
+script inspection and forced handler acceptance do not establish live timing,
+campaign completion or full game parity.

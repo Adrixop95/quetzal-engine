@@ -73,6 +73,7 @@ static void schedule(GameSim& sim, uint64_t tick) {
   if (tick == 24) send(Pct::PauseBuild, {5}, 0);
   if (tick == 45) send(Pct::PauseOn, {});
   if (tick == 48) send(Pct::PauseOff, {});
+  // Retired player ferry controls must remain harmless during the shuttle cycle.
   if (tick == 130) send(Pct::Move, {1}, 10 * 48 + 24, 7 * 48 + 24);
   if (tick == 190) send(Pct::Unload, {1}, 11 * 48 + 24, 7 * 48 + 24);
   if (tick == 260) send(Pct::Move, {2}, 14 * 48 + 24, 10 * 48 + 24);
@@ -119,7 +120,8 @@ int main(int argc, char** argv) {
         check(w.objects[1].boarding && !w.effects.empty(), "save must occur during boarding and combat");
         check(w.objects.size() > 6 && w.objects[6].progress < 1000, "save must occur during construction");
       }
-      if (checkpoint == 120) check(!w.objects[0].cargo.empty(), "cargo checkpoint was missed");
+      if (checkpoint == 60) check(!w.objects[0].cargo.empty() && w.objects[0].ferry_phase == 3,
+                                  "sailing cargo checkpoint was missed");
       SaveData s; s.mission = w.mission.file_name; s.tick = sim->tick_count(); s.hash = sim->state_hash(w);
       s.script_hash = file_hash(script); s.log = sim->log(); s.modifications = sim->initial_modifications();
       s.selection = w.selection.ids; s.local_side = uint32_t(w.local_side); s.cam_x = -12.5f; s.cam_y = 200; s.cam_zoom = 1.5f;

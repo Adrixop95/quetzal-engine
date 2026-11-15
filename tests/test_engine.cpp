@@ -126,7 +126,7 @@ static void test_movement_rules() {
     CHECK(w.objects[0].order == uint8_t(Order::Idle));
   }
 
-  // Air crosses impassable ground; vessels use separate water agents.
+  // Air crosses impassable ground; Johnka uses water agents and ferries reject player orders.
   World initial; initial.terrain.w = initial.terrain.h = 20; initial.terrain.cells.resize(400);
   initial.passability = {20, 20, std::vector<uint8_t>(400, 0)};
   for (int type : {7,7,84,88}) {
@@ -136,7 +136,7 @@ static void test_movement_rules() {
   for (Pct command : {Pct::Move, Pct::AttackMove}) {
     World w = initial;
     GameSim sim(rules, Modifications::faithful()); sim.init(w);
-    for (const auto& o : w.objects) CHECK((o.mover >= 0) == is_transport(o.type));
+    for (const auto& o : w.objects) CHECK((o.mover >= 0) == (o.type == 88));
     Command move; move.type = command; move.ids = {1,2,3,4}; move.a = 700; move.b = 600;
     sim.submit(move);
     for (int tick = 0; tick < 150; ++tick) {
@@ -150,10 +150,9 @@ static void test_movement_rules() {
     }
     CHECK(w.objects[0].cur_x == to_fixed(700) && w.objects[0].cur_y == to_fixed(600));
     CHECK(w.objects[0].order == uint8_t(Order::Idle) && w.objects[0].anim_state == 0);
-    for (int i : {2,3}) {
-      CHECK(w.objects[i].cur_x != initial.objects[i].cur_x || w.objects[i].cur_y != initial.objects[i].cur_y);
-      CHECK(w.objects[i].order == uint8_t(Order::Idle));
-    }
+    CHECK(w.objects[2].cur_x == initial.objects[2].cur_x && w.objects[2].cur_y == initial.objects[2].cur_y);
+    CHECK(w.objects[3].cur_x != initial.objects[3].cur_x || w.objects[3].cur_y != initial.objects[3].cur_y);
+    CHECK(w.objects[3].order == uint8_t(Order::Idle));
     World replayed = initial;
     auto replay = GameSim::replay(replayed, rules, sim.log(), sim.tick_count());
     CHECK(replay->state_hash(replayed) == sim.state_hash(w));
