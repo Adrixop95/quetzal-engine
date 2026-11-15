@@ -886,12 +886,18 @@ static void test_siege_ranged() {
   blast.terrain.w = blast.terrain.h = 20; blast.terrain.cells.resize(400);
   for (int i = 0; i < 4; ++i) {
     Object o; o.id = uint32_t(i + 1); o.type = i == 3 ? 7 : 0; o.hp = 10000;
+    o.side = i == 1 ? 1 : 0; o.tactic = 10; o.cooldown = 100;
     o.teleport(to_fixed(i == 1 ? 262 : i == 2 ? 287 : 200), to_fixed(200));
     blast.objects.push_back(o);
   }
+  // An offscreen source exercises tactic notifications through the shared blast path.
+  Object source; source.id = 5; source.type = 0; source.side = 1; source.tactic = 20;
+  source.hp = 10000; source.cooldown = 100; source.teleport(to_fixed(800), to_fixed(800));
+  blast.objects.push_back(source);
+  blast.relation[0][1] = blast.relation[1][0] = kEnemy;
   GameSim blast_sim(rules, Modifications::faithful()); blast_sim.init(blast);
   Effect impact; impact.kind = data::EffectClass::BallExpl; impact.flight = true;
-  impact.source = 99; impact.payload_id = 3;
+  impact.source = 5; impact.payload_id = 3;
   impact.x = impact.end_x = to_fixed(200); impact.y = impact.end_y = to_fixed(200);
   blast.effects.push_back(impact);
   blast.begin_tick(); blast_sim.tick(blast);
@@ -899,7 +905,9 @@ static void test_siege_ranged() {
   // retain the fraction through the +0xe8 factor 204/256 before integer HP.
   CHECK(blast.objects[0].hp == 7000 && blast.objects[1].hp == 8058);
   CHECK(blast.objects[2].hp == 9253 && blast.objects[3].hp == 10000);
-  CHECK(blast.objects[0].last_hit_by == 99);
+  CHECK(blast.objects[0].last_hit_by == 5);
+  CHECK(blast.tactic_attacked_by.at({0, 10}) == 1);
+  CHECK(blast.tactic_attacked_by.count({1, 10}) == 0);
 }
 
 static void test_standalone_area_attack() {
@@ -2014,6 +2022,26 @@ static void test_population_difficulty_modes() {
       sim.script_kill(w, 3); production_steps(sim, w, 1);
       CHECK(w.objects[0].order == uint8_t(Order::Move) && w.objects[0].target == 0);
     }
+  }
+
+  // G: losing an idle attack cancels its pursuit agent as well as its logical
+  // order. Otherwise tactic.idle becomes true while the unit keeps chasing.
+  for (int loss = 0; loss < 3; ++loss) {
+    World w = initial;
+    w.objects[0].attack_mode = AttackMode::Aggressive;
+    w.objects[2].teleport(to_fixed(700), to_fixed(500));
+    GameSim sim(rules, Modifications::faithful()); sim.init(w);
+    Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 3;
+    sim.submit(attack); production_steps(sim, w, 2);
+    CHECK(w.objects[0].order == uint8_t(Order::Attack));
+    const Fixed x = w.objects[0].cur_x, y = w.objects[0].cur_y;
+    if (loss == 0) sim.script_kill(w, 3);
+    else if (loss == 1) w.objects[2].removed = true;
+    else { w.objects[0].target = 999; w.objects[2].removed = true; }
+    production_steps(sim, w, 12);
+    CHECK(w.objects[0].order == uint8_t(Order::Idle));
+    CHECK(w.objects[0].target == 0 && w.objects[0].resume == 0);
+    CHECK(w.objects[0].cur_x == x && w.objects[0].cur_y == y);
   }
 }
 

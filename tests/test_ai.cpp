@@ -210,7 +210,8 @@ static void army_scenarios(std::shared_ptr<const RulesData> rules) {
   auto raid_initial = initial;
   raid_initial.objects[0].tactic = 77;
   object(raid_initial, 0, 0, 0, 11, 10);
-  object(raid_initial, 0, 1, 1, 9, 8);
+  // The attacked condition requires the source to belong to an active tactic.
+  object(raid_initial, 0, 1, 1, 9, 8, 7);
   TempDir raid_directory;
   const auto raid_script = raid_directory.path() / "raid-notification.scn";
   std::ofstream(raid_script) << "trigger(0) conditions side(0).tactic(77).attacked == 1 actions side(0).addMoney(7) trigger(0).disable end";

@@ -151,11 +151,13 @@ static bool cmp(Cmp c, int64_t a, int64_t b) {
   return false;
 }
 
-void ScriptRunner::notify_attack(const World& w, const Object& target, int source_side) {
-  // V: attacked stores the notifying enemy's side, independently of its lifetime.
-  // G: positive hostile combat hits supply notifications until tactic scans are modeled.
-  if (target.tactic >= 0 && w.hostile(target.side, source_side))
-    tactics_[{target.side, target.tactic}].attacked_side = source_side;
+void ScriptRunner::notify_attack(World& w, const Object& target, int source_side) {
+  // V: attacked stores the notifying nonfriendly side, independently of its lifetime.
+  // G: the combat adapter checks source kind and tactic before notifying.
+  if (target.tactic >= 0 && target.side >= 0 && target.side < 8 &&
+      source_side >= 0 && source_side < 8 && target.side != source_side &&
+      w.relation[target.side][source_side] != kFriend)
+    w.tactic_attacked_by[{target.side, target.tactic}] = source_side;
 }
 
 bool ScriptRunner::eval(const World& w, const Condition& c) const {
@@ -220,8 +222,9 @@ bool ScriptRunner::eval(const World& w, const Condition& c) const {
       int64_t v = 0;
       if (c.kind == CondKind::TacticValid) v = m.empty() ? 0 : 1;
       else if (c.kind == CondKind::TacticAttacked) {
-        const auto it = tactics_.find({side, c.id});
-        v = it == tactics_.end() ? -1 : it->second.attacked_side;
+        v = -1;
+        const auto hit = w.tactic_attacked_by.find({side, c.id});
+        if (!m.empty() && hit != w.tactic_attacked_by.end()) v = hit->second;
       } else if (c.kind == CondKind::TacticIdle) {
         v = 1;
         for (uint32_t id : m) if (w.find(id)->order != uint8_t(Order::Idle)) v = 0;
@@ -404,7 +407,6 @@ uint64_t ScriptRunner::state_hash() const {
   for (const auto& t : tactics_) {
     mix(uint64_t(t.first.first)); mix(uint64_t(t.first.second));
     mix(t.second.locked); mix(uint64_t(t.second.path + 1)); mix(uint64_t(t.second.path_index));
-    mix(uint32_t(t.second.attacked_side));
     mix(t.second.cycled); mix(t.second.inverted);
   }
   return h;
