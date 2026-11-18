@@ -173,6 +173,7 @@ const char* usage_text() {
          "  --menu-script FILE frame-scheduled menu input; exit when a mission is chosen\n"
          "  --menu-trace FILE  raw per-frame front-end observations\n"
          "  --no-menu          start the default mission directly instead of the front-end menu\n"
+         "  --skirmish         play the named custom mission against computer sides\n"
          "  --menu-session     enable pause and objectives menus when starting a mission directly\n"
          "  --audio-log FILE  write playback events as text\n"
          "  --no-audio         silent;  --volume V  all audio volumes 0..1\n"
@@ -225,6 +226,7 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     else if (a == "--settings") { if (!next(v)) return false; }
     else if (a == "--game") { if (!next(v)) return false; o.game_dir = v; }
     else if (a == "--load-original") { if (!next(v)) return false; o.original_save = v; }
+    else if (a == "--skirmish") o.skirmish = true;
     else if (a == "--size") {
       if (!next(v)) return false;
       if (std::sscanf(v, "%dx%d", &o.window.width, &o.window.height) != 2 || o.window.width < 160 || o.window.height < 120) { err = "bad --size"; return false; }
@@ -297,8 +299,11 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
   // Selecting a preset clears stored overrides; explicit CLI overrides always win.
   if (!cli_profile.empty()) o.modifications.set_profile(cli_profile);
   for (const auto& modification : cli_modifications) o.modifications.set(modification);
-  if (!o.original_save.empty() && (o.mission_given || o.wander)) {
-    err = "--load-original cannot be combined with a mission or --wander"; return false;
+  if (!o.original_save.empty() && (o.mission_given || o.wander || o.skirmish)) {
+    err = "--load-original cannot be combined with a mission, --wander or --skirmish"; return false;
+  }
+  if (o.skirmish && (!o.mission_given || !o.sim || o.wander)) {
+    err = "--skirmish requires a mission and the game simulation"; return false;
   }
   if ((!o.capture_dir.empty() || o.capture_every) &&
       (o.capture_dir.empty() || !o.capture_every || o.script.empty() || o.ui_trace.empty())) {

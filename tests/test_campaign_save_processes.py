@@ -127,7 +127,7 @@ class CampaignSaveTests(unittest.TestCase):
                     valid = ui_slot.read_bytes()
                     for contents, message in ((b'AZS2', 'Unsupported save format'),
                                               (b'AZS3', 'Corrupt or truncated save'),
-                                              (valid[:4] + struct.pack('<I', 4) + valid[8:], 'Unsupported save version')):
+                                              (valid[:4] + struct.pack('<I', 3) + valid[8:], 'Unsupported save version')):
                         ui_slot.write_bytes(contents)
                         script.write_text('key ctrl+L\nexpect tick == 1\nquit\n', encoding='ascii')
                         refused = run(graphical)

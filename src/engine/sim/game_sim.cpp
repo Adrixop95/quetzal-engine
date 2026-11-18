@@ -1853,6 +1853,7 @@ uint64_t GameSim::state_hash(const World& w) const {
   // Hash contract 2: fixed-width integer values, ordered containers and explicit sizes.
   // Rules and loaded sight resources must be identical (content compatibility is separate).
   mix(2); mix(initial_modifications_.bits()); mix(modifications_.bits()); mix(w.tick); mix(w.script_side); mix(bool(w.original_save));
+  if (w.skirmish) mix(0x534b49524d495348ull); // distinguish the explicit launch mode; retain normal replay hashes
   mix(w.terrain.w); mix(w.terrain.h); mix(w.mission.tileset);
   mix(w.resources.w); mix(w.resources.h); mix(w.resources.v.size());
   for (auto value : w.resources.v) mix(value);

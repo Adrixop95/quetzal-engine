@@ -31,7 +31,14 @@ static SaveData fixture() {
 static void check_save(const Bytes& v) {
   SaveData out = fixture(); out.mission = "unchanged";
   auto before = serialize_save(out);
-  if (deserialize_save(v, out)) CHECK(serialize_save(out) == v);
+  if (deserialize_save(v, out)) {
+    if (read_le<uint32_t>(v.data() + 4) != 4) CHECK(serialize_save(out) == v);
+    // Version 4 containers upgrade to version 5 without changing replay semantics.
+    auto upgraded = serialize_save(out);
+    SaveData again;
+    CHECK(deserialize_save(upgraded, again));
+    CHECK(serialize_save(again) == upgraded);
+  }
   else CHECK(serialize_save(out) == before);
 }
 static void check_log(const Bytes& v) {
@@ -45,6 +52,12 @@ static void malformed() {
   CHECK(!bytes.empty());
   SaveData decoded; CHECK(deserialize_save(bytes, decoded));
   CHECK(decoded.cam_x == s.cam_x && decoded.content_hash == s.content_hash);
+  auto legacy = bytes;
+  legacy.erase(legacy.end() - 20, legacy.end() - 12); // version 4 has no local UI fields
+  write_le(legacy.data() + 4, uint32_t(4)); repair_checksum(legacy);
+  CHECK(deserialize_save(legacy, decoded) && !decoded.skirmish && decoded.hash == s.hash);
+  write_le(legacy.data() + legacy.size() - 12, uint32_t(0x80000000u)); repair_checksum(legacy);
+  CHECK(!deserialize_save(legacy, decoded)); // version 4 never defined a skirmish flag
   for (size_t i = 0; i < bytes.size(); ++i) {
     check_save(Bytes(bytes.begin(), bytes.begin() + i));
     for (unsigned bit = 0; bit < 8; ++bit) {
@@ -80,7 +93,7 @@ static void malformed() {
   auto old_replay = bytes; write_le(old_replay.data() + 8, uint32_t(1)); repair_checksum(old_replay);
   CHECK(!deserialize_save(old_replay, decoded)); check_save(old_replay);
   std::string error;
-  for (uint32_t version : {0u, 1u, 2u, 3u, 4u, kSaveFormatVersion + 1}) {
+  for (uint32_t version : {0u, 1u, 2u, 3u, kSaveFormatVersion + 1}) {
     auto incompatible = bytes; write_le(incompatible.data() + 4, version); repair_checksum(incompatible);
     CHECK(!deserialize_save(incompatible, decoded, &error));
     CHECK(error.find("Unsupported save version") == 0);
@@ -103,7 +116,7 @@ static void malformed() {
   selected.selection = {0}; CHECK(serialize_save(selected).empty());
   selected.selection.resize(kMaxCommandIds + 1); CHECK(serialize_save(selected).empty());
   selected = s; selected.local_side = 8; CHECK(serialize_save(selected).empty());
-  for (auto name : {"", "../mission_1", "/mission_1", "mission.mp", "a b"}) {
+  for (auto name : {"", "../mission_1", "/mission_1", ".", "..", "C:map", "a\\b", "a\nb"}) {
     auto bad = s; bad.mission = name; CHECK(serialize_save(bad).empty());
   }
   auto bad = s; bad.cam_zoom = 0; CHECK(serialize_save(bad).empty());

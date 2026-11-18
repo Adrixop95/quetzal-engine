@@ -173,6 +173,7 @@ struct Selection {
 };
 
 struct World {
+  bool skirmish = false;         // explicit single-player custom mission, retained by engine saves
   // Retains unresolved original research, script and pool state without inventing semantics.
   std::shared_ptr<const SaveGame> original_save;
   std::vector<uint32_t> original_unit_ids; // imported engine ID minus one -> sparse original pool ID

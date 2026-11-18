@@ -15,6 +15,8 @@
 #include "engine/app/menu_script.hpp"
 #include "engine/app/ui_trace.hpp"
 #include "engine/assets/mission.hpp"
+#include "engine/assets/skirmish.hpp"
+#include "core/script.hpp"
 #include "engine/render/sprite_store.hpp"
 #include "engine/render/png.hpp"
 #include "engine/ui/cursor.hpp"
@@ -63,9 +65,9 @@ class Screen {
   bool run(FrontendResult& out, const std::string& open_briefing);
 
  private:
-  enum class Mode { Main, Campaign, Custom, Briefing, Options, Audio, Modifications, Load, Credits, Controls };
+  enum class Mode { Main, Campaign, Custom, Briefing, Options, Audio, Modifications, Load, Credits, Controls, CustomSetup, Loading };
   static const char* mode_name(Mode mode) {
-    static const char* names[] = {"main", "campaign", "custom", "briefing", "options", "audio", "modifications", "load", "credits", "controls"};
+    static const char* names[] = {"main", "campaign", "custom", "briefing", "options", "audio", "modifications", "load", "credits", "controls", "custom-setup", "loading"};
     return names[int(mode)];
   }
 
@@ -135,7 +137,11 @@ class Screen {
   int ow_ = 0, oh_ = 0;
 
   struct Entry { std::string spec, title; };
-  std::vector<Entry> campaign_, custom_;
+  std::vector<Entry> campaign_;
+  std::vector<CustomMap> custom_;
+  MissionDef custom_mission_;
+  std::string custom_spec_, custom_error_;
+  bool chosen_skirmish_ = false;
   int custom_page_ = 0, campaign_page_ = 0, campaign_selected_ = -1;
   int armed_x_ = -1, armed_y_ = -1;
   CampaignProgress progress_;
@@ -174,19 +180,6 @@ void Screen::load_lists() {
   progress_.load(user_file("Saves/engine_campaign.txt"));
   campaign_.clear();
   custom_.clear();
-  std::error_code ec;
-  std::vector<std::string> stems;
-  for (const auto& e : fs::directory_iterator(data_.maps_dir(), ec)) {
-    std::string ext = e.path().extension().string();
-    for (auto& c : ext) c = char(std::tolower(c));
-    if (ext == ".mp") stems.push_back(e.path().stem().string());
-  }
-  std::sort(stems.begin(), stems.end(), [](const std::string& a, const std::string& b) {
-    std::string la = a, lb = b;
-    for (auto& c : la) c = char(std::tolower(c));
-    for (auto& c : lb) c = char(std::tolower(c));
-    return la < lb;
-  });
   for (int n = 1; n <= 15; n++) {
     std::string spec = "mission_" + std::to_string(n);
     std::string mp = find_file_ci(data_.maps_dir(), spec + ".mp");
@@ -195,12 +188,7 @@ void Screen::load_lists() {
     std::string title = load_mission(mp, m) && !m.title.empty() ? m.title : label(34, "Mission") + " " + std::to_string(n);
     campaign_.push_back({spec, title});
   }
-  for (const std::string& st : stems) {
-    std::string lo = st;
-    for (auto& c : lo) c = char(std::tolower(c));
-    if (lo.rfind("mission_", 0) == 0) continue;
-    custom_.push_back({st, st});
-  }
+  custom_ = custom_maps(data_.maps_dir());
 }
 
 void Screen::enter_briefing(const std::string& spec) {
@@ -428,7 +416,7 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
         if (slot >= 0) {
           SaveData save;
           resume_save_ = SaveLoadMenu::slot_path(slot);
-          if (read_save(resume_save_, save)) chosen_ = save.mission;
+          if (read_save(resume_save_, save)) { chosen_ = save.mission; chosen_skirmish_ = save.skirmish; }
           else { resume_save_.clear(); slots_.show(false); }
         }
         if (!slots_.open && chosen_.empty()) mode_ = Mode::Campaign;
@@ -443,16 +431,56 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
         for (int row = 0; row < 9; ++row) {
           const int i = custom_page_ * 9 + row;
           if (i >= int(custom_.size())) break;
-          Button item = control(FrontendLayout::campaign_row(row), custom_[size_t(i)].title);
+          Button item = control(FrontendLayout::campaign_row(row), custom_[size_t(i)].title + " (" + std::to_string(custom_[size_t(i)].width) + " x " + std::to_string(custom_[size_t(i)].height) + ")");
           draw_button(item);
-          if (clicked(item)) enter_briefing(custom_[size_t(i)].spec);
+          if (clicked(item)) {
+            custom_spec_ = custom_[size_t(i)].spec;
+            custom_error_.clear();
+            custom_mission_ = {};
+            World candidate;
+            if (load_world(data_, custom_spec_, candidate, custom_error_) && setup_skirmish(candidate, custom_error_)) {
+              custom_mission_ = candidate.mission;
+              script::Script script;
+              const auto path = data_.map_file(custom_spec_, "scn");
+              if (path.empty() || !script::load_script(path, script)) custom_error_ = "Missing or invalid mission script";
+            }
+            mode_ = Mode::CustomSetup;
+          }
         }
+        if (custom_.empty()) text(400, 290, "No custom maps found in Maps", 1, gold, true);
         Button previous = control(FrontendLayout::previous, "<"), next = control(FrontendLayout::next, ">");
         Button back = control(FrontendLayout::bottom_right, label(148, "Cancel"));
         draw_button(previous, custom_page_ > 0); draw_button(next, custom_page_ + 1 < pages); draw_button(back);
         if (clicked(previous) && custom_page_ > 0) --custom_page_;
         if (clicked(next) && custom_page_ + 1 < pages) ++custom_page_;
         if (clicked(back) || in_.hit(SDL_SCANCODE_ESCAPE)) mode_ = Mode::Campaign;
+        break;
+      }
+      case Mode::CustomSetup: {
+        background(270);
+        text(400, 22, "Custom mission", 2.2f, gold, true);
+        text(400, 70, custom_mission_.title.empty() ? custom_spec_ : custom_mission_.title, 1.5f, gold, true);
+        text(400, 105, std::to_string(custom_mission_.w) + " x " + std::to_string(custom_mission_.h), 1, gold, true);
+        for (size_t i = 0; i < custom_mission_.sides.size(); ++i) {
+          const auto& side = custom_mission_.sides[i];
+          static const char* races[] = {"Russian", "Aztec", "Chinese"};
+          const std::string owner = side.neutral ? "Neutral AI" : side.only_comp ? "AI" : "Human";
+          text(90, 150 + int(i) * 34, "Side " + std::to_string(side.index + 1) + "  " + owner +
+               "  " + races[side.race] + "  Colour " + std::to_string(side.color) +
+               "  Cash " + std::to_string(side.money), 1, gold);
+        }
+        if (!custom_error_.empty()) text(400, 470, custom_error_, 1, gold, true);
+        Button start{550, 535, 170, 36, "Start"}, back{90, 535, 150, 36, "Back"};
+        draw_button(start, custom_error_.empty()); draw_button(back);
+        if (custom_error_.empty() && (clicked(start) || (in_.hit(SDL_SCANCODE_RETURN) && !in_.alt))) mode_ = Mode::Loading;
+        if (clicked(back) || in_.hit(SDL_SCANCODE_ESCAPE)) mode_ = Mode::Custom;
+        break;
+      }
+      case Mode::Loading: {
+        background(270);
+        text(400, 280, "Loading custom mission...", 2, gold, true);
+        chosen_ = custom_spec_;
+        chosen_skirmish_ = true;
         break;
       }
       case Mode::Briefing: {
@@ -576,6 +604,7 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
   out.quit = quit_ && chosen_.empty();
   out.failed = failed_;
   out.mission = chosen_;
+  out.skirmish = chosen_skirmish_;
   out.resume_save = resume_save_;
   return !out.quit;
 }
