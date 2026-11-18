@@ -2,6 +2,8 @@
 // object dots and the camera rectangle. Click/drag with the left button to move the camera.
 #pragma once
 #include <SDL.h>
+#include <array>
+#include <vector>
 #include "engine/assets/game_data.hpp"
 #include "engine/platform/input.hpp"
 #include "engine/render/fog.hpp"
@@ -29,6 +31,9 @@ class Minimap {
  private:
   const World* world_ = nullptr;
   SDL_Texture* tex_ = nullptr;
+  // Runtime palette variants of the user's preview; no game pixels are embedded.
+  std::array<std::vector<uint32_t>, 20> preview_shades_;
+  int texture_w_ = 0, texture_h_ = 0, default_shade_ = 0;
   SDL_Rect rect_{0, 0, 0, 0};
   bool from_preview_ = false;
   SDL_Color tint_{255, 255, 255, 255};

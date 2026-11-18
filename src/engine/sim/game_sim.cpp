@@ -135,12 +135,36 @@ void GameSim::init(World& w) {
   w.script_cameras.clear();
   w.messages.clear();
   w.message_retirement = 0;
+  // V: mission visibility is combined with startup daylight before the first
+  // acquisition pass (0x430ae0). Do not stamp object sight until the tick ends.
+  if (!w.original_save && rules_->sight() && !w.visibility_brightness &&
+      w.terrain.w > 0 && w.terrain.h > 0) {
+    const int width = w.terrain.w + 1, height = w.terrain.h + 2;
+    const int ambient = rules_->sight()->daylight[w.mission.tileset != 0][w.day_clock];
+    w.visibility.sides.resize(std::max({w.visibility.sides.size(), w.side_state.size(), size_t(8)}));
+    for (auto& layer : w.visibility.sides) {
+      VisFile::Layer raw{width, height, std::vector<uint8_t>(size_t(width) * height, 0)};
+      if (layer.w == w.terrain.w && layer.h == w.terrain.h &&
+          layer.v.size() == size_t(layer.w) * layer.h) {
+        for (int y = 0; y < layer.h; ++y) {
+          for (int x = 0; x < layer.w; ++x)
+            raw.v[size_t(y) * width + x] = uint8_t(std::max(0, ambient - layer.v[size_t(y) * layer.w + x]));
+          raw.v[size_t(y) * width + layer.w] = raw.v[size_t(y) * width + layer.w - 1];
+        }
+        std::copy_n(raw.v.begin() + size_t(layer.h - 1) * width, width,
+                    raw.v.begin() + size_t(layer.h) * width);
+      }
+      layer = std::move(raw);
+    }
+    w.visibility_brightness = true;
+    ++w.fog_version;
+  }
   // Reference computer intelligence starts with visibility value 24 (rules_ai.md).
   // Imported saves retain their recorded fog instead of restarting intelligence.
   if (!w.original_save) {
     for (const auto& side : w.mission.sides)
       if (side.only_comp && side.index >= 0 && side.index < int(w.visibility.sides.size()))
-        std::fill(w.visibility.sides[side.index].v.begin(), w.visibility.sides[side.index].v.end(), uint8_t(w.visibility_brightness ? 128 : 24));
+        std::fill(w.visibility.sides[side.index].v.begin(), w.visibility.sides[side.index].v.end(), uint8_t(24));
   }
   w.town_state.clear();
   for (const TownDef& t : w.mission.towns) {
