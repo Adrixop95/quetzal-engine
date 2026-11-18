@@ -20,8 +20,9 @@ SceneRenderer::SceneRenderer(Window& win, const GameData& data, const World& wor
 // 0 = per-sprite palette from the tile header (Tiles0 uses Pal 4/5/6, Tiles1 uses 8/9/10).
 int SceneRenderer::default_palette() const { return opts.terrain_palette > 0 ? opts.terrain_palette : 0; }
 
-void SceneRenderer::queue(int page, float x0, float y0, float x1, float y1, const SDL_Rect& src) {
+void SceneRenderer::queue(int page, float x0, float y0, float x1, float y1, const SDL_Rect& src, const SpriteKey& key, int frame) {
   if (page >= int(batches_.size())) batches_.resize(page + 1);
+  if (observe_sprite) observe_sprite(key, frame, {x0, y0, x1 - x0, y1 - y0});
   int ps = store_.atlas().page_size();
   batches_[page].add(x0, y0, x1, y1, src, ps, ps, mod_);
 }
@@ -102,13 +103,14 @@ void SceneRenderer::draw_terrain(const Camera& cam) {
   int by1 = std::min(t.h, int(std::ceil((cam.y + cam.visible_h()) / kTilePx)));
   for (int y = by0; y < by1; y++)
     for (int x = bx0; x < bx1; x++) {
-      const StoredSprite& s = store_.get({arch, 0x44c, t.base(x, y), pal, shade_at(float(x * kTilePx + 24), float(y * kTilePx + 24))});
+      const SpriteKey key{arch, 0x44c, t.base(x, y), pal, shade_at(float(x * kTilePx + 24), float(y * kTilePx + 24))};
+      const StoredSprite& s = store_.get(key);
       if (!s.ok()) continue;
-      int frame = s.frames > 1 ? int((world_.tick / 2) % uint64_t(s.frames)) : 0;  // water/shore animation
+      int frame = s.frames > 1 ? int(opts.view_counter % unsigned(s.frames)) : 0;  // water/shore animation
       stats.tiles++;
       float sx0 = snap(cam.to_screen_x(float(x * kTilePx))), sy0 = snap(cam.to_screen_y(float(y * kTilePx)));
       float sx1 = snap(cam.to_screen_x(float((x + 1) * kTilePx))), sy1 = snap(cam.to_screen_y(float((y + 1) * kTilePx)));
-      queue(s.region.page, sx0, sy0, sx1, sy1, {s.region.x, s.region.y + frame * kTilePx, kTilePx, kTilePx});
+      queue(s.region.page, sx0, sy0, sx1, sy1, {s.region.x, s.region.y + frame * kTilePx, kTilePx, kTilePx}, key, frame);
     }
   for (int p = 0; p < int(batches_.size()); p++) flush(p);
 
@@ -137,11 +139,13 @@ void SceneRenderer::draw_terrain(const Camera& cam) {
 }
 
 // Draws one image of a stored sprite with its hotspot at world position (wx, wy).
-void SceneRenderer::blit(const Camera& cam, const StoredSprite& s, int frame, float wx, float wy, int& cur_page) {
+void SceneRenderer::blit(const Camera& cam, const StoredSprite& s, const SpriteKey& key, int frame, float wx, float wy, int& cur_page) {
   if (s.region.page != cur_page) { flush(cur_page); cur_page = s.region.page; }
+  const int cells = std::max(1, s.frames);
+  frame = ((frame % cells) + cells) % cells;
   float x0 = wx - s.ox, y0 = wy - s.oy;
   queue(s.region.page, snap(cam.to_screen_x(x0)), snap(cam.to_screen_y(y0)), snap(cam.to_screen_x(x0 + s.cw)),
-        snap(cam.to_screen_y(y0 + s.ch)), s.frame_rect(frame));
+        snap(cam.to_screen_y(y0 + s.ch)), s.frame_rect(frame), key, frame);
 }
 
 void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
@@ -190,28 +194,27 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
 
   int cur_page = -1;
   SDL_Color body_mod = mod_;
-  // Selection rings go on the ground, under bodies.
-  mod_ = {255, 255, 255, 255};
-  for (const Item& it : items) {
-    if (it.effect || it.tree || !it.primary || is_ferry(*it.o) || !world_.selection.contains(it.o->id)) continue;
+  // V: each sorted item draws its own ground selection before its body.
+  auto draw_selection = [&](const Item& it) {
+    if (it.effect || it.tree || !it.primary || is_ferry(*it.o) || !world_.selection.contains(it.o->id)) return;
     const TypeInfo* ti = type_info(it.o->type);
     SpriteKey k;
     k.archive = ArchiveId::Common; k.group = 0x44c; k.shade = 0;
     k.index = ti && ti->is_structure() ? 314 : 309;
     const StoredSprite& s = store_.get(k);
-    if (!s.ok()) continue;
-    int f = int((world_.tick / 2) % uint64_t(std::max(1, s.frames)));
+    if (!s.ok()) return;
+    mod_ = {255, 255, 255, 255};
+    int f = int(opts.view_counter % unsigned(std::max(1, s.frames)));
     if (s.region.page != cur_page) { flush(cur_page); cur_page = s.region.page; }
     float x0 = it.wx - s.cw / 2.f, y0 = it.wy - s.ch / 2.f;
     queue(s.region.page, snap(cam.to_screen_x(x0)), snap(cam.to_screen_y(y0)), snap(cam.to_screen_x(x0 + s.cw)),
-          snap(cam.to_screen_y(y0 + s.ch)), s.frame_rect(f));
-  }
-  flush(cur_page);
-  cur_page = -1;
-  mod_ = body_mod;
+          snap(cam.to_screen_y(y0 + s.ch)), s.frame_rect(f), k, f);
+    mod_ = body_mod;
+  };
   // Shared ordered list: finish every item before starting the next one.
   int scale = std::max(1, int(std::lround(cam.zoom)));
   for (const Item& it : items) {
+    draw_selection(it);
     uint8_t local_shade = shade_at(it.wx, it.wy);
     auto draw_frame = [&](data::SpriteRef frame, bool shadow, int height, int side) {
       if (!frame.valid()) return;
@@ -222,7 +225,7 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
       mod_ = shadow ? SDL_Color{255, 255, 255, 255} : body_mod;
       const auto& sprite = store_.get(key);
       if (!sprite.ok()) return;
-      blit(cam, sprite, 0, it.wx, it.wy - (shadow ? 0 : height), cur_page);
+      blit(cam, sprite, key, 0, it.wx, it.wy - (shadow ? 0 : height), cur_page);
       stats.sprites++;
     };
     if (it.effect) {
@@ -236,10 +239,11 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
 
     if (it.tree) {
       for (bool shadow : {true, false}) {
-        const StoredSprite& s = store_.get({arch, uint16_t(shadow ? data::kShadowGroup : data::kBodyGroup),
-            it.tree, pal, shadow ? uint8_t(data::kShadowShade) : shade_at(it.wx, it.wy), 0, 0, shadow});
+        const SpriteKey key{arch, uint16_t(shadow ? data::kShadowGroup : data::kBodyGroup),
+            it.tree, pal, shadow ? uint8_t(data::kShadowShade) : shade_at(it.wx, it.wy), 0, 0, shadow};
+        const StoredSprite& s = store_.get(key);
         mod_ = shadow ? SDL_Color{255, 255, 255, 255} : body_mod;
-        if (s.ok()) { stats.overlays++; blit(cam, s, data::overlay_frame(opts.wind, opts.wind_counter), it.wx, it.wy, cur_page); }
+        if (s.ok()) { stats.overlays++; blit(cam, s, key, data::overlay_frame(opts.wind, opts.wind_counter), it.wx, it.wy, cur_page); }
       }
       continue;
     }
@@ -252,7 +256,7 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
       const StoredSprite& s = store_.get(sd.key);
       if (s.ok()) {
         drawn = true; stats.sprites++;
-        blit(cam, s, sd.key.frame, it.wx + sd.dx, it.wy + sd.dy, cur_page);
+        blit(cam, s, sd.key, sd.key.frame, it.wx + sd.dx, it.wy + sd.dy, cur_page);
       }
     }
     if (drawn || !it.primary || (provider_ && provider_->hides_missing(st))) continue;

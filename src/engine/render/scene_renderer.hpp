@@ -27,6 +27,7 @@ struct SceneOptions {
   bool markers = true;        // draw placeholders for objects without a sprite
   data::WindStrength wind = data::WindStrength::Still;
   unsigned wind_counter = 0;  // supplied by unpaused view updates
+  unsigned view_counter = 0;  // V: water and selection advance with unpaused view updates
   bool overlays = true;       // terrain overlay layer (high 16 bits of .map cells)
 };
 
@@ -46,6 +47,9 @@ class SceneRenderer {
 
   SceneOptions opts;
   RenderStats stats;
+  // Optional diagnostic observer. Rectangles are the actual queued screen bounds;
+  // frame is the stacked cell index, while key.index identifies the resource.
+  std::function<void(const SpriteKey&, int, const SDL_FRect&)> observe_sprite;
   const Font& font() const { return font_; }
   Fog& fog() { return fog_; }
   SpriteStore& store() { return store_; }
@@ -56,11 +60,11 @@ class SceneRenderer {
   void draw_terrain(const Camera& cam);
   data::SpriteRef effect_frame(const Effect& e) const;
   void draw_objects(const Camera& cam, float alpha);
-  void blit(const Camera& cam, const StoredSprite& s, int frame, float wx, float wy, int& cur_page);
+  void blit(const Camera& cam, const StoredSprite& s, const SpriteKey& key, int frame, float wx, float wy, int& cur_page);
   ObjectState object_state(const Object& o) const;
 
   void flush(int page);
-  void queue(int page, float x0, float y0, float x1, float y1, const SDL_Rect& src);
+  void queue(int page, float x0, float y0, float x1, float y1, const SDL_Rect& src, const SpriteKey& key, int frame);
 
   Window& win_;
   const GameData& data_;

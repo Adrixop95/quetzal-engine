@@ -1,6 +1,7 @@
 // Software cursor, drawn as the very last thing of every frame at the freshest mouse position
 // (like a hardware cursor: it never lags behind the 12 Hz simulation or the world rendering).
-// Images come from Res/common.xbe (see README for the id table); animated cursors cycle at 80 ms/frame like the original.
+// Images come from Res/common.xbe. G: phase uses absolute 80 ms steps;
+// original frame-stall and reset behavior still needs measurement.
 #pragma once
 #include <SDL.h>
 #include <cstdint>
@@ -12,9 +13,9 @@ namespace aztec::engine {
 enum class CursorKind {
   Arrow,      // feather (common 1)
   Attack,     // sword (common 0, cell 0)
-  Move,       // animated amulet (common 2)
-  Pan,        // crossed axes (common 5), used while dragging the map
-  ScrollN, ScrollNE, ScrollE, ScrollSE, ScrollS, ScrollSW, ScrollW, ScrollNW,  // edge-scroll arrows (common 6..13)
+  Move,       // bomb (common 2); command semantics remain provisional
+  Pan,        // hammers (common 5), used while dragging the map
+  ScrollN, ScrollNE, ScrollE, ScrollSE, ScrollS, ScrollSW, ScrollW, ScrollNW,  // ordinary edge-scroll arrows (common 14..21)
   Menu,       // mace (common 4), outside a mission
   Count
 };
