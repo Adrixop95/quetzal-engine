@@ -196,6 +196,16 @@ static void test_sight() {
   initial.terrain.w = initial.terrain.h = 40; initial.terrain.cells.resize(1600);
   Object scout; scout.id = 1; scout.type = 0; scout.hp = 6000;
   scout.teleport(to_fixed(20 * 48), to_fixed(20 * 48)); initial.objects.push_back(scout);
+  {
+    World computer = initial;
+    SideDef side; side.index = 0; side.only_comp = true;
+    computer.mission.sides.push_back(side);
+    GameSim initialization(rules, Modifications::faithful()); initialization.init(computer);
+    CHECK(computer.visibility_brightness && computer.visibility.sides.size() == 8);
+    CHECK(computer.visibility.sides[0].v == std::vector<uint8_t>(41 * 42, 24));
+    CHECK(!position_visible(computer, 0, 20 * 48, 20 * 48));
+    CHECK(computer.visibility.sides[1].v == std::vector<uint8_t>(41 * 42, 0));
+  }
   // Loaded tile darkness must be converted before exploration is retained.
   World legacy = initial;
   legacy.visibility.sides.resize(8);
@@ -216,6 +226,26 @@ static void test_sight() {
   CHECK(world.visibility.sides[0].w == 41 && world.visibility.sides[0].h == 42);
   CHECK(world.visibility.sides[0].v[index] == 80);
   CHECK(world.visibility.sides[1].v[index] == 0); // hostile and allied vision is not shared
+  {
+    World allied = initial;
+    Object ally = scout; ally.id = 2; ally.side = 1;
+    ally.teleport(to_fixed(8 * 48), to_fixed(8 * 48));
+    allied.objects.push_back(ally);
+    allied.relation[0][1] = allied.relation[1][0] = kFriend;
+    GameSim allies(rules, Modifications::faithful()); allies.init(allied);
+    allied.begin_tick(); allies.tick(allied);
+    CHECK(allied.visibility.sides[0].v[8 * 41 + 8] == 0);
+    CHECK(allied.visibility.sides[1].v[8 * 41 + 8] == 80);
+    CHECK(!object_visible(allied, 0, allied.objects[1]));
+    // Buildings stamp their descriptor mask at their ground position too.
+    inputs->masks[rules->type(10).vision_mask] = mask;
+    allied.objects[1].type = 10;
+    allied.begin_tick(); allies.tick(allied);
+    CHECK(allied.visibility.sides[1].v[8 * 41 + 8] == 80);
+    allied.objects[1].removed = true;
+    allied.begin_tick(); allies.tick(allied);
+    CHECK(allied.visibility.sides[1].v[8 * 41 + 8] == 32);
+  }
   world.objects[0].alive = false;
   world.begin_tick(); sim.tick(world);
   CHECK(world.visibility.sides[0].v[index] == 32);
@@ -246,6 +276,34 @@ static void test_sight() {
   enemy.teleport(to_fixed(20 * 48 + 400), to_fixed(20 * 48));
   initial.objects.push_back(enemy);
   initial.relation[0][1] = kEnemy;
+  // Tick 1 acquisition consumes startup daylight minus loaded darkness. Its
+  // result must not depend on the object mask stamped at the end of that tick.
+  for (int darkness : {47, 48}) {
+    World startup = initial;
+    startup.objects[0].id = 3; // this object's four-tick scan falls on ticks 1, 5
+    startup.objects[0].attack_mode = AttackMode::Aggressive;
+    startup.objects[1].attack_mode = AttackMode::Direct;
+    startup.visibility.sides.resize(8);
+    startup.visibility.sides[0] = {40, 40, std::vector<uint8_t>(1600, uint8_t(darkness))};
+    GameSim start(rules, Modifications::faithful()); start.init(startup);
+    CHECK(startup.visibility_brightness);
+    CHECK(startup.visibility.sides[0].v[20 * 41 + 20] == 80 - darkness);
+    CHECK(startup.visibility.sides[0].v[39 * 41 + 40] == 80 - darkness);
+    CHECK(startup.visibility.sides[0].v[40 * 41 + 40] == 80 - darkness);
+    startup.begin_tick(); start.tick(startup);
+    CHECK(startup.objects[0].target == (darkness == 47 ? 2u : 0u));
+    CHECK(object_visible(startup, 0, startup.objects[1]));
+    for (int t = 0; t < 4; ++t) { startup.begin_tick(); start.tick(startup); }
+    CHECK(startup.objects[0].target == 2u);
+    World replayed = initial;
+    replayed.objects[0].id = 3;
+    replayed.objects[0].attack_mode = AttackMode::Aggressive;
+    replayed.objects[1].attack_mode = AttackMode::Direct;
+    replayed.visibility.sides.resize(8);
+    replayed.visibility.sides[0] = {40, 40, std::vector<uint8_t>(1600, uint8_t(darkness))};
+    auto replay = GameSim::replay(replayed, rules, start.log(), start.tick_count());
+    CHECK(start.state_hash(startup) == replay->state_hash(replayed));
+  }
   for (int ambient : {32, 33}) {
     for (auto& day : inputs->daylight) day.fill(uint8_t(ambient));
     World duel = initial;

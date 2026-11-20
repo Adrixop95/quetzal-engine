@@ -159,6 +159,49 @@ static void run(const std::filesystem::path& output, bool original, int sc, int 
     CHECK(minimap.rect().x == width - 162 * sc && minimap.rect().y == 70 * sc);
     CHECK(minimap.rect().w == 120 * sc && minimap.rect().h == 90 * sc);
     Camera camera; camera.set_world(5760, 4320); camera.set_view(float(width - 204 * sc), float(height));
+    {
+      float wx = -1, wy = -1;
+      Minimap empty; empty.to_world(10, 10, wx, wy); CHECK(wx == 0 && wy == 0);
+      const auto bounds = minimap.rect();
+      minimap.to_world(bounds.x + bounds.w / 2, bounds.y + bounds.h / 2, wx, wy);
+      CHECK(wx == world.width_px() / 2 && wy == world.height_px() / 2);
+      minimap.to_world(bounds.x - 100, bounds.y - 100, wx, wy); CHECK(wx == 0 && wy == 0);
+      minimap.to_world(bounds.x + bounds.w + 100, bounds.y + bounds.h + 100, wx, wy);
+      CHECK(wx >= 0 && wx < world.width_px() && wy >= 0 && wy < world.height_px());
+      // Palette entries deliberately change hue between shades. A black
+      // overlay or daylight RGB tint cannot produce these expected colors.
+      World preview_world = world; preview_world.objects.clear();
+      CHECK(decode_sprite({indexed.data(), indexed.size()}, preview_world.preview));
+      preview_world.visibility_brightness = true;
+      preview_world.visibility.sides = {{121, 92, std::vector<uint8_t>(121 * 92, 8)}};
+      Minimap preview_map; CHECK(preview_map.init(r, data, preview_world, 0, 14));
+      preview_map.layout_in(panel.minimap_rect(), sc);
+      preview_map.set_tint({20, 30, 40, 255});
+      Fog fog;
+      auto pixel = [&]() {
+        preview_map.draw(r, camera, 0, &fog);
+        auto image = capture(r, width, height);
+        auto box = preview_map.rect();
+        return image[size_t(box.y + box.h / 2) * width + box.x + box.w / 2] & 0xffffff;
+      };
+      CHECK(pixel() == 0x0000ff); // 8 >> 3 selects shade 1
+      std::fill(preview_world.visibility.sides[0].v.begin(), preview_world.visibility.sides[0].v.end(), 79);
+      CHECK(pixel() == 0x00ff00); // 79 >> 3 selects shade 9, without rounding
+      for (int y = 0; y < 92; ++y) for (int x = 0; x < 60; ++x)
+        preview_world.visibility.sides[0].v[y * 121 + x] = 8;
+      preview_map.draw(r, camera, 0, &fog);
+      const auto split = capture(r, width, height);
+      const auto box = preview_map.rect();
+      const size_t row = size_t(box.y + box.h / 2) * width;
+      CHECK((split[row + box.x + box.w / 2 - 1] & 0xffffff) == 0x0000ff);
+      CHECK((split[row + box.x + box.w / 2] & 0xffffff) == 0x00ff00);
+      preview_world.visibility.sides.push_back({121, 92, std::vector<uint8_t>(121 * 92, 8)});
+      preview_world.local_side = 1; CHECK(pixel() == 0x0000ff);
+      fog.set_enabled(false); CHECK(pixel() != 0x0000ff);
+      fog.set_enabled(true); CHECK(pixel() == 0x0000ff);
+      // Reinitialization must release old textures and reset preview state.
+      CHECK(preview_map.init(r, data, world, 0, 14)); CHECK(!preview_map.from_preview());
+    }
     // Edge markers must not overwrite the surrounding minimap frame. Compare
     // the frame before/after adding dots, independently of terrain or dot color.
     {
