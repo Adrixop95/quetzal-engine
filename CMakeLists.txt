@@ -205,6 +205,11 @@ set_tests_properties(render_contracts PROPERTIES LABELS "unit")
 add_test(NAME animation_headless COMMAND test_render_contracts --headless)
 set_tests_properties(animation_headless PROPERTIES LABELS "unit"
   ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+add_executable(test_render_states tests/test_render_states.cpp)
+target_link_libraries(test_render_states aztec_engine_lib)
+add_test(NAME render_states COMMAND test_render_states)
+set_tests_properties(render_states PROPERTIES LABELS "unit"
+  ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
 if(Python3_Interpreter_FOUND)
   add_test(NAME testmaps_tools COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tests/test_testmaps.py $<TARGET_FILE:aztec_map_viewer>)
   set_tests_properties(testmaps_tools PROPERTIES LABELS "unit" TIMEOUT 180)

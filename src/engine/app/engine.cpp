@@ -566,6 +566,13 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         double t = (o.time >= 0 ? o.time : world.mission.start_time) + (o.time >= 0 ? 0 : double(world.tick) + alpha);
         scene.set_light(daylight.sample(world.mission.tileset, t));
       }
+      // V: the view clock is separate from simulation animation ages.
+      // G: one engine presentation corresponds to one original view update.
+      if (!paused && !pause.open && !submodal && !briefing.open && !audio_options.open &&
+          world.outcome == kRunning && !(game && game->paused())) {
+        ++scene.opts.view_counter;
+        ++scene.opts.wind_counter;
+      }
       minimap.set_tint(scene.light_tint());
       bool placement_overlay_drawn = false;
       scene.draw(cam, alpha, [&] {

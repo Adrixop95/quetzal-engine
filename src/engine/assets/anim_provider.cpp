@@ -72,7 +72,8 @@ data::SpriteRef AnimSpriteProvider::frame_for(const ObjectState& st) const {
       if (firing.valid()) return firing;
     }
   }
-  const bool aligned = st.cycle_ready && (angle_of(st) & 31) == 0;
+  // V: alignment uses the nearest dir32 cell, including the wrap at east.
+  const bool aligned = st.cycle_ready && (data::direction32_from_angle(angle_of(st)) % 4 == 0);
   const auto sequence = data::body_sequence(kind, body_state, angle_of(st), int(st.anim_variant),
                                            aligned, data::kTypeAnims[st.type_id].anim2 != 0);
   const int64_t tick = body_state == data::AnimState::Idle || body_state == data::AnimState::Move

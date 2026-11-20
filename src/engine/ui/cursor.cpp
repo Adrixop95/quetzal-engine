@@ -24,7 +24,8 @@ CursorKind Cursor::scroll_kind(int dx, int dy) {
 }
 
 bool Cursor::init(SDL_Renderer* r, SpriteStore& store) {
-  static const uint32_t ids[] = {1, 0, 2, 5, 6, 13, 12, 11, 10, 9, 8, 7, 4};
+  // V: ordinary scrolling uses 14..21; 6..13 are the blocked variants.
+  static const uint32_t ids[] = {1, 0, 2, 5, 14, 21, 20, 19, 18, 17, 16, 15, 4};
   static_assert(sizeof ids / sizeof *ids == int(CursorKind::Count), "cursor table");
   for (int i = 0; i < int(CursorKind::Count); i++) {
     defs_[i].key = common(ids[i]);
