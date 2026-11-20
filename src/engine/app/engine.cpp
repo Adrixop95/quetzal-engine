@@ -23,6 +23,7 @@
 #include "engine/render/scene_renderer.hpp"
 #include "engine/ui/cursor.hpp"
 #include "engine/ui/frontend.hpp"
+#include "engine/assets/skirmish.hpp"
 #include "engine/ui/campaign.hpp"
 #include "engine/ui/hud.hpp"
 #include "engine/ui/names.hpp"
@@ -97,10 +98,11 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
   World world;
   bool loaded = o.original_save.empty() ? load_world(data, spec, world, err)
                                        : load_original_save(data, o.original_save, world, err);
+  if (loaded && o.skirmish) loaded = setup_skirmish(world, err);
   if (!loaded) {
     std::fprintf(stderr, "%s\n", err.c_str());
-    if (!o.resume_save.empty()) {
-      o.resume_save.clear(); o.frontend_notice = "Load failed: mission unavailable";
+    if (!o.resume_save.empty() || (o.skirmish && o.menu_session)) {
+      o.resume_save.clear(); o.frontend_notice = "Load failed: " + err;
       return PlayExit::ToMenu;
     }
     rc = 1; return PlayExit::Quit;
@@ -155,7 +157,13 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
     if (!keys_path.empty() && load_keys_ini(keys_path, bindings)) cmdui.set_bindings(std::move(bindings));
     if (game && !world.original_save) {
       std::string scn = data.map_file(world.mission.file_name, "scn");
-      if (!scn.empty() && !game->attach_script(scn)) std::fprintf(stderr, "warning: cannot parse %s\n", scn.c_str());
+      const bool script_ok = !scn.empty() && game->attach_script(scn);
+      if (o.skirmish && !script_ok) {
+        o.frontend_notice = "Load failed: missing or invalid custom mission script";
+        if (o.menu_session) return PlayExit::ToMenu;
+        rc = 1; return PlayExit::Quit;
+      }
+      if (!scn.empty() && !script_ok) std::fprintf(stderr, "warning: cannot parse %s\n", scn.c_str());
     }
     sim->init(world);
     uint64_t session_content = 0;
@@ -181,8 +189,8 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
     } else if (world.original_save) {
       cam.x = float(world.original_save->view_x); cam.y = float(world.original_save->view_y);
     } else if (!world.mission.sides.empty()) {
-      const SideDef& s = world.mission.sides[0];
-      cam.center_on((s.start_x + 0.5f) * kTilePx, (s.start_y + 0.5f) * kTilePx);
+      for (const SideDef& s : world.mission.sides) if (s.index == world.local_side)
+        cam.center_on((s.start_x + 0.5f) * kTilePx, (s.start_y + 0.5f) * kTilePx);
     }
 
     if (!o.resume_save.empty()) {
@@ -201,6 +209,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       }
       game = resumed.get(); sim = std::move(resumed); cmdui.set_sim(game);
       o.modifications = game->modifications();
+      o.skirmish = world.skirmish;
       cam.x = saved.cam_x; cam.y = saved.cam_y; cam.zoom = saved.cam_zoom;
       o.resume_save.clear();
       o.frontend_notice.clear();
@@ -270,7 +279,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
     SaveLoadMenu slots;
     std::string save_path = SaveLoadMenu::slot_path(0);
     const std::string objectives_text = mission_objectives(data, world.mission.file_name);
-    const std::string next_mission = world.original_save ? "" : next_campaign_mission(data, world.mission.file_name);
+    std::string next_mission = world.original_save || world.skirmish ? "" : next_campaign_mission(data, world.mission.file_name);
     std::string notice;
     double notice_left = 0;
     auto notify = [&](std::string text) { notice = std::move(text); notice_left = 6; };
@@ -388,6 +397,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         if (game && save_requested && !game->has_pending_commands()) {
           save_requested = false;
           SaveData sd;
+          sd.skirmish = world.skirmish;
           sd.mission = world.mission.file_name; sd.content_hash = session_content; sd.tick = game->tick_count(); sd.hash = game->state_hash(world);
           sd.script_hash = file_hash(data.map_file(world.mission.file_name, "scn"));
           sd.selection = world.selection.ids; sd.local_side = uint32_t(world.local_side);
@@ -426,6 +436,8 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
             world = std::move(fresh);
             game = ns.get();
             o.modifications = game->modifications();
+            o.skirmish = world.skirmish;
+            next_mission = world.skirmish ? "" : next_campaign_mission(data, world.mission.file_name);
             sim = std::move(ns);
             cmdui.set_sim(game);
             cam.x = sd.cam_x; cam.y = sd.cam_y; cam.zoom = sd.cam_zoom;
@@ -486,12 +498,12 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         if (!pt && o.menu_session) {
           const auto movie = find_file_ci(data.root(), world.outcome == kVictory ? "Video/win.avi" : "Video/lose.avi");
           if (!movie.empty()) play_video(win, movie);
-          if (world.outcome == kVictory && campaign_number(world.mission.file_name) == 15) {
+          if (world.outcome == kVictory && !world.skirmish && campaign_number(world.mission.file_name) == 15) {
             const auto final_movie = find_file_ci(data.root(), "Video/final.avi");
             if (!final_movie.empty()) play_video(win, final_movie);
           }
         }
-        if (world.outcome == kVictory && o.menu_session && !pt && !world.original_save && campaign_number(world.mission.file_name)) {
+        if (world.outcome == kVictory && o.menu_session && !pt && !world.original_save && !world.skirmish && campaign_number(world.mission.file_name)) {
           const std::string path = user_file("Saves/engine_campaign.txt");
           CampaignProgress progress;
           std::error_code ec;
@@ -630,7 +642,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       modification_options.draw(win.renderer(), scene.font(), o, ow, oh, pscale);
       slots.draw(win.renderer(), scene.font(), ow, oh, pscale, &scene.store());
       if (world.outcome != kRunning) OutcomeMenu::draw(win.renderer(), scene.font(), ow, oh, pscale,
-          world.outcome == kVictory, campaign_number(world.mission.file_name) == 15, !next_mission.empty(), &scene.store());
+          world.outcome == kVictory, !world.skirmish && campaign_number(world.mission.file_name) == 15, !next_mission.empty(), &scene.store());
       if (notice_left > 0) draw_messages(win.renderer(), scene.font(), {{notice, 1}},
           SDL_Rect{8 * pscale, oh - 64 * pscale, ow - 16 * pscale, 60 * pscale}, pscale);
       // Cursor last, at the freshest mouse position.
@@ -664,7 +676,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         trace_ui(ui_trace, frame, world, cam, alpha, in, cmdui, game, ui_command_start,
                  panel.rect(), pscale, show_panel, pause.open, ck, cursor_drawn, cursor_ms,
                  rendered_tooltip, periodic_shot.empty() ? pending_shot : periodic_shot, placement_overlay_drawn,
-                 world.outcome == kVictory ? (campaign_number(world.mission.file_name) == 15 ? "victory" : "mission-result-victory") :
+                 world.outcome == kVictory ? (!world.skirmish && campaign_number(world.mission.file_name) == 15 ? "victory" : "mission-result-victory") :
                  world.outcome != kRunning ? "mission-result-defeat" : slots.open ? slots.screen_id() :
                  briefing.open ? "objectives" : audio_options.open ? "audio" : modification_options.open ? "modifications" :
                  pause.open ? "pause-menu" : "gameplay");
@@ -755,6 +767,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
           }
         }
         opts.resume_save = fr.resume_save;
+        opts.skirmish = fr.skirmish;
         open_brief.clear();
         menu = false;
       }
@@ -768,6 +781,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       if (pe == PlayExit::ToMenu) { opts.original_save.clear(); menu = true; continue; }
       if (pe == PlayExit::Restart) continue;
       if (pe == PlayExit::Next) {
+        opts.skirmish = false;
         open_brief = next_campaign_mission(data, spec);
         opts.original_save.clear();
         menu = true;

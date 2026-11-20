@@ -19,6 +19,7 @@ inline constexpr size_t kMaxSaveBytes = kMaxLogBytes + 4 * kMaxCommandIds + 512;
 inline constexpr uint64_t kMaxSaveTicks = 12 * 60 * 60 * 24; // 24 simulation hours
 
 struct SaveData {
+  bool skirmish = false;        // restore custom single-player ownership before command replay
   std::string mission;          // spec to reload ("mission_3")
   uint64_t tick = 0;
   uint64_t hash = 0;            // state hash at `tick`, verified after replay

@@ -20,6 +20,7 @@
 #include "engine/sim/combat_trace.hpp"
 #include "engine/sim/tactic_trace.hpp"
 #include "engine/sim/savegame.hpp"
+#include "engine/assets/skirmish.hpp"
 
 namespace aztec::engine {
 namespace {
@@ -213,7 +214,7 @@ int run_headless(int argc, char** argv) {
     if (!configured_game_dir(argc, argv, game, settings_error)) throw std::runtime_error(settings_error);
     std::string cli_profile = "faithful";
     std::vector<std::string> cli_modifications;
-    bool mission_given = false;
+    bool mission_given = false, skirmish = false;
     for (int i = 1; i < argc; ++i) {
       std::string a = argv[i];
       auto value = [&]() -> std::string {
@@ -249,8 +250,9 @@ int run_headless(int argc, char** argv) {
       else if (a == "--save") save_path = value();
       else if (a == "--resume") resume_path = value();
       else if (a == "--no-auto-orders") auto_orders = false;
+      else if (a == "--skirmish") skirmish = true;
       else if (a == "--help") {
-        std::puts("usage: aztec_engine --headless [--settings FILE] --game DIR --rules-dir DIR [--profile faithful|enhanced] [--mod NAME=on|off (parallel_training also 1..8|per-building)] [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--report FILE] [--observations FILE [--order-observations]] [--combat-trace FILE] [--ai-trace FILE] [--tactic-trace FILE] [--tick-hashes FILE] [--l0-schedule FILE --l0-output FILE --l0-frames DIR] [--save-at N --save FILE] [--resume FILE] MISSION");
+        std::puts("usage: aztec_engine --headless [--settings FILE] --game DIR --rules-dir DIR [--profile faithful|enhanced] [--mod NAME=on|off (parallel_training also 1..8|per-building)] [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--skirmish] [--report FILE] [--observations FILE [--order-observations]] [--combat-trace FILE] [--ai-trace FILE] [--tactic-trace FILE] [--tick-hashes FILE] [--l0-schedule FILE --l0-output FILE --l0-frames DIR] [--save-at N --save FILE] [--resume FILE] MISSION");
         return 0;
       } else if (a.empty() || a[0] == '-' || mission_given) throw std::runtime_error("unexpected argument: " + a);
       else { report.mission = a; mission_given = true; }
@@ -264,6 +266,7 @@ int run_headless(int argc, char** argv) {
     if (!data.open(game, error)) throw std::runtime_error(error);
     World world;
     if (!load_world(data, report.mission, world, error)) throw std::runtime_error(error);
+    if (skirmish && !setup_skirmish(world, error)) throw std::runtime_error(error);
     auto rules = std::make_shared<RulesData>();
     if (!rules->load_dir(rules_dir)) throw std::runtime_error("cannot load rules from " + rules_dir);
     rules->load_sight(data.root());
@@ -441,6 +444,7 @@ int run_headless(int argc, char** argv) {
       hash_row();
       if (tick == save_tick) {
         SaveData saved;
+        saved.skirmish = world.skirmish;
         saved.mission = world.mission.file_name; saved.selection = world.selection.ids; saved.local_side = uint32_t(world.local_side);
         saved.tick = sim.tick_count(); saved.hash = report.hash;
         saved.script_hash = file_hash(scn); saved.content_hash = content; saved.log = sim.log(); saved.modifications = sim.initial_modifications();

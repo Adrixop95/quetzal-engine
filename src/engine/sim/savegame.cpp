@@ -22,12 +22,14 @@
 #endif
 
 #include "core/endian.hpp"
+#include "engine/assets/skirmish.hpp"
 #include "engine/sim/game_sim.hpp"
 #include "engine/world/world.hpp"
 
 namespace aztec::engine {
 namespace {
 constexpr uint64_t kOffset = 1469598103934665603ull;
+constexpr uint32_t kSkirmishFlag = 0x80000000u; // version 5: high bit of the settings word
 void mix(uint64_t& h, const uint8_t* p, size_t n) {
   for (size_t i = 0; i < n; ++i) h = (h ^ p[i]) * 1099511628211ull;
 }
@@ -43,7 +45,9 @@ template <class T> bool get(const std::vector<uint8_t>& v, size_t& o, T& x) {
 }
 bool valid_save(const SaveData& s) {
   if (s.mission.empty() || s.mission.size() > 128 || s.tick > kMaxSaveTicks || s.local_side >= 8 || s.selection.size() > kMaxCommandIds ||
-      s.mission.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != std::string::npos ||
+      s.mission == "." || s.mission == ".." ||
+      s.mission.find_first_of("/\\:") != std::string::npos ||
+      std::any_of(s.mission.begin(), s.mission.end(), [](unsigned char c) { return c < 32 || c == 127; }) ||
       !std::isfinite(s.cam_x) || !std::isfinite(s.cam_y) || !std::isfinite(s.cam_zoom) ||
       std::fabs(s.cam_x) > 10000000 || std::fabs(s.cam_y) > 10000000 || s.cam_zoom < 0.125f || s.cam_zoom > 8.f)
     return false;
@@ -76,7 +80,7 @@ std::vector<uint8_t> serialize_save(const SaveData& s) {
   v.insert(v.end(), log.begin(), log.end());
   scalar(v, s.local_side); scalar(v, uint32_t(s.selection.size()));
   for (uint32_t id : s.selection) scalar(v, id);
-  scalar(v, s.modifications.bits());
+  scalar(v, s.modifications.bits() | (s.skirmish ? kSkirmishFlag : 0u));
   scalar(v, checksum(v, v.size()));
   return v;
 }
@@ -91,13 +95,13 @@ bool deserialize_save(const std::vector<uint8_t>& v, SaveData& out, std::string*
   if (std::memcmp(v.data(), "AZS3", 4) != 0 || v.size() < 12) return false;
   const auto version = read_le<uint32_t>(v.data() + 4);
   const auto replay = read_le<uint32_t>(v.data() + 8);
-  if (version != kSaveFormatVersion || replay != kSaveReplayVersion) {
+  if ((version != 4 && version != kSaveFormatVersion) || replay != kSaveReplayVersion) {
     if (error) *error = "Unsupported save version (format " + std::to_string(version) +
         ", replay " + std::to_string(replay) + "); expected " + std::to_string(kSaveFormatVersion) +
         "/" + std::to_string(kSaveReplayVersion);
     return false;
   }
-  if (v.size() < 92 || read_le<uint64_t>(v.data() + v.size() - 8) != checksum(v, v.size() - 8)) return false;
+  if (v.size() < 84 || read_le<uint64_t>(v.data() + v.size() - 8) != checksum(v, v.size() - 8)) return false;
   size_t o = 12;
   uint32_t n, ln, count, modifications;
   if (!get(v, o, n) || !n || n > 128 || n > v.size() - o) return false;
@@ -106,14 +110,19 @@ bool deserialize_save(const std::vector<uint8_t>& v, SaveData& out, std::string*
   if (!get(v, o, parsed.tick) || !get(v, o, parsed.hash) || !get(v, o, parsed.script_hash) ||
       !get(v, o, parsed.content_hash) || !get(v, o, parsed.cam_x) || !get(v, o, parsed.cam_y) ||
       !get(v, o, parsed.cam_zoom) || !get(v, o, ln) || ln > kMaxLogBytes ||
-      o > v.size() - 20 || ln > v.size() - 20 - o) return false;
+      o > v.size() - (version >= 5 ? 20 : 12) || ln > v.size() - (version >= 5 ? 20 : 12) - o) return false;
   std::vector<uint8_t> log(v.begin() + o, v.begin() + o + ln);
   o += ln;
-  if (!get(v, o, parsed.local_side) || !get(v, o, count) || count > kMaxCommandIds ||
-      o > v.size() - 12 || size_t(count) * 4 != v.size() - 12 - o) return false;
-  parsed.selection.resize(count);
-  for (auto& id : parsed.selection) if (!get(v, o, id)) return false;
-  if (!get(v, o, modifications) || !Modifications::valid(modifications)) return false;
+  if (version >= 5) {
+    if (!get(v, o, parsed.local_side) || !get(v, o, count) || count > kMaxCommandIds ||
+        o > v.size() - 12 || size_t(count) * 4 != v.size() - 12 - o) return false;
+    parsed.selection.resize(count);
+    for (auto& id : parsed.selection) if (!get(v, o, id)) return false;
+  } else if (o != v.size() - 12) return false;
+  if (!get(v, o, modifications)) return false;
+  parsed.skirmish = version >= 5 && (modifications & kSkirmishFlag) != 0;
+  if (version >= 5) modifications &= ~kSkirmishFlag;
+  if (!Modifications::valid(modifications)) return false;
   parsed.modifications = Modifications::from_bits(modifications);
   if (!deserialize_log(log, parsed.log) || !valid_save(parsed)) return false;
   out = std::move(parsed);
@@ -224,6 +233,8 @@ std::unique_ptr<GameSim> replay_save(const SaveData& s, World& fresh,
   if (s.content_hash != expected_content_hash) { error = "Save content is incompatible"; return {}; }
   if (s.script_hash != file_hash(script_path)) { error = "Save script is incompatible"; return {}; }
   World candidate = fresh;
+  if (s.skirmish && !setup_skirmish(candidate, error)) return {};
+  if (!s.skirmish && candidate.skirmish) { error = "Save mode is incompatible"; return {}; }
   // Check script parsing explicitly: replay's low-level API tolerates attach failure.
   if (!script_path.empty()) {
     GameSim probe(rules);

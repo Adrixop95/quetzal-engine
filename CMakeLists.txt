@@ -59,7 +59,7 @@ add_test(NAME formats COMMAND test_formats ${CMAKE_SOURCE_DIR}/game)
 # ---- clean C++20 engine (src/engine): loads the original data files, no recompiled code
 add_library(aztec_engine_lib
   src/engine/save_import.cpp
-  src/engine/assets/game_data.cpp src/engine/assets/mission.cpp src/engine/assets/anim_provider.cpp src/engine/assets/daylight.cpp
+  src/engine/assets/game_data.cpp src/engine/assets/mission.cpp src/engine/assets/skirmish.cpp src/engine/assets/anim_provider.cpp src/engine/assets/daylight.cpp
   src/engine/platform/input.cpp src/engine/platform/window.cpp
   src/engine/world/world.cpp src/engine/world/camera.cpp src/engine/world/type_info.cpp
   src/engine/sim/simulation.cpp src/engine/sim/commands.cpp src/engine/sim/savegame.cpp src/engine/sim/rules.cpp src/engine/sim/game_sim.cpp src/engine/sim/transport.cpp src/engine/sim/script_runner.cpp src/engine/sim/ai.cpp src/engine/ai/planner.cpp
@@ -316,6 +316,14 @@ aztec_warnings(test_campaign_flow)
 target_compile_definitions(test_campaign_flow PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data")
 add_test(NAME campaign_flow COMMAND test_campaign_flow)
 set_tests_properties(campaign_flow PROPERTIES LABELS "unit" TIMEOUT 30
+  ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+
+add_executable(test_skirmish tests/test_skirmish.cpp)
+target_link_libraries(test_skirmish PRIVATE aztec_engine_lib)
+aztec_warnings(test_skirmish)
+target_compile_definitions(test_skirmish PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data")
+add_test(NAME custom_mission_skirmish COMMAND test_skirmish)
+set_tests_properties(custom_mission_skirmish PROPERTIES LABELS "unit" TIMEOUT 30
   ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
 
 # Read-only campaign script inventory plus asset-independent trigger contracts.

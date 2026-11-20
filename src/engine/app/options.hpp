@@ -23,6 +23,7 @@ struct Options {
   std::string resume_save;          // internal front-end engine replay selection
   std::string frontend_notice;      // last front-end load failure
   std::string mission = "1";
+  bool skirmish = false;           // --skirmish: custom single-player ownership and AI
   bool mission_given = false;      // a mission was named on the command line
   bool menu_session = false;       // the front-end is in use: Esc opens the pause menu instead of quitting
   bool no_menu = false;
