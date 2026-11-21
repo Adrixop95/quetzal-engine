@@ -239,3 +239,10 @@ class (the visibility predicate) was **not** traced; the panel chain is `0x443f0
   what the panel notes above say.
 - V: the world view is not a region of list `0x515530`; its input runs in the game thread
   mouse pump `0x435bc0`, which writes frame packets into the local ring.
+
+## Corrections (2026-11-21, from docs/interface_geometry.md)
+
+V: attack mode 0 is Direct Control and mode 3 is Balanced; the stance buttons are not
+Aggressive or Defensive guesses. The two `0x1e` buttons are Manual Repair and Manual Destroy.
+Vtable slot `+0x5c` of a button returns its tooltip text and anchor; it is not a grey-out or
+progress hook. The values `0x195` to `0x197` are y coordinates, not sprite groups.
