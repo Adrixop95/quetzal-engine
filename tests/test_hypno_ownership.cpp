@@ -115,7 +115,7 @@ static void ordinary_damage() {
     CHECK(!w.objects[1].alive && w.objects[1].side == 1 && w.objects[1].secondary_hp == 23);
   }
   CHECK(data->type(57).weapon_id == 47 && data->type(57).weapon.components.size() == 2);
-  CHECK(data->type(57).weapon.components[0].payload_id == -1); // class 9 is not an explosion
+  CHECK(data->type(57).weapon.components[0].splash_px == 0); // class 9 is a point effect, not an explosion
   CHECK(data->type(86).weapon_id == -1 && !data->type(86).armed);
   CHECK(data->type(88).weapon_id == 54 && data->type(88).weapon.klass == 8);
   CHECK(data->type(88).weapon.payload_id == 53 && data->type(88).weapon.range == 123);
