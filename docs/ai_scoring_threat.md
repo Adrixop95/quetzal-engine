@@ -51,7 +51,7 @@ score = D + 0.5 * F + 0.5 * G                                (0.5 = double at 0x
 - `count[t]` is record dword `t + 1` (90 counts at record `+4 .. +0x168`); positions from
   virtual `+0x94`; map size from `DAT_00515428` virtuals `+4`, `+8`.
 - Correction to the older note: the 0x300 is a **multiplier of the distance term**, not an
-  added 3.0.
+  multiplied by 3.0 (corrected; an earlier note said added).
 - Oddity, V: the loop walks position i of the unit-type list but tests record dword i
   (not dword `type+1`) for non-zero before adding type `list[i-1]`. G: an original
   off-by-index; some unit types are skipped or counted depending on another type's count.

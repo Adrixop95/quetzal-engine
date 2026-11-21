@@ -11,7 +11,7 @@ that inference was too strong (see "What the live runs do and do not show").
    `0x447e00` with the side object, the world position and modifier bits. It finds the object
    under the cursor and, if it belongs to an allied side and has a tactic other than the
    selected one, asks that target tactic for its kind through virtual `+0x80`. For a kind
-   other than 1 (an ordinary unit group has kind 1) the selected group receives the order
+   other than 1 (tactic kinds: 0 base group, 1 town, 2 ferry, 4 Johnka; an ordinary unit group has kind 0) the selected group receives the order
    `+0xf0(target tactic)`; for kind 1 it receives a plain move. Enemy objects get an attack
    order. **No eligibility test of the selected group appears in this function.**
 2. **V** The ferry is a tactic: the vtable `0x48fbd4` is the tactic class (its method list
