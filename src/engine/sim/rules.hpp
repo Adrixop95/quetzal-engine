@@ -17,6 +17,9 @@ struct SightData;
 enum class Src : uint8_t { Verified, Measured, Placeholder };
 
 constexpr int kDayTicks = 7200;
+// Common target rectangle and its +0x20 extent, independent of collision discs.
+constexpr int kHitHalfWidth = 28, kHitTop = 48, kHitBottom = 16;
+constexpr int kWeaponQueryLimit = 128;
 
 struct HarvestRule {
   int rate_a = 0, rate_b = 0;  // descriptor d60/d61; resource channel names remain unresolved
@@ -128,6 +131,8 @@ class RulesData {
   void init_defaults();
   const TypeRules& type(int id) const { return id >= 0 && id < int(types_.size()) ? types_[id] : dummy_; }
   WeaponResult weapon(int weapon_id, const TypeRules& target, bool allied = false) const;
+  int weapon_class(int id) const;
+  int contact_damage(int id, const TypeRules& target, bool allied) const;
   int blast_damage(int weapon_id, const TypeRules& target, int distance_px) const;
   WeaponResult attack(int attacker, int target, bool allied = false) const;
   // Historical observations for diagnostics only; never used to schedule attacks.

@@ -19,15 +19,22 @@ routine `0x43ea30`.
 | `0x495020` | `0x46ead0` | `0x46eb10` | 6 (Snowman) | V: 18000, 9000 against non-organic, zero against air; the effect deals the damage and then applies a status through virtual `+0x9c` with value `0x12` to every non-allied, non-airborne object of the two Marine categories within about 96 px of the target (an area freeze or slow, status meaning O) |
 | `0x4950a8` | `0x46e580` | `0x46e8b0` | 4 and 5 (Knight, Ninja) | formula V (3000, 1500, reload 19, range 72); effect V (sweep, see below) |
 | `0x494430` | `0x44c8d0` | `0x44ca60` | 7 (Demolisher and the distance based weapons ids 3, 17, 18, 25, 29, 37, 38, 41, 42, 49, 53) | O: "unread (distance based)" |
+| `0x495130` | `0x46dfe0` | `0x46e0d0` | 2 (footman, rifleman, bear, bizon, chief, watch tower, Abdula) | V: direct base/category damage, optional armor helper; see ground_weapons.md |
+| `0x494f10` | `0x46dfe0` | `0x46ed90` | 13 (Hypno, hypno tower) | V: direct damage, optional armor helper and cosmetic trail; current armor coefficients are zero; no side change |
+| `0x494f98` | `0x46ec90` | `0x46ed00` | 10 (Jaguar) | V: 1800 base, 1125 against non-organic or structure, 1.25 for two category flags, zero against air; the effect deals the damage and then calls the attacker's virtual `+0x104` with damage divided by 3 (V: primary HP heal capped at maximum) |
+| `0x495020` | `0x46ead0` | `0x46eb10` | 6 (Snowman) | V: 18000, 9000 against non-organic, zero against air; the effect deals the damage and then applies a status through virtual `+0x9c` with value `0x12` to every non-allied, non-airborne object of the two Marine categories whose hit rectangles overlap a 96 px square around the attacker (V: add 18 attack cooldown ticks) |
+| `0x4950a8` | `0x46e580` | `0x46e8b0` | 4 and 5 (Knight, Ninja) | V: 3000/1500, reload 19, range 72; central full-damage sector and two half-damage flanks, sweep radius 96 |
+| `0x4943a4` | `0x44c100` / `0x44c130` | `0x44c3c0` | 7 (Demolisher and explosion ids 3, 17, 18, 25, 29, 37, 38, 41, 42, 49, 53) | V: full inner damage, 8.8 falloff and armor outside; immediate area effect |
+| `0x494430` | `0x44c8d0` | `0x44ca60` | 8 (volley) | V: separate scatter scheduler; task 141 |
 | `0x48f63c` | base | base | arrow family (class 1) and projectile objects | formula V; secondary weapon rec[12] O |
 
-The remaining classes (0, 3, 8, 9, 11, 12, 14) are created through other constructors
-(for example `0x44c010`, `0x444080`, `0x41e350`, `0x42e180`, `0x429c90`); their vtables are
-not yet tied to the class ids.
+Other factory links are recorded below; the final ground-class table and
+[ground_weapons.md](ground_weapons.md) supersede the early survey labels.
 
-## Unresolved weapons by unit type (from docs/data/rules.json)
+## Historical unresolved list (before the ground-class implementation)
 
-Weapon-bearing types whose weapon class the rules data still marks as guess or unread:
+This list records the original investigation scope. The ground-class rows are now
+resolved; the burn family remains separate task 141 work:
 
 | Type | Weapon id | Class | Missions placing it |
 | --- | --- | --- | --- |
@@ -66,18 +73,18 @@ weapon record in `docs/data/rules.json` (`record_raw`).
 
 | Class (G for the link) | Vtable | Constructor | Damage `+0x5c` | Hit effect `+0x7c` | What it is (V) |
 | --- | --- | --- | --- | --- | --- |
-| 0 | `0x48f8f4` | `0x406700` | `0x4068e0` | `0x4069c0` | Ballistic carrier projectile. Its damage is delegated to the weapon whose id is in `rec[4]` (a second weapon prototype). Launch computes the flight from the start and target points: speed from `rec[1]`, an arc over the flight time, frame from the direction (`0x461ac0` angle), and a spawn height offset of two pixels. Range method `0x406960` divides the distance by `rec[1]`. Weapons 2, 30, 32, 40, 43, 46, 50 |
+| 0 | `0x48f8f4` | `0x406700` | `0x4068e0` | `0x4069c0` | Ballistic carrier projectile. Its damage is delegated to the weapon whose id is in `rec[4]` (a second weapon prototype). Launch computes the flight from the start and target points: speed from `rec[1]`, an arc over the flight time, frame from the direction (`0x461ac0` angle), and a spawn height offset of two pixels. Flight-time method `0x406960` divides the distance by `rec[1]`; range is `rec[3]`. Weapons 2, 30, 32, 40, 43, 46, 50 |
 | 1 | `0x48f558` | `0x403b60` | `0x403d00` | `0x403f40` | Arrow family; formula already in the rules notes (start `rec[4]`, multipliers `rec[7..11]`, armor `rec[5]`, secondary `rec[12]`) |
-| 3 | `0x48f7e0` | `0x404c80` | `0x404b90` | `0x404f70` | Straight projectile. Damage: zero against airborne targets and against allied objects (same-side test `0x4472e0` on the side list); otherwise `rec[4]` (0.6875 of it against non-organic targets, `0xb0` out of 256) multiplied by `48 / rec[1]` (the projectile speed), plus the damage of the secondary weapon whose id is in `rec[5]` when present. Range method `0x404c30` is the distance divided by `rec[1]` (flight time). Launch `0x404f70` clamps the aim point to the weapon range, sets the angle and direction frame, and the projectile moves by `rec[1]` per tick. Multi-target scan `+0x64` (`0x404e10`) lists objects in a box and applies the same damage rule to each. Weapons 5, 6, 22, 24 (Mage), 26, 28 (Aztec crossbow tower) |
-| 7 | `0x4943a4` | `0x44c010` | `0x44c100` | `0x44c3c0` | Distance based area explosion. `0x44c130`: applies only to targets whose airborne flag equals the flag in `rec[5]`; with distance d between the objects, full damage `rec[4]` inside `rec[1]`, linear falloff between `rec[1]` and `rec[2]`, zero beyond it; 0.8 (`0xcc` of 256) of the result for targets with the `+0xe8` category, then scaled by the target's armor factor from virtual `+0x108`. Weapons 3, 17, 18, 25, 29, 37, 38 (Demolisher), 41, 42, 49, 53 |
+| 3 | `0x48f7e0` | `0x404c80` | `0x404b90` | `0x404f70` | Straight projectile. Damage: zero against airborne targets and against allied objects (same-side test `0x4472e0` on the side list); otherwise `rec[4]` (0.6875 of it against non-organic targets, `0xb0` out of 256) multiplied by `48 / rec[1]` (the projectile speed), plus the damage of the secondary weapon whose id is in `rec[5]` when present. Flight-time method `0x404c30` is distance divided by `rec[1]`; range is `rec[3]`. Launch `0x404f70` clamps the aim point to the weapon range, sets the angle and direction frame, and the projectile moves by `rec[1]` per tick. Multi-target scan `+0x64` (`0x404e10`) lists objects in a box and applies the same damage rule to each. Weapons 5, 6, 22, 24 (Mage), 26, 28 (Aztec crossbow tower) |
+| 7 | `0x4943a4` | `0x44c010` | `0x44c100` | `0x44c3c0` | Distance based area explosion. `0x44c130`: applies only to targets whose airborne flag equals the flag in `rec[5]`; with distance d from the explosion, add the target extent (28) to both radii; full damage `rec[4]` inside the inner radius bypasses armor; 8.8 linear falloff between the radii is scaled by 204/256 for `+0xe8`, then by armor virtual `+0x108`; zero beyond the outer radius. Weapons 3, 17, 18, 25, 29, 37, 38 (Demolisher), 41, 42, 49, 53 |
 | 9 | `0x493fe0` | `0x444080` | `0x444160` | none (inherits) | Direct damage with multipliers: base `rec[0]`, then `rec[3]` against airborne, `rec[4]` non-organic, `rec[5]` for `+0xf4`, `rec[6]` for `+0xe8`, `rec[7]` structure (each applied as value times current divided by 256), plus `rec[1]` times the target's armor value (`+0x10c`) divided by 256. Weapons 21, 23, 27, 45 |
 | 11 | `0x4927a8` | `0x429c90` | `0x429c00` | `0x42a010` | Burn. Damage per application is 10 times `0x429f60`: zero for the object itself or an airborne target, otherwise 2000 (`0x7d000` / 256 scale) reduced to one quarter (`0x40` of 256) when the target belongs to an allied side, then scaled by the target's fire armor factor (virtual `+0x108`). Weapon 34 (spider flamethrower, wheel firethrower). Effect `0x42a010` and the helper object it creates are still to be read |
 | 12 | `0x490738` | `0x41e350` | `0x41e3c0` | `0x41e4a0` | Sum of two weapons: the damage is the sum of the damages of the weapons with ids `rec[0]` and `rec[1]`. Weapons 7, 35, 39, 44, 47, 51 (axe thrower, cannon, elefant and the towers that use them) |
-| 2 | `0x494f10` | (factory) | `0x46dfe0` | `0x46ed90` | Direct damage; effect still to be read |
-| 4, 5 | `0x4950a8` | (factory) | `0x46e580` | `0x46e8b0` | Knight and Ninja melee: 3000, 1500 against non-organic or structure, reload 19, range 72; effect to be read |
-| 6 | `0x495020` | (factory) | `0x46ead0` | `0x46eb10` | Snowman: 18000, 9000 against non-organic, zero against air; the effect also applies status `0x12` through virtual `+0x9c` to non-allied, non-airborne objects of the two Marine categories within about 96 px |
+| 2 | `0x495130` | (factory) | `0x46dfe0` | `0x46e0d0` | Direct base/category hit plus optional armor helper; see ground_weapons.md |
+| 4, 5 | `0x4950a8` | (factory) | `0x46e580` | `0x46e8b0` | Knight and Ninja melee: 3000, 1500 against non-organic or structure, reload 19, range 72; full central sweep and half-damage flanks |
+| 6 | `0x495020` | (factory) | `0x46ead0` | `0x46eb10` | Snowman: 18000, 9000 against non-organic, zero against air; the effect adds 18 attack cooldown ticks through virtual `+0x9c` to non-allied ground Marine categories overlapping a 96 px square around the attacker |
 | 10 | `0x494f98` | (factory) | `0x46ec90` | `0x46ed00` | Jaguar: 1800, 1125 against non-organic or structure, 1.25 for two category flags, zero against air; the effect calls the attacker's virtual `+0x104` with damage divided by 3 |
-| 13 | `0x495130` | (factory) | `0x46dfe0` | `0x46e0d0` | Hypno and hypno tower: direct damage, no side change (see `hypno_recon.md`) |
+| 13 | `0x494f10` | (factory) | `0x46dfe0` | `0x46ed90` | Hypno and hypno tower: direct damage, no side change (see `hypno_recon.md`) |
 
 Findings that change what the clone must do:
 
@@ -90,8 +97,8 @@ Findings that change what the clone must do:
   class 7 (`rec[5]`) and from the Bird, Zeppelin and tower weapons listed in the next task.
 - Allied fire is suppressed by a side-list test (`0x4472e0`) in classes 3 and 11 (burn is
   reduced to one quarter instead of zero).
-- Hit effects of classes 2, 4/5, 6, 10 and 11, and the helper objects they spawn, are still
-  to be read; they are named in `tasks/queue/140` and `141`.
+- Ground hit effects are resolved in the final table and ground_weapons.md; class 11
+  burn helpers and class 8 scheduling remain task 141 work.
 
 ## Weapon graph of the unresolved units (third pass)
 
@@ -100,9 +107,9 @@ and weapon record tables in `docs/data/rules.json` (already in the repository). 
 record layouts by class (V from the methods above):
 
 - class 12 (sum): `rec[0]` and `rec[1]` are the ids of the two component weapons,
-  `rec[2]` the reload; the damage is the sum of both components (the same id twice is a
-  double shot).
-- class 0 (ballistic carrier): `rec[1]` flight parameter, `rec[2]` speed per tick,
+  `rec[2]` the lateral launch offset; reload and range delegate to the first child
+  (`0x41e480`, `0x41e5f0`); damage sums both components (the same id twice is a double shot).
+- class 0 (ballistic carrier): `rec[1]` speed per tick, `rec[2]` reload,
   `rec[3]` range, `rec[4]` id of the impact weapon that supplies the damage.
 - class 3 (straight projectile): `rec[1]` speed per tick, `rec[2]` reload, `rec[3]` range,
   `rec[4]` damage factor, `rec[5]` id of the impact weapon.
@@ -114,14 +121,14 @@ record layouts by class (V from the methods above):
 | --- | --- | --- |
 | Mage (28) | Marine descriptor weapon id 24 | 24 (class 3, speed 20, reload 20, range 200, factor 600) then impact 25 (class 7, inner radius 20, outer radius 35, damage 2000, ground only) |
 | Aztec crossbow tower (49) | Defence descriptor weapon id 28 | 28 (class 3, speed 20, reload 20, range 225, factor 800) then impact 29 (class 7, radii 20 and 50, damage 2700, ground only) |
-| Axe thrower trucks and wheels (3, 61), Rus fortress tower (23) | weapon id 7 | 7 (class 12, reload 25) = 5 + 6 (class 3, speed 25, reload 35, range 250, factor 500) then impact 21 (class 9, damage 2000 with armor component) |
-| Cannon truck (4), Rus cannon tower (26) | weapon ids 39 and 51 | 39 (class 12, reload 25) = 40 + 40 (class 0, speed 30, range 290) then impact 41 (class 7, radii 35 and 70, damage 4000, air 0) |
-| Elefant (57) | weapon id 47 | 47 (class 12, reload 15) = 46 + 46 (class 0, range 230) then impact 45 (class 9, damage 3800) |
+| Axe thrower trucks and wheels (3, 61), Rus fortress tower (23) | weapon id 7 | 7 (class 12, reload 35) = 5 + 6 (class 3, speed 25, reload 35, range 250, factor 500) then impact 21 (class 9, damage 2000 with armor component) |
+| Cannon truck (4), Rus cannon tower (26) | weapon ids 39 and 51 | 39 (class 12, reload 45) = 40 + 40 (class 0, speed 30, range 290) then impact 41 (class 7, radii 35 and 70, damage 4000, air 0) |
+| Elefant (57) | weapon id 47 | 47 (class 12, reload 40) = 46 + 46 (class 0, range 230) then impact 45 (class 9, damage 3800) |
 | Catapult (83) | Truck descriptor field d7 = 32 | 32 (class 0, speed 30, range 200) then impact 3 (class 7, radii 24 and 72, damage 3000) |
 | Hopcannon (87) | Cannon descriptor field d7 = 2 | 2 (class 0, range 250) then impact 3 (as the catapult) |
-| Deltaplan (34) | Bird descriptor field d9 = 35 | 35 (class 12, reload 25) = 36 + 36 (class 1 arrow, speed 15, reload 30, range 140) |
+| Deltaplan (34) | Bird descriptor field d9 = 35 | 35 (class 12, reload 30) = 36 + 36 (class 1 arrow, speed 15, reload 30, range 140) |
 | Paraplan (60) | Bird descriptor field d9 = 52 | 52 (class 2 direct, damage 2600, range 200, no effect on structures or non-organic) |
-| Zeppelin2 (85) | Zeppelin descriptor field d8 = 44 | 44 (class 12, reload 15) = 43 + 43 (class 0, speed 48, range 30) then impact 42 (class 7, radii 80 and 120, damage 3000): a bomb |
+| Zeppelin2 (85) | Zeppelin descriptor field d8 = 44 | 44 (class 12, reload 48) = 43 + 43 (class 0, speed 0, reload 48, range 30) then impact 42 (class 7, radii 30 and 80, damage 3000): a bomb |
 | Eagle (33), Zeppelin (7) | descriptor weapon field is -1 | no weapon in the descriptor; their behaviour (scout, carrier or something else) is still unknown |
 | Demolisher (2) | Marine weapon id 38 | class 7 explosion used directly (damage falls off with distance) |
 | Spider and wheel flamethrowers (35, 59) | weapon id 34 | class 11 burn (see above); has no weapon record |
@@ -145,12 +152,13 @@ Corrections to the open list from `gap_recon.md`:
   the damage. For a Marine `+0x104` (`0x4029d0`) is **Heal(amount)**: it adds to the
   current hit points and caps at the maximum (virtual `+0x3c`). The Jaguar heals itself for a
   third of the damage it deals (life steal), up to its maximum hit points.
-- Snowman (weapon class 6) area effect: virtual `+0x9c` (`0x471220`) adds the value 0x12 to the
-  object field at `+0x84`. That field is the facing angle (the unit initialiser stores a
-  random 0 to 255 there and the animation frame is `((angle + 4) >> 3) & 0x1f`, 32
-  directions). The snow burst therefore **turns** every non-allied, non-airborne
-  organic Marine within about 96 px of the target by 18 angle units (about 25 degrees). It
-  has no other effect in this code path.
+- Snowman (weapon class 6) area effect: virtual `+0x9c` (`0x471220`) adds 18 to
+  the Marine attack cooldown at `+0x84`, which `0x433db0` decrements each tick and
+  initializes to reload plus one. Facing is `+0x80`. The older turning claim was
+  based on another object's layout and is superseded. The scan is a 96 px square
+  centred on the attacker; qualifying ground, non-allied Marine categories receive
+  the cooldown addition when their hit rectangles overlap it. No movement slow,
+  rotation, ownership change or secondary HP damage occurs.
 - Marine virtual `+0xa0` (`0x432fa0`) returns descriptor byte `+0x2c` (class flag byte 0); bit 0 of
   a group's flag dword requires that every member answers true. Its meaning is not yet
   established; it is not used by the ferry.
@@ -234,3 +242,59 @@ only), **G** = guess.
   stun or a knockback, and it does not turn the facing.
 - V: volley class 8 always releases 16 explosions, each at `rand % 10` ticks within the
   scatter radius (96 px); `rec[3]` (80, 50, 30) is the reload.
+## Ground classes completed (2026-11-18)
+
+This pass supersedes earlier O/G effect labels and the swapped class 2/13 factory
+links above. **V** = read from the private original or from the existing public
+records. Formulas, helper lifetimes, status meanings, clone limits and live probes
+are in [ground_weapons.md](ground_weapons.md). In particular, Snowman adds attack
+cooldown; class 3's damage getter is a kill-time estimate rather than one impact.
+Class 7's inner radius bypasses armor; only its falloff band applies e8 and fire
+armor. A target's hit extent is 28 px, not the clone's movement collision radius.
+
+All rows below are V. Speed is per tick; range and radii are pixels. Reload means
+the weapon getter, before the Marine's additional tick and animation scheduling.
+Payload-only getters are listed for completeness and do not create an extra shot.
+
+| Class | Weapon ids | Active descriptor or chain | Speed; reload; range | Payload / area / other effects |
+| --- | --- | --- | --- | --- |
+| 0 | 2 | Hopcannon 87 | 30; 37; 250 | Explosion 3 at actual landing |
+| 0 | 30 | No active descriptor in the current type table | 0; 40; 15 | Vertical drop, explosion 3 |
+| 0 | 32 | Catapult 83 | 30; 30; 200 | Explosion 3 |
+| 0 | 40 | Cannon 4 via pair 39 | 30; 45; 290 | Explosion 41, two carriers |
+| 0 | 43 | Zeppelin2 85 via pair 44 | 0; 48; 30 | Vertical bombs, explosion 42 |
+| 0 | 46 | Elefant 57 via pair 47 | 20; 40; 230 | Point payload 45, two carriers |
+| 0 | 50 | Rus cannon tower 26 via pair 51 | 30; 45; 360 | Explosion 49, two carriers |
+| 3 | 5,6 | Axe trucks/wheels 3,61 and fortress tower 23 via pair 7 | 25; 35; 250 | Contact 500/tick, payload 21 |
+| 3 | 22 | No active descriptor in the current type table | 20; 20; 200 | Contact 600/tick, payload 23 |
+| 3 | 24 | Mage 28 | 20; 20; 200 | Contact 600/tick, explosion 25 |
+| 3 | 26 | No active descriptor in the current type table | 20; 20; 200 | Contact 600/tick, payload 27 |
+| 3 | 28 | Aztec crossbow tower 49 | 20; 20; 225 | Contact 800/tick, explosion 29 |
+| 7 | 3 | Payload of 2,30,32 | Direct; 40; 192 | Radii 24/72, damage 3000, ground |
+| 7 | 17,18 | Class 8 Katusha / air tower payloads | Direct; 30; 200 | Radii 15/25, damage 3000; 17 ground, 18 air only; class 8 scheduler belongs to task 141 |
+| 7 | 25 | Mage payload | Direct; 30; 200 | Radii 20/35, damage 2000, ground |
+| 7 | 29 | Crossbow tower payload | Direct; 30; 200 | Radii 20/50, damage 2700, ground |
+| 7 | 37 | No active descriptor/chain in the current tables | Direct; 40; 180 | Radii 20/30, damage 1500, ground |
+| 7 | 38 | Demolisher 2, directly | Direct; 30; 180 | Radii 25/55, damage 3500, ground; attacker survives unless independently damaged |
+| 7 | 41 | Cannon payload | Direct; 45; 330 | Radii 35/70, damage 4000, ground |
+| 7 | 42 | Zeppelin2 bomb payload | Direct; 50; 120 | Radii 30/80, damage 3000, ground |
+| 7 | 49 | Cannon tower payload | Direct; 45; 360 | Radii 35/70, damage 4000, ground |
+| 7 | 53 | Johnka via class 8 weapon 54 | Direct; 30; 200 | Radii 15/25, damage 3000, ground; vessel/volley dependency is separate |
+| 9 | 21 | Axe-pair point payload | Payload only; 0; 0 | Base 2000; multipliers air 0, non-organic 160/256, f4 1, e8 1, structure 160/256 |
+| 9 | 23,27 | Payloads of inactive 22,26 | Payload only; 0; 0 | Base 1800; air 0, non-organic 1, f4 128/256, e8 336/256, structure 2 |
+| 9 | 45 | Elefant point payload | Payload only; 0; 0 | Base 3800; same category multipliers as 23/27 |
+| 14 | 0 | No active campaign weapon | No shot | Absent-chain sentinel; optional save helper class is not a weapon |
+
+For every class 3 row, contact damage is zero against allies/air and is multiplied
+by 176/256 for non-organic targets. Its secondary effect has its own alliance and
+air rules. For every class 7 row, damage includes allies, and radii gain the 28 px
+target extent. For every class 9 row, the armor coefficient is zero in the current
+records; point effects include allies. These classes change primary HP only.
+Class 0/3 create projectiles, class 7 creates an explosion animation helper, and
+class 9 is a point application without persistent status. None changes sides,
+secondary HP or movement speed, and none spawns a controllable unit.
+
+The new synthetic `ground_weapons` test covers formulas, Mage/tower duels and
+groups, friendly/air controls, moving-target misses, Demolisher groups, Knight and
+Ninja sectors, Jaguar overkill healing/cap, Snowman additive cooldown and point
+payloads. Replay hashes cover transient class 3 identity and direct explosions.

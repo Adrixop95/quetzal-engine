@@ -14,6 +14,7 @@ struct Effect {
   int height = 0, age = 0, lifetime = 0, speed = 0;
   int damage = 0, splash_px = 0, impact_anim = 0, shockwave = 0;
   int payload_id = -1; // spatial blast evaluated independently for every victim
+  int weapon_id = -1; // class 3 contact damage is evaluated at each flight step
   int32_t velocity_x = 0, velocity_y = 0, altitude = 0, vertical_speed = 0, gravity = 0;
   bool flight = false, loop = false;
 };

@@ -1270,8 +1270,9 @@ static void test_attack_delay() {
   sim.submit(attack); w.begin_tick(); sim.tick(w);
   CHECK(w.objects[1].hp == 12000 && w.objects[0].cooldown == 26);
   // Countdown processing still occurs on each recipient's own turn this tick.
-  for (int i : {1, 2, 8}) CHECK(w.objects[i].cooldown == 117);
-  for (int i : {3, 4, 5, 6}) CHECK(w.objects[i].cooldown == 99);
+  // The task extends the query to hit rectangles overlapping the square.
+  for (int i : {1, 2, 4, 8}) CHECK(w.objects[i].cooldown == 117);
+  for (int i : {3, 5, 6}) CHECK(w.objects[i].cooldown == 99);
   CHECK(w.objects[7].cooldown == 100);
   CHECK(w.objects[2].hp == 30000); // the secondary effect does not deal area damage
   auto hash = sim.state_hash(w);
@@ -1291,8 +1292,8 @@ static void test_projectiles() {
   CHECK(rules->type(27).weapon.speed == 30 && rules->type(27).range_px == 160);
   CHECK(rules->type(3).weapon.anim == 101);
   CHECK(rules->type(4).weapon.anim == 100);
-  CHECK(rules->type(2).weapon.anim == 0); // standalone area hit, tested separately
-  for (int type : {27, 3, 4}) {
+  CHECK(rules->type(2).weapon.anim == 0); // Demolisher detonates directly
+  for (int type : {27, 4}) {
     World initial;
     initial.terrain.w = initial.terrain.h = 40;
     initial.terrain.cells.resize(1600);

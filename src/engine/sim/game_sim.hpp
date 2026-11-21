@@ -100,6 +100,8 @@ class GameSim : public Simulation {
                                          const std::string& scn_path = "", ReplayObserver before_commands = {}, Modifications modifications = Modifications::faithful());
 
  private:
+  void damage_object(World& w, Object& target, int damage, const Effect& hit);
+  void impact_weapon(World& w, int weapon, const Effect& hit);
   CombatObserver combat_observer_;
   AiObserver ai_observer_;
   uint64_t next_trace_id_ = 0;

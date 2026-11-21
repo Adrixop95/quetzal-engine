@@ -19111,7 +19111,8 @@
   {
    "id": 0,
    "class": 14,
-   "param": 0
+   "param": 0,
+   "status": "verified (V: id 0 is the absent-chain sentinel; no factory constructor or campaign weapon; ground_weapons.md)"
   },
   {
    "id": 1,
@@ -19157,11 +19158,11 @@
     250,
     3
    ],
-   "flight_param": 30,
-   "projectile_speed": 37,
+   "reload_ticks": 37,
    "range_px": 250,
    "delegates_to_weapon": 3,
-   "status": "verified (layout, docs/weapon_class_map.md); damage delegated to the impact weapon"
+   "projectile_speed": 30,
+   "status": "verified (V: ballistic carrier, damage delegated; ground_weapons.md)"
   },
   {
    "id": 3,
@@ -19178,11 +19179,13 @@
     150,
     -500
    ],
-   "inner_radius": 24,
-   "outer_radius": 72,
+   "reload_ticks": 40,
+   "range_px": 192,
+   "inner_radius_px": 24,
+   "outer_radius_px": 72,
    "damage": 3000,
-   "requires_airborne": 0,
-   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
+   "target_airborne": false,
+   "status": "verified (V: 8.8 falloff outside inner radius plus target extent; inner damage bypasses armor; ground_weapons.md)"
   },
   {
    "id": 4,
@@ -19213,7 +19216,8 @@
    "mult_f4": 1.0,
    "mult_e8": 1.0,
    "mult_structure": 0.5,
-   "status": "verified (formula from code; footman 600/10 observed)"
+   "armor_helper_duration_ticks": 0,
+   "status": "verified (V: direct category damage; optional armor helper, inactive in current records; ground_weapons.md)"
   },
   {
    "id": 5,
@@ -19227,12 +19231,12 @@
     500,
     21
    ],
-   "projectile_speed": 25,
    "reload_ticks": 35,
    "range_px": 250,
-   "damage_factor": 500,
+   "contact_damage_per_tick": 500,
+   "projectile_speed": 25,
    "chained_weapon": 21,
-   "status": "verified (layout, docs/weapon_class_map.md); 0 vs air and allies, damage rec[4]*(0x30/rec[1])"
+   "status": "verified (V: contact ticks plus spatial impact; damage getter is an estimate; ground_weapons.md)"
   },
   {
    "id": 6,
@@ -19246,12 +19250,12 @@
     500,
     21
    ],
-   "projectile_speed": 25,
    "reload_ticks": 35,
    "range_px": 250,
-   "damage_factor": 500,
+   "contact_damage_per_tick": 500,
+   "projectile_speed": 25,
    "chained_weapon": 21,
-   "status": "verified (layout, docs/weapon_class_map.md); 0 vs air and allies, damage rec[4]*(0x30/rec[1])"
+   "status": "verified (V: contact ticks plus spatial impact; damage getter is an estimate; ground_weapons.md)"
   },
   {
    "id": 7,
@@ -19276,7 +19280,7 @@
    "range_px": 72,
    "damage": 3000,
    "damage_vs_nonorganic_or_structure": 1500,
-   "status": "verified (code; rifleman first hit at 68 px observed); 0 vs allied or air"
+   "status": "verified (code; rifleman first hit at 68 px observed); 0 vs allied or air; central sector and two half-damage flanks (V; ground_weapons.md)"
   },
   {
    "id": 9,
@@ -19307,7 +19311,8 @@
    "mult_f4": 1.0,
    "mult_e8": 1.0,
    "mult_structure": 1.0,
-   "status": "verified (formula from code; footman 600/10 observed)"
+   "armor_helper_duration_ticks": 0,
+   "status": "verified (V: direct category damage; optional armor helper, inactive in current records; ground_weapons.md)"
   },
   {
    "id": 10,
@@ -19338,7 +19343,8 @@
    "mult_f4": 1.0,
    "mult_e8": 1.375,
    "mult_structure": 1.5,
-   "status": "verified (formula from code; footman 600/10 observed)"
+   "armor_helper_duration_ticks": 0,
+   "status": "verified (V: direct category damage; optional armor helper, inactive in current records; ground_weapons.md)"
   },
   {
    "id": 11,
@@ -19348,8 +19354,9 @@
    "range_px": 10,
    "damage": 1800,
    "damage_vs_nonorganic_or_structure": 1125,
-   "mult_organic_f4_e8": 1.25,
-   "status": "verified (code); 0 vs air"
+   "mult_organic_f4_or_e8": 1.25,
+   "attacker_heal_divisor": 3,
+   "status": "verified (V: 0 vs air; heal uses nominal damage, capped at maximum HP; ground_weapons.md)"
   },
   {
    "id": 12,
@@ -19380,7 +19387,8 @@
    "mult_f4": 1.0,
    "mult_e8": 1.0,
    "mult_structure": 0.5,
-   "status": "verified (formula from code; footman 600/10 observed)"
+   "armor_helper_duration_ticks": 0,
+   "status": "verified (V: direct category damage; optional armor helper, inactive in current records; ground_weapons.md)"
   },
   {
    "id": 13,
@@ -19390,7 +19398,7 @@
    "range_px": 72,
    "damage": 3000,
    "damage_vs_nonorganic_or_structure": 1500,
-   "status": "verified (code; rifleman first hit at 68 px observed); 0 vs allied or air"
+   "status": "verified (code; rifleman first hit at 68 px observed); 0 vs allied or air; central sector and two half-damage flanks (V; ground_weapons.md)"
   },
   {
    "id": 14,
@@ -19454,7 +19462,8 @@
    "mult_f4": 1.0,
    "mult_e8": 1.0,
    "mult_structure": 1.0,
-   "status": "verified (formula from code; footman 600/10 observed)"
+   "armor_helper_duration_ticks": 0,
+   "status": "verified (V: direct category damage; optional armor helper, inactive in current records; ground_weapons.md)"
   },
   {
    "id": 16,
@@ -19464,7 +19473,8 @@
    "range_px": 10,
    "damage": 18000,
    "damage_vs_nonorganic": 9000,
-   "status": "verified (code); 0 vs air"
+   "target_attack_cooldown_add": 18,
+   "status": "verified (V: 0 vs air; cooldown area is a 96 px square around attacker, not a turn/freeze; ground_weapons.md)"
   },
   {
    "id": 17,
@@ -19481,11 +19491,13 @@
     150,
     -600
    ],
-   "inner_radius": 15,
-   "outer_radius": 25,
+   "reload_ticks": 30,
+   "range_px": 200,
+   "inner_radius_px": 15,
+   "outer_radius_px": 25,
    "damage": 3000,
-   "requires_airborne": 0,
-   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
+   "target_airborne": false,
+   "status": "verified (V: 8.8 falloff outside inner radius plus target extent; inner damage bypasses armor; ground_weapons.md)"
   },
   {
    "id": 18,
@@ -19502,11 +19514,13 @@
     150,
     -600
    ],
-   "inner_radius": 15,
-   "outer_radius": 25,
+   "reload_ticks": 30,
+   "range_px": 200,
+   "inner_radius_px": 15,
+   "outer_radius_px": 25,
    "damage": 3000,
-   "requires_airborne": 1,
-   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
+   "target_airborne": true,
+   "status": "verified (V: 8.8 falloff outside inner radius plus target extent; inner damage bypasses armor; ground_weapons.md)"
   },
   {
    "id": 19,
@@ -19555,7 +19569,7 @@
    "mult_f4": 1.0,
    "mult_e8": 1.0,
    "mult_structure": 0.625,
-   "status": "verified (layout, docs/weapon_class_map.md)"
+   "status": "verified (V: point impact applies to every overlapping target; ground_weapons.md)"
   },
   {
    "id": 22,
@@ -19569,12 +19583,12 @@
     600,
     23
    ],
-   "projectile_speed": 20,
    "reload_ticks": 20,
    "range_px": 200,
-   "damage_factor": 600,
+   "contact_damage_per_tick": 600,
+   "projectile_speed": 20,
    "chained_weapon": 23,
-   "status": "verified (layout, docs/weapon_class_map.md); 0 vs air and allies, damage rec[4]*(0x30/rec[1])"
+   "status": "verified (V: contact ticks plus spatial impact; damage getter is an estimate; ground_weapons.md)"
   },
   {
    "id": 23,
@@ -19597,7 +19611,7 @@
    "mult_f4": 0.5,
    "mult_e8": 1.3125,
    "mult_structure": 2.0,
-   "status": "verified (layout, docs/weapon_class_map.md)"
+   "status": "verified (V: point impact applies to every overlapping target; ground_weapons.md)"
   },
   {
    "id": 24,
@@ -19611,12 +19625,12 @@
     600,
     25
    ],
-   "projectile_speed": 20,
    "reload_ticks": 20,
    "range_px": 200,
-   "damage_factor": 600,
+   "contact_damage_per_tick": 600,
+   "projectile_speed": 20,
    "chained_weapon": 25,
-   "status": "verified (layout, docs/weapon_class_map.md); 0 vs air and allies, damage rec[4]*(0x30/rec[1])"
+   "status": "verified (V: contact ticks plus spatial impact; damage getter is an estimate; ground_weapons.md)"
   },
   {
    "id": 25,
@@ -19633,11 +19647,13 @@
     150,
     -500
    ],
-   "inner_radius": 20,
-   "outer_radius": 35,
+   "reload_ticks": 30,
+   "range_px": 200,
+   "inner_radius_px": 20,
+   "outer_radius_px": 35,
    "damage": 2000,
-   "requires_airborne": 0,
-   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
+   "target_airborne": false,
+   "status": "verified (V: 8.8 falloff outside inner radius plus target extent; inner damage bypasses armor; ground_weapons.md)"
   },
   {
    "id": 26,
@@ -19651,12 +19667,12 @@
     600,
     27
    ],
-   "projectile_speed": 20,
    "reload_ticks": 20,
    "range_px": 200,
-   "damage_factor": 600,
+   "contact_damage_per_tick": 600,
+   "projectile_speed": 20,
    "chained_weapon": 27,
-   "status": "verified (layout, docs/weapon_class_map.md); 0 vs air and allies, damage rec[4]*(0x30/rec[1])"
+   "status": "verified (V: contact ticks plus spatial impact; damage getter is an estimate; ground_weapons.md)"
   },
   {
    "id": 27,
@@ -19679,7 +19695,7 @@
    "mult_f4": 0.5,
    "mult_e8": 1.3125,
    "mult_structure": 2.0,
-   "status": "verified (layout, docs/weapon_class_map.md)"
+   "status": "verified (V: point impact applies to every overlapping target; ground_weapons.md)"
   },
   {
    "id": 28,
@@ -19693,12 +19709,12 @@
     800,
     29
    ],
-   "projectile_speed": 20,
    "reload_ticks": 20,
    "range_px": 225,
-   "damage_factor": 800,
+   "contact_damage_per_tick": 800,
+   "projectile_speed": 20,
    "chained_weapon": 29,
-   "status": "verified (layout, docs/weapon_class_map.md); 0 vs air and allies, damage rec[4]*(0x30/rec[1])"
+   "status": "verified (V: contact ticks plus spatial impact; damage getter is an estimate; ground_weapons.md)"
   },
   {
    "id": 29,
@@ -19715,11 +19731,13 @@
     150,
     -300
    ],
-   "inner_radius": 20,
-   "outer_radius": 50,
+   "reload_ticks": 30,
+   "range_px": 200,
+   "inner_radius_px": 20,
+   "outer_radius_px": 50,
    "damage": 2700,
-   "requires_airborne": 0,
-   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
+   "target_airborne": false,
+   "status": "verified (V: 8.8 falloff outside inner radius plus target extent; inner damage bypasses armor; ground_weapons.md)"
   },
   {
    "id": 30,
@@ -19732,11 +19750,11 @@
     15,
     3
    ],
-   "flight_param": 0,
-   "projectile_speed": 40,
+   "reload_ticks": 40,
    "range_px": 15,
    "delegates_to_weapon": 3,
-   "status": "verified (layout, docs/weapon_class_map.md); damage delegated to the impact weapon"
+   "projectile_speed": 0,
+   "status": "verified (V: ballistic carrier, damage delegated; ground_weapons.md)"
   },
   {
    "id": 31,
@@ -19782,11 +19800,11 @@
     200,
     3
    ],
-   "flight_param": 30,
-   "projectile_speed": 30,
+   "reload_ticks": 30,
    "range_px": 200,
    "delegates_to_weapon": 3,
-   "status": "verified (layout, docs/weapon_class_map.md); damage delegated to the impact weapon"
+   "projectile_speed": 30,
+   "status": "verified (V: ballistic carrier, damage delegated; ground_weapons.md)"
   },
   {
    "id": 33,
@@ -19817,7 +19835,8 @@
    "mult_f4": 1.0,
    "mult_e8": 0.875,
    "mult_structure": 1.0,
-   "status": "verified (formula from code; footman 600/10 observed)"
+   "armor_helper_duration_ticks": 0,
+   "status": "verified (V: direct category damage; optional armor helper, inactive in current records; ground_weapons.md)"
   },
   {
    "id": 34,
@@ -19890,11 +19909,13 @@
     150,
     -500
    ],
-   "inner_radius": 20,
-   "outer_radius": 30,
+   "reload_ticks": 40,
+   "range_px": 180,
+   "inner_radius_px": 20,
+   "outer_radius_px": 30,
    "damage": 1500,
-   "requires_airborne": 0,
-   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
+   "target_airborne": false,
+   "status": "verified (V: 8.8 falloff outside inner radius plus target extent; inner damage bypasses armor; ground_weapons.md)"
   },
   {
    "id": 38,
@@ -19911,11 +19932,13 @@
     150,
     -200
    ],
-   "inner_radius": 25,
-   "outer_radius": 55,
+   "reload_ticks": 30,
+   "range_px": 180,
+   "inner_radius_px": 25,
+   "outer_radius_px": 55,
    "damage": 3500,
-   "requires_airborne": 0,
-   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
+   "target_airborne": false,
+   "status": "verified (V: 8.8 falloff outside inner radius plus target extent; inner damage bypasses armor; ground_weapons.md)"
   },
   {
    "id": 39,
@@ -19943,11 +19966,11 @@
     290,
     41
    ],
-   "flight_param": 30,
-   "projectile_speed": 45,
+   "reload_ticks": 45,
    "range_px": 290,
    "delegates_to_weapon": 41,
-   "status": "verified (layout, docs/weapon_class_map.md); damage delegated to the impact weapon"
+   "projectile_speed": 30,
+   "status": "verified (V: ballistic carrier, damage delegated; ground_weapons.md)"
   },
   {
    "id": 41,
@@ -19964,11 +19987,13 @@
     150,
     -100
    ],
-   "inner_radius": 35,
-   "outer_radius": 70,
+   "reload_ticks": 45,
+   "range_px": 330,
+   "inner_radius_px": 35,
+   "outer_radius_px": 70,
    "damage": 4000,
-   "requires_airborne": 0,
-   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
+   "target_airborne": false,
+   "status": "verified (V: 8.8 falloff outside inner radius plus target extent; inner damage bypasses armor; ground_weapons.md)"
   },
   {
    "id": 42,
@@ -19985,11 +20010,13 @@
     150,
     -100
    ],
-   "inner_radius": 30,
-   "outer_radius": 80,
+   "reload_ticks": 50,
+   "range_px": 120,
+   "inner_radius_px": 30,
+   "outer_radius_px": 80,
    "damage": 3000,
-   "requires_airborne": 0,
-   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
+   "target_airborne": false,
+   "status": "verified (V: 8.8 falloff outside inner radius plus target extent; inner damage bypasses armor; ground_weapons.md)"
   },
   {
    "id": 43,
@@ -20002,11 +20029,11 @@
     30,
     42
    ],
-   "flight_param": 0,
-   "projectile_speed": 48,
+   "reload_ticks": 48,
    "range_px": 30,
    "delegates_to_weapon": 42,
-   "status": "verified (layout, docs/weapon_class_map.md); damage delegated to the impact weapon"
+   "projectile_speed": 0,
+   "status": "verified (V: ballistic carrier, damage delegated; ground_weapons.md)"
   },
   {
    "id": 44,
@@ -20044,7 +20071,7 @@
    "mult_f4": 0.5,
    "mult_e8": 1.3125,
    "mult_structure": 2.0,
-   "status": "verified (layout, docs/weapon_class_map.md)"
+   "status": "verified (V: point impact applies to every overlapping target; ground_weapons.md)"
   },
   {
    "id": 46,
@@ -20057,11 +20084,11 @@
     230,
     45
    ],
-   "flight_param": 20,
-   "projectile_speed": 40,
+   "reload_ticks": 40,
    "range_px": 230,
    "delegates_to_weapon": 45,
-   "status": "verified (layout, docs/weapon_class_map.md); damage delegated to the impact weapon"
+   "projectile_speed": 20,
+   "status": "verified (V: ballistic carrier, damage delegated; ground_weapons.md)"
   },
   {
    "id": 47,
@@ -20126,11 +20153,13 @@
     150,
     -100
    ],
-   "inner_radius": 35,
-   "outer_radius": 70,
+   "reload_ticks": 45,
+   "range_px": 360,
+   "inner_radius_px": 35,
+   "outer_radius_px": 70,
    "damage": 4000,
-   "requires_airborne": 0,
-   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
+   "target_airborne": false,
+   "status": "verified (V: 8.8 falloff outside inner radius plus target extent; inner damage bypasses armor; ground_weapons.md)"
   },
   {
    "id": 50,
@@ -20143,11 +20172,11 @@
     360,
     49
    ],
-   "flight_param": 30,
-   "projectile_speed": 45,
+   "reload_ticks": 45,
    "range_px": 360,
    "delegates_to_weapon": 49,
-   "status": "verified (layout, docs/weapon_class_map.md); damage delegated to the impact weapon"
+   "projectile_speed": 30,
+   "status": "verified (V: ballistic carrier, damage delegated; ground_weapons.md)"
   },
   {
    "id": 51,
@@ -20193,7 +20222,8 @@
    "mult_f4": 0.0,
    "mult_e8": 0.0,
    "mult_structure": 0.0,
-   "status": "verified (formula from code; footman 600/10 observed)"
+   "armor_helper_duration_ticks": 0,
+   "status": "verified (V: direct category damage; optional armor helper, inactive in current records; ground_weapons.md)"
   },
   {
    "id": 53,
@@ -20210,11 +20240,13 @@
     150,
     -600
    ],
-   "inner_radius": 15,
-   "outer_radius": 25,
+   "reload_ticks": 30,
+   "range_px": 200,
+   "inner_radius_px": 15,
+   "outer_radius_px": 25,
    "damage": 3000,
-   "requires_airborne": 0,
-   "status": "verified (layout, docs/weapon_class_map.md); distance based, 0x44c130"
+   "target_airborne": false,
+   "status": "verified (V: 8.8 falloff outside inner radius plus target extent; inner damage bypasses armor; ground_weapons.md)"
   },
   {
    "id": 54,
@@ -20258,7 +20290,8 @@
    "mult_f4": 0.5,
    "mult_e8": 0.5,
    "mult_structure": 2.0,
-   "status": "verified (formula from code; footman 600/10 observed)"
+   "armor_helper_duration_ticks": 0,
+   "status": "verified (V: direct category damage; optional armor helper, inactive in current records; ground_weapons.md)"
   },
   {
    "id": 56,
@@ -20289,7 +20322,8 @@
    "mult_f4": 2.0,
    "mult_e8": 1.5,
    "mult_structure": 0.5,
-   "status": "verified (formula from code; footman 600/10 observed)"
+   "armor_helper_duration_ticks": 0,
+   "status": "verified (V: direct category damage; optional armor helper, inactive in current records; ground_weapons.md)"
   },
   {
    "id": 57,
@@ -20320,7 +20354,8 @@
    "mult_f4": 2.0,
    "mult_e8": 1.5,
    "mult_structure": 0.5,
-   "status": "verified (formula from code; footman 600/10 observed)"
+   "armor_helper_duration_ticks": 0,
+   "status": "verified (V: direct category damage; optional armor helper, inactive in current records; ground_weapons.md)"
   },
   {
    "id": 58,
@@ -20384,7 +20419,8 @@
    "mult_f4": 1.0,
    "mult_e8": 1.0,
    "mult_structure": 0.5,
-   "status": "verified (formula from code; footman 600/10 observed)"
+   "armor_helper_duration_ticks": 0,
+   "status": "verified (V: direct category damage; optional armor helper, inactive in current records; ground_weapons.md)"
   }
  ],
  "build_tree": [

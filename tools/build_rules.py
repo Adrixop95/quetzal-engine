@@ -53,20 +53,20 @@ for r in ids:
     rec = tabs.get(c, {}).get(p)
     if rec: w['record_raw'] = rec
     if c in (2, 13) and rec:
-        w.update(reload_ticks=rec[0], damage=rec[1], armor_scaled_damage=rec[2], range_px=rec[4], mult_air=rec[5] / 256, mult_nonorganic=rec[6] / 256, mult_f4=rec[7] / 256, mult_e8=rec[8] / 256, mult_structure=rec[9] / 256, status='verified (formula from code; footman 600/10 observed)')
+        w.update(reload_ticks=rec[0], damage=rec[1], armor_scaled_damage=rec[2], range_px=rec[4], mult_air=rec[5] / 256, mult_nonorganic=rec[6] / 256, mult_f4=rec[7] / 256, mult_e8=rec[8] / 256, mult_structure=rec[9] / 256, armor_helper_duration_ticks=rec[3], status='verified (V: direct category damage; optional armor helper, inactive in current records; ground_weapons.md)')
     elif c == 1 and rec:
         w.update(projectile_speed=rec[1], reload_ticks=rec[2], range_px=rec[3], damage=rec[4], armor_scaled_damage=rec[5], mult_air=rec[7] / 256, mult_nonorganic=rec[8] / 256, mult_f4=rec[9] / 256, mult_e8=rec[10] / 256, mult_structure=rec[11] / 256, chained_weapon=rec[12], status='verified (formula from code; archer 800 observed)')
-    elif c == 0 and rec: w.update(flight_param=rec[1], projectile_speed=rec[2], range_px=rec[3], delegates_to_weapon=rec[4], status='verified (layout, docs/weapon_class_map.md); damage delegated to the impact weapon')
-    elif c == 3 and rec: w.update(projectile_speed=rec[1], reload_ticks=rec[2], range_px=rec[3], damage_factor=rec[4], chained_weapon=rec[5], status='verified (layout, docs/weapon_class_map.md); 0 vs air and allies, damage rec[4]*(0x30/rec[1])')
+    elif c == 0 and rec: w.update(reload_ticks=rec[2], range_px=rec[3], delegates_to_weapon=rec[4], projectile_speed=rec[1], status='verified (V: ballistic carrier, damage delegated; ground_weapons.md)')
+    elif c == 3 and rec: w.update(reload_ticks=rec[2], range_px=rec[3], contact_damage_per_tick=rec[4], projectile_speed=rec[1], chained_weapon=rec[5], status='verified (V: contact ticks plus spatial impact; damage getter is an estimate; ground_weapons.md)')
     elif c == 8 and rec: w.update(delegates_to_weapon=rec[0], status='verified (code)')
     elif c == 12 and rec: w.update(sum_of_weapons=[rec[0], rec[1]], status='verified (code)')
-    elif c == 9 and rec: w.update(damage=rec[0], armor_scaled_damage=rec[1], mult_air=rec[3] / 256, mult_nonorganic=rec[4] / 256, mult_f4=rec[5] / 256, mult_e8=rec[6] / 256, mult_structure=rec[7] / 256, status='verified (layout, docs/weapon_class_map.md)')
-    elif c in (4, 5): w.update(reload_ticks=19, range_px=72, damage=3000, damage_vs_nonorganic_or_structure=1500, status='verified (code; rifleman first hit at 68 px observed); 0 vs allied or air')
-    elif c == 6: w.update(reload_ticks=25, range_px=10, damage=18000, damage_vs_nonorganic=9000, status='verified (code); 0 vs air')
-    elif c == 10: w.update(reload_ticks=11, range_px=10, damage=1800, damage_vs_nonorganic_or_structure=1125, mult_organic_f4_e8=1.25, status='verified (code); 0 vs air')
+    elif c == 9 and rec: w.update(damage=rec[0], armor_scaled_damage=rec[1], mult_air=rec[3] / 256, mult_nonorganic=rec[4] / 256, mult_f4=rec[5] / 256, mult_e8=rec[6] / 256, mult_structure=rec[7] / 256, status='verified (V: point impact applies to every overlapping target; ground_weapons.md)')
+    elif c in (4, 5): w.update(reload_ticks=19, range_px=72, damage=3000, damage_vs_nonorganic_or_structure=1500, status='verified (code; rifleman first hit at 68 px observed); 0 vs allied or air; central sector and two half-damage flanks (V; ground_weapons.md)')
+    elif c == 6: w.update(reload_ticks=25, range_px=10, damage=18000, damage_vs_nonorganic=9000, target_attack_cooldown_add=18, status='verified (V: 0 vs air; cooldown area is a 96 px square around attacker, not a turn/freeze; ground_weapons.md)')
+    elif c == 10: w.update(reload_ticks=11, range_px=10, damage=1800, damage_vs_nonorganic_or_structure=1125, mult_organic_f4_or_e8=1.25, attacker_heal_divisor=3, status='verified (V: 0 vs air; heal uses nominal damage, capped at maximum HP; ground_weapons.md)')
     elif c == 11: w.update(reload_ticks=40, range_px=96, status='verified (formula 10*f(0x429f60) per tick of burn, docs/weapon_class_map.md); hit-effect helper 0x42a010 unread')
-    elif c == 7 and rec: w.update(inner_radius=rec[1], outer_radius=rec[2], damage=rec[4], requires_airborne=rec[5], status='verified (layout, docs/weapon_class_map.md); distance based, 0x44c130')
-    elif c == 7: w.update(status='verified (distance based, 0x44c130); no record')
+    elif c == 7 and rec: w.update(reload_ticks=rec[6], range_px=rec[3], inner_radius_px=rec[1], outer_radius_px=rec[2], damage=rec[4], target_airborne=bool(rec[5]), status='verified (V: 8.8 falloff outside inner radius plus target extent; inner damage bypasses armor; ground_weapons.md)')
+    elif c == 14: w.update(status='verified (V: id 0 is the absent-chain sentinel; no factory constructor or campaign weapon; ground_weapons.md)')
     W.append(w)
 R['weapons'] = W
 R['build_tree'] = [{k: num(v) for k, v in r.items()} for r in rd('buildtree.csv')]
@@ -78,5 +78,7 @@ R['constants'].update({'tick_hz': {'value': 12, 'status': 'verified'}, 'tile_px'
     'fixed_point': {'value': '8.8, product>>8', 'status': 'verified'},
     'price_formula': R['mechanics']['production']['price'],
     'Kprice': R['mechanics']['production']['build_speed']['Kprice'], 'Ktime': R['mechanics']['production']['build_speed']['Ktime'], 'KAdvPostTime': 1.5, 'KAdvPostPrice': 1.0, 'KWarehouse': [1.0, R['mechanics']['economy']['warehouse']['factor_with']]})
-json.dump(R, open('docs/data/rules.json', 'w'), indent=1)
+with open('docs/data/rules.json', 'w') as output:
+    json.dump(R, output, indent=1)
+    output.write('\n')
 print('rules.json', os.path.getsize('docs/data/rules.json'))
