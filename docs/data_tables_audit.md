@@ -132,3 +132,40 @@ like small integer arrays (placement and footprint flags, production and upgrade
 them by reading the loops that index them (build tree and production code), not single offsets.
 So the work to take the descriptor tables to 99 percent is the naming of about 158 words, not
 about 450.
+
+## Descriptor naming completed (2026-11-21)
+
+The counts above describe the starting snapshot. The current field inventory and
+function evidence are in [descriptor_fields.md](descriptor_fields.md), with one
+table per kind. `descriptor_kinds.csv` and `descriptor_fields.csv` now drive
+`tools/build_rules.py`; `rules.json` is regenerated from those public sources.
+
+All 201 non-sentinel data columns have names and meanings: 200 have verified
+reads/layouts and one has an inferred meaning (Defence d63, launch height).
+This is **99.50% V naming coverage**. An additional 24 constant -1 columns are
+explicitly named and marked unused. Thus every one of the **225 columns nonzero
+in any type** has a name and status. The validation includes -1 and allows
+all-zero columns to be omitted; the supplied layout actually names all 520 words.
+The earlier total of 497 words was an arithmetic error.
+
+Corrections established by this survey:
+
+- Bird's descriptor pointer is object +0x64, not +0x6c. Its constructors and the
+  separate Zeppelin table are included in the extended private scan.
+- The last descriptor word is a localized name-string pointer, not a code pointer.
+- Building's integer runs are footprint cells and harvest-clock entries, not
+  production/upgrade lists. Those lists belong to separate build-tree tables.
+- Catapult primary HP is d1 (10000), while d4 (3000) is secondary HP. Headtruck
+  and Spider d3 is primary maximum HP; d6 is secondary HP.
+- Headtruck/Spider weapon IDs and fire/physical armor getters, and Truck/Cannon
+  weapon IDs and fire/physical armor getters, have direct function evidence.
+- Marine d14 is read by `0x433010`, virtual +0x110. It is named
+  `armor_auxiliary`, retaining `armor_d14` as an alias. Its accessor role is V;
+  a gameplay damage consumer remains unidentified. No resistance is invented.
+- Weapon classes 0, 3, 7, 9 and 11 now expose verified formula/record evidence,
+  keeping their class-link inference and unresolved burn-helper sequencing explicit.
+
+`descriptor_fields` in CTest checks missing labels/statuses/evidence, per-type
+value mappings, the corrected HP fields and reproducible JSON regeneration
+without private inputs. These checks establish metadata consistency, not gameplay
+parity or dynamic execution of every described array entry.

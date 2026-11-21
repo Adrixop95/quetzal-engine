@@ -75,8 +75,8 @@ weapon record in `docs/data/rules.json` (`record_raw`).
 | --- | --- | --- | --- | --- | --- |
 | 0 | `0x48f8f4` | `0x406700` | `0x4068e0` | `0x4069c0` | Ballistic carrier projectile. Its damage is delegated to the weapon whose id is in `rec[4]` (a second weapon prototype). Launch computes the flight from the start and target points: speed from `rec[1]`, an arc over the flight time, frame from the direction (`0x461ac0` angle), and a spawn height offset of two pixels. Flight-time method `0x406960` divides the distance by `rec[1]`; range is `rec[3]`. Weapons 2, 30, 32, 40, 43, 46, 50 |
 | 1 | `0x48f558` | `0x403b60` | `0x403d00` | `0x403f40` | Arrow family; formula already in the rules notes (start `rec[4]`, multipliers `rec[7..11]`, armor `rec[5]`, secondary `rec[12]`) |
-| 3 | `0x48f7e0` | `0x404c80` | `0x404b90` | `0x404f70` | Straight projectile. Damage: zero against airborne targets and against allied objects (same-side test `0x4472e0` on the side list); otherwise `rec[4]` (0.6875 of it against non-organic targets, `0xb0` out of 256) multiplied by `48 / rec[1]` (the projectile speed), plus the damage of the secondary weapon whose id is in `rec[5]` when present. Flight-time method `0x404c30` is distance divided by `rec[1]`; range is `rec[3]`. Launch `0x404f70` clamps the aim point to the weapon range, sets the angle and direction frame, and the projectile moves by `rec[1]` per tick. Multi-target scan `+0x64` (`0x404e10`) lists objects in a box and applies the same damage rule to each. Weapons 5, 6, 22, 24 (Mage), 26, 28 (Aztec crossbow tower) |
 | 7 | `0x4943a4` | `0x44c010` | `0x44c100` | `0x44c3c0` | Distance based area explosion. `0x44c130`: applies only to targets whose airborne flag equals the flag in `rec[5]`; with distance d from the explosion, add the target extent (28) to both radii; full damage `rec[4]` inside the inner radius bypasses armor; 8.8 linear falloff between the radii is scaled by 204/256 for `+0xe8`, then by armor virtual `+0x108`; zero beyond the outer radius. Weapons 3, 17, 18, 25, 29, 37, 38 (Demolisher), 41, 42, 49, 53 |
+| 3 | `0x48f7e0` | `0x404c80` | `0x404b90` | `0x404f70` | Straight projectile. The base factor is zero against airborne or allied targets (side-list test `0x4472e0`); otherwise it is `rec[4]`, reduced to `176/256` for non-organic targets. The damage getter estimates contact damage by multiplying this factor by integer `floor(48 / rec[1])`, then adds the secondary weapon damage from `rec[5]` when present. The secondary call still occurs when the base is zero; its own target rules apply. Flight-time method `0x404c30` is the distance divided by `rec[1]`; range is `rec[3]`. Launch `0x404f70` clamps the aim point to the weapon range, sets the angle and direction frame, and the projectile moves by `rec[1]` per tick. Moving contact applies the factor per tick; destination impact invokes the payload once (see ground_weapons.md). Multi-target scan `+0x64` (`0x404e10`) lists objects in a box. Weapons 5, 6, 22, 24 (Mage), 26, 28 (Aztec crossbow tower) |
 | 9 | `0x493fe0` | `0x444080` | `0x444160` | none (inherits) | Direct damage with multipliers: base `rec[0]`, then `rec[3]` against airborne, `rec[4]` non-organic, `rec[5]` for `+0xf4`, `rec[6]` for `+0xe8`, `rec[7]` structure (each applied as value times current divided by 256), plus `rec[1]` times the target's armor value (`+0x10c`) divided by 256. Weapons 21, 23, 27, 45 |
 | 11 | `0x4927a8` | `0x429c90` | `0x429c00` | `0x42a010` | Burn. Damage per application is 10 times `0x429f60`: zero for the object itself or an airborne target, otherwise 2000 (`0x7d000` / 256 scale) reduced to one quarter (`0x40` of 256) when the target belongs to an allied side, then scaled by the target's fire armor factor (virtual `+0x108`). Weapon 34 (spider flamethrower, wheel firethrower). Effect `0x42a010` and the helper object it creates are still to be read |
 | 12 | `0x490738` | `0x41e350` | `0x41e3c0` | `0x41e4a0` | Sum of two weapons: the damage is the sum of the damages of the weapons with ids `rec[0]` and `rec[1]`. Weapons 7, 35, 39, 44, 47, 51 (axe thrower, cannon, elefant and the towers that use them) |
@@ -109,8 +109,10 @@ record layouts by class (V from the methods above):
 - class 12 (sum): `rec[0]` and `rec[1]` are the ids of the two component weapons,
   `rec[2]` the lateral launch offset; reload and range delegate to the first child
   (`0x41e480`, `0x41e5f0`); damage sums both components (the same id twice is a double shot).
-- class 0 (ballistic carrier): `rec[1]` speed per tick, `rec[2]` reload,
-  `rec[3]` range, `rec[4]` id of the impact weapon that supplies the damage.
+- class 0 (ballistic carrier): `rec[1]` flight speed (zero for a dropped bomb),
+  `rec[2]` reload, `rec[3]` range, `rec[4]` id of the impact weapon supplying damage.
+  Shared getters `0x4039a0` and `0x4039b0` verify reload and range; `0x4069c0`
+  uses `rec[1]` for flight. This corrects the earlier speed/reload swap.
 - class 3 (straight projectile): `rec[1]` speed per tick, `rec[2]` reload, `rec[3]` range,
   `rec[4]` damage factor, `rec[5]` id of the impact weapon.
 - class 7 (explosion): `rec[1]` inner radius, `rec[2]` outer radius, `rec[4]` damage,
@@ -136,7 +138,7 @@ record layouts by class (V from the methods above):
 Corrections to the open list from `gap_recon.md`:
 
 - Mage and the Aztec crossbow tower are not a plain 500 damage shot: they combine the
-  class 3 hit (factor times 48 divided by speed, integer division) with a class 7 impact
+  class 3 hit (factor times integer `floor(48/speed)`) with a class 7 impact
   that depends on distance. Their damage in the clone must come from this chain.
 - Catapult, Hopcannon, cannons, bombs and the elefant all work through class 0 carriers that
   hand the damage to a class 7 or class 9 impact weapon, so one implementation of the weapon
@@ -298,3 +300,13 @@ The new synthetic `ground_weapons` test covers formulas, Mage/tower duels and
 groups, friendly/air controls, moving-target misses, Demolisher groups, Knight and
 Ninja sectors, Jaguar overkill healing/cap, Snowman additive cooldown and point
 payloads. Replay hashes cover transient class 3 identity and direct explosions.
+## Descriptor audit reconciliation (2026-11-21)
+
+The generated rules now mark the inspected formulas/records for classes 0, 3, 7,
+9 and 11 as verified and include their function addresses. `class_link_status`
+remains `guess`, preserving the factory-link uncertainty of the second pass.
+Class 11 keeps an explicit open hit-effect status for helper sequencing; its
+tenfold damage getter does not prove ten executed burn applications.
+See [descriptor_fields.md](descriptor_fields.md) for descriptor weapon IDs and
+the field-coverage checks. Earlier descriptions of the generated file as
+guessed/unread are historical, not the current metadata status.
