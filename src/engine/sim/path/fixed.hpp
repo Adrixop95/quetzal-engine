@@ -92,6 +92,33 @@ inline Vec2 with_length(Vec2 v, i32 len) {
   return {(i32)((i64)v.x * len / l), (i32)((i64)v.y * len / l)};
 }
 inline constexpr int abs_i(int v) { return v < 0 ? -v : v; }
+// Original movement norm and scaling; integer division truncates toward zero.
+inline constexpr i32 movement_norm(Vec2 v) {
+  i32 a = abs_i(v.x), m = abs_i(v.y);
+  if (m > a) { i32 t = a; a = m; m = t; }
+  const i32 b = m + (m >> 1);
+  return a + (b >> 2) + (b >> 6) - (a >> 7) - (a >> 5);
+}
+inline constexpr Vec2 movement_scale(Vec2 v, i32 len) {
+  const i32 n = movement_norm(v);
+  return n ? Vec2{(i32)((i64)v.x * len / n), (i32)((i64)v.y * len / n)} : Vec2{len, len};
+}
+inline constexpr Vec2 movement_pixels(Vec2 v) { return {v.x / kFix, v.y / kFix}; }
+inline constexpr Vec2 marine_velocity(Vec2 position, Vec2 target, i32 speed) {
+  return movement_scale(movement_pixels(target) - movement_pixels(position), speed);
+}
+// Heading uses the engine's mathematical angle convention. The signed 8-bit
+// difference and thresholds do not depend on which compass direction is zero.
+inline int vehicle_turn(int heading, int desired) {
+  int diff = ((desired - heading + 128) & 255) - 128;
+  return abs_i(diff) < 8 ? desired : (heading + (diff < 0 ? -8 : 8)) & 255;
+}
+inline i32 vehicle_speed(i32 speed_px, i32 maximum_px, i32 distance_fixed, int turn_difference) {
+  const i32 change = maximum_px * maximum_px / 48 + 1;
+  if (distance_fixed < 24 * kFix || abs_i(turn_difference) >= 56)
+    return speed_px > change ? speed_px - change : 0;
+  return speed_px + change < maximum_px ? speed_px + change : maximum_px;
+}
 // 8-way facing (0 = N, clockwise, as the original) from a vector.
 inline int facing8(Vec2 v) { int a = angle_of(v.x, v.y); return (((a + 64 + 16) >> 5) & 7); }
 

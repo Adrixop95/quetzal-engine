@@ -129,13 +129,17 @@ endif()
 
 # ---- deterministic pathfinding / movement module (src/engine/sim/path): no dependencies
 add_library(aztec_path src/engine/sim/path/navgrid.cpp src/engine/sim/path/flowfield.cpp src/engine/sim/path/astar.cpp src/engine/sim/path/courses.cpp
-  src/engine/sim/path/mover.cpp)
+  src/engine/sim/path/mover.cpp src/engine/sim/path/wave.cpp src/engine/sim/path/wave_mover.cpp)
 target_include_directories(aztec_path PUBLIC src)
 target_compile_features(aztec_path PUBLIC cxx_std_20)
 aztec_warnings(aztec_path)
 add_executable(test_path tests/test_path.cpp)
 target_link_libraries(test_path aztec_path)
 add_test(NAME path COMMAND test_path)
+add_executable(test_wave tests/test_wave.cpp)
+target_link_libraries(test_wave aztec_path)
+add_test(NAME wave COMMAND test_wave)
+set_tests_properties(wave PROPERTIES LABELS "unit")
 add_executable(path_bench tools/path_bench.cpp)
 target_link_libraries(path_bench aztec_path)
 add_executable(formation_probe tools/formation_probe.cpp)

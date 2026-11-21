@@ -2,10 +2,10 @@
 
 namespace aztec::path {
 
-bool NavGrid::connected(int sx, int sy, int tx, int ty, MoveClass c) const {
+bool NavGrid::connected(int sx, int sy, int tx, int ty, MoveClass c, bool diagonal) const {
   if (blocked(tx, ty, c)) return false;
   if (blocked(sx, sy, c) && !nearest_free(sx, sy, c, sx, sy)) return false;
-  auto& cache = regions_[size_t(c)];
+  auto& cache = regions_[size_t(c) + (diagonal ? 3 : 0)];
   if (cache.labels.empty() || cache.version != version_) {
     cache.labels.assign(size_t(w_) * h_, 0);
     std::vector<size_t> pending;
@@ -17,10 +17,9 @@ bool NavGrid::connected(int sx, int sy, int tx, int ty, MoveClass c) const {
       pending.clear(); pending.push_back(start);
       for (size_t i = 0; i < pending.size(); ++i) {
         const int cx = int(pending[i] % w_), cy = int(pending[i] / w_);
-        // A permitted diagonal always has a two-edge orthogonal alternative.
-        // Four neighbours therefore preserve the field's no-corner-cut connectivity.
-        constexpr int dx[] = {1, -1, 0, 0}, dy[] = {0, 0, 1, -1};
-        for (int d = 0; d < 4; ++d) {
+        // Legacy fields prohibit corner cutting; the original wave permits it.
+        constexpr int dx[] = {1, -1, 0, 0, 1, 1, -1, -1}, dy[] = {0, 0, 1, -1, 1, -1, 1, -1};
+        for (int d = 0; d < (diagonal ? 8 : 4); ++d) {
           const int nx = cx + dx[d], ny = cy + dy[d];
           if (blocked(nx, ny, c)) continue;
           const size_t next = size_t(ny) * w_ + nx;

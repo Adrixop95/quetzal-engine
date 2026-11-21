@@ -34,7 +34,7 @@ static void test_field_vs_astar() {
     Cell s{(int)(rnd() % 40), (int)(rnd() % 30)}, e{(int)(rnd() % 40), (int)(rnd() % 30)};
     if (g.blocked(s.x, s.y, cls) || g.blocked(e.x, e.y, cls)) continue;
     FlowField ff; ff.build(g, cls, &e, 1, 4);
-    AStarResult a = astar(g, cls, s, e, 4);
+    AStarResult a = legacy_astar(g, cls, s, e, 4);
     CHECK(a.found == ff.reachable(s.x, s.y));
     if (a.found) {
       // the field charges the wall penalty on the tile it expands into (start side), A* on the tile entered (goal side)
@@ -49,10 +49,10 @@ static void test_field_vs_astar() {
   }
 }
 
-static void test_no_corner_cut() {
+static void test_original_corner_cut() {
   NavGrid g(10, 10); g.set_terrain(5, 4, 0); g.set_terrain(4, 5, 0);   // diagonal squeeze between (4,4) and (5,5)
   AStarResult a = astar(g, MoveClass::Small, {4, 4}, {5, 5}, 0);
-  CHECK(a.found); CHECK(a.tiles.size() > 2);   // must go around, not through the diagonal gap
+  CHECK(a.found); CHECK(a.tiles.size() == 2);   // the original permits this diagonal
 }
 
 static void check_connectivity(const NavGrid& g, Cell start, MoveClass cls) {
@@ -348,7 +348,7 @@ static void test_dense_unstick_arrival() {
 
 int main() {
   test_connectivity_cache();
-  test_math(); test_field_vs_astar(); test_no_corner_cut(); test_courses(); test_determinism(); test_unreachable_goal(); test_large_class(); test_dynamic_block();
+  test_math(); test_field_vs_astar(); test_original_corner_cut(); test_courses(); test_determinism(); test_unreachable_goal(); test_large_class(); test_dynamic_block();
   const u64 wall_run = run_goal_beside_wall();
   CHECK(wall_run == run_goal_beside_wall());
   for (bool reverse : {false, true}) {

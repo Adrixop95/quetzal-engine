@@ -45,7 +45,10 @@ class NavGrid {
   bool nearest_free(int x, int y, MoveClass c, int& ox, int& oy) const;
   // Same reachability as a field rooted at (sx,sy), including blocked-root relocation.
   // Region labels are query caches; they do not participate in simulation hashes.
-  bool connected(int sx, int sy, int tx, int ty, MoveClass c) const;
+  bool connected(int sx, int sy, int tx, int ty, MoveClass c, bool diagonal = false) const;
+  bool can_enter(int x, int y, MoveClass c, bool occupied, bool margin = false) const {
+    return !occupied && !blocked(x, y, c) && (!margin || !near_wall(x, y, c));
+  }
 
  private:
   int w_ = 0, h_ = 0;
@@ -58,7 +61,7 @@ class NavGrid {
     u32 version = 0;
     std::vector<u32> labels;
   };
-  mutable std::array<Regions, 3> regions_;
+  mutable std::array<Regions, 6> regions_;
 };
 
 }  // namespace aztec::path

@@ -1,18 +1,18 @@
-// Deterministic group movement: shared flow fields + slot assignment + velocity-sampling local avoidance
-// + position-based overlap resolution (units are discs with sub-tile 24.8 positions, walls are tiles).
-// Keeps the original feel (per-type speed in px/tick, 12 Hz tick, 8-way facing) but replaces the original's
-// tile-exclusive stepping, two-requester WaveSearch admission and 8-step path memory (docs/rules_movement.md).
+// Deterministic movement with an opt-in original ground-wave candidate.
+// Disc movement remains the game default until tactic integration passes its gates.
 #pragma once
 #include <memory>
 #include <vector>
 #include "astar.hpp"
 #include "flowfield.hpp"
+#include "wave.hpp"
 
 namespace aztec::path {
 
 enum class AgentState : u8 { Idle, Moving, Arrived };
 
 struct MoverConfig {
+  bool original_ground = false; // candidate: tactic coordination must pass integration gates before promotion
   i32 avoid_horizon = 8;        // ticks looked ahead for collisions
   int overlap_iterations = 3;
   int wall_penalty = 4;         // extra field cost next to walls (10 = one straight step)
@@ -46,6 +46,14 @@ struct Agent {
   int formation = -1;
   Vec2 step_goal;              // reserved tile centre during startup approach
   Vec2 step_from;
+  // Original ground stepping; group destination allocation remains an engine policy.
+  Cell reserved_tile{0, 0};
+  bool stepping = false;
+  bool vehicle = false;        // Truck / Headtruck; Spider arrival behavior remains unresolved
+  bool about_to_attack = false;
+  i32 vehicle_speed_px = 0;
+  u32 retries = 0;
+  std::vector<Cell> wave_path;  // at most eight remaining steps
 };
 
 class MoveSystem {
@@ -61,6 +69,7 @@ class MoveSystem {
   void stop(u32 id);
   void tick();
   void set_unit_unstick(bool enabled);
+  void set_fog(u32 team, std::span<const u8> brightness);
   const std::vector<Agent>& agents() const { return agents_; }
   std::vector<Agent>& agents_mut() { return agents_; }
   u64 state_hash() const;
@@ -85,6 +94,11 @@ class MoveSystem {
   void local_repath(Agent& a);
   bool cooperate(Agent& a);
   void recover(Agent& a);
+  bool original_agent(const Agent& a) const { return cfg_.original_ground && !cfg_.unit_unstick && a.cls != MoveClass::Water && a.formation < 0; }
+  void order_wave(const u32* ids, int n, Vec2 goal);
+  void tick_wave();
+  WaveBudget wave_budget_;
+  std::vector<std::vector<u8>> fog_;
   NavGrid& grid_;
   MoverConfig cfg_;
   std::vector<Agent> agents_;

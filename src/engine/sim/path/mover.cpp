@@ -12,6 +12,7 @@ constexpr int kDa[13] = {0, 6, -6, 12, -12, 20, -20, 32, -32, 48, -48, 64, -64};
 
 u32 MoveSystem::add_agent(Vec2 pos, i32 radius, i32 speed, MoveClass cls, u32 team) {
   Agent a; a.team = team; a.id = (u32)agents_.size(); a.pos = a.prev_pos = a.win_start = pos; a.radius = radius; a.speed = speed; a.cls = cls;
+  a.reserved_tile = {floor_div(pos.x, kTileFix), floor_div(pos.y, kTileFix)};
   agents_.push_back(a);
   return a.id;
 }
@@ -28,6 +29,7 @@ void MoveSystem::stop(u32 id) {
   Agent& a = agents_[id];
   if (a.order >= 0) { --orders_[a.order]->refs; a.order = -1; }
   a.local_path.clear(); a.unstick_ticks = 0; a.unstick_best = 0;
+  a.wave_path.clear(); a.retries = 0; a.stepping = false; a.vehicle_speed_px = 0;
   a.state = AgentState::Idle; a.vel = {0, 0};
   a.target = {}; a.target_until = 0; a.backoff_ticks = 0;
   a.formation = -1;
@@ -138,6 +140,7 @@ void MoveSystem::order_move(const u32* ids, int n, Vec2 goal) {
     order_move(ground.data(), int(ground.size()), goal);
     return;
   }
+  if (cfg_.original_ground && !cfg_.unit_unstick && !water) { order_wave(ids, n, goal); return; }
   int oi = -1;
   for (size_t i = 0; i < orders_.size(); ++i) if (orders_[i]->refs == 0) { oi = (int)i; break; }
   if (oi < 0) { orders_.push_back(std::make_unique<Order>()); oi = (int)orders_.size() - 1; }
@@ -360,7 +363,7 @@ void MoveSystem::resolve_overlaps() {
       for (u32 j : nb) {
         if (j < a.id || !a.enabled || !agents_[j].enabled) continue;
         Agent& b = agents_[j];
-        if (a.formation >= 0 || b.formation >= 0) continue;
+        if (a.formation >= 0 || b.formation >= 0 || original_agent(a) || original_agent(b)) continue;
         i32 ra = a.squeeze_ticks ? a.radius * 7 / 10 : a.radius, rb = b.squeeze_ticks ? b.radius * 7 / 10 : b.radius;
         Vec2 d = b.pos - a.pos; i64 dd = len2(d); i64 R = (i64)ra + rb;
         if (dd >= R * R) continue;
@@ -376,9 +379,9 @@ void MoveSystem::resolve_overlaps() {
         b.pos.x += (i32)((i64)n.x * ov / 4096 * sb / 256); b.pos.y += (i32)((i64)n.y * ov / 4096 * sb / 256);
       }
     }
-    for (Agent& a : agents_) if (a.enabled && a.formation < 0) grid_.push_out(a.pos, a.squeeze_ticks ? a.radius * 7 / 10 : a.radius, a.cls);
+    for (Agent& a : agents_) if (a.enabled && a.formation < 0 && !original_agent(a)) grid_.push_out(a.pos, a.squeeze_ticks ? a.radius * 7 / 10 : a.radius, a.cls);
   }
-  for (Agent& a : agents_) if (a.enabled && a.formation < 0 && grid_.disc_hits(a.pos, a.radius * 6 / 10, a.cls)) a.pos = a.prev_pos;   // never end inside a wall
+  for (Agent& a : agents_) if (a.enabled && a.formation < 0 && !original_agent(a) && grid_.disc_hits(a.pos, a.radius * 6 / 10, a.cls)) a.pos = a.prev_pos;   // never end inside a wall
 }
 
 void MoveSystem::set_unit_unstick(bool enabled) {
@@ -388,6 +391,8 @@ void MoveSystem::set_unit_unstick(bool enabled) {
     a.local_path.clear(); a.unstick_ticks = 0; a.unstick_best = length(a.slot - a.pos);
     a.ghost_ticks = a.squeeze_ticks = a.backoff_ticks = a.stuck_level = 0;
     a.target_until = 0;
+    a.wave_path.clear(); a.retries = 0; a.stepping = false; a.vehicle_speed_px = 0;
+    a.reserved_tile = {floor_div(a.pos.x, kTileFix), floor_div(a.pos.y, kTileFix)};
   }
 }
 
@@ -554,11 +559,12 @@ void MoveSystem::recover(Agent& a) {
 void MoveSystem::tick() {
   ++tick_;
   tick_formations();
+  tick_wave();
   build_hash();
   std::vector<Vec2> nv(agents_.size());
   std::vector<u32> nb;
   for (Agent& a : agents_) {
-    if (!a.enabled || a.formation >= 0) continue;
+    if (!a.enabled || a.formation >= 0 || original_agent(a)) continue;
     a.prev_pos = a.pos;
     Vec2 pref{0, 0};
     if (a.state == AgentState::Moving && a.order >= 0) {
@@ -572,7 +578,7 @@ void MoveSystem::tick() {
     nv[a.id] = choose_velocity(a, pref, nb);
   }
   for (Agent& a : agents_) {
-    if (!a.enabled || a.formation >= 0) continue;
+    if (!a.enabled || a.formation >= 0 || original_agent(a)) continue;
     a.vel = nv[a.id]; a.pos = a.pos + a.vel;
     if (a.vel.x || a.vel.y) { a.heading = angle_of(a.vel.x, a.vel.y); a.facing = facing8(a.vel); ++a.moved_ticks; }
     if (a.ghost_ticks) --a.ghost_ticks;
@@ -581,7 +587,7 @@ void MoveSystem::tick() {
   resolve_overlaps();
   build_hash();
   for (Agent& a : agents_) {
-    if (!a.enabled || a.formation >= 0) continue;
+    if (!a.enabled || a.formation >= 0 || original_agent(a)) continue;
     if (a.state != AgentState::Moving) continue;
     i32 dist = length(a.slot - a.pos);
     if (dist <= 2 * kFix) { a.state = AgentState::Arrived; a.vel = {0, 0}; continue; }
@@ -611,11 +617,25 @@ u64 MoveSystem::state_hash() const {
   mix(cfg_.avoid_horizon); mix(cfg_.overlap_iterations); mix(cfg_.wall_penalty);
   mix(cfg_.slot_gap); mix(cfg_.stuck_window);
   if (cfg_.unit_unstick) mix(0x756e737469636bull);
+  if (cfg_.original_ground) {
+    mix(0x77617665u);
+    for (u32 id : wave_budget_.granted()) mix(id);
+    for (auto entry : wave_budget_.waiting()) { mix(entry.id); mix(entry.retries); }
+    mix(fog_.size());
+    for (const auto& layer : fog_) { mix(layer.size()); for (u8 value : layer) mix(value); }
+  }
   mix(agents_.size());
   for (const Agent& a : agents_) {
     if (cfg_.unit_unstick) {
       mix(a.team); mix(a.unstick_ticks); mix(a.unstick_best); mix(a.local_path.size());
       for (Vec2 p : a.local_path) { mix((u32)p.x); mix((u32)p.y); }
+    }
+    if (cfg_.original_ground) {
+      mix(a.team);
+      mix(u32(a.reserved_tile.x)); mix(u32(a.reserved_tile.y)); mix(a.stepping);
+      mix(a.vehicle); mix(a.about_to_attack); mix(a.vehicle_speed_px); mix(a.retries);
+      mix(u32(a.step_goal.x)); mix(u32(a.step_goal.y));
+      mix(a.wave_path.size()); for (Cell c : a.wave_path) { mix(u32(c.x)); mix(u32(c.y)); }
     }
     mix(a.id); mix((u32)a.pos.x); mix((u32)a.pos.y); mix((u32)a.vel.x); mix((u32)a.vel.y); mix((u32)a.prev_pos.x); mix((u32)a.prev_pos.y);
     mix((u32)a.radius); mix((u32)a.speed); mix((u64)a.cls); mix((u64)a.state); mix(a.hold); if (!a.enabled) mix(a.enabled); mix((u32)a.order);
