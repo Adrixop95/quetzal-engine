@@ -129,6 +129,8 @@ struct QueueItem {
   int plan_town = -1, plan_entry = -1; // owning AI request; training objects are created at completion
   uint64_t plan_generation = 0;
   int work_rate = 0;          // frozen integer HP/work increment per active tick
+  int created_clock = 0;     // repair clock starts at admission, including unpaid waiting
+  int previous_type = -1;    // restore this hall type on upgrade cancellation
 };
 
 // Per-side economy and command state.

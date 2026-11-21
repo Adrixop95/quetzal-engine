@@ -333,6 +333,8 @@ static void sparse_towns(std::shared_ptr<const RulesData> rules) {
   CHECK(events.size() == 2 && events[1].first == 2);
   CHECK(std::string(events[1].second.kind) == "production");
   q.remaining = 1;
+  // Building work is its live HP, so prepare the final increment explicitly.
+  w.find_mut(q.object)->hp = w.find(q.object)->hp_max - q.work_rate;
   w.begin_tick(); sim.tick(w);
   CHECK(w.side_state[0].queue.empty());
   CHECK(w.objects.back().type == 12 && w.objects.back().town == 4);
@@ -382,6 +384,7 @@ static void observation(std::shared_ptr<const RulesData> rules) {
 // Two towns sharing cash select their own speeds before pricing their orders.
 static void town_orders(std::shared_ptr<const RulesData> rules) {
   auto w = world();
+  w.resources.v.assign(1600, 128); // farm sites must be valid before payment starts
   w.mission.towns[1].side = w.objects[1].side = 0;
   w.mission.sides[1].only_comp = false;
   w.relation[0][1] = kFriend;

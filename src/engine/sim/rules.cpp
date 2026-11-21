@@ -120,6 +120,7 @@ bool is_melee(int t) {
 int parse_fixed256(const std::string& t) { return parse_fixed256_impl(t); }
 
 int harvest_tick(HarvestState& s, int rate, int clock, int period, const std::vector<int>* dates) {
+  if ((!dates && period < 0) || (dates && dates->empty())) return 0;
   s.accumulated += rate;
   bool due = false;
   if (dates) {
@@ -259,7 +260,7 @@ bool RulesData::load_dir(const std::string& dir) {
           t.service_damage_protected = (uint32_t(num(r, 60)) & 255u) != 0;
           harvest.terrain = (uint32_t(num(r, 60)) & 0xff00u) != 0;  // byte +0xed within d59
           harvest.rate_a = num(r, 61); harvest.rate_b = num(r, 62);
-          harvest.repair_rate = num(r, 63); harvest.scheduled = num(r, 64) != 0;
+          harvest.repair_rate = num(r, 63); harvest.scheduled = (uint32_t(num(r, 64)) & 255u) != 0;
           harvest.period = num(r, 65, -1); harvest.repair_period = num(r, 321, -1);
           if (harvest.scheduled)
             for (int i = 0; i < std::clamp(harvest.period, 0, 255); ++i) harvest.dates.push_back(num(r, 66 + i));

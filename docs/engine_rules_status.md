@@ -2138,6 +2138,33 @@ claim follows from the synthetic checks. Worker travel, stages/timing, original
 payment/refunds, sound/selection/rally, training/spawn, service/protection/HP and
 hall/tree transitions through saves all still require two repeated live runs.
 
+## Task 151: economy creation, completion and lane gates (2026-11-21)
+
+**V reference contracts / synthetic implementation:** paid building work now starts
+from zero HP and advances actual HP for automatic structures and in-place hall
+upgrades as well as explicit placements. Units retain integer work accumulation.
+The existing first-start-tick increment, no-builder/no-tick-drain path, 8.8 refund
+of the actual payment, unpaid waiting cancellation, serial town lanes and absence
+of a population gate remain covered. Missing prerequisites now allow admission
+while leaving the head unpaid and blocking the lane until completed prerequisites
+exist. Disabled entries, unique reservations and waiting capacity still apply.
+
+Gold samples terrain and initializes its clock at completion, before the first
+active update; existing completed mission structures initialize at mission start.
+Repair initializes its own rate/clock at creation/admission and retains that age
+through waiting and construction; only active updates accumulate credits. Disabled
+income accumulators remain empty. Existing descriptor dates, rounding, warehouse
+scope/non-stacking and day-wrap tests are retained. New synthetic checks isolate
+these boundaries, automatic-building damage/refunds and upgrade cancellation.
+Queue creation clocks and previous hall types participate in state hashes/replay.
+
+**G / observation boundary:** automatic placement and failed-site policy, waiting
+one-HP placeholders, hall HP/clock restoration on cancellation, completion versus
+active-object dispatch ordering and shared-cash town arbitration still require
+native observation. Optional parallel modifications remain clone settings. The
+static formulas are not a live parity claim. Task-64 observer and task-97 aligned
+production/income measurement dependencies remain open; no original executable
+or reference runtime was run. See [implementation and measurement list](economy_implementation.md).
 
 ## Task 150: original building placement predicate (2026-11-21)
 
