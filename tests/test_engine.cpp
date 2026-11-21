@@ -1802,7 +1802,7 @@ static void test_group_reach() {
 static void test_building_placement() {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
   World base = production_world();
-  production_object(base, 11, 0, 5, 5); base.objects.back().town_hall = true;
+  production_object(base, 11, 0, 8, 8); base.objects.back().town_hall = true;
   base.side_state.resize(8); base.side_state[0].money = 10000;
   base.passability = {40, 40, std::vector<uint8_t>(1600, 2)};
   auto check_tile = [&](int x, int y, bool expected) {
@@ -1811,7 +1811,7 @@ static void test_building_placement() {
     CHECK(sim.can_place(w, 0, 14, 12, 12) == expected);
   };
   check_tile(11, 12, false); // occupied western arm, outside the old sprite rectangle
-  check_tile(13, 13, false); // clearance corner is required by the default policy
+  check_tile(13, 13, true); // value-1 mask cells do not affect placement
   World occupied = base; production_object(occupied, 0, 0, 12, 12);
   GameSim blocked(rules, Modifications::faithful()); blocked.init(occupied);
   CHECK(!blocked.can_place(occupied, 0, 14, 12, 12));
@@ -1894,11 +1894,127 @@ static void test_building_placement() {
   }
 }
 
+// Invented descriptors isolate the placement predicate from public game metadata.
+static void test_original_placement_rules() {
+  TempDir directory;
+  const auto root = directory.path();
+  std::ofstream(root / "types.csv") << "id,name,kind,param,price,time,construct\n"
+      "0,unit,0,0,1,10,0\n11,hall,2,0,1,10,0\n"
+      "12,plain,2,1,1,10,0\n13,channelA,2,2,1,10,0\n"
+      "14,channelB,2,3,1,10,0\n15,either,2,4,1,10,0\n16,offset,2,5,1,10,0\n"
+      "17,defence,7,0,1,10,0\n";
+  auto descriptors = [&](const char* name, bool defence) {
+    std::ofstream out(root / name);
+    out << "param";
+    for (int d = 0; d <= 67; ++d) out << ",d" << d;
+    out << '\n';
+    for (int param = 0; param < (defence ? 1 : 6); ++param) {
+      std::array<int, 68> words{};
+      words[defence ? 3 : 1] = 100;
+      const int first = defence ? 9 : 6;
+      words[first + 24] = 2;
+      if (!defence && param > 0 && param < 5) {
+        words[first + 25] = 2; // second body cell east of the anchor
+        words[first + 23] = 1; // ignored cell west of the anchor
+      }
+      if (!defence && param == 5) {
+        words[first + 24] = 0; words[first + 25] = 2;
+      }
+      words[60] = defence || param == 2 || param == 4 ? 1 : 0;
+      words[61] = defence || param == 3 || param == 4 ? 1 : 0;
+      words[64] = -1; // resource requirements do not depend on income scheduling
+      out << param;
+      for (int word : words) out << ',' << word;
+      out << '\n';
+    }
+  };
+  descriptors("desc_building.csv", false); descriptors("desc_defence.csv", true);
+  std::ofstream(root / "buildtree.csv") << "race,townhall_type,slot,item_ugi,flagB_construct,prereq\n"
+      "0,1,0,12,0,\n";
+  auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(root.string()));
+  World base = production_world(); base.resources.v.assign(1600, 0);
+  base.passability = {40, 40, std::vector<uint8_t>(1600, 2)};
+  production_object(base, 11, 0, 10, 10); base.objects.back().town_hall = true;
+  auto check = [&](World w, int type, int x, int y, bool expected) {
+    GameSim sim(rules); sim.init(w);
+    CHECK(sim.can_place(w, 0, type, x, y) == expected);
+    const auto cells = sim.placement_cells(w, 0, type, x, y);
+    CHECK((!cells.empty() && std::all_of(cells.begin(), cells.end(),
+        [](const PlacementCell& cell) { return !cell.blocked; })) == expected);
+  };
+  check(base, 12, 16, 10, true); // farthest cell at distance 7
+  check(base, 12, 17, 10, false); // farthest cell exactly at radius 8
+  check(base, 12, 15, 14, true); // 6^2 + 4^2 < 64
+  check(base, 12, 15, 16, false); // diagonal escapes the circle
+  check(base, 12, INT32_MAX, INT32_MIN, false);
+  for (int value : {0, 1, 2, 255}) {
+    World w = base; w.passability.v[10 * 40 + 15] = uint8_t(value);
+    check(w, 12, 15, 10, value >= 2);
+    w = base; w.passability.v[10 * 40 + 14] = uint8_t(value);
+    check(w, 12, 15, 10, true); // value 1 in the mask is never required
+  }
+  for (int type : {0, 11}) for (auto offset : {std::pair{-1, 0}, {2, 0}, {0, -1}, {0, 1}, {2, 1}}) {
+    World w = base; production_object(w, type, -1, 15 + offset.first, 10 + offset.second);
+    check(w, 12, 15, 10, type == 0 || offset == std::pair{2, 1});
+  }
+  for (int type : {0, 11}) {
+    World w = base; production_object(w, type, -1, 15, 10);
+    check(w, 12, 15, 10, false);
+    w.objects.back().removed = true; check(w, 12, 15, 10, true);
+  }
+  // A unit's collision disc may cross the boundary without occupying the body tile.
+  World boundary = base; production_object(boundary, 0, -1, 14, 10);
+  boundary.objects.back().teleport(15 * kTilePx * 256 - 1, tile_center_fixed(10));
+  check(boundary, 12, 15, 10, true);
+  for (bool brightness : {false, true}) for (int byte : {0, 32, 33, 152}) {
+    World w = base; w.visibility_brightness = brightness;
+    const int width = 40 + int(brightness), height = 40 + 2 * int(brightness);
+    w.visibility.sides.resize(1);
+    auto& layer = w.visibility.sides[0];
+    layer.w = width; layer.h = height; layer.v.assign(size_t(width) * height, brightness ? 152 : 0);
+    layer.v[10 * width + 16] = uint8_t(brightness ? byte : 152 - byte);
+    check(w, 12, 15, 10, byte > 32);
+  }
+  for (int type : {12, 13, 14, 15, 17}) for (int resource : {0, 1, 256, 257}) {
+    World w = base; w.resources.v[10 * 40 + 16] = uint16_t(resource);
+    const bool expected = type == 12 || type == 17 ||
+        ((type == 13 || type == 15) && (resource & 255)) ||
+        ((type == 14 || type == 15) && (resource >> 8));
+    check(w, type, 15, 10, expected);
+    w.resources.v[10 * 40 + 16] = 0;
+    w.resources.v[10 * 40 + 14] = uint16_t(resource);
+    check(w, type, 15, 10, type == 12 || type == 17); // ignored mask cell
+  }
+  World no_yield = base; GameSim empty(rules); empty.init(no_yield);
+  const auto cells = empty.placement_cells(no_yield, 0, 15, 15, 10);
+  CHECK(cells.size() == 2 && std::all_of(cells.begin(), cells.end(),
+      [](const PlacementCell& c) { return c.blocked; }));
+  // Bounds apply to each body cell, rather than just the anchor.
+  World edge = base; edge.objects[0].teleport(tile_center_fixed(35), tile_center_fixed(10));
+  check(edge, 12, 38, 10, true);
+  check(edge, 12, 39, 10, false);
+  edge.objects[0].teleport(tile_center_fixed(5), tile_center_fixed(10));
+  check(edge, 12, 0, 10, true); // ignored west cell lies outside the map
+  // Packets retain the client-approved position even if it becomes invalid.
+  World admitted = base; GameSim sim(rules); sim.init(admitted);
+  admitted.side_state[0].money = 0;
+  CHECK(!sim.can_place(admitted, 0, 12, 30, 30));
+  Command buy; buy.type = Pct::PlaceBuilding; buy.a = 12; buy.b = buy.c = 30; buy.ids = {1};
+  sim.submit(buy); production_steps(sim, admitted, 1);
+  CHECK(admitted.side_state[0].queue.size() == 1 && admitted.side_state[0].money == 0);
+  CHECK(!admitted.side_state[0].queue[0].started && admitted.side_state[0].queue[0].paid == 0);
+  sim.submit(buy); production_steps(sim, admitted, 1);
+  CHECK(admitted.side_state[0].queue.size() == 2 && admitted.objects.size() == 3);
+  admitted.side_state[0].money = 10;
+  production_steps(sim, admitted, 1);
+  CHECK(admitted.side_state[0].queue[0].started && admitted.side_state[0].money == 9);
+}
+
 // Invented map objects and resource bytes exercise both policies without game data.
 static void test_placement_modes() {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
   World base = production_world();
-  production_object(base, 11, 0, 5, 5); base.objects.back().town_hall = true;
+  production_object(base, 11, 0, 8, 8); base.objects.back().town_hall = true;
   base.side_state.resize(8); base.side_state[0].money = 10000;
   base.passability = {40, 40, std::vector<uint8_t>(1600, 2)};
   const auto& barracks = rules->type(14);
@@ -1916,27 +2032,27 @@ static void test_placement_modes() {
     for (int i = 0; i < 49; ++i) {
       const int x = 12 + i % 7 - 3, y = 12 + i / 7 - 3;
       const bool body = barracks.footprint_mask[i] == 2;
-      const bool required = body || (!relaxed && barracks.footprint_mask[i] == 1);
+      const bool required = body;
       World tree = base; tree.terrain.cells[y * 40 + x] = 1u << 16;
-      check(tree, 14, 12, 12, relaxed || !required); // object on otherwise open terrain
+      check(tree, 14, 12, 12, true); // overlay bytes alone are not object-grid occupants
       World rock = base; rock.passability.v[y * 40 + x] = 0;
       check(rock, 14, 12, 12, !required);
       World forest = base; forest.passability.v[y * 40 + x] = 1;
       check(forest, 14, 12, 12, !required);
       World deposit = base; deposit.resources.v[y * 40 + x] = 65 << 8;
-      check(deposit, 14, 12, 12, relaxed || !required);
+      check(deposit, 14, 12, 12, true);
     }
     // Agricultural resources are allowed; farms do not require mineral deposits.
     check(base, 12, 12, 12, true);
     World mineral = base; mineral.resources.v[12 * 40 + 12] = 65 << 8;
-    check(mineral, 12, 12, 12, relaxed);
+    check(mineral, 12, 12, 12, true);
     for (int mine : {13, 48, 66}) {
       check(base, mine, 12, 12, false); // low byte alone is not mineral
       check(mineral, mine, 12, 12, true);
       World rock = mineral; rock.passability.v[12 * 40 + 12] = 0;
-      check(rock, mine, 12, 12, true); // existing mineral-rock exception
+      check(rock, mine, 12, 12, false); // deposits never override terrain
       World tree = mineral; tree.passability.v[12 * 40 + 12] = 1;
-      check(tree, mine, 12, 12, relaxed);
+      check(tree, mine, 12, 12, false);
       World occupied = mineral; production_object(occupied, 0, 0, 12, 12);
       check(occupied, mine, 12, 12, false); // deposit never bypasses units
       occupied = mineral; production_object(occupied, 14, 0, 12, 12);
@@ -1948,11 +2064,11 @@ static void test_placement_modes() {
     check(occupied, 14, 12, 12, false);
     occupied = base; production_object(occupied, 7, 0, 12, 12);
     CHECK(rules->type(7).flier);
-    check(occupied, 14, 12, 12, true);
+    check(occupied, 14, 12, 12, false);
     occupied = base; production_object(occupied, 0, 0, 13, 13);
-    check(occupied, 14, 12, 12, relaxed); // unit in clearance, outside body
-    check(base, 14, 5, 5, false); // town hall body
-    check(base, 14, 8, 5, relaxed); // town hall clearance beyond its body
+    check(occupied, 14, 12, 12, true); // neighbouring units do not block
+    check(base, 14, 8, 8, false); // town hall body
+    check(base, 14, 11, 8, relaxed); // town hall clearance beyond its body
     for (auto edge : {std::pair{0, 12}, {39, 12}, {12, 0}, {12, 39}})
       check(base, 14, edge.first, edge.second, false);
     check(base, 14, 0, 0, false); // required footprint extends off-map
@@ -1966,7 +2082,7 @@ static void test_placement_modes() {
     CHECK(!sim.can_place(reserved, 0, 14, 12, 12));
   }
   // Switching while a ghost is active immediately changes preview and acceptance.
-  World initial = base; initial.terrain.cells[12 * 40 + 12] = 2u << 16;
+  World initial = base; production_object(initial, 13, 0, 15, 12);
   World w = initial; GameSim sim(rules); sim.init(w);
   CommandsUi ui(&sim); Camera cam; cam.set_world(1920, 1920); cam.set_view(796, 700);
   Minimap mm; SDL_Rect panel{796, 0, 204, 493}; auto boxes = CommandsUi::layout(panel, 1);
@@ -1990,7 +2106,7 @@ static void test_placement_modes() {
     if (renderer) {
       SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); SDL_RenderClear(renderer);
       ui.draw_ghost(renderer, w, cam, 12 * 48 + 24, 12 * 48 + 24);
-      SDL_Rect sample{12 * 48 + 24, 12 * 48 + 24, 1, 1}; uint32_t pixel = 0;
+      SDL_Rect sample{13 * 48 + 24, 12 * 48 + 24, 1, 1}; uint32_t pixel = 0;
       CHECK(SDL_RenderReadPixels(renderer, &sample, SDL_PIXELFORMAT_ARGB8888, &pixel, 4) == 0);
       const int red = (pixel >> 16) & 255, green = (pixel >> 8) & 255;
       CHECK(valid ? green > red : red > green);
@@ -2000,16 +2116,20 @@ static void test_placement_modes() {
   };
   check_colour(false);
   Command buy; buy.type = Pct::PlaceBuilding; buy.a = 14; buy.b = buy.c = 12; buy.ids = {1};
-  sim.submit(buy); production_steps(sim, w, 1);
-  CHECK(w.objects.size() == 1 && w.side_state[0].queue.empty());
+  // UI rejects the click before a packet is submitted.
+  click = {}; click.mx = click.my = 12 * 48 + 24;
+  click.pressed[SDL_BUTTON_LEFT] = true;
+  ui.update(click, w, cam, 1, mm, false, panel);
+  CHECK(sim.pending_commands().empty());
+  CHECK(w.objects.size() == 2 && w.side_state[0].queue.empty());
   Command toggle; toggle.type = Pct::SetModifications; toggle.a = 2;
   sim.submit(toggle); production_steps(sim, w, 1);
   CHECK(ui.placement_preview(w, cam, 12 * 48 + 24, 12 * 48 + 24).valid);
   check_colour(true);
   sim.submit(buy); production_steps(sim, w, 1);
-  CHECK(w.objects.size() == 2 && !w.side_state[0].queue.empty());
+  CHECK(w.objects.size() == 3 && !w.side_state[0].queue.empty());
   toggle.a = 0; sim.submit(toggle); production_steps(sim, w, 2);
-  CHECK(!sim.modifications().relaxed_placement && w.objects.size() == 2);
+  CHECK(!sim.modifications().relaxed_placement && w.objects.size() == 3);
   // Already accepted construction is retained when the helper is turned off.
   World replayed = initial;
   auto replay = GameSim::replay(replayed, rules, sim.log(), sim.tick_count());
@@ -2023,7 +2143,7 @@ static void test_mine_construction_flow() {
     World initial = production_world();
     initial.mission.towns[0].index = 4; initial.mission.towns[0].race = race;
     initial.mission.towns[0].type = race ? 2 : 1;
-    production_object(initial, rules->town_building(initial.mission.towns[0].type, race), 4, 5, 5);
+    production_object(initial, rules->town_building(initial.mission.towns[0].type, race), 4, 8, 8);
     initial.objects[0].town_hall = true;
     initial.side_state.resize(8); initial.side_state[0].money = 10000;
     initial.resources.v.assign(1600, 0);
@@ -2033,7 +2153,7 @@ static void test_mine_construction_flow() {
     for (int y = 9; y <= 15; ++y) for (int x = 9; x <= 15; ++x)
       if (GameSim::occupies(r, 12, 12, x, y)) {
         initial.resources.v[y * 40 + x] = 65 << 8;
-        initial.passability.v[y * 40 + x] = 0; // mineral rock, not ordinary clear land
+        initial.passability.v[y * 40 + x] = 2; // deposits on buildable terrain
       }
     World w = initial; GameSim sim(rules, Modifications::faithful()); sim.init(w);
     CHECK(sim.can_place(w, 0, type, 12, 12));
@@ -2041,8 +2161,8 @@ static void test_mine_construction_flow() {
     CHECK(!sim.can_place(w, 0, type, 12, 12, nullptr, nullptr, 1)); // wrong producing town
     CHECK(!sim.can_place(w, 0, type, -1, 12));
     CHECK(!sim.can_place(w, 0, type, INT32_MAX, INT32_MIN));
-    CHECK(sim.can_place(w, 0, 14, 21, 5)); // P radius boundary (16 tiles)
-    CHECK(!sim.can_place(w, 0, 14, 22, 5));
+    CHECK(sim.can_place(w, 0, 14, 14, 8)); // every body cell must remain strictly inside radius 8
+    CHECK(!sim.can_place(w, 0, 14, 16, 8));
 
     w.selection.ids = {1}; CommandsUi ui(&sim);
     Camera cam; cam.set_world(1920, 1920); cam.set_view(796, 700);
@@ -2150,7 +2270,9 @@ static void test_automatic_placement_access() {
   Command buy; buy.type = Pct::Build; buy.a = 12; buy.ids = {1};
   for (int i = 0; i < 12; ++i) sim.submit(buy);
   production_steps(sim, w, duration * 12 + 1);
-  CHECK(w.side_state[0].queue.empty() && w.objects.size() == 13);
+  CHECK(w.objects.size() > 1);
+  // The smaller circle can fill before all twelve farms fit.
+  CHECK(w.objects.size() + w.side_state[0].queue.size() == 13);
   path::NavGrid nav(w.terrain.w, w.terrain.h);
   for (const auto& object : w.objects) {
     if (!object.alive || object.removed) continue;
@@ -2518,7 +2640,7 @@ static void test_mine_audit() {
     World placement = production_world();
     placement.passability = {40, 40, std::vector<uint8_t>(1600, 2)};
     placement.resources.v.assign(1600, 0);
-    production_object(placement, 11, 0, 5, 5); placement.objects.back().town_hall = true;
+    production_object(placement, 11, 0, 8, 8); placement.objects.back().town_hall = true;
     // Move a single deposit through every body, clearance and ignored mask offset.
     for (bool relaxed : {false, true}) for (int cell = 0; cell < 49; ++cell) {
       World w = placement;
@@ -2617,7 +2739,7 @@ static void test_mine_audit() {
     production_steps(sim, w, 600);
     CHECK(!w.objects[0].alive && w.side_state[0].money == money);
     CHECK(w.objects[1].alive && !w.objects[1].removed);
-    production_object(w, 11, 0, 5, 5); w.objects.back().town_hall = true;
+    production_object(w, 11, 0, 8, 8); w.objects.back().town_hall = true;
     CHECK(sim.can_place(w, 0, type, 12, 12));
     move.ids = {2}; sim.submit(move); production_steps(sim, w, 80);
     CHECK(w.objects[1].cur_x > tile_center_fixed(17));
@@ -2999,7 +3121,7 @@ static void test_town_service() {
   CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
   auto base = [] {
     World w = production_world();
-    production_object(w, 11, 0, 5, 5); w.objects.back().town_hall = true;
+    production_object(w, 11, 0, 6, 6); w.objects.back().town_hall = true;
     production_object(w, 11, 1, 30, 30); w.objects.back().town_hall = true;
     return w;
   };
@@ -3415,7 +3537,7 @@ static void test_faithful_profile_hashes() {
 static void test_default_construction_placeholders() {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
   World initial = production_world();
-  production_object(initial, 11, 0, 5, 5); initial.objects.back().town_hall = true;
+  production_object(initial, 11, 0, 14, 15); initial.objects.back().town_hall = true;
   initial.side_state.resize(8); initial.side_state[0].money = 10000;
   World w = initial; GameSim sim(rules, Modifications::faithful()); sim.init(w);
   // Decode the legacy all-off bitset independently of named profile selection.
@@ -3423,7 +3545,7 @@ static void test_default_construction_placeholders() {
   CHECK(sim.state_hash(w) == legacy.state_hash(legacy_world));
   Command unit; unit.type = Pct::Build; unit.a = 0; unit.ids = {1}; sim.submit(unit); legacy.submit(unit);
   Command place; place.type = Pct::PlaceBuilding; place.a = 12; place.ids = {1};
-  place.b = 12; place.c = 12; sim.submit(place); legacy.submit(place);
+  place.b = 12; place.c = 10; sim.submit(place); legacy.submit(place);
   place.b = 18; place.c = 18; sim.submit(place); legacy.submit(place);
   production_steps(sim, w, 1);
   production_steps(legacy, legacy_world, 1);
@@ -3533,16 +3655,16 @@ static void test_construction_resume_completion() {
 static void test_mixed_production_queue() {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
   World w = production_world();
-  production_object(w, 11, 0, 5, 5); w.objects.back().town_hall = true;
+  production_object(w, 11, 0, 14, 15); w.objects.back().town_hall = true;
   production_object(w, 11, 1, 30, 30); w.objects.back().town_hall = true;
   production_object(w, 14, 0, 10, 5);
   w.side_state.resize(8); w.side_state[0].money = 10000;
   World initial = w; GameSim sim(rules, {true}); sim.init(w);
   Command buy; buy.type = Pct::Build; buy.a = 0; buy.ids = {1};
   sim.submit(buy); sim.submit(buy);
-  // Place two repeatable farms, including a second placement on the same site.
+  // Place two repeatable farms at distinct sites inside the town circle.
   Command place; place.type = Pct::PlaceBuilding; place.a = 12; place.ids = {1};
-  place.b = 12; place.c = 12; sim.submit(place); sim.submit(place);
+  place.b = 12; place.c = 10; sim.submit(place);
   place.b = 18; place.c = 18; sim.submit(place);
   buy.ids = {2}; sim.submit(buy);
   production_steps(sim, w, 1);
@@ -3619,7 +3741,7 @@ static void test_mixed_production_queue() {
 
   // A cash stall blocks the default lane, but parallel construction leaves unit training independent.
   for (bool enabled : {false, true}) {
-    World poor = production_world(); production_object(poor, 11, 0, 5, 5);
+    World poor = production_world(); production_object(poor, 11, 0, 14, 15);
     poor.objects.back().town_hall = true;
     GameSim ps(rules, {enabled}); ps.init(poor);
     buy.ids = {1}; buy.a = 14; buy.b = 18; buy.c = 18; ps.submit(buy);
@@ -3642,7 +3764,7 @@ static void test_mixed_production_queue() {
   }
 
   // A waiting item's price and duration use the speed when it starts.
-  World priced = production_world(); production_object(priced, 11, 0, 5, 5);
+  World priced = production_world(); production_object(priced, 11, 0, 14, 15);
   priced.objects.back().town_hall = true;
   GameSim price_sim(rules, Modifications::faithful()); price_sim.init(priced); priced.side_state[0].money = 1000;
   buy.a = 0; price_sim.submit(buy); price_sim.submit(buy); production_steps(price_sim, priced, 1);
@@ -3653,7 +3775,7 @@ static void test_mixed_production_queue() {
   price_sim.submit(cancel); production_steps(price_sim, priced, 1);
   CHECK(priced.side_state[0].queue[0].paid == 200 && priced.side_state[0].queue[0].total == 68);
 
-  World destroyed = production_world(); production_object(destroyed, 11, 0, 5, 5);
+  World destroyed = production_world(); production_object(destroyed, 11, 0, 14, 15);
   destroyed.objects.back().town_hall = true;
   GameSim ds(rules, Modifications::faithful()); ds.init(destroyed); destroyed.side_state[0].money = 10000;
   buy.a = 14; ds.submit(buy); production_steps(ds, destroyed, 1);
@@ -4590,6 +4712,7 @@ int main(int argc, char** argv) {
     test_movement_rules();
     test_sight();
     test_building_placement();
+    test_original_placement_rules();
     test_placement_modes();
     test_mine_construction_flow();
     test_automatic_placement_access();
