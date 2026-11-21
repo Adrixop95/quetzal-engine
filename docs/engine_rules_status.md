@@ -1678,11 +1678,11 @@ and software-renderer pixels without game assets.
 **Independent implementation:** Building and Defence descriptor masks now drive
 placement checks, queued reservations, navigation insertion/removal, upgrades,
 death, cancellation and debug teleport. Occupancy is centred on the clicked tile,
-not inferred from the sprite's pixel bounds. Explicit placement is checked both
-when ordered and before payment/start; a newly occupied waiting site suspends its
-order. Moving ground objects are checked against the occupied tiles using their
-current collision discs. Flying objects and removed/dead objects do not obstruct
-placement. Ordinary structures need clear terrain; mines use the resource map.
+not inferred from the sprite's pixel bounds. Task 150 supersedes the original
+placeholder predicate: the UI checks each body cell before sending a command;
+admission and payment/start do not repeat placement validation. Object tiles
+replace collision discs, including flying objects; dead/removed objects are
+ignored. See [placement rules](placement_rules.md) for V/G evidence boundaries.
 
 Every non-upgrade structure button enters placement mode, including all three
 factions' mines and repeatable farms/defences. The preview follows the current
@@ -1715,10 +1715,10 @@ exit offsets.
 
 | Rule | Evidence | Boundary |
 | --- | --- | --- |
-| Descriptor occupancy and construction frame selector | V existing descriptor/render contracts | Shared mask replaces the sprite rectangle; value-1 clearance semantics remain open |
-| Town-local radius | P | Chebyshev distance at most 16 tiles from the live completed producing hall; original metric and radius need measurement |
-| Terrain and mines | P placement / V resource-map format | Ordinary occupied cells need passability 2. Mines require positive channel B in at least one occupied cell; mineral-bearing cells may use blocked terrain. Deposit threshold, channel naming, terrain exceptions and slope/clearance rules need live controls |
-| Collision and reservations | V engine construction / P original collision geometry | Exact mask overlap, current ground-object discs and waiting-site reservations; mobile disc radii remain provisional |
+| Descriptor occupancy and construction frame selector | V static reference / engine construction | Only mask value 2 affects placement; 0/1 are ignored (`0x409940`) |
+| Town-local radius | V static reference / implemented | Every body cell must satisfy squared distance from the producing hall tile < 64; radius 8 (`0x45bd50`, `0x409940`) |
+| Terrain and resources | V static reference / implemented | Layer 0 nonzero (`.dat >= 2`); no deposit exception or standalone overlay/mineral rejection. Non-defence d60/d61 request A/B; one body cell nonzero in either requested channel suffices |
+| Collision, light and reservations | V static predicate / G engine mapping | Empty body object cells, no orthogonal building neighbours; side byte > 32. Engine uses structure masks and current object tiles; exact grid membership, side-map identity and reservation timing remain G |
 | Valid/blocked preview colours | P | RGBA (60,220,60,110)/(230,50,60,110), outlines alpha 230; original colours, opacity, grid shape and line width are unmeasured |
 | Start, workers, damage growth, completion and refunds | V engine construction / P original timing and worker participation | Shared town queue and prior task 36 refund calculation; no live construction equivalence claimed |
 | New live measurements | P unmeasured | Isolated reference launch failed before the game started; no colours, rules or timings inferred |
@@ -2137,3 +2137,24 @@ No reference was launched here; no new M evidence, measured engine fix or parity
 claim follows from the synthetic checks. Worker travel, stages/timing, original
 payment/refunds, sound/selection/rally, training/spawn, service/protection/HP and
 hall/tree transitions through saves all still require two repeated live runs.
+
+
+## Task 150: original building placement predicate (2026-11-21)
+
+**V static reference / implemented:** radius 8 with strict squared distance for
+all value-2 mask cells, ignored values 0/1, buildable layer 0, empty object tiles,
+four orthogonal building neighbours and a side byte greater than 32. Required
+income channels come from non-defence d60/d61, with an OR across channels and body
+cells and a nonzero threshold. The preview and click use one shared query.
+Admission and production start do not re-run it; admission reserves without
+payment. Replay semantics version is 14. See [placement_rules.md](placement_rules.md)
+for addresses, detailed tests and the optional helper policy.
+
+**G / outstanding:** mapping side +0x690 to engine brightness, exact original
+object-grid membership, missing-mask fallback, anchor guards, hall prerequisites,
+reservation representation, AI site ranking and diagonal planner gaps. The audited
+observer and live placement captures remain missing dependencies; no reference
+process was run and no live placement or whole-game parity is claimed. Synthetic
+regressions use invented maps/descriptors and software-renderer pixels. Older task
+47/101 statements about radius 16, clearance masks, mineral terrain exceptions
+and waiting-site revalidation are superseded by this update.

@@ -718,7 +718,6 @@ void GameSim::apply(World& w, const Command& c) {
     case Pct::PlaceBuilding:
     case Pct::Build: {
       if (!ss) break;
-      const char* why = "";
       int ti = producing_town(w, c.side, c.ids);
       if (ti < 0) break;
       const std::vector<MenuItem> items = menu(w, c.side, ti);
@@ -729,8 +728,9 @@ void GameSim::apply(World& w, const Command& c) {
                         [ti](const QueueItem& q) { return q.town == ti && !q.started; }) >= kProductionQueueCapacity) break;
       const bool place = mi->construct || c.type == Pct::PlaceBuilding;
       if (c.type == Pct::PlaceBuilding && !mi->place) break;
-      if (place && (c.b < 0 || c.c < 0 || c.b >= w.terrain.w || c.c >= w.terrain.h ||
-                            !can_place(w, c.side, c.a, c.b, c.c, &why, nullptr, ti))) break;
+      // Coordinates are bounded for engine storage; placement was checked by
+      // the client. Packet admission neither retests the site nor charges cash.
+      if (place && (c.b < 0 || c.c < 0 || c.b >= w.terrain.w || c.c >= w.terrain.h)) break;
       QueueItem q{c.a, std::max(1, mi->time), std::max(1, mi->time), ti, 0};
       if (place) {
         q.tile_x = c.b; q.tile_y = c.c;
@@ -910,77 +910,67 @@ std::vector<PlacementCell> GameSim::placement_cells(const World& w, int side, in
   const Object* hall = town_hall(w, town);
   const char* global = nullptr;
   if (!hall || hall->side != side || hall->progress < 1000) global = "needs town hall";
-  // P: bounded town-local build area until the original distance metric is measured.
-  else if (std::max(std::abs(tx - px(hall->cur_x) / kTilePx),
-                    std::abs(ty - px(hall->cur_y) / kTilePx)) > 16) global = "too far from town hall";
-  const bool mine = type == 13 || type == 48 || type == 66;
   const bool strict = !modifications_.relaxed_placement;
-  // P: value 1 is treated as clearance until task 66 measures its exact role.
-  // Keep navigation occupancy (value 2) separate from placement requirements.
-  auto required = [strict](const TypeRules& rule, int cx, int cy, int x, int y) {
-    if (strict && rule.has_footprint_mask) {
-      const int dx = x - cx + 3, dy = y - cy + 3;
-      if (dx >= 0 && dx < 7 && dy >= 0 && dy < 7 && rule.footprint_mask[dy * 7 + dx] == 1) return true;
-    }
-    return occupies(rule, cx, cy, x, y);
-  };
+  const bool upgrade = hall && town >= 0 &&
+      upgrade_level(w.mission.towns[size_t(town)].race, type) >= 0;
+  const bool need_a = r.kind != 7 && !upgrade && r.harvest.rate_a != 0;
+  const bool need_b = r.kind != 7 && !upgrade && r.harvest.rate_b != 0;
   int x0, y0, x1, y1; footprint(r, tx, ty, x0, y0, x1, y1);
-  if (strict && r.has_footprint_mask) {
-    for (int i = 0; i < 49; ++i) if (r.footprint_mask[i] == 1) {
-      x0 = std::min(x0, tx + i % 7 - 3); x1 = std::max(x1, tx + i % 7 - 3);
-      y0 = std::min(y0, ty + i / 7 - 3); y1 = std::max(y1, ty + i / 7 - 3);
-    }
-  }
   // Reject pathological fallback descriptors without allocating an unbounded preview.
   if (int64_t(x1) - x0 > 7 || int64_t(y1) - y0 > 7) return {{tx, ty, "invalid footprint"}};
   bool deposit = false;
   std::vector<PlacementCell> cells;
+  const auto* light = visibility_layer(w, side);
   for (int y = y0; y <= y1; ++y) for (int x = x0; x <= x1; ++x) {
-    if (!required(r, tx, ty, x, y)) continue;
-    const bool body = occupies(r, tx, ty, x, y);
-    const bool resource = w.resources.in(x, y) && (w.resources.at(x, y) >> 8) > 0;
-    const bool mineral = mine && body && resource;
-    deposit |= mineral;
-    const char* reason = nullptr;
+    if (!occupies(r, tx, ty, x, y)) continue;
+    const uint16_t resource = w.resources.in(x, y) ? w.resources.at(x, y) : 0;
+    deposit |= (need_a && (resource & 255)) || (need_b && (resource >> 8));
+    const char* reason = global;
     if (!nav_.in_bounds(x, y)) reason = "outside map";
-    else {
-      // P: mineral-bearing rock may host mines; ordinary structures need clear terrain.
-      if (nav_.terrain(x, y) < 2 && (!mineral || (strict && nav_.terrain(x, y) == 1))) reason = "terrain blocked";
-      else if ((!reservation || !reservation->object) && nav_.blocked(x, y, path::MoveClass::Large) && nav_.terrain(x, y) >= 2) reason = "occupied";
-      // P: conservatively reject map overlays, including objects on open .dat
-      // cells. Overlay-specific exceptions still need original-game controls.
-      else if (strict && size_t(y) * w.terrain.w + x < w.terrain.cells.size() && w.terrain.overlay(x, y)) reason = "map object";
-      else if (strict && resource && !mine) reason = "mineral resource";
-      // A known terrain/navigation rejection needs no further collision scans.
-      if (reason) { cells.push_back({x, y, reason}); continue; }
-      // Query structure masks as well: deposits must never bypass a dynamic blocker.
-      for (const auto& object : w.objects) {
-        if (!object.alive || object.removed || object.type < 0 || (reservation && object.id == reservation->object)) continue;
+    else if (!reason) {
+      const int64_t dx = int64_t(x) - px(hall->cur_x) / kTilePx;
+      const int64_t dy = int64_t(y) - px(hall->cur_y) / kTilePx;
+      if (dx * dx + dy * dy >= 64) reason = "too far from town hall";
+      else if (nav_.terrain(x, y) < 2) reason = "terrain blocked";
+      else if ((!reservation || !reservation->object) &&
+          nav_.blocked(x, y, path::MoveClass::Large)) reason = "occupied";
+      // G: use the engine side brightness grid for side +0x690. Placement
+      // reads the tile byte, unlike picking's interpolated brightness.
+      else if (strict && light && (w.visibility_brightness ?
+          light->v[size_t(y) * light->w + x] <= 32 :
+          152 - std::min(152, int(light->v[size_t(y) * light->w + x])) <= 32))
+        reason = "tile not lit";
+      if (!reason) for (const auto& object : w.objects) {
+        if (!object.alive || object.removed || object.type < 0 ||
+            (reservation && object.id == reservation->object)) continue;
         const auto& other = rules_->type(object.type);
         if (other.structure) {
-          // In-place upgrades temporarily remove the old hall's navigation footprint.
-          if (&object == hall && upgrade_level(w.mission.towns[size_t(town)].race, type) >= 0) continue;
+          if (&object == hall && upgrade) continue;
           const int ox = px(object.cur_x) / kTilePx, oy = px(object.cur_y) / kTilePx;
-          // Clearance rings may overlap each other, but never a building body.
-          if (occupies(other, ox, oy, x, y) || (body && required(other, ox, oy, x, y))) reason = "occupied";
-        } else if (!other.flier) {
-          const int64_t ox = px(object.cur_x), oy = px(object.cur_y);
-          const int64_t cx = std::clamp(ox, int64_t(x) * kTilePx, int64_t(x + 1) * kTilePx);
-          const int64_t cy = std::clamp(oy, int64_t(y) * kTilePx, int64_t(y + 1) * kTilePx);
-          if ((ox - cx) * (ox - cx) + (oy - cy) * (oy - cy) < int64_t(other.radius_px) * other.radius_px)
-            reason = "unit in the way";
-        }
+          if (occupies(other, ox, oy, x, y)) reason = "occupied";
+          else if (strict && (occupies(other, ox, oy, x - 1, y) ||
+              occupies(other, ox, oy, x + 1, y) || occupies(other, ox, oy, x, y - 1) ||
+              occupies(other, ox, oy, x, y + 1))) reason = "next to building";
+        } else if (px(object.cur_x) / kTilePx == x &&
+                   px(object.cur_y) / kTilePx == y) reason = "unit in the way";
         if (reason) break;
       }
       if (!reason) for (const auto& state : w.side_state) for (const auto& q : state.queue) {
-        if (&q == reservation || q.tile_x < 0 || q.started) continue;
+        if (&q == reservation || q.tile_x < 0 || q.started || q.object) continue;
         const auto& queued = rules_->type(q.type);
-        if (occupies(queued, q.tile_x, q.tile_y, x, y) || (body && required(queued, q.tile_x, q.tile_y, x, y))) reason = "reserved";
+        if (occupies(queued, q.tile_x, q.tile_y, x, y) || (strict &&
+            (occupies(queued, q.tile_x, q.tile_y, x - 1, y) ||
+             occupies(queued, q.tile_x, q.tile_y, x + 1, y) ||
+             occupies(queued, q.tile_x, q.tile_y, x, y - 1) ||
+             occupies(queued, q.tile_x, q.tile_y, x, y + 1)))) reason = "reserved";
       }
     }
-    cells.push_back({x, y, reason ? reason : global});
+    cells.push_back({x, y, reason});
   }
-  if (mine && !deposit) for (auto& cell : cells) if (!cell.blocked) cell.blocked = "needs mineral deposit";
+  // The resource test is an OR over required channels and all body cells.
+  // A missing deposit clears the entire original output mask.
+  if ((need_a || need_b) && !deposit)
+    for (auto& cell : cells) cell.blocked = "needs income resource";
   return cells;
 }
 
@@ -1064,9 +1054,6 @@ void GameSim::economy(World& w) {
         MenuItem offer;
         for (const auto& m : menu(w, int(s), q.town)) if (m.type == q.type) offer = m;
         if (ss.money < offer.price) { ++i; continue; }
-        if (q.tile_x >= 0 && !can_place(w, int(s), q.type, q.tile_x, q.tile_y, nullptr, &q, q.town)) {
-          ++i; continue;
-        }
         q.started = true;
         q.paid = offer.price;
         // Production advances by an integer fraction of the target's maximum

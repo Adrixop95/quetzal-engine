@@ -2,7 +2,7 @@
 # The generator is tools/playthrough_route.py:demo_game.
 build 14 5 10 3
 await 1000 count 14 >= 1
-harvest 12 5 18 3
+harvest 12 5 2 3
 await 1000 count 12 >= 1
 await 1000 income >= 1
 train 0 2 3
