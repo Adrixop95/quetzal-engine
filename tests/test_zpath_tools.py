@@ -334,6 +334,23 @@ class LogTests(unittest.TestCase):
         self.assertEqual(summary['status'], 'ok')
 
 class LayoutTests(unittest.TestCase):
+    def test_wave_candidate_is_explicit_and_repeatable(self):
+        if not BENCHMARK:
+            self.skipTest('pass path_bench to check the wave candidate')
+        command = [BENCHMARK, '--json', '--n', '1', '--ticks', '600', 'open']
+        baseline = json.loads(subprocess.check_output(command, text=True))
+        candidate = json.loads(subprocess.check_output(command + ['--wave'], text=True))
+        repeat = json.loads(subprocess.check_output(command + ['--wave'], text=True))
+        candidate.pop('ms_per_tick'); repeat.pop('ms_per_tick')
+        self.assertEqual(candidate, repeat)
+        self.assertEqual(candidate['arrived'], 1)
+        self.assertEqual(candidate['ideal_ticks'], baseline['ideal_ticks'])
+        self.assertNotEqual(candidate['makespan'], baseline['makespan'])
+        rejected = subprocess.run(command + ['--wave', '--mod', 'unit_unstick=on'],
+                                  text=True, capture_output=True)
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn('cannot be combined', rejected.stderr)
+
     def test_delayed_group_receives_full_observation_budget(self):
         if not BENCHMARK:
             self.skipTest('pass path_bench to check delayed group budgets')

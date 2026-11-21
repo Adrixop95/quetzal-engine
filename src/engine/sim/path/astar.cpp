@@ -1,4 +1,6 @@
 #include "astar.hpp"
+#include "wave.hpp"
+#include <utility>
 #include <queue>
 
 namespace aztec::path {
@@ -10,7 +12,7 @@ constexpr u32 kStep[8] = {10, 10, 10, 10, 14, 14, 14, 14};
 inline u32 octile(int dx, int dy) { dx = dx < 0 ? -dx : dx; dy = dy < 0 ? -dy : dy; int mn = dx < dy ? dx : dy, mx = dx < dy ? dy : dx; return (u32)(14 * mn + 10 * (mx - mn)); }
 }  // namespace
 
-AStarResult astar(const NavGrid& g, MoveClass cls, Cell start, Cell goal, int wall_penalty) {
+AStarResult legacy_astar(const NavGrid& g, MoveClass cls, Cell start, Cell goal, int wall_penalty) {
   AStarResult res;
   const int w = g.width(), h = g.height();
   if (g.blocked(start.x, start.y, cls) || !g.in_bounds(goal.x, goal.y)) return res;
@@ -43,6 +45,20 @@ AStarResult astar(const NavGrid& g, MoveClass cls, Cell start, Cell goal, int wa
   for (i32 i = (i32)bestIdx; i >= 0; i = parent[i]) res.tiles.push_back({i % w, i / w});
   for (size_t a = 0, b = res.tiles.size(); a + 1 < b; ++a, --b) { Cell t = res.tiles[a]; res.tiles[a] = res.tiles[b - 1]; res.tiles[b - 1] = t; }
   return res;
+}
+
+AStarResult astar(const NavGrid& g, MoveClass cls, Cell start, Cell goal, int wall_penalty) {
+  if (cls == MoveClass::Water) return legacy_astar(g, cls, start, goal, wall_penalty);
+  auto wave = wave_search(g, cls, start, goal);
+  AStarResult result;
+  result.found = wave.found && !wave.extraction_failed;
+  result.expanded = wave.expanded;
+  if (wave.tiles.size() >= 2) {
+    Cell end = wave.tiles.back();
+    result.cost = (wave.cells[size_t(end.y) * g.width() + end.x] >> 4) - 2;
+  }
+  result.tiles = std::move(wave.tiles);
+  return result;
 }
 
 std::vector<Vec2> smooth_path(const NavGrid& g, MoveClass cls, const std::vector<Cell>& tiles, i32 radius) {

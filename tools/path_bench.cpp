@@ -1,7 +1,7 @@
 // Benchmark: runs the movement-experiment courses (same layouts as tools/make_zpath.py in the original game) through
 // the new deterministic MoveSystem and prints the same metrics as tools/zpath_analyze.py.
 // usage: path_bench [--json|--describe|--smoke] [--n 1,10,30] [--ticks N]
-//                   [--mod unit_unstick=on|off] [--unstick-scenarios] [course...]
+//                   [--wave] [--mod unit_unstick=on|off] [--unstick-scenarios] [course...]
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
@@ -18,7 +18,7 @@ using namespace aztec::path;
 
 static double optimal_px(const Course& c, Cell a, Cell b) {
   NavGrid g(c.w, c.h); g.load_dat(c.w, c.h, c.dat.data());
-  AStarResult r = astar(g, MoveClass::Small, a, b, 0);
+  AStarResult r = legacy_astar(g, MoveClass::Small, a, b, 0);
   double px = 0;
   for (size_t i = 1; i < r.tiles.size(); ++i) px += (r.tiles[i].x != r.tiles[i - 1].x && r.tiles[i].y != r.tiles[i - 1].y) ? 68 : 48;
   return px;
@@ -26,11 +26,11 @@ static double optimal_px(const Course& c, Cell a, Cell b) {
 
 struct Result { std::string course; int n; double success, mean_ratio, mean_time_ratio, ms_per_tick; int arrived, makespan, median, lost, max_idle, ideal; double mean_revisits; u64 hash; u64 fields, stuck; int overlaps, settled, ticks, stuck_units; u64 repaths, swaps, sidesteps, relocations, stall_windows; std::vector<int> arrivals; };
 
-static Result run(const std::string& name, int n, int max_ticks, bool unstick) {
+static Result run(const std::string& name, int n, int max_ticks, bool unstick, bool wave) {
   Course c;
   if (!make_course(name, n, c)) throw std::runtime_error("unknown course: " + name);
   NavGrid g(c.w, c.h); g.load_dat(c.w, c.h, c.dat.data());
-  MoverConfig config; config.unit_unstick = unstick;
+  MoverConfig config; config.unit_unstick = unstick; config.original_ground = wave;
   MoveSystem ms(g, config);
   const int ng = (int)c.groups.size();
   std::vector<std::vector<u32>> ids(ng);
@@ -100,7 +100,7 @@ static Result run(const std::string& name, int n, int max_ticks, bool unstick) {
 }
 
 int main(int argc, char** argv) {
-  bool unstick = false; bool adversarial = false; bool json = false; std::vector<int> ns = {1, 10, 30}; int max_ticks = 1490; bool smoke = false, describe = false; std::vector<std::string> courses;
+  bool wave = false; bool unstick = false; bool adversarial = false; bool json = false; std::vector<int> ns = {1, 10, 30}; int max_ticks = 1490; bool smoke = false, describe = false; std::vector<std::string> courses;
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--mod") && i + 1 < argc) {
       std::string option = argv[++i];
@@ -108,6 +108,7 @@ int main(int argc, char** argv) {
       else if (option == "unit_unstick=off") unstick = false;
       else { fprintf(stderr, "invalid modification\n"); return 2; }
     }
+    else if (!strcmp(argv[i], "--wave")) wave = true;
     else if (!strcmp(argv[i], "--unstick-scenarios")) adversarial = true;
     else if (!strcmp(argv[i], "--smoke")) smoke = true;
     else if (!strcmp(argv[i], "--describe")) describe = true;
@@ -118,6 +119,9 @@ int main(int argc, char** argv) {
   }
   if (max_ticks <= 0 || ns.empty() || std::any_of(ns.begin(), ns.end(), [](int n) { return n <= 0 || n > 100; })) {
     fprintf(stderr, "ticks must be positive and unit counts must be in 1..100\n"); return 2;
+  }
+  if (wave && unstick) {
+    fprintf(stderr, "the wave candidate cannot be combined with unit_unstick=on\n"); return 2;
   }
   if (smoke) { ns = {30}; courses = {"gap1", "corr1", "rooms", "clusters"}; max_ticks = 700; }
   if (adversarial) courses = {"unstick_column", "unstick_box", "unstick_forest", "unstick_stationary"};
@@ -137,9 +141,9 @@ int main(int argc, char** argv) {
       printf("],\"start\":[%d,%d],\"goal\":[%d,%d]}\n", validated.start.x, validated.start.y, validated.goal.x, validated.goal.y);
       continue;
     }
-    Result r = run(c, n, max_ticks, unstick);
+    Result r = run(c, n, max_ticks, unstick, wave);
     if (smoke) {
-      Result repeat = run(c, n, max_ticks, unstick);
+      Result repeat = run(c, n, max_ticks, unstick, wave);
       if (r.arrived != n || r.hash != repeat.hash || r.overlaps != 0) ++failures;
     }
     if (json) {

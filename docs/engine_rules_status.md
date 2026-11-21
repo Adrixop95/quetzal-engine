@@ -19,6 +19,42 @@ keeps group destination slots in the anchor's visible arrival area. This correct
 wall-side stalls in synthetic engine tests; reference formation parity remains open.
 Legend: **V** = verified against the original (code or screenshot), **M** = measured on the recompiled original, **P** = placeholder (invented, to be replaced).
 
+## Original wave search (task 152, partial, 2026-11-21)
+
+V specification / engine construction: ground point queries now use the round
+wave described in [pathfinding_wave.md](pathfinding_wave.md), with framed u16
+labels, departure delays 1/2/4, equal diagonal costs, unrestricted corners,
+documented expansion/extraction order and Chebyshev-ring fallback. Tests cover
+fog/occupancy overrides, blocked starts/goals, radius outlines and goal lists.
+Water and legacy field comparisons explicitly retain the old octile query.
+
+V rules / synthetic candidate only: an opt-in tile-reserving mover implements
+one owned tile released/reserved at step start, straight/+45/-45 side tests,
+two-requester admission with retry priority, eight-step memory, Marine norm and
+velocity arithmetic, and Truck/Headtruck turn/brake helpers. Candidate hashes
+include pending paths, reservations, admission, retries, ownership/fog and vehicle
+state. These rules are **not promoted to GameSim's default movement**.
+
+G integration: tactic anchors, local goal lists, connected-member look-ahead,
+formation scans/timers, group margin-class selection, side-fog alignment and vehicle
+model scheduling are unresolved. The documented three-way extraction tie can
+select a blocked non-candidate on a synthetic map; it reports an explicit failure
+instead of returning a malformed route. Growable fronts and a label-wrap guard
+are deliberate engine safety extensions, not verified reference behavior.
+
+V engine measurement: the candidate has 585/656 arrivals, 71 lost and 53 stuck
+across the 48 benchmark cases. A default-promotion experiment failed seven
+existing suites, including sustained AI and faithful playthrough stress (an earlier candidate
+that applied margin layers to members). Base/member versus margin/group layers
+are now explicit; full tactic promotion remains open. The
+game therefore retains disc/flow movement; default benchmark metrics and all 48
+hashes remain unchanged (656/656 arrivals, zero stuck). Existing acceptance
+assertions are retained. The original executable was not run. Only 14 original
+CSV rows are usable, including seven explored rows; failed captures do not
+establish movement behavior. See [implementation and before/after tables](pathfinding_implementation.md)
+for V/G boundaries and the remaining promotion requirements. Full original
+pathfinding parity and the requested default replacement remain incomplete.
+
 ## Cursor confinement (task 39, 2026-10-29)
 
 **Engine presentation policy; reference parity unverified.** Interactive focused
