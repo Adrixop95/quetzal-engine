@@ -65,9 +65,9 @@ class Screen {
   bool run(FrontendResult& out, const std::string& open_briefing);
 
  private:
-  enum class Mode { Main, Campaign, Custom, Briefing, Options, Audio, Modifications, Load, Credits, Controls, CustomSetup, Loading };
+  enum class Mode { Main, Campaign, Custom, Briefing, Options, Audio, Modifications, Load, Credits, Controls, CustomSetup, Loading, Settings };
   static const char* mode_name(Mode mode) {
-    static const char* names[] = {"main", "campaign", "custom", "briefing", "options", "audio", "modifications", "load", "credits", "controls", "custom-setup", "loading"};
+    static const char* names[] = {"main", "campaign", "custom", "briefing", "options", "audio", "modifications", "load", "credits", "controls", "custom-setup", "loading", "settings"};
     return names[int(mode)];
   }
 
@@ -146,6 +146,7 @@ class Screen {
   int armed_x_ = -1, armed_y_ = -1;
   CampaignProgress progress_;
   AudioOptions audio_options_;
+  SettingsOptions settings_options_;
   ModificationOptions modification_options_;
   SaveLoadMenu slots_;
   TextOverlay credits_;
@@ -280,6 +281,7 @@ void Screen::frame_end() {
   const uint32_t cursor_ms = scripted_ ? uint32_t(capture_frame_ * 1000 / 12)
       : opts_.menu_script.empty() ? SDL_GetTicks() : uint32_t(uint64_t(frame_) * 1000 / 60);
   cursor_.draw(win_.renderer(), store_, in_.mx, in_.my, CursorKind::Menu, std::max(1, int(std::lround(L_.s))), cursor_ms);
+  if (!win_.apply_gamma(opts_.gamma)) { failed_ = quit_ = true; }
   if (!capture_shot_.empty()) save_png(win_.renderer(), capture_shot_);
   ++capture_frame_;
   if (!request_.shot.empty() && !save_png(win_.renderer(), request_.shot)) {
@@ -312,7 +314,11 @@ void Screen::frame_end() {
            << ",\"fog\":" << (opts_.fog ? "true" : "false") << ",\"light\":" << (opts_.light ? "true" : "false")
            << ",\"sfx\":" << opts_.sfx_volume << ",\"music\":" << opts_.music_volume << ",\"speech\":" << opts_.speech_volume
            << ",\"acknowledgement\":" << (opts_.acknowledgement ? "true" : "false")
-           << ",\"subtitles\":" << (opts_.subtitles ? "true" : "false") << '}';
+           << ",\"subtitles\":" << (opts_.subtitles ? "true" : "false")
+           << ",\"width\":" << opts_.window.width << ",\"height\":" << opts_.window.height
+           << ",\"gamma\":" << opts_.gamma << ",\"sampling_rate\":" << opts_.sampling_rate
+           << ",\"speech_style\":" << opts_.speech_style << ",\"game_speed_ms\":" << opts_.game_speed_ms
+           << ",\"scroll_speed\":" << opts_.scroll_speed << ",\"network_provider\":" << opts_.network_provider << '}';
     trace_ << ",\"quit\":" << (quit_ ? "true" : "false") << ",\"capture\":";
     trace_string(trace_, request_.shot);
     trace_ << ",\"background_image\":" << background_image_ << ",\"audio_observed\":false}\n";
@@ -560,13 +566,29 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
         background(284);
         audio_options_.update(in_, opts_, ow_, oh_, std::max(1, int(L_.s)));
         audio_options_.draw(win_.renderer(), font_, opts_, ow_, oh_, std::max(1, int(L_.s)), false);
-        if (!audio_options_.open) mode_ = Mode::Options;
+        if (audio_options_.settings_requested) {
+          audio_options_.settings_requested = false; mode_ = Mode::Settings; settings_options_.open = true;
+        } else if (!audio_options_.open) mode_ = Mode::Options;
         break;
       }
       case Mode::Modifications: {
         modification_options_.update(in_, opts_, ow_, oh_, std::max(1, int(L_.s)));
         modification_options_.draw(win_.renderer(), font_, opts_, ow_, oh_, std::max(1, int(L_.s)));
         if (!modification_options_.open) mode_ = Mode::Options;
+        break;
+      }
+      case Mode::Settings: {
+        background(284);
+        const int previous_width = opts_.window.width, previous_height = opts_.window.height;
+        settings_options_.update(in_, opts_, ow_, oh_, std::max(1, int(L_.s)));
+        if ((previous_width != opts_.window.width || previous_height != opts_.window.height) &&
+            !win_.set_size(opts_.window.width, opts_.window.height)) {
+          opts_.window.width = previous_width; opts_.window.height = previous_height;
+          save_frontend_options(user_file("frontend-options.txt"), opts_);
+          std::fprintf(stderr, "Requested resolution is unavailable\n");
+        }
+        settings_options_.draw(win_.renderer(), font_, opts_, ow_, oh_, std::max(1, int(L_.s)));
+        if (!settings_options_.open) mode_ = Mode::Options;
         break;
       }
       case Mode::Options: {
@@ -577,6 +599,9 @@ bool Screen::run(FrontendResult& out, const std::string& open_briefing) {
         Button b2{250, 225, 300, 40, std::string("Edge scrolling: ") + (opts_.edge_scroll ? "on" : "off")};
         Button b3{250, 280, 300, 40, std::string("Fog of war: ") + (opts_.fog ? "on" : "off")};
         Button b4{250, 335, 300, 40, std::string("Day / night tint: ") + (opts_.light ? "on" : "off")};
+        Button settings{570, 170, 210, 40, "More settings"};
+        draw_button(settings);
+        if (clicked(settings)) { mode_ = Mode::Settings; settings_options_.open = true; }
         Button sound{250, 390, 300, 40, "Audio"};
         Button mods{250, 440, 300, 40, "Game modifications"};
         Button controls{560, 495, 190, 40, "Controls"}; draw_button(controls);
@@ -625,7 +650,7 @@ void AudioOptions::update(const Input& in, Options& o, int w, int h, int sc) {
   if (in.hit(SDL_SCANCODE_ESCAPE) || (in.hit(SDL_SCANCODE_RETURN) && !in.alt)) open = false;
   if (!in.pressed[SDL_BUTTON_LEFT]) return;
   const SDL_Point point{in.mx, in.my};
-  for (int i = 0; i < 6; ++i) {
+  for (int i = 0; i < 7; ++i) {
     const auto rect = row(i, w, h, sc);
     if (!SDL_PointInRect(&point, &rect)) continue;
     if (i < 3) {
@@ -633,7 +658,8 @@ void AudioOptions::update(const Input& in, Options& o, int w, int h, int sc) {
       *volumes[i] = std::clamp(*volumes[i] + (in.mx < rect.x + rect.w / 2 ? -0.1f : 0.1f), 0.f, 1.f);
     } else if (i == 3) o.acknowledgement = !o.acknowledgement;
     else if (i == 4) o.subtitles = !o.subtitles;
-    else open = false;
+    else if (i == 5) open = false;
+    else { open = false; settings_requested = true; }
     if (i < 5 && !save_frontend_options(user_file("frontend-options.txt"), o))
       std::fprintf(stderr, "Cannot persist audio options\n");
   }
@@ -645,12 +671,78 @@ void AudioOptions::draw(SDL_Renderer* r, const Font& font, const Options& o, int
   std::string labels[] = {"-  Effects: " + std::to_string(int(std::lround(o.sfx_volume * 100))) + "%  +",
       "-  Music: " + std::to_string(int(std::lround(o.music_volume * 100))) + "%  +",
       "-  Speech: " + std::to_string(int(std::lround(o.speech_volume * 100))) + "%  +",
-      std::string("Acknowledgements: ") + (o.acknowledgement ? "on" : "off"),
-      std::string("Subtitles: ") + (o.subtitles ? "on" : "off"), "Back"};
-  for (int i = 0; i < 6; ++i) {
+      std::string("Confirmation speech: ") + (o.acknowledgement ? "on" : "off"),
+      std::string("Subtitles: ") + (o.subtitles ? "on" : "off"), "Back", "Other settings"};
+  for (int i = 0; i < 7; ++i) {
     const auto rect = row(i, w, h, sc);
     SDL_SetRenderDrawColor(r, 55, 42, 25, 255); SDL_RenderFillRect(r, &rect);
     const int ts = 2 * sc;
+    font.draw(r, rect.x + (rect.w - font.width(labels[i], ts)) / 2,
+              rect.y + (rect.h - font.height(ts)) / 2, labels[i], ts, {245, 230, 200, 255});
+  }
+}
+
+SDL_Rect SettingsOptions::row(int index, int w, int h, int sc) {
+  const int width = std::min((w - 24) / 2, 340 * sc);
+  const int stride = std::min(52 * sc, (h - 72) / 5);
+  return {w / 2 - width - 4 + (index / 5) * (width + 8),
+          (h - stride * 5) / 2 + (index % 5) * stride, width, stride - 8};
+}
+
+void SettingsOptions::update(const Input& in, Options& o, int w, int h, int sc) {
+  if (!open) return;
+  if (audio.open) { audio.update(in, o, w, h, sc); audio.settings_requested = false; return; }
+  if (in.hit(SDL_SCANCODE_ESCAPE) || (in.hit(SDL_SCANCODE_RETURN) && !in.alt)) { open = false; return; }
+  if (!in.pressed[SDL_BUTTON_LEFT]) return;
+  const SDL_Point point{in.mx, in.my};
+  for (int i = 0; i < 10; ++i) {
+    const auto rect = row(i, w, h, sc);
+    if (!SDL_PointInRect(&point, &rect)) continue;
+    const int direction = in.mx < rect.x + rect.w / 2 ? -1 : 1;
+    switch (i) {
+      case 0:
+        if (o.window.width == 800 && o.window.height == 600) { o.window.width = 1024; o.window.height = 768; }
+        else { o.window.width = 800; o.window.height = 600; }
+        break;
+      case 1: o.gamma = std::clamp(std::round((o.gamma + direction * 0.1) * 10) / 10, 0.5, 2.5); break;
+      case 2: {
+        const int rates[] = {11025, 22050, 44100};
+        int index = o.sampling_rate == 11025 ? 0 : o.sampling_rate == 22050 ? 1 : 2;
+        o.sampling_rate = rates[(index + direction + 3) % 3]; break;
+      }
+      case 3: o.acknowledgement = !o.acknowledgement; break;
+      case 4: o.speech_style = (o.speech_style + direction + 4) % 4; break;
+      case 5: o.game_speed_ms = std::clamp(o.game_speed_ms - direction * 5, 60, 200); break;
+      case 6: o.scroll_speed = std::clamp(o.scroll_speed + direction * 4, 20, 80); break;
+      case 7: o.network_provider = 1 - o.network_provider; break;
+      case 8: audio.open = true; break;
+      case 9: open = false; break;
+    }
+    if (i < 8 && !save_frontend_options(user_file("frontend-options.txt"), o))
+      std::fprintf(stderr, "Cannot persist player settings\n");
+    break;
+  }
+}
+
+void SettingsOptions::draw(SDL_Renderer* r, const Font& font, const Options& o, int w, int h, int sc) const {
+  if (!open) return;
+  if (audio.open) { audio.draw(r, font, o, w, h, sc); return; }
+  SDL_SetRenderDrawColor(r, 20, 18, 14, 255); SDL_RenderClear(r);
+  static const char* styles[] = {"Auto", "Ross", "Aztec", "Cathayan"};
+  const std::string labels[] = {
+      "Resolution: " + std::to_string(o.window.width) + "x" + std::to_string(o.window.height),
+      "- Gamma: " + std::to_string(int(std::lround(o.gamma * 100))) + "% +",
+      "Sampling: " + std::to_string(o.sampling_rate) + " Hz",
+      std::string("Confirmation speech: ") + (o.acknowledgement ? "on" : "off"),
+      std::string("Speech style: ") + styles[o.speech_style],
+      "- Game speed: " + std::to_string(o.game_speed_ms) + " ms +",
+      "- Scroll speed: " + std::to_string(o.scroll_speed) + " +",
+      std::string("Protocol: ") + (o.network_provider ? "IPX" : "TCP/IP") + " (unavailable)", "Audio volumes", "Back"};
+  for (int i = 0; i < 10; ++i) {
+    const auto rect = row(i, w, h, sc);
+    SDL_SetRenderDrawColor(r, 55, 42, 25, 255); SDL_RenderFillRect(r, &rect);
+    int ts = 2 * sc;
+    while (ts > 1 && (font.width(labels[i], ts) > rect.w - 8 || font.height(ts) > rect.h - 4)) --ts;
     font.draw(r, rect.x + (rect.w - font.width(labels[i], ts)) / 2,
               rect.y + (rect.h - font.height(ts)) / 2, labels[i], ts, {245, 230, 200, 255});
   }
@@ -665,7 +757,7 @@ void ModificationOptions::update(const Input& in, Options& options, int w, int h
   if (in.hit(SDL_SCANCODE_ESCAPE)) open = false;
   if (!in.pressed[SDL_BUTTON_LEFT]) return;
   SDL_Point point{in.mx, in.my};
-  for (int i = 0; i < 6; ++i) {
+  for (int i = 0; i < 7; ++i) {
     const auto rect = row(i, w, h, sc);
     if (!SDL_PointInRect(&point, &rect)) continue;
     if (i == 5) { open = false; return; }
@@ -687,7 +779,7 @@ void ModificationOptions::draw(SDL_Renderer* r, const Font& font, const Options&
   SDL_SetRenderDrawColor(r, 20, 18, 14, 255); SDL_RenderClear(r);
   const auto top = row(0, w, h, sc);
   font.draw(r, top.x, top.y - 44 * sc, "Game modifications (F9)", 2 * sc, {245, 230, 200, 255});
-  for (int i = 0; i < 6; ++i) {
+  for (int i = 0; i < 7; ++i) {
     const auto rect = row(i, w, h, sc);
     std::string label;
     if (i == 5) label = "Back";
@@ -789,7 +881,7 @@ void PauseMenu::draw(SDL_Renderer* r, const Font& font, int ow, int oh, int sc) 
   SDL_Rect all{0, 0, ow, oh};
   SDL_SetRenderDrawColor(r, 0, 0, 0, 150);
   SDL_RenderFillRect(r, &all);
-  static const char* labels[9] = {"Resume", "Mission objectives", "Audio", "Save game", "Load game", "Restart mission", "Main menu", "Quit", "Game modifications"};
+  static const char* labels[9] = {"Resume", "Mission objectives", "Audio / options", "Save game", "Load game", "Restart mission", "Main menu", "Quit", "Game modifications"};
   int mx, my;
   SDL_GetMouseState(&mx, &my);
   for (int i = 0; i < 9; i++) {

@@ -2,6 +2,7 @@
 #pragma once
 #include <SDL.h>
 #include <string>
+#include <vector>
 
 namespace aztec::engine {
 
@@ -19,6 +20,10 @@ class Window {
  public:
   ~Window();
   bool create(const WindowOptions& o);
+  bool set_size(int width, int height);
+  // G: portable full-frame gamma, including menus and software-rendered captures.
+  bool apply_gamma(double gamma);
+  static uint8_t gamma_channel(uint8_t value, double gamma);
   bool set_mode(DisplayMode m);
   DisplayMode mode() const { return mode_; }
   void cycle_borderless();    // F11
@@ -38,6 +43,9 @@ class Window {
   bool vsync() const { return vsync_; }
 
  private:
+  SDL_Texture* gamma_texture_ = nullptr;
+  int gamma_width_ = 0, gamma_height_ = 0;
+  std::vector<uint8_t> gamma_pixels_;
   SDL_Window* win_ = nullptr;
   SDL_Renderer* ren_ = nullptr;
   DisplayMode mode_ = DisplayMode::Windowed;

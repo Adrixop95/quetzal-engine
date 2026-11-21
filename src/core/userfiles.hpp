@@ -12,7 +12,7 @@ namespace aztec {
 // 224-byte options block into each profile file.
 struct PlayerOptions {          // block at plr+0x4c; field offsets are relative to the block
   uint32_t acknowledgement = 1; // +0x08 bool (registry Sound\Acknowledgement)
-  uint32_t unit_speed_mode = 0; // +0x0c enum 0..3 (cycles a button label; meaning unverified)
+  uint32_t speech_style = 0;    // V: +0x0c Auto / Ross / Aztec / Cathayan voice family
   uint32_t sfx_volume = 0;      // +0x94
   uint32_t music_volume = 0;    // +0x98
   uint32_t speech_volume = 0;   // +0x9c

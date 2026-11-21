@@ -30,11 +30,13 @@ AudioSystem::~AudioSystem() {
 void AudioSystem::callback(void* user, Uint8* stream, int len) {
   AudioSystem* a = static_cast<AudioSystem*>(user);
   std::lock_guard<std::mutex> lock(a->mu_);
-  a->mixer_.mix(reinterpret_cast<int16_t*>(stream), len / 4);
+  a->mixer_.mix_at_rate(reinterpret_cast<int16_t*>(stream), len / 4, a->sampling_rate_);
 }
 
-bool AudioSystem::init(const std::string& game_dir, bool open_device) {
+bool AudioSystem::init(const std::string& game_dir, bool open_device, int sampling_rate) {
+  if (sampling_rate != 11025 && sampling_rate != 22050 && sampling_rate != kMixRate) return false;
   if (dev_) { SDL_CloseAudioDevice(dev_); dev_ = 0; }
+  sampling_rate_ = sampling_rate;
   stop_effects(); stop_music(); tracks_.clear(); cache_.clear();
   std::string snd = find_file_ci(game_dir + "/Res", "Snd.xbe");
   bank_ok_ = !snd.empty() && bank_.open(snd);
@@ -47,14 +49,35 @@ bool AudioSystem::init(const std::string& game_dir, bool open_device) {
       for (const MusicTrack& m : t) tracks_.push_back({int(m.number), {f, m}});
   }
   if (!open_device) return bank_ok_;
-  if (!SDL_WasInit(SDL_INIT_AUDIO) && SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) { std::fprintf(stderr, "note: audio unavailable (%s)\n", SDL_GetError()); return bank_ok_; }
+  this->open_device();
+  return bank_ok_;
+}
+
+bool AudioSystem::open_device() {
+  if (!SDL_WasInit(SDL_INIT_AUDIO) && SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) return false;
   SDL_AudioSpec want{};
-  want.freq = kMixRate; want.format = AUDIO_S16SYS; want.channels = 2; want.samples = 1024;
+  want.freq = sampling_rate_; want.format = AUDIO_S16SYS; want.channels = 2; want.samples = 1024;
   want.callback = &AudioSystem::callback; want.userdata = this;
   dev_ = SDL_OpenAudioDevice(nullptr, 0, &want, nullptr, 0);
-  if (!dev_) { std::fprintf(stderr, "note: no audio device (%s)\n", SDL_GetError()); return bank_ok_; }
+  if (!dev_) { std::fprintf(stderr, "note: no audio device (%s)\n", SDL_GetError()); return false; }
   SDL_PauseAudioDevice(dev_, 0);
-  return bank_ok_;
+  return true;
+}
+
+bool AudioSystem::set_sampling_rate(int rate) {
+  if (rate != 11025 && rate != 22050 && rate != kMixRate) return false;
+  if (rate == sampling_rate_) return true;
+  const bool reopen = dev_ != 0;
+  if (dev_) { SDL_CloseAudioDevice(dev_); dev_ = 0; }
+  sampling_rate_ = rate;
+  return !reopen || open_device();
+}
+
+uint32_t AudioSystem::play_speech_set(uint32_t ross_set, int race, int style, bool ack) {
+  if (style < 0 || style > 3 || race < 0 || race > 2 || (ack && !acknowledgement)) return 0;
+  const int family = style ? style - 1 : race;
+  const uint32_t id = choose(ross_set + uint32_t(family) * 100);
+  return play_speech(id, ack);
 }
 
 void AudioSystem::set_volumes(float sfx, float music, float speech) {

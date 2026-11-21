@@ -10,6 +10,10 @@ constexpr double kSimStep = 1.0 / kSimHz;
 class FixedStepper {
  public:
   explicit FixedStepper(double step = kSimStep, int max_catchup = 5) : step_(step), max_(max_catchup) {}
+  // Preserve interpolation phase when changing speed; paused time is never accumulated.
+  void set_step(double step) {
+    if (step > 0 && step != step_) { acc_ = acc_ / step_ * step; step_ = step; }
+  }
   // Feed wall-clock seconds; returns how many simulation ticks to run now.
   int advance(double dt) {
     acc_ += std::min(dt, 0.25);

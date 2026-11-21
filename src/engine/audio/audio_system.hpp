@@ -30,7 +30,7 @@ class AudioSystem {
  public:
   ~AudioSystem();
   // game_dir holds Res/Snd.xbe and Music/*.xbe. Returns whether the effects bank is readable; music loads independently.
-  bool init(const std::string& game_dir, bool open_device = true);
+  bool init(const std::string& game_dir, bool open_device = true, int sampling_rate = kMixRate);
   // Called on the main thread after successful playback requests, also without a device.
   std::function<void(const AudioEvent&)> event_sink;
   uint64_t event_tick = 0;
@@ -39,6 +39,10 @@ class AudioSystem {
   void loop_at(uint64_t source, uint32_t set, float x, float y, float cx, float cy);
   void end_scene_tick();
   void stop_effects();
+  bool set_sampling_rate(int rate);
+  int sampling_rate() const { return sampling_rate_; }
+  // V: explicit style overrides the speaker's race; set membership comes from Snd.xbe.
+  uint32_t play_speech_set(uint32_t ross_set, int race, int style, bool is_acknowledgement);
   bool device_ok() const { return dev_ != 0; }
   bool bank_ok() const { return bank_ok_; }
   void set_volumes(float sfx, float music, float speech = 0.8f);
@@ -74,6 +78,8 @@ class AudioSystem {
   std::shared_ptr<const Pcm> sound_pcm(uint32_t id);
   void pick_and_play_music();
 
+  bool open_device();
+  int sampling_rate_ = kMixRate;
   SDL_AudioDeviceID dev_ = 0;
   std::mutex mu_;
   Mixer mixer_;

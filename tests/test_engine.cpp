@@ -520,6 +520,19 @@ static void test_pure() {
   CHECK(st.alpha() > 0 && st.alpha() < 1);
   CHECK(st.advance(10.0) <= 5);  // spiral protection
 
+  // Wall-clock speed changes do not alter logical simulation updates.
+  for (int interval : {60, 83, 200}) {
+    FixedStepper speed(interval / 1000.0);
+    int ticks = 0;
+    for (int frame = 0; frame < 10000; ++frame) ticks += speed.advance(0.001);
+    CHECK(std::abs(ticks - 10000 / interval) <= 1);
+  }
+  FixedStepper changing(0.2);
+  CHECK(changing.advance(0.1) == 0);
+  changing.set_step(0.06); CHECK(std::abs(changing.alpha() - 0.5) < 0.00001);
+  CHECK(changing.advance(0.031) == 1);
+  changing.reset(); CHECK(changing.advance(0.059) == 0);
+
   // interpolation
   Object o;
   o.teleport(to_fixed(100), to_fixed(100));

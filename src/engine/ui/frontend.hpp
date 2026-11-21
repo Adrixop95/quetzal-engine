@@ -43,10 +43,20 @@ class PauseMenu {
 // Presentation-only controls shared by the front-end and paused mission.
 class AudioOptions {
  public:
-  bool open = false;
+  bool open = false, settings_requested = false;
   static SDL_Rect row(int index, int width, int height, int scale);
   void update(const Input& in, Options& options, int width, int height, int scale);
   void draw(SDL_Renderer* r, const Font& font, const Options& options, int width, int height, int scale, bool backdrop = true) const;
+};
+
+// Shared settings page, available before and during a mission.
+class SettingsOptions {
+ public:
+  bool open = false;
+  AudioOptions audio;
+  static SDL_Rect row(int index, int width, int height, int scale);
+  void update(const Input& in, Options& options, int width, int height, int scale);
+  void draw(SDL_Renderer* r, const Font& font, const Options& options, int width, int height, int scale) const;
 };
 
 class ModificationOptions {

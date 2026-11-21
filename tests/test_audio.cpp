@@ -382,5 +382,49 @@ int main(int argc, char** argv) {
   CHECK(fallback.current_track() == 0 && !fallback.mixer().music_playing() && music_events.empty());
   fallback.start_music(1, 15, 0); // an exact invalid track must not select another
   CHECK(fallback.current_track() == 0 && music_events.empty());
+  // Output-rate conversion preserves stream duration and channel independence.
+  for (int rate : {11025, 22050, 44100}) {
+    Mixer conversion; conversion.sfx_volume = conversion.music_volume = 1;
+    const int factor = kMixRate / rate;
+    auto tone = std::make_shared<Pcm>(80 * 2);
+    for (int i = 0; i < 80; ++i) { (*tone)[i * 2] = 800; (*tone)[i * 2 + 1] = -400; }
+    conversion.play(tone, 1, 1);
+    conversion.play_music(tone, tone->data(), 80);
+    std::vector<int16_t> converted(size_t(80 / factor) * 2);
+    conversion.mix_at_rate(converted.data(), 80 / factor, rate);
+    for (size_t i = 0; i < converted.size(); i += 2) CHECK(converted[i] == 1600 && converted[i + 1] == -800);
+    CHECK(conversion.active_voices() == 0 && conversion.music_ended);
+    conversion.mix_at_rate(converted.data(), 80 / factor, rate);
+    for (auto value : converted) CHECK(value == 0);
+  }
+  // Invented set contents test Auto/explicit families without copying game resources.
+  std::vector<Bytes> families(201);
+  for (int family = 0; family < 3; ++family) { families[family * 100].resize(4); put(families[family * 100], 0, family + 1); }
+  write(root / "Res/Snd.xbe", archive({{1000, families}, {0x460, {wav(8), wav(8), wav(8)}}}));
+  AudioSystem voices; CHECK(voices.init(root.string(), false));
+  voices.set_volumes(1, 1, 1);
+  for (int race = 0; race < 3; ++race) {
+    CHECK(voices.play_speech_set(1, race, 0, true) == uint32_t(race + 1));
+    for (int style = 1; style <= 3; ++style)
+      CHECK(voices.play_speech_set(1, race, style, true) == uint32_t(style));
+  }
+  voices.acknowledgement = false;
+  CHECK(voices.play_speech_set(1, 0, 1, true) == 0);
+  CHECK(voices.play_speech_set(1, 0, 1, false) == 1);
+  CHECK(voices.play_speech_set(1, 0, 4, false) == 0);
+  CHECK(voices.set_sampling_rate(11025) && voices.sampling_rate() == 11025);
+  CHECK(!voices.set_sampling_rate(8000) && voices.sampling_rate() == 11025);
+  // Dummy SDL really opens each requested device rate; active stream state survives reopen.
+  {
+    CHECK(SDL_setenv("SDL_AUDIODRIVER", "dummy", 1) == 0);
+    AudioSystem device; device.init(root.string(), true, 22050);
+    CHECK(device.device_ok());
+    device.start_music(3, 0, 0);
+    const auto track = device.current_track();
+    for (int rate : {11025, 44100, 22050}) {
+      CHECK(device.set_sampling_rate(rate) && device.device_ok() && device.sampling_rate() == rate);
+      CHECK(device.current_track() == track);
+    }
+  }
   return failures ? 1 : 0;
 }

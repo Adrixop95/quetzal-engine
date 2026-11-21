@@ -1,10 +1,14 @@
 #include "engine/platform/window.hpp"
 
 #include <cstdio>
+#include <array>
+#include <cmath>
+#include <algorithm>
 
 namespace aztec::engine {
 
 Window::~Window() {
+  if (gamma_texture_) SDL_DestroyTexture(gamma_texture_);
   if (ren_) SDL_DestroyRenderer(ren_);
   if (win_) SDL_DestroyWindow(win_);
 }
@@ -28,6 +32,43 @@ bool Window::create(const WindowOptions& o) {
   SDL_ShowCursor(SDL_DISABLE);  // the engine draws its own cursor every frame
   focused_ = (SDL_GetWindowFlags(win_) & SDL_WINDOW_INPUT_FOCUS) != 0;
   return set_mode(o.mode);
+}
+
+bool Window::set_size(int width, int height) {
+  if (width < 160 || height < 120) return false;
+  if (mode_ == DisplayMode::Fullscreen) {
+    SDL_DisplayMode display{}; display.w = width; display.h = height;
+    if (SDL_SetWindowDisplayMode(win_, &display) != 0) return false;
+  }
+  SDL_SetWindowSize(win_, width, height);
+  return true;
+}
+
+uint8_t Window::gamma_channel(uint8_t value, double gamma) {
+  if (!std::isfinite(gamma) || gamma <= 0) return value;
+  return uint8_t(std::clamp(std::lround(255 * std::pow(value / 255.0, 1.0 / gamma)), 0l, 255l));
+}
+
+bool Window::apply_gamma(double gamma) {
+  if (gamma == 1.0) return true;
+  if (!std::isfinite(gamma) || gamma < 0.5 || gamma > 2.5) return false;
+  int w, h; output_size(w, h);
+  if (w <= 0 || h <= 0) return false;
+  if (!gamma_texture_ || w != gamma_width_ || h != gamma_height_) {
+    if (gamma_texture_) SDL_DestroyTexture(gamma_texture_);
+    gamma_texture_ = SDL_CreateTexture(ren_, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, w, h);
+    if (!gamma_texture_) return false;
+    gamma_width_ = w; gamma_height_ = h;
+    gamma_pixels_.resize(size_t(w) * h * 4);
+    SDL_SetTextureBlendMode(gamma_texture_, SDL_BLENDMODE_NONE);
+  }
+  if (SDL_RenderReadPixels(ren_, nullptr, SDL_PIXELFORMAT_RGBA32, gamma_pixels_.data(), w * 4) != 0) return false;
+  std::array<uint8_t, 256> lut{};
+  for (int i = 0; i < 256; ++i) lut[i] = gamma_channel(uint8_t(i), gamma);
+  for (size_t i = 0; i < gamma_pixels_.size(); i += 4)
+    for (int ch = 0; ch < 3; ++ch) gamma_pixels_[i + ch] = lut[gamma_pixels_[i + ch]];
+  return SDL_UpdateTexture(gamma_texture_, nullptr, gamma_pixels_.data(), w * 4) == 0 &&
+      SDL_RenderCopy(ren_, gamma_texture_, nullptr, nullptr) == 0;
 }
 
 bool Window::set_mode(DisplayMode m) {

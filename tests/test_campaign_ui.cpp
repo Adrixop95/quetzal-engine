@@ -5,6 +5,7 @@
 #include <fstream>
 #include "temp_dir.hpp"
 #include "core/endian.hpp"
+#include "core/userfiles.hpp"
 #include "engine/render/png.hpp"
 #include "engine/ui/campaign.hpp"
 #include "engine/ui/frontend.hpp"
@@ -175,10 +176,33 @@ int main(int argc, char** argv) {
   CHECK(loaded.unlocked(15));
 
   Options preferences;
+  preferences.window.width = 1024; preferences.window.height = 768; preferences.gamma = 1.7;
+  preferences.sampling_rate = 11025; preferences.speech_style = 3;
+  preferences.game_speed_ms = 150; preferences.scroll_speed = 72; preferences.network_provider = 0;
   preferences.speech_volume = 0.25f; preferences.edge_scroll = false; preferences.subtitles = false;
   const auto preferences_path = (root / "preferences.txt").string();
   CHECK(save_frontend_options(preferences_path, preferences));
   Options restored; CHECK(load_frontend_options(preferences_path, restored));
+  CHECK(restored.window.width == 1024 && restored.window.height == 768 && restored.gamma == 1.7);
+  CHECK(restored.sampling_rate == 11025 && restored.speech_style == 3 && restored.network_provider == 0);
+  CHECK(restored.game_speed_ms == 150 && restored.scroll_speed == 72);
+  Options unchanged = restored;
+  for (const char* bad : {
+      "QUETZAL_OPTIONS_2\n0 1 1 1 500 500 500 1 1\n800 600 nan 22050 0 83 48 1\n",
+      "QUETZAL_OPTIONS_2\n0 1 1 1 500 500 500 1 1\n800 600 1 8000 0 83 48 1\n",
+      "QUETZAL_OPTIONS_2\n0 1 1 1 500 500 500 1 1\n800 600 1 22050 4 83 48 1\n",
+      "QUETZAL_OPTIONS_2\n0 1 1 1 500 500 500 1 1\n800 600 1 22050 0 59 48 1\n",
+      "QUETZAL_OPTIONS_2\n0 1 1 1 500 500 500 1 1\n800 600 1 22050 0 83 81 1\n",
+      "QUETZAL_OPTIONS_2\n0 1 1 1 500 500 500 1 1\n800 600 1 22050 0 83 48 2\n",
+      "QUETZAL_OPTIONS_2\n0 1 1 1 500 500 500 1 1\n800 600 1 22050 0 83 48 1 extra\n"}) {
+    write(preferences_path, bad); CHECK(!load_frontend_options(preferences_path, restored));
+    CHECK(restored.gamma == unchanged.gamma && restored.sampling_rate == unchanged.sampling_rate);
+    CHECK(restored.window.width == unchanged.window.width && restored.scroll_speed == unchanged.scroll_speed);
+  }
+  write(preferences_path, "QUETZAL_OPTIONS_1\n0 1 1 1 800 600 250 1 1\n");
+  Options legacy; CHECK(load_frontend_options(preferences_path, legacy));
+  CHECK(legacy.game_speed_ms == 83 && legacy.gamma == 1 && legacy.sampling_rate == 22050);
+  CHECK(save_frontend_options(preferences_path, preferences));
   CHECK(restored.speech_volume == 0.25f && !restored.edge_scroll && !restored.subtitles);
   write(preferences_path, "QUETZAL_OPTIONS_1\n0 1 1 1 900 800 1001 1 1\n");
   CHECK(!load_frontend_options(preferences_path, restored) && restored.speech_volume == 0.25f);
@@ -195,6 +219,21 @@ int main(int argc, char** argv) {
   CHECK(parse({"engine"}, parsed) && parsed.speech_volume == 0.25f && !parsed.edge_scroll);
   CHECK(parse({"engine", "--volume", "0.5", "--speech-volume", "0.2", "--no-subtitles", "--no-acknowledgement"}, parsed));
   CHECK(parsed.sfx_volume == 0.5f && parsed.music_volume == 0.5f && parsed.speech_volume == 0.2f && !parsed.subtitles && !parsed.acknowledgement);
+  CHECK(parse({"engine", "--game-speed", "60", "--scroll-speed", "20", "--sampling-rate", "44100", "--speech-style", "2", "--gamma", "2.5"}, parsed));
+  CHECK(parsed.game_speed_ms == 60 && parsed.scroll_speed == 20 && parsed.gamma == 2.5);
+  CHECK(parsed.sampling_rate == 44100 && parsed.speech_style == 2);
+  for (const char* bad : {"nan", "inf", "0", "3", "1.5junk"}) {
+    Options invalid; CHECK(!parse({"engine", "--gamma", bad}, invalid));
+  }
+  for (const auto& flag : {"--game-speed", "--scroll-speed", "--sampling-rate", "--speech-style"}) {
+    for (const char* bad : {"-1", "2147483648", "60junk", "", "nan"}) {
+      Options invalid; CHECK(!parse({"engine", flag, bad}, invalid));
+    }
+  }
+  aztec::PlayerFile profile; profile.name = "Synthetic"; profile.options.speech_style = 3;
+  aztec::PlayerFile profile_readback;
+  CHECK(aztec::parse_player_file(aztec::serialize_player_file(profile), profile_readback));
+  CHECK(profile_readback.options.speech_style == 3);
   std::filesystem::remove(user_file("frontend-options.txt"));
   for (const char* bad : {"nan", "inf", "-1", "2", "", "0.5junk"}) {
     Options invalid;
@@ -293,6 +332,21 @@ int main(int argc, char** argv) {
       CHECK(options.speech_volume == 1);
       audio.draw(renderer, font, options, w, h, sc);
       capture("audio");
+      SettingsOptions settings; settings.open = true;
+      for (int i = 0; i < 10; ++i) {
+        const auto setting = SettingsOptions::row(i, w, h, sc);
+        CHECK(setting.x >= 0 && setting.y >= 0 && setting.x + setting.w <= w && setting.y + setting.h <= h);
+        if (i < 8) {
+          click.mx = setting.x + setting.w - 1; click.my = setting.y + 1;
+          settings.update(click, options, w, h, sc);
+        }
+      }
+      CHECK(options.window.width == 800 && options.gamma == 1.1 && options.sampling_rate == 44100);
+      CHECK(!options.acknowledgement && options.speech_style == 1 && options.game_speed_ms == 78);
+      CHECK(options.scroll_speed == 52 && options.network_provider == 0);
+      settings.draw(renderer, font, options, w, h, sc); capture("settings");
+      Options setting_readback; CHECK(load_frontend_options(user_file("frontend-options.txt"), setting_readback));
+      CHECK(setting_readback.game_speed_ms == 78 && setting_readback.gamma == 1.1);
       TextOverlay overlay; overlay.show("Briefing / objectives", briefing + std::string(50000, 'A'));
       Input end; end.key_hit[SDL_SCANCODE_END] = true; overlay.update(end);
       SDL_Rect clip{10, 10, w - 20, h - 20}; SDL_RenderSetClipRect(renderer, &clip);
@@ -342,6 +396,17 @@ int main(int argc, char** argv) {
   options.script = (root / "resume-controls.txt").string();
   CHECK(run_engine(options) == 0);
   options.resume_save.clear(); options.ui_trace.clear();
+  // Navigate the paused mission into settings, change speed, close and resume.
+  write(root / "settings-controls.txt",
+      "key Escape\nclick 400 238\nclick 400 455\nexpect tick == 0\n"
+      "click 720 171\nexpect tick == 0\nkey Escape\nclick 400 160\n"
+      "expect tick == 2\nuntil 6\nexpect outcome == 1\nquit\n");
+  options.script = (root / "settings-controls.txt").string();
+  options.ui_trace = (root / "settings-ui.jsonl").string();
+  CHECK(run_engine(options) == 0);
+  Options mission_preferences; CHECK(load_frontend_options(user_file("frontend-options.txt"), mission_preferences));
+  CHECK(mission_preferences.game_speed_ms == options.game_speed_ms - 5);
+  options.ui_trace.clear();
   // Drive the actual front-end without assets or the legacy screen-walk shortcut.
   options.script.clear(); options.menu = true; options.menu_session = false;
   options.menu_script = (root / "menus.txt").string();
@@ -383,6 +448,14 @@ int main(int argc, char** argv) {
   CHECK(read(options.menu_trace).find("load-confirmation") != std::string::npos);
   write(options.menu_script, "0 shot " + (root / "missing/capture.png").string() + "\n");
   CHECK(run_engine(options) == 1); // capture failures must reach the caller
+  // New settings page remains reachable without replacing the existing options route.
+  write(options.menu_script,
+      "0 move 160 540\n0 down\n1 up\n2 move 400 58\n2 down\n3 up\n"
+      "4 move 600 180\n4 down\n5 up\n6 move 720 171\n6 down\n7 up\n"
+      "8 keydown Escape\n9 keyup Escape\n10 close\n");
+  CHECK(run_engine(options) == 0);
+  CHECK(read(options.menu_trace).find("\"rendered_screen\":\"settings\"") != std::string::npos);
+  CHECK(read(options.menu_trace).find("\"game_speed_ms\":78") != std::string::npos);
   write(options.menu_script, "0 invalid\n");
   CHECK(run_engine(options) == 1);
   return failures ? 1 : 0;
