@@ -275,6 +275,8 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
     PauseMenu pause;
     TextOverlay briefing;
     AudioOptions audio_options;
+    SettingsOptions settings_options;
+    int settings_width = o.window.width, settings_height = o.window.height;
     ModificationOptions modification_options;
     SaveLoadMenu slots;
     std::string save_path = SaveLoadMenu::slot_path(0);
@@ -335,11 +337,11 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       if (in.hit(SDL_SCANCODE_RETURN) && in.alt) win.toggle_fullscreen();
       notice_left = std::max(0.0, notice_left - dt);
       advance_messages(world, dt);
-      if (in.hit(SDL_SCANCODE_F9) && !in.ctrl && !briefing.open && !audio_options.open && !slots.open) {
+      if (in.hit(SDL_SCANCODE_F9) && !in.ctrl && !briefing.open && !audio_options.open && !settings_options.open && !slots.open) {
         modification_options.open = !modification_options.open;
         if (modification_options.open) pause.open = true;
       }
-      const bool submodal = briefing.open || audio_options.open || modification_options.open || slots.open;
+      const bool submodal = briefing.open || audio_options.open || settings_options.open || modification_options.open || slots.open;
       const bool slot_saving = slots.saving;
       const int confirmed_slot = slots.update(in, ow, oh, pscale);
       if (modification_options.open) {
@@ -352,6 +354,17 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       }
       else if (briefing.open) briefing.update(in);
       else if (audio_options.open) audio_options.update(in, o, ow, oh, pscale);
+      else if (settings_options.open) settings_options.update(in, o, ow, oh, pscale);
+      if (audio_options.settings_requested) {
+        audio_options.settings_requested = false; settings_options.open = true;
+      }
+      if (o.window.width != settings_width || o.window.height != settings_height) {
+        if (!win.set_size(o.window.width, o.window.height)) {
+          o.window.width = settings_width; o.window.height = settings_height;
+          save_frontend_options(user_file("frontend-options.txt"), o);
+          notify("Requested resolution is unavailable");
+        } else { settings_width = o.window.width; settings_height = o.window.height; }
+      }
       if (submodal) consume_input();
       if (world.outcome != kRunning && !submodal) {
         const auto action = OutcomeMenu::update(in, ow, oh, pscale, world.outcome == kVictory);
@@ -476,8 +489,9 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         std::printf(save_screenshot(win.renderer(), p) ? "saved %s\n" : "screenshot failed %s\n", p.c_str());
       }
 
-      // Fixed 12 Hz simulation, independent of frame rate.
-      if ((!pt || !playtest.limit_reached(world)) && !paused && !pause.open && !submodal && !briefing.open && !audio_options.open && !leave && world.outcome == kRunning) {
+      // V: interactive speed controls the wall-clock update interval. Scripted tests use logical ticks.
+      stepper.set_step(pt ? kSimStep : o.tick_seconds());
+      if ((!pt || !playtest.limit_reached(world)) && !paused && !pause.open && !submodal && !briefing.open && !audio_options.open && !settings_options.open && !leave && world.outcome == kRunning) {
         int n = stepper.advance(dt);
         for (int i = 0; i < n; i++) {
           world.begin_tick();
@@ -515,7 +529,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         }
       }
       win.set_gameplay_active(!pt && o.screenshot.empty() && !in.quit && !leave &&
-          !pause.open && !submodal && !briefing.open && !audio_options.open &&
+          !pause.open && !submodal && !briefing.open && !settings_options.open &&
           world.outcome == kRunning && !paused && !(game && game->paused()));
       // Camera input.
       CameraInput ci;
@@ -550,6 +564,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       if (in.pressed[SDL_BUTTON_LEFT] && on_mm && !cmdui.wants_left_click()) drag_minimap = true;
       if (!in.buttons[SDL_BUTTON_LEFT]) drag_minimap = false;
       // Selection (left button in the world view).
+      const auto previous_selection = world.selection.ids;
       const size_t ui_command_start = game ? game->pending_commands().size() : 0;
       {
         bool in_world = world.outcome == kRunning && !pause.open && !submodal && !on_mm && !on_panel && !drag_minimap && !pan;
@@ -558,6 +573,8 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         selection_input.shift = cmdui.action_down(in, "Add");
         selui.update(selection_input, world, cam, alpha, in_world && !consumed && !cmdui.wants_left_click());
       }
+      // G: scale the existing smooth camera; exact original scroll cadence is pending.
+      cam.speed = 1100.f * o.scroll_speed / 48.f;
       if (in.focused && !in.alt && !pause.open) cam.update(ci, float(std::min(dt, 0.1)));
       if (drag_minimap) {
         int mx = std::clamp(in.mx, minimap.rect().x, minimap.rect().x + minimap.rect().w - 1);
@@ -568,9 +585,29 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       }
 
       if (audio) {
+        audio->set_sampling_rate(o.sampling_rate);
         audio->set_volumes(o.sfx_volume, o.music_volume, o.speech_volume);
         audio->acknowledgement = o.acknowledgement; audio->subtitles = o.subtitles;
         audio->event_tick = world.tick;
+        // G: use the owned speaker's side race until mixed-race speaker descriptors are exposed.
+        if (!world.selection.ids.empty()) {
+          const auto* speaker = world.find(world.selection.ids.front());
+          int race = -1;
+          if (speaker && speaker->alive && !speaker->removed && speaker->side == world.local_side)
+            for (const auto& side : world.mission.sides) if (side.index == speaker->side) race = side.race;
+          if (race >= 0 && race <= 2) {
+            bool order = false;
+            if (game) for (size_t i = ui_command_start; i < game->pending_commands().size(); ++i) {
+              const auto kind = game->pending_commands()[i].type;
+              order |= kind == Pct::Move || kind == Pct::Attack || kind == Pct::AttackMove || kind == Pct::Stop;
+            }
+            if (order || previous_selection != world.selection.ids) {
+              audio->event_trigger = order ? AudioEvent::Trigger::Orders : AudioEvent::Trigger::Selection;
+              audio->play_speech_set(order ? 104 : 101, race, o.speech_style, true);
+              audio->event_trigger = AudioEvent::Trigger::Unknown;
+            }
+          }
+        }
         audio->update(dt);
       }
       // Render. Day clock: mission StartTime + simulation ticks (+ interpolation).
@@ -639,6 +676,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       pause.draw(win.renderer(), scene.font(), ow, oh, pscale);
       briefing.draw(win.renderer(), scene.font(), ow, oh, pscale);
       audio_options.draw(win.renderer(), scene.font(), o, ow, oh, pscale);
+      settings_options.draw(win.renderer(), scene.font(), o, ow, oh, pscale);
       modification_options.draw(win.renderer(), scene.font(), o, ow, oh, pscale);
       slots.draw(win.renderer(), scene.font(), ow, oh, pscale, &scene.store());
       if (world.outcome != kRunning) OutcomeMenu::draw(win.renderer(), scene.font(), ow, oh, pscale,
@@ -663,6 +701,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       const uint32_t cursor_ms = pt ? uint32_t(uint64_t(frame) * 1000 / 12) : SDL_GetTicks();
       const bool cursor_drawn = visible && (o.screenshot.empty() || forced);
       if (cursor_drawn) cursor.draw(win.renderer(), scene.store(), cx, cy, ck, cur_scale, cursor_ms);
+      if (!win.apply_gamma(o.gamma)) { std::fprintf(stderr, "Gamma rendering failed\n"); rc = 1; break; }
       // Observe the composed frame without inserting script frames or advancing time.
       std::string periodic_shot;
       if (o.capture_every > 0 && world.tick > last_capture_tick && world.tick % uint64_t(o.capture_every) == 0) {
@@ -678,7 +717,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
                  rendered_tooltip, periodic_shot.empty() ? pending_shot : periodic_shot, placement_overlay_drawn,
                  world.outcome == kVictory ? (!world.skirmish && campaign_number(world.mission.file_name) == 15 ? "victory" : "mission-result-victory") :
                  world.outcome != kRunning ? "mission-result-defeat" : slots.open ? slots.screen_id() :
-                 briefing.open ? "objectives" : audio_options.open ? "audio" : modification_options.open ? "modifications" :
+                 briefing.open ? "objectives" : audio_options.open ? "audio" : settings_options.open ? "settings" : modification_options.open ? "modifications" :
                  pause.open ? "pause-menu" : "gameplay");
         ui_trace.flush();
         if (!ui_trace) { std::fprintf(stderr, "UI trace write failed\n"); rc = 1; break; }
@@ -750,7 +789,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       write_audio_event(audio_log.get(), event, sequence++);
     };
     AudioSystem* audio_ptr = nullptr;
-    if (o.audio) { audio.init(o.game_dir); audio.set_volumes(o.sfx_volume, o.music_volume, o.speech_volume); audio_ptr = &audio; }
+    if (o.audio) { audio.init(o.game_dir, true, o.sampling_rate); audio.set_volumes(o.sfx_volume, o.music_volume, o.speech_volume); audio_ptr = &audio; }
     for (;;) {
       if (menu) {
         FrontendResult fr;
@@ -772,6 +811,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
         menu = false;
       }
       if (audio_ptr) {
+        audio.set_sampling_rate(opts.sampling_rate);
         audio.set_volumes(opts.sfx_volume, opts.music_volume, opts.speech_volume);
         audio.acknowledgement = opts.acknowledgement; audio.subtitles = opts.subtitles;
       }

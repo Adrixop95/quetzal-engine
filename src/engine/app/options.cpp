@@ -97,31 +97,50 @@ bool load_frontend_options(const std::string& path, Options& out) {
   char bytes[256]; file.read(bytes, sizeof bytes);
   if (file.bad() || file.gcount() == sizeof bytes) return false;
   std::istringstream in(std::string(bytes, size_t(file.gcount())));
+  Options parsed = out;
   std::string magic, extra;
   int mode, edge, fog, light, sfx, music, speech, acknowledgement, subtitles;
   if (!(in >> magic >> mode >> edge >> fog >> light >> sfx >> music >> speech >> acknowledgement >> subtitles) ||
-      magic != "QUETZAL_OPTIONS_1" || (in >> extra) || mode < 0 || mode > 2) return false;
+      (magic != "QUETZAL_OPTIONS_1" && magic != "QUETZAL_OPTIONS_2") || mode < 0 || mode > 2) return false;
   for (int value : {edge, fog, light, acknowledgement, subtitles}) if (value < 0 || value > 1) return false;
   for (int value : {sfx, music, speech}) if (value < 0 || value > 1000) return false;
-  out.window.mode = DisplayMode(mode); out.edge_scroll = edge; out.fog = fog; out.light = light;
-  out.sfx_volume = sfx / 1000.f; out.music_volume = music / 1000.f; out.speech_volume = speech / 1000.f;
-  out.acknowledgement = acknowledgement; out.subtitles = subtitles;
+  if (magic == "QUETZAL_OPTIONS_2") {
+    if (!(in >> parsed.window.width >> parsed.window.height >> parsed.gamma >> parsed.sampling_rate
+          >> parsed.speech_style >> parsed.game_speed_ms >> parsed.scroll_speed >> parsed.network_provider)) return false;
+    if (parsed.window.width < 160 || parsed.window.width > 16384 || parsed.window.height < 120 || parsed.window.height > 16384 ||
+        !std::isfinite(parsed.gamma) || parsed.gamma < 0.5 || parsed.gamma > 2.5 ||
+        (parsed.sampling_rate != 11025 && parsed.sampling_rate != 22050 && parsed.sampling_rate != 44100) ||
+        parsed.speech_style < 0 || parsed.speech_style > 3 || parsed.game_speed_ms < 60 || parsed.game_speed_ms > 200 ||
+        parsed.scroll_speed < 20 || parsed.scroll_speed > 80 || parsed.network_provider < 0 || parsed.network_provider > 1) return false;
+  }
+  if (in >> extra) return false;
+  parsed.window.mode = DisplayMode(mode); parsed.edge_scroll = edge; parsed.fog = fog; parsed.light = light;
+  parsed.sfx_volume = sfx / 1000.f; parsed.music_volume = music / 1000.f; parsed.speech_volume = speech / 1000.f;
+  parsed.acknowledgement = acknowledgement; parsed.subtitles = subtitles;
+  out = parsed;
   return true;
 }
 bool save_frontend_options(const std::string& path, const Options& o) {
   if (path.empty() || int(o.window.mode) < 0 || int(o.window.mode) > 2) return false;
   for (float volume : {o.sfx_volume, o.music_volume, o.speech_volume})
     if (!std::isfinite(volume) || volume < 0 || volume > 1) return false;
+  if (o.window.width < 160 || o.window.width > 16384 || o.window.height < 120 || o.window.height > 16384 ||
+      !std::isfinite(o.gamma) || o.gamma < 0.5 || o.gamma > 2.5 ||
+      (o.sampling_rate != 11025 && o.sampling_rate != 22050 && o.sampling_rate != 44100) ||
+      o.speech_style < 0 || o.speech_style > 3 || o.game_speed_ms < 60 || o.game_speed_ms > 200 ||
+      o.scroll_speed < 20 || o.scroll_speed > 80 || o.network_provider < 0 || o.network_provider > 1) return false;
   // A private staging directory avoids following an existing temporary symlink.
   const auto staging = path + ".pending";
   std::error_code ec;
   if (!std::filesystem::create_directory(staging, ec)) return false;
   const auto temporary = staging + "/settings";
   std::ofstream file(temporary, std::ios::binary);
-  file << "QUETZAL_OPTIONS_1\n" << int(o.window.mode) << ' ' << int(o.edge_scroll) << ' '
+  file << "QUETZAL_OPTIONS_2\n" << int(o.window.mode) << ' ' << int(o.edge_scroll) << ' '
        << int(o.fog) << ' ' << int(o.light) << ' ' << std::lround(o.sfx_volume * 1000) << ' '
        << std::lround(o.music_volume * 1000) << ' ' << std::lround(o.speech_volume * 1000) << ' '
-       << int(o.acknowledgement) << ' ' << int(o.subtitles) << '\n';
+       << int(o.acknowledgement) << ' ' << int(o.subtitles) << '\n'
+       << o.window.width << ' ' << o.window.height << ' ' << o.gamma << ' ' << o.sampling_rate << ' '
+       << o.speech_style << ' ' << o.game_speed_ms << ' ' << o.scroll_speed << ' ' << o.network_provider << '\n';
   file.close();
   bool ok = !file.fail();
   if (ok) {
@@ -157,6 +176,9 @@ const char* usage_text() {
          "  --settings FILE    game=DIR file (default per-user settings.ini)\n"
          "  --load-original FILE  import an original .sav (partial resume; see docs/savegame.md)\n"
          "  --size WxH         window size (default 1280x720)\n"
+         "  --game-speed MS    update interval 60..200 ms (smaller is faster)\n"
+         "  --scroll-speed N   camera speed 20..80; --gamma G  brightness 0.5..2.5\n"
+         "  --sampling-rate HZ 11025, 22050 or 44100; --speech-style N 0 Auto, 1 Ross, 2 Aztec, 3 Cathayan\n"
          "  --fullscreen       exclusive fullscreen;  --borderless  desktop-size borderless window\n"
          "  --no-vsync         disable vsync;  --software  force software renderer;  --fps N  frame cap\n"
          "  --zoom Z           initial zoom (0.5 .. 4); default automatic\n"
@@ -230,6 +252,26 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     else if (a == "--size") {
       if (!next(v)) return false;
       if (std::sscanf(v, "%dx%d", &o.window.width, &o.window.height) != 2 || o.window.width < 160 || o.window.height < 120) { err = "bad --size"; return false; }
+    }
+    else if (a == "--game-speed" || a == "--scroll-speed" || a == "--sampling-rate" || a == "--speech-style") {
+      if (!next(v)) return false;
+      char* end = nullptr; const long value = std::strtol(v, &end, 10);
+      bool valid = end != v && !*end;
+      if (a == "--game-speed") valid = valid && value >= 60 && value <= 200;
+      if (a == "--scroll-speed") valid = valid && value >= 20 && value <= 80;
+      if (a == "--sampling-rate") valid = valid && (value == 11025 || value == 22050 || value == 44100);
+      if (a == "--speech-style") valid = valid && value >= 0 && value <= 3;
+      if (!valid) { err = "bad " + a; return false; }
+      if (a == "--game-speed") o.game_speed_ms = int(value);
+      if (a == "--scroll-speed") o.scroll_speed = int(value);
+      if (a == "--sampling-rate") o.sampling_rate = int(value);
+      if (a == "--speech-style") o.speech_style = int(value);
+    }
+    else if (a == "--gamma") {
+      if (!next(v)) return false;
+      char* end = nullptr; const double value = std::strtod(v, &end);
+      if (end == v || *end || !std::isfinite(value) || value < 0.5 || value > 2.5) { err = "bad --gamma"; return false; }
+      o.gamma = value;
     }
     else if (a == "--fullscreen") o.window.mode = DisplayMode::Fullscreen;
     else if (a == "--borderless") o.window.mode = DisplayMode::Borderless;

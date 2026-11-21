@@ -32,6 +32,8 @@ class Mixer {
   void stop_music() { music_pcm_ = nullptr; music_holder_.reset(); music_ended = false; }
   bool music_playing() const { return music_pcm_ != nullptr; }
   void mix(int16_t* out, int frames);
+  // G: box-filter the internal stream; output duration and pitch stay unchanged.
+  void mix_at_rate(int16_t* out, int frames, int rate);
   size_t active_voices() const;
   float sfx_volume = 0.8f, music_volume = 0.6f, speech_volume = 0.8f;
   bool music_ended = false;   // set by mix() when the stream finished (the owner picks the next track)

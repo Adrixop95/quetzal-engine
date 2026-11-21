@@ -102,4 +102,17 @@ void Mixer::mix(int16_t* out, int frames) {
   for (size_t i = 0; i < acc.size(); i++) out[i] = int16_t(std::clamp(acc[i], -32768, 32767));
 }
 
+void Mixer::mix_at_rate(int16_t* out, int frames, int rate) {
+  if (rate != 11025 && rate != 22050 && rate != kMixRate) return;
+  const int factor = kMixRate / rate;
+  if (factor == 1) { mix(out, frames); return; }
+  std::vector<int16_t> source(size_t(frames) * factor * 2);
+  mix(source.data(), frames * factor);
+  for (int i = 0; i < frames; ++i) for (int ch = 0; ch < 2; ++ch) {
+    int sum = 0;
+    for (int j = 0; j < factor; ++j) sum += source[size_t(i * factor + j) * 2 + ch];
+    out[size_t(i) * 2 + ch] = int16_t(sum / factor);
+  }
+}
+
 }  // namespace aztec::engine

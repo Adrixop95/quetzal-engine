@@ -41,6 +41,13 @@ struct Options {
   bool audio = true;               // --no-audio
   float sfx_volume = 0.8f, music_volume = 0.6f, speech_volume = 0.8f;
   bool acknowledgement = true, subtitles = true;
+  // V: game speed stores milliseconds per update, not a unit/stat multiplier.
+  int game_speed_ms = 83, scroll_speed = 48, sampling_rate = 22050;
+  int speech_style = 0; // V: Auto, Ross, Aztec, Cathayan voice families.
+  int network_provider = 1; // V: original provider preference; original transports unavailable.
+  double gamma = 1.0;
+  double tick_seconds() const { return game_speed_ms / 1000.0; }
+
   std::string ui_trace;            // --ui-trace FILE: raw per-frame UI observations
   std::string capture_dir;         // periodic playtest captures; directory must already exist
   int capture_every = 0;           // completed logical ticks, excluding repeated paused frames

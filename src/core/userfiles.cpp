@@ -173,7 +173,7 @@ bool parse_player_file(const std::vector<uint8_t>& d, PlayerFile& p) {
   p.const_one = rd32(d, 0x44);
   PlayerOptions& o = p.options;
   o.acknowledgement = rd32(d, kOpt + 0x08);
-  o.unit_speed_mode = rd32(d, kOpt + 0x0c);
+  o.speech_style = rd32(d, kOpt + 0x0c);
   o.sfx_volume = rd32(d, kOpt + 0x94);
   o.music_volume = rd32(d, kOpt + 0x98);
   o.speech_volume = rd32(d, kOpt + 0x9c);
@@ -198,7 +198,7 @@ std::vector<uint8_t> serialize_player_file(const PlayerFile& p) {
   wr32(d, 0x44, p.const_one);
   const PlayerOptions& o = p.options;
   wr32(d, kOpt + 0x08, o.acknowledgement);
-  wr32(d, kOpt + 0x0c, o.unit_speed_mode);
+  wr32(d, kOpt + 0x0c, o.speech_style);
   wr32(d, kOpt + 0x94, o.sfx_volume);
   wr32(d, kOpt + 0x98, o.music_volume);
   wr32(d, kOpt + 0x9c, o.speech_volume);
