@@ -138,7 +138,7 @@ class GameSim : public Simulation {
   void kill(World& w, Object& o);
   uint32_t spawn(World& w, int type, int side, int px, int py, int hp, bool constructing);
   void attach_agent(Object& o);
-  bool menu_ok(const World& w, int side, const BuildItem& it, int town, const char** why, const QueueItem* reservation = nullptr) const;
+  bool menu_ok(const World& w, int side, const BuildItem& it, int town, const char** why, const QueueItem* reservation = nullptr, bool admission = false) const;
   const Object* nearest_enemy(const World& w, const Object& o) const;
   int town_index(const World& w, int side) const;
   int producing_town(const World& w, int side, const std::vector<uint32_t>& ids) const;
@@ -146,7 +146,9 @@ class GameSim : public Simulation {
   int upgrade_level(int race, int type) const;
   void cancel_production(World& w, SideState& side, size_t index);
   void block_footprint(const TypeRules& r, int tx, int ty, int delta);
-  bool finish_structure(World& w, int side, const QueueItem& item);
+  bool start_structure(World& w, int side, QueueItem& item);
+  void initialize_gold(const World& w, Object& object);
+  void initialize_repair(const World& w, Object& object, int clock = -1);
   bool automatic_site(const World& w, int side, int type, int tx, int ty, int town) const;
   // Combat scatter is isolated from decoration choices. Reference RNG parity is pending.
   uint32_t next_combat_rand() {

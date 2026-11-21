@@ -2128,7 +2128,7 @@ static void test_mine_construction_flow() {
     CHECK(w.objects.back().progress < 1000 && !w.objects.back().harvest_ready);
     production_steps(sim, w, 1);
     CHECK(w.objects.back().progress == 1000 && w.objects.back().hp == w.objects.back().hp_max);
-    CHECK(w.objects.back().anim_state != kAnimConstruct && !w.objects.back().harvest_ready);
+    CHECK(w.objects.back().anim_state != kAnimConstruct && w.objects.back().harvest_ready);
     CHECK(w.side_state[0].queue.empty());
     production_steps(sim, w, 1); CHECK(w.objects.back().harvest_ready);
     World final_replay = initial;
@@ -2479,7 +2479,7 @@ static void test_resource_clock_save_boundary() {
     fresh.resources.v.assign(1600, uint16_t(65 | (65 << 8)));
     production_object(fresh, type, 0, 10, 10);
     World live = fresh; GameSim sim(rules, Modifications::faithful()); sim.init(live);
-    CHECK(!live.objects[0].harvest_ready);
+    CHECK(live.objects[0].harvest_ready && live.objects[0].gold_harvest.accumulated == 0);
     production_steps(sim, live, 9);
     CHECK(live.objects[0].harvest_ready && live.day_clock == 7199);
     SaveData saved; saved.mission = "resource-clock-boundary"; saved.tick = sim.tick_count();
@@ -2653,6 +2653,7 @@ static void test_production() {
   auto rules = std::make_shared<RulesData>();
   CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
   CHECK(rules->type(12).harvest.terrain && rules->type(12).harvest.dates.size() == 6);
+  CHECK(rules->type(39).harvest.dates.size() == 10 && rules->type(65).harvest.dates.size() == 8);
   CHECK(rules->type(13).harvest.rate_b == 16);
   CHECK(production_value(100, 1, 2, true, false, false) == 160);
   CHECK(production_value(100, 1, 2, true, false, true) == 53);
@@ -2790,7 +2791,7 @@ static void test_production() {
   CHECK(construction.objects[1].progress < 1000 && !construction.objects[1].harvest_ready);
   production_steps(bs, construction, 1);
   CHECK(construction.objects[1].progress == 1000 && construction.objects[1].hp == construction.objects[1].hp_max);
-  CHECK(!construction.objects[1].harvest_ready);
+  CHECK(construction.objects[1].harvest_ready && construction.objects[1].gold_harvest.accumulated == 0);
   production_steps(bs, construction, 1);
   CHECK(construction.objects[1].harvest_ready);
 
@@ -2836,7 +2837,7 @@ static void test_town_production() {
     CHECK(w.side_state[0].queue.size() == 1 && w.side_state[0].queue[0].remaining == upgrade.time - 1);
     CHECK(w.side_state[0].money == 10000 - upgrade.price);
     for (const MenuItem& m : sim.menu(w, 0)) if (m.type != (race == 0 ? 0 : race == 1 ? 27 : 53)) CHECK(!m.enabled);
-    CHECK(w.objects.size() == 1 && w.objects[0].type == rules->town_building(0, race));
+    CHECK(w.objects.size() == 1 && w.objects[0].type == target && w.objects[0].progress < 1000);
     Command pause; pause.type = Pct::PauseBuild; pause.a = 1; sim.submit(pause);
     production_steps(sim, w, 3);
     CHECK(w.side_state[0].queue[0].remaining == upgrade.time - 1);
@@ -2852,7 +2853,7 @@ static void test_town_production() {
       production_steps(sim, w, 1); production_steps(*continuation, continued, 1);
       CHECK(continuation->state_hash(continued) == sim.state_hash(w));
       if (remaining > 1) {
-        CHECK(w.mission.towns[0].type == 0 && w.objects[0].type == rules->town_building(0, race));
+        CHECK(w.mission.towns[0].type == 0 && w.objects[0].type == target && w.objects[0].progress < 1000);
         CHECK(w.side_state[0].queue.size() == 1);
         CHECK(!item(sim, w, 0, race == 0 ? 14 : race == 1 ? 41 : 67).enabled);
       }
@@ -2894,15 +2895,18 @@ static void test_town_production() {
     sim.submit(buy); sim.submit(buy); production_steps(sim, w, 1);
     CHECK(w.side_state[0].queue.size() == 2 && w.side_state[0].queue[0].paid == m.price);
     CHECK(w.side_state[0].money == 10000 - m.price);
-    CHECK(w.objects.size() == fresh.objects.size() && item(sim, w, 0, type).enabled);
+    CHECK(w.objects.size() == fresh.objects.size() + 1 && w.objects.back().progress < 1000 && item(sim, w, 0, type).enabled);
     production_steps(sim, w, m.time - 2);
-    CHECK(w.objects.size() == fresh.objects.size());
+    CHECK(w.objects.size() == fresh.objects.size() + 1 && w.objects.back().progress < 1000);
     production_steps(sim, w, 1);
-    CHECK(w.side_state[0].queue.size() == 1 && w.objects.size() == fresh.objects.size() + 1);
-    CHECK(w.objects.back().type == type && w.objects.back().town == 0 && w.objects.back().progress == 1000);
-    CHECK(!sim.can_place(w, 0, type, int(w.objects.back().cur_x >> 8) / kTilePx, int(w.objects.back().cur_y >> 8) / kTilePx));
+    CHECK(w.side_state[0].queue.size() == 1 && w.objects.size() == fresh.objects.size() + 2);
+    const auto& first = w.objects[fresh.objects.size()];
+    CHECK(first.type == type && first.town == 0 && first.progress == 1000);
+    CHECK(first.harvest_ready && first.gold_harvest.accumulated == 0);
+    CHECK(w.objects.back().progress < 1000); // successor starts in the completion tick
+    CHECK(!sim.can_place(w, 0, type, int(first.cur_x >> 8) / kTilePx, int(first.cur_y >> 8) / kTilePx));
     CHECK(item(sim, w, 0, type).enabled);
-    const Fixed first_x = w.objects.back().cur_x, first_y = w.objects.back().cur_y;
+    const Fixed first_x = first.cur_x, first_y = first.cur_y;
     production_steps(sim, w, m.time);
     CHECK(w.side_state[0].queue.empty() && w.objects.size() == fresh.objects.size() + 2);
     CHECK(w.objects.back().type == type && w.objects.back().town == 0);
@@ -2916,7 +2920,7 @@ static void test_town_production() {
       CHECK(item(sim, w, 0, race == 0 ? 18 : race == 1 ? 40 : 70).enabled);
     // Income/repair accumulation begins at completion, using the resource map at the chosen site.
     if (type == 13) {
-      CHECK(w.objects.back().gold_harvest.accumulated > 0);
+      CHECK(w.objects.back().harvest_ready && w.objects.back().gold_harvest.accumulated == 0);
       int money = w.side_state[0].money;
       production_steps(sim, w, 100); CHECK(w.side_state[0].money > money);
     }
@@ -2927,6 +2931,7 @@ static void test_town_production() {
 
   // Repeatable structures obey the per-town queue capacity; only the started (first) item is charged, waiting orders are unpaid.
   World capacity = production_world();
+  capacity.resources.v.assign(1600, uint16_t(65 << 8));
   capacity.side_state.resize(8); capacity.side_state[0].money = 100000;
   production_object(capacity, 11, 0, 10, 10); capacity.objects[0].town_hall = true;
   GameSim capacity_sim(rules, Modifications::faithful()); capacity_sim.init(capacity);
@@ -2944,7 +2949,7 @@ static void test_town_production() {
   CHECK(capacity.side_state[0].queue.size() == 50);
   CHECK(capacity.side_state[0].money > 100000 - 2 * mine_price && capacity.side_state[0].money <= 100000 - mine_price);   // cancel refunds part of the started item, the next one starts and pays
 
-  // A blocked map retains the completed queue item; cancellation releases it.
+  // Automatic placement failure leaves the head unpaid and blocks the lane; cancellation releases it.
   World blocked = production_world();
   blocked.passability = {40, 40, std::vector<uint8_t>(1600, 0)};
   blocked.side_state.resize(8); blocked.side_state[0].money = 10000;
@@ -2952,7 +2957,7 @@ static void test_town_production() {
   GameSim blocked_sim(rules, Modifications::faithful()); blocked_sim.init(blocked);
   Command request; request.type = Pct::Build; request.a = 12;
   blocked_sim.submit(request); production_steps(blocked_sim, blocked, 200);
-  CHECK(blocked.objects.size() == 1 && blocked.side_state[0].queue[0].remaining == 0);
+  CHECK(blocked.objects.size() == 1 && !blocked.side_state[0].queue[0].started && blocked.side_state[0].money == 10000);
   CHECK(item(blocked_sim, blocked, 0, 12).enabled);
   Command remove; remove.type = Pct::QueueKill; blocked_sim.submit(remove);
   production_steps(blocked_sim, blocked, 1);
@@ -2983,7 +2988,7 @@ static void test_town_production() {
   // A dead hall suspends its timer without spawning at an unrelated side start.
   int remaining = w.side_state[0].queue[0].remaining;
   sim.script_kill(w, 1); production_steps(sim, w, 200);
-  CHECK(w.objects.size() == 1 && w.side_state[0].queue[0].remaining == remaining);
+  CHECK(w.objects.size() == 2 && w.objects[1].progress < 1000 && w.side_state[0].queue[0].remaining == remaining);
   int money = w.side_state[0].money;
   Command cancel; cancel.type = Pct::QueueKill; sim.submit(cancel); production_steps(sim, w, 1);
   CHECK(w.side_state[0].queue.empty() && w.side_state[0].money == money + refund);
@@ -3508,7 +3513,7 @@ static void test_construction_resume_completion() {
     for (int tick = 1; tick <= damaged_remaining; ++tick) {
       production_steps(sim, w, 1); production_steps(*replay, restored, 1);
       CHECK(sim.state_hash(w) == replay->state_hash(restored));
-      CHECK(w.side_state[0].money == cash && !w.find(id)->harvest_ready);
+      CHECK(w.side_state[0].money == cash && w.find(id)->harvest_ready == (tick == damaged_remaining));
       if (tick < damaged_remaining) CHECK(w.find(id)->progress < 1000 && !w.side_state[0].queue.empty());
     }
     CHECK(w.side_state[0].queue.empty() && w.find(id)->progress == 1000);
@@ -3777,17 +3782,17 @@ static void test_payment_clock() {
   place.b = place.c = 15; place.ids = {1};
   construction.submit(place); production_steps(construction, building, 3);
   CHECK(building.side_state[0].money == 57 && building.objects.size() == 2);
-  CHECK(building.objects[1].hp == 12856); // three increments of 4285, initial HP 1
+  CHECK(building.objects[1].hp == 12855); // three increments of 4285, starting HP 0
   CHECK(construction.production_refund(building, building.side_state[0].queue[0]) == 24);
   building.objects[1].hp -= 5000;
   // Damage changes the live HP fraction before another production tick.
   CHECK(construction.production_refund(building, building.side_state[0].queue[0]) == 31);
   Command pause; pause.type = Pct::PauseBuild; pause.a = 1; pause.ids = {1};
   construction.submit(pause); production_steps(construction, building, 3);
-  CHECK(building.objects[1].hp == 7856 && building.side_state[0].money == 57);
+  CHECK(building.objects[1].hp == 7855 && building.side_state[0].money == 57);
   pause.a = 0; construction.submit(pause);
   production_steps(construction, building, 5);
-  CHECK(building.objects[1].hp == 29281 && building.objects[1].progress < 1000);
+  CHECK(building.objects[1].hp == 29280 && building.objects[1].progress < 1000);
   CHECK(building.side_state[0].money == 57 && building.side_state[0].queue.size() == 1);
   production_steps(construction, building, 1);
   CHECK(building.objects[1].hp == 30000 && building.objects[1].progress == 1000);
@@ -3820,7 +3825,7 @@ static void test_harvest_rate_lifecycle() {
       descriptor[1] = 1001; descriptor[4] = descriptor[5] = 48;
       descriptor[6 + 24] = descriptor[6 + 25] = 2;
       descriptor[59] = 256; descriptor[60] = 25; descriptor[61] = 50;
-      descriptor[62] = 100; descriptor[63] = param == 0;
+      descriptor[62] = 100; descriptor[63] = param == 0 ? 65537 : 256; // only the low byte selects a schedule
       descriptor[64] = param == 0 ? 2 : 7;
       descriptor[65] = 3; descriptor[66] = 11; descriptor[320] = 3;
       out << param;
@@ -3838,6 +3843,7 @@ static void test_harvest_rate_lifecycle() {
     World live = fresh; GameSim sim(rules, Modifications::faithful()); sim.init(live);
     production_steps(sim, live, 2);
     CHECK(live.objects[0].gold_harvest.rate == (partial ? 100 : 200));
+    CHECK(rules->type(type).harvest.scheduled == (type == 12));
     CHECK(live.objects[0].repair_harvest.rate == 256);
     auto hash = sim.state_hash(live);
     ++live.objects[0].gold_harvest.rate;
@@ -3870,6 +3876,105 @@ static void test_harvest_rate_lifecycle() {
     CHECK(dry.objects[0].gold_harvest.rate == 0 && dry.side_state[0].money == 0);
     CHECK(ds.income_total(0) == 0);
   }
+}
+
+// Invented descriptors isolate admission, creation/completion clocks and real HP.
+static void test_economy_creation_boundaries() {
+  TempDir directory;
+  std::ofstream(directory.path() / "types.csv") <<
+      "id,ugi,kind,param,unit_price,build_time,dev_level\n"
+      "0,UNIT,Marine,0,7,7,0\n11,HALL,Building,1,0,0,1\n"
+      "13,MINE,Building,0,43,7,1\n19,UPGRADE,Building,0,43,7,2\n";
+  std::ofstream(directory.path() / "desc_marine.csv") <<
+      "param,d0,d1,d2,d3,d4\n0,0,101,0,101,101\n";
+  std::ofstream(directory.path() / "townhall_ids.csv") << "level,a,b,c\n1,11,38,64\n2,19,47,71\n";
+  std::ofstream(directory.path() / "buildtree.csv") <<
+      "race,level,slot,type,map,prereq\n0,1,0,0,0,13\n0,1,1,13,0,\n0,1,2,19,0,\n";
+  {
+    std::ofstream out(directory.path() / "desc_building.csv");
+    out << "param";
+    for (int i = 0; i <= 320; ++i) out << ",d" << i;
+    out << '\n';
+    for (int param = 0; param < 2; ++param) {
+      std::array<int, 321> d{};
+      d[1] = param ? 1000 : 101; d[30] = 2;
+      d[59] = param ? 0 : 256; d[61] = param ? 0 : 25;
+      d[62] = param ? 0 : 100; d[64] = param ? -1 : 5; d[320] = 3;
+      out << param;
+      for (int value : d) out << ',' << value;
+      out << '\n';
+    }
+  }
+  auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(directory.path().string()));
+  World fresh = production_world(); fresh.mission.towns.resize(1);
+  fresh.resources.v.assign(1600, uint16_t(32 << 8));
+  production_object(fresh, 11, 0, 5, 5); fresh.objects[0].town_hall = true;
+  fresh.side_state.resize(8); fresh.side_state[0].money = 100;
+  Command unit; unit.type = Pct::Build; unit.a = 0; unit.ids = {1};
+  Command mine = unit; mine.a = 13;
+  World waiting = fresh; GameSim ws(rules, Modifications::faithful()); ws.init(waiting);
+  ws.submit(unit); ws.submit(mine); production_steps(ws, waiting, 3);
+  CHECK(waiting.side_state[0].queue.size() == 2);
+  CHECK(!waiting.side_state[0].queue[0].started && !waiting.side_state[0].queue[1].started);
+  CHECK(waiting.side_state[0].money == 100 && waiting.objects.size() == 1);
+  CHECK(ws.production_refund(waiting, waiting.side_state[0].queue[0]) == 0);
+  // Completing the prerequisite releases the same waiting head, without resubmission.
+  production_object(waiting, 13, 0, 20, 20);
+  production_steps(ws, waiting, 1);
+  CHECK(waiting.side_state[0].queue[0].started && !waiting.side_state[0].queue[1].started);
+  CHECK(waiting.side_state[0].queue[0].remaining == 7 && waiting.side_state[0].money == 93);
+
+  // The mine waits unpaid for one tick, then completes after eight integer increments.
+  for (bool explicit_site : {false, true}) {
+    World w = fresh; w.side_state[0].money = 0;
+    GameSim sim(rules, Modifications::faithful()); sim.init(w);
+    Command build = mine;
+    if (explicit_site) { build.type = Pct::PlaceBuilding; build.b = build.c = 15; }
+    sim.submit(build); production_steps(sim, w, 1);
+    CHECK(!w.side_state[0].queue[0].started && w.side_state[0].money == 0);
+    w.side_state[0].money = 100;
+    production_steps(sim, w, 1);
+    auto id = w.side_state[0].queue[0].object;
+    CHECK(w.find(id)->hp == 14 && w.find(id)->repair_harvest.last_clock == 0);
+    CHECK(w.find(id)->repair_harvest.rate == 256 && w.find(id)->repair_harvest.accumulated == 0);
+    CHECK(sim.production_refund(w, w.side_state[0].queue[0]) == 37);
+    production_steps(sim, w, 7);
+    CHECK(w.side_state[0].queue.empty() && w.find(id)->hp == 101);
+    CHECK(w.find(id)->harvest_ready && w.find(id)->gold_harvest.rate == 32);
+    CHECK(w.find(id)->gold_harvest.last_clock == 9 && w.find(id)->gold_harvest.accumulated == 0);
+    w.resources.v.assign(1600, 0); // between completion and the first active update
+    production_steps(sim, w, 1);
+    CHECK(w.find(id)->repair_harvest.last_clock == 10);
+    CHECK(w.find(id)->repair_harvest.accumulated == 0); // one active increment paid immediately
+    CHECK(w.find(id)->gold_harvest.accumulated == 32 && w.side_state[0].money == 57);
+    production_steps(sim, w, 4);
+    CHECK(w.find(id)->gold_harvest.rate == 32 && w.side_state[0].money == 58);
+    CHECK(w.find(id)->gold_harvest.last_clock == 14);
+  }
+
+  // Automatic structures and in-place upgrades both use damage-sensitive HP.
+  for (int type : {13, 19}) {
+    World w = fresh; GameSim sim(rules, Modifications::faithful()); sim.init(w);
+    if (type == 19) w.resources.v.assign(1600, 0);
+    auto buy = mine; buy.a = type; sim.submit(buy); production_steps(sim, w, 3);
+    auto id = w.side_state[0].queue[0].object;
+    CHECK(w.find(id)->hp == 42 && w.side_state[0].money == 57);
+    w.find_mut(id)->hp -= 20;
+    CHECK(sim.production_refund(w, w.side_state[0].queue[0]) == 33);
+    production_steps(sim, w, 5);
+    CHECK(w.find(id)->hp == 92 && w.side_state[0].queue.size() == 1);
+    CHECK(w.side_state[0].money == 57);
+    Command cancel; cancel.type = Pct::QueueKill; sim.submit(cancel);
+    const int refund = sim.production_refund(w, w.side_state[0].queue[0]);
+    production_steps(sim, w, 1);
+    CHECK(w.side_state[0].money == 57 + refund && w.side_state[0].queue.empty());
+    if (type == 19) CHECK(w.objects[0].type == 11 && w.objects[0].hp == 1000 && w.objects[0].alive);
+    else CHECK(w.find(id)->removed);
+  }
+  HarvestState disabled;
+  CHECK(harvest_tick(disabled, 256, 1, -1) == 0 && disabled.accumulated == 0);
+  std::vector<int> empty;
+  CHECK(harvest_tick(disabled, 256, 1, 0, &empty) == 0 && disabled.accumulated == 0);
 }
 
 static void test_mission_unit_health() {
@@ -4509,6 +4614,7 @@ int main(int argc, char** argv) {
     test_scenario_controllers();
     test_payment_clock();
     test_harvest_rate_lifecycle();
+    test_economy_creation_boundaries();
     test_siege_ranged();
     test_descriptor_combat();
     test_fire_air_siege();

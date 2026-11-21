@@ -221,6 +221,7 @@ void GameSim::init(World& w) {
       }
       o.progress = 1000;
       o.gold_harvest = {}; o.repair_harvest = {}; o.harvest_ready = false;
+      if (r.structure) { initialize_gold(w, o); initialize_repair(w, o); }
       o.body_angle = o.facing * 32; o.turret_angle = o.body_angle;
       if (o.source == ObjectSource::Johnka) {
         o.removed = !o.vessel_enabled;
@@ -321,7 +322,7 @@ bool GameSim::automatic_site(const World& w, int side, int type, int tx, int ty,
 
 // Automatic placement is an engine policy pending reference placement evidence.
 // Search nearest square rings, with stable row/column tie breaking.
-bool GameSim::finish_structure(World& w, int side, const QueueItem& item) {
+bool GameSim::start_structure(World& w, int side, QueueItem& item) {
   const Object* hall = town_hall(w, item.town);
   if (!hall || hall->side != side || hall->progress < 1000) return false;
   TownDef& town = w.mission.towns[size_t(item.town)];
@@ -336,17 +337,22 @@ bool GameSim::finish_structure(World& w, int side, const QueueItem& item) {
       block_footprint(old, tx, ty, +1);
       return false;
     }
+    item.previous_type = o->type;
     o->type = item.type; o->town_hall = true;
-    o->hp_max = r.hp_max; o->hp = r.hp_max; o->secondary_hp = r.secondary_hp;
+    o->hp_max = r.hp_max; o->hp = 0; o->secondary_hp = r.secondary_hp;
     o->harvest_ready = false; o->gold_harvest = {}; o->repair_harvest = {};
-    o->anim_state = kAnimIdle; o->anim_tick = 0; o->body_tick = -1;
+    initialize_repair(w, *o, item.created_clock);
+    o->progress = 0; o->build_elapsed = 0;
+    o->anim_state = kAnimConstruct; o->anim_tick = 0; o->body_tick = -1;
+    item.object = o->id;
     block_footprint(r, tx, ty, +1);
-    town.type = level;
     return true;
   }
   auto place = [&](int x, int y) {
     if (!automatic_site(w, side, item.type, x, y, item.town)) return false;
-    uint32_t id = spawn(w, item.type, side, x * kTilePx + kTilePx / 2, y * kTilePx + kTilePx / 2, 0, false);
+    uint32_t id = spawn(w, item.type, side, x * kTilePx + kTilePx / 2, y * kTilePx + kTilePx / 2, 0, true);
+    item.object = id;
+    initialize_repair(w, *w.find_mut(id), item.created_clock);
     w.find_mut(id)->town = town.index;
     w.find_mut(id)->tactic = town.scenario_id;
     return true;
@@ -388,6 +394,10 @@ uint32_t GameSim::spawn(World& w, int type, int side, int pxx, int pyy, int hp, 
     o.hp = 1;
     o.anim_state = kAnimConstruct;
     o.construction_overlay = r.kind == 7;
+  }
+  if (r.structure) {
+    initialize_repair(w, o);
+    if (!constructing) initialize_gold(w, o);
   }
   w.objects.push_back(o);
   Object& ref = w.objects.back();
@@ -724,7 +734,12 @@ void GameSim::apply(World& w, const Command& c) {
       const std::vector<MenuItem> items = menu(w, c.side, ti);
       const MenuItem* mi = nullptr;
       for (const MenuItem& m : items) if (m.type == c.a) mi = &m;
-      if (!mi || !mi->enabled) break;
+      if (!mi) break;
+      bool admitted = false;
+      const auto& td = w.mission.towns[size_t(ti)];
+      for (const auto& recipe : rules_->build_list(td.race, td.type))
+        if (recipe.type == c.a) admitted = menu_ok(w, c.side, recipe, ti, &why, nullptr, true);
+      if (!admitted) break;
       if (std::count_if(ss->queue.begin(), ss->queue.end(),
                         [ti](const QueueItem& q) { return q.town == ti && !q.started; }) >= kProductionQueueCapacity) break;
       const bool place = mi->construct || c.type == Pct::PlaceBuilding;
@@ -732,6 +747,7 @@ void GameSim::apply(World& w, const Command& c) {
       if (place && (c.b < 0 || c.c < 0 || c.b >= w.terrain.w || c.c >= w.terrain.h ||
                             !can_place(w, c.side, c.a, c.b, c.c, &why, nullptr, ti))) break;
       QueueItem q{c.a, std::max(1, mi->time), std::max(1, mi->time), ti, 0};
+      q.created_clock = w.day_clock;
       if (place) {
         q.tile_x = c.b; q.tile_y = c.c;
         q.object = spawn(w, q.type, c.side, c.b * kTilePx + kTilePx / 2,
@@ -837,11 +853,11 @@ int GameSim::training_capacity(const World& w, int town, int producer) const {
   }));
 }
 
-bool GameSim::menu_ok(const World& w, int side, const BuildItem& it, int town, const char** why, const QueueItem* reservation) const {
+bool GameSim::menu_ok(const World& w, int side, const BuildItem& it, int town, const char** why, const QueueItem* reservation, bool admission) const {
   const SideDef* sd = nullptr;
   for (const SideDef& s : w.mission.sides) if (s.index == side) sd = &s;
   if (sd && std::find(sd->disabled.begin(), sd->disabled.end(), it.type) != sd->disabled.end()) { *why = "disabled"; return false; }
-  for (const Prerequisite& need : it.prereq) {
+  if (!admission) for (const Prerequisite& need : it.prereq) {
     bool have = false;
     for (const Object& o : w.objects)
       if (!o.removed && o.alive && o.side == side && o.type == need.type && o.progress >= 1000 && (need.side_wide || o.town == w.mission.towns[size_t(town)].index)) { have = true; break; }
@@ -1012,9 +1028,46 @@ void GameSim::cancel_production(World& w, SideState& side, size_t index) {
   side.money += production_refund(w, q);
   if (Object* o = w.find_mut(q.object); o && o->alive && !o->removed) {
     block_footprint(rules_->type(o->type), px(o->cur_x) / kTilePx, px(o->cur_y) / kTilePx, -1);
-    o->alive = false; o->removed = true; o->hp = 0;
+    if (q.previous_type >= 0) {
+      o->type = q.previous_type;
+      const auto& old = rules_->type(o->type);
+      o->hp = o->hp_max = old.hp_max; o->secondary_hp = old.secondary_hp;
+      o->progress = 1000; o->set_anim(kAnimIdle); o->body_tick = -1;
+      initialize_gold(w, *o); initialize_repair(w, *o);
+      block_footprint(old, px(o->cur_x) / kTilePx, px(o->cur_y) / kTilePx, +1);
+    } else { o->alive = false; o->removed = true; o->hp = 0; }
   }
   side.queue.erase(side.queue.begin() + index);
+}
+
+void GameSim::initialize_gold(const World& w, Object& o) {
+  const auto& h = rules_->type(o.type).harvest;
+  o.gold_harvest = {};
+  o.gold_harvest.last_clock = w.day_clock;
+  int rate = int(((int64_t(h.rate_a) * 65536 / 100) + 128) >> 8);
+  if (h.terrain) {
+    int64_t sum = 0;
+    int count = 0;
+    int ca = int(((int64_t(h.rate_a) * 65536 / 100) * 2 + 256) >> 8);
+    int cb = int(((int64_t(h.rate_b) * 65536 / 100) * 2 + 256) >> 8);
+    for (int cell = 0; cell < 49; ++cell) if (h.occupancy[cell] == 2) {
+      int x = px(o.cur_x) / kTilePx + cell % 7 - 3;
+      int y = px(o.cur_y) / kTilePx + cell / 7 - 3;
+      uint16_t v = w.resources.in(x, y) ? w.resources.at(x, y) : 0;
+      sum += 2 * (v & 255) * ca + 2 * (v >> 8) * cb;
+      ++count;
+    }
+    rate = count ? int((sum / count) >> 8) : 0;
+  }
+  o.gold_harvest.rate = rate;
+  o.harvest_ready = true;
+}
+
+void GameSim::initialize_repair(const World& w, Object& o, int clock) {
+  const auto& h = rules_->type(o.type).harvest;
+  o.repair_harvest = {};
+  o.repair_harvest.last_clock = clock < 0 ? w.day_clock : clock;
+  o.repair_harvest.rate = int(((int64_t(h.repair_rate) * 65536 / 100) + 128) >> 8);
 }
 
 void GameSim::economy(World& w) {
@@ -1052,7 +1105,7 @@ void GameSim::economy(World& w) {
       }
       const Object* hall = town_hall(w, q.town);
       // A missing producer suspends production rather than spawning at the side start.
-      if (!hall || hall->side != int(s) || hall->progress < 1000) { ++i; continue; }
+      if (!hall || hall->side != int(s) || (hall->progress < 1000 && hall->id != q.object)) { ++i; continue; }
       const bool starting = !q.started;
       if (!q.started) {
         const auto& town = w.mission.towns[size_t(q.town)];
@@ -1067,6 +1120,11 @@ void GameSim::economy(World& w) {
         if (q.tile_x >= 0 && !can_place(w, int(s), q.type, q.tile_x, q.tile_y, nullptr, &q, q.town)) {
           ++i; continue;
         }
+        if (rules_->type(q.type).structure && !q.object) {
+          if (!start_structure(w, int(s), q)) { ++i; continue; }
+          // Spawning may reallocate the object vector.
+          hall = town_hall(w, q.town);
+        }
         q.started = true;
         q.paid = offer.price;
         // Production advances by an integer fraction of the target's maximum
@@ -1075,7 +1133,10 @@ void GameSim::economy(World& w) {
         q.total = q.remaining = std::max(1, offer.time);
         ss.money -= q.paid;
         if (q.town < int(w.ai_towns.size())) w.ai_towns[q.town].spent += q.paid;
-        if (auto* object = w.find_mut(q.object)) object->build_total = q.total;
+        if (auto* object = w.find_mut(q.object)) {
+          object->build_total = q.total;
+          object->hp = 0;
+        }
         if (ai_observer_ && std::any_of(w.mission.sides.begin(), w.mission.sides.end(),
             [s](const auto& side) { return side.index == int(s) && side.only_comp; })) {
           AiEvent event; event.kind = "production"; event.side = int(s); event.town = q.town;
@@ -1097,8 +1158,13 @@ void GameSim::economy(World& w) {
       }
       bool finished = false;
       if (q.remaining <= 0 && !starting) {
-        if (q.object) { finished = true; completed.push_back(q.object); }
-        else if (rules_->type(q.type).structure) finished = finish_structure(w, int(s), q);
+        if (q.object) {
+          finished = true; completed.push_back(q.object);
+          auto* object = w.find_mut(q.object);
+          initialize_gold(w, *object);
+          const int level = upgrade_level(w.mission.towns[size_t(q.town)].race, q.type);
+          if (level >= 0) w.mission.towns[size_t(q.town)].type = level;
+        }
         else {
           const auto& unit = rules_->type(q.type);
           const int bx = px(hall->cur_x), by = px(hall->cur_y);
@@ -1143,45 +1209,24 @@ void GameSim::economy(World& w) {
     }
   }
   std::fill(w.repair_credits.begin(), w.repair_credits.end(), 0);
-  // Construction starts its independent harvest clocks only after completion.
+  // Gold starts at completion; repair keeps its creation clock but accrues only while active.
   for (Object& o : w.objects) {
     if (o.removed || !o.alive || o.type < 0) continue;
     const TypeRules& r = rules_->type(o.type);
     if (!r.structure || std::find(completed.begin(), completed.end(), o.id) != completed.end()) continue;
+    bool queued = false;
+    for (const auto& state : w.side_state) for (const auto& q : state.queue) queued |= q.object == o.id;
+    if (queued) continue;
     if (o.progress < 1000) {
-      bool queued = false;
-      for (const auto& state : w.side_state) for (const auto& q : state.queue) queued |= q.object == o.id;
-      if (queued) continue;
       const int total = std::max(1, o.build_total);
       const int before = std::max(1, int(int64_t(o.hp_max) * o.build_elapsed / total));
       o.build_elapsed = std::min(total, o.build_elapsed + 1);
       o.progress = int(int64_t(o.build_elapsed) * 1000 / total);
       o.hp = std::min(o.hp_max, o.hp + std::max(1, int(int64_t(o.hp_max) * o.build_elapsed / total)) - before);
-      if (o.progress >= 1000) { o.anim_state = kAnimIdle; o.anim_tick = 0; o.body_tick = -1; }
+      if (o.progress >= 1000) { o.anim_state = kAnimIdle; o.anim_tick = 0; o.body_tick = -1; initialize_gold(w, o); }
     } else if (o.side >= 0 && o.side < int(w.side_state.size())) {
       const auto& h = r.harvest;
-      if (!o.harvest_ready) {
-        // The first active tick follows creation/completion of the accumulator.
-        o.gold_harvest.last_clock = o.repair_harvest.last_clock = (w.day_clock + kDayTicks - 1) % kDayTicks;
-        int rate = int(((int64_t(h.rate_a) * 65536 / 100) + 128) >> 8);
-        if (h.terrain) {
-          int64_t sum = 0;
-          int count = 0;
-          int ca = int(((int64_t(h.rate_a) * 65536 / 100) * 2 + 256) >> 8);
-          int cb = int(((int64_t(h.rate_b) * 65536 / 100) * 2 + 256) >> 8);
-          for (int cell = 0; cell < 49; ++cell) if (h.occupancy[cell] == 2) {
-            int x = px(o.cur_x) / kTilePx + cell % 7 - 3;
-            int y = px(o.cur_y) / kTilePx + cell / 7 - 3;
-            uint16_t v = w.resources.in(x, y) ? w.resources.at(x, y) : 0;
-            sum += 2 * (v & 255) * ca + 2 * (v >> 8) * cb;
-            ++count;
-          }
-          rate = count ? int((sum / count) >> 8) : 0;
-        }
-        o.gold_harvest.rate = rate;
-        o.repair_harvest.rate = int(((int64_t(h.repair_rate) * 65536 / 100) + 128) >> 8);
-        o.harvest_ready = true;
-      }
+      if (!o.harvest_ready) initialize_gold(w, o);
       int gain = harvest_tick(o.gold_harvest, o.gold_harvest.rate, w.day_clock, h.period, h.scheduled ? &h.dates : nullptr);
       if (o.town >= 0 && (o.type == 12 || o.type == 39 || o.type == 65)) {
         bool warehouse = false;
@@ -1194,7 +1239,7 @@ void GameSim::economy(World& w) {
       }
       w.side_state[o.side].money += gain;
       if (o.side < 8) income_total_[o.side] += gain;
-      int credits = harvest_tick(o.repair_harvest, o.repair_harvest.rate, w.day_clock, h.repair_period);
+      int credits = h.repair_rate != 0 ? harvest_tick(o.repair_harvest, o.repair_harvest.rate, w.day_clock, h.repair_period) : 0;
       for (size_t ti = 0; ti < w.mission.towns.size(); ++ti)
         if (w.mission.towns[ti].index == o.town && w.mission.towns[ti].side == o.side) {
           w.repair_credits[ti] += credits * 100;
@@ -2231,7 +2276,7 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(uint32_t(s.money)); mix(s.queue.size());
     mix(s.enemy_mask);
     for (const QueueItem& q : s.queue) { mix(uint32_t(q.type)); mix(uint32_t(q.remaining)); mix(uint32_t(q.total)); mix(uint32_t(q.town)); mix(uint32_t(q.paid)); mix(q.plan_town); mix(q.plan_entry); mix(q.plan_generation);
-      mix(q.started); mix(q.paused); mix(uint32_t(q.tile_x)); mix(uint32_t(q.tile_y)); mix(q.object); mix(uint32_t(q.work_rate)); }
+      mix(q.started); mix(q.paused); mix(uint32_t(q.tile_x)); mix(uint32_t(q.tile_y)); mix(q.object); mix(uint32_t(q.work_rate)); mix(q.created_clock); mix(q.previous_type); }
     for (const auto& g : s.groups) { mix(g.size()); for (uint32_t id : g) mix(id); }
   }
   mix(w.visibility_brightness);
