@@ -25,11 +25,11 @@ changes it (see `docs/gap_recon.md` for the open items behind each row).
 | --- | --- | --- | --- |
 | Data tables, raw values (90 types, 60 weapon records, build tree, prices) | ~100% | ~85% | partial |
 | Descriptor fields (meaning of each of the 201 data-carrying words) | ~97% (about 180 named, some as guesses) | ~20% | ~10% |
-| Weapon and damage formulas | ~95% (weapon graph, anti-air table, effects, fire, Knight sweep) | ~50% | ~25% |
-| Movement and path finding | ~92% (wave search, tie breaking, passability, side steps, speed arithmetic) | ~55% | ~30% |
-| Unit behaviour (states, acquisition, groups) | ~93% (idle scan, chase, leash, retaliation, group anchor and formation) | ~45% | ~25% |
-| Economy and construction | ~92% (placement, progress, refunds, income, production lane, build tree flags) | ~60% | ~30% |
-| Computer players (purchases, waves, defence) | ~85% (production gate, plan builder, target score, threat rule; some tables open) | ~30% | ~10% |
+| Weapon and damage formulas | ~96% (weapon graph, anti-air table, effects, fire, Knight sweep) | ~50% | ~25% |
+| Movement and path finding | ~93% (wave search, tie breaking, passability, side steps, speed arithmetic) | ~55% | ~30% |
+| Unit behaviour (states, acquisition, groups) | ~95% (idle scan, chase, leash, retaliation, group anchor and formation) | ~45% | ~25% |
+| Economy and construction | ~94% (placement, progress, refunds, income, production lane, build tree flags) | ~60% | ~30% |
+| Computer players (purchases, waves, defence) | ~92% (production gate, plan builder, target score, threat rule; some tables open) | ~30% | ~10% |
 | Mission scripts (conditions, actions, flow) | ~97% (all action codes, 22 condition codes, trigger timing, victory flow) | ~85% | forced-state tests only |
 | Transport (ferries) | ~95% (control flow, request conditions, passenger rule, tick timeline) | ~35% (model to be replaced) | one measured cycle |
 | Special mechanics (towers, air units, fire, town capture) | ~90% (capture rule, ownership mechanism, hypno resolved) | ~30% | ~15% |
@@ -38,7 +38,7 @@ changes it (see `docs/gap_recon.md` for the open items behind each row).
 | Audio | ~90% | ~50% | ~10% |
 | Campaign (missions 1 to 15) | ~78% | ~70% (scripts) | ~7% (one mission played honestly) |
 
-Overall (rough): about 92% of the original's rules understood, about 45 to 50% implemented,
+Overall (rough): about 94% of the original's rules understood, about 45 to 50% implemented,
 about 15 to 20% checked against the original or by play. The reference oracle (the original
 executable running headless under an observer, plus its decompilation) covers about 35% of
 the logic so far; the decompilation corpus now holds 5468 functions with an index of one-line annotations used as leads, not as truth; missions 4 to 15 have not been measured.
