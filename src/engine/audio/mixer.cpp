@@ -38,32 +38,55 @@ Positional positional_gain(float dx, float dist) {
   return p;
 }
 
-uint64_t Mixer::play(std::shared_ptr<const Pcm> pcm, float l, float r, bool loop, bool speech) {
+uint64_t Mixer::play(std::shared_ptr<const Pcm> pcm, float l, float r, bool loop, bool speech, bool protected_speech) {
   if (!pcm || pcm->size() < 2) return 0;
-  int slot = -1;
-  for (int i = 0; i < kMaxVoices; i++) if (!voices_[i].pcm) { slot = i; break; }
-  if (slot < 0) {  // steal the voice closest to its end
-    size_t best = 0;
-    for (int i = 0; i < kMaxVoices; i++) { size_t left = voices_[i].pcm->size() / 2 - voices_[i].pos; if (slot < 0 || left < best) { slot = i; best = left; } }
-  }
-  voices_[slot] = {std::move(pcm), 0, l, r, loop, ++next_voice_, speech};
+  const int slot = allocate_slot();
+  if (slot < 0) return 0;
+  voices_[slot] = {std::move(pcm), 0, l, r, loop, ++next_voice_, speech, speech && protected_speech};
   return next_voice_;
+}
+
+int Mixer::allocate_slot() {
+  // V: search cyclically for a free buffer, then an unprotected victim.
+  // Music and flagged speech are protected; effects and casual speech are not.
+  for (int pass = 0; pass < 2; ++pass) {
+    for (int offset = 1; offset <= kMaxVoices; ++offset) {
+      const int slot = (last_slot_ + offset) % kMaxVoices;
+      if (slot == music_slot_) continue;
+      const auto& voice = voices_[slot];
+      if (!voice.pcm || (pass == 1 && !voice.protected_voice)) {
+        last_slot_ = slot;
+        voices_[slot] = Voice{};
+        return slot;
+      }
+    }
+  }
+  return -1;
 }
 
 bool Mixer::gain(uint64_t id, float l, float r) {
   for (auto& v : voices_) if (v.pcm && v.id == id) { v.l = l; v.r = r; return true; }
   return false;
 }
+bool Mixer::playing(uint64_t id) const {
+  for (const auto& v : voices_) if (v.pcm && v.id == id) return true;
+  return false;
+}
 void Mixer::stop(uint64_t id) {
   for (auto& v : voices_) if (v.id == id) v = Voice{};
 }
 
-void Mixer::play_music(std::shared_ptr<const void> holder, const int16_t* pcm, size_t frames) {
+bool Mixer::play_music(std::shared_ptr<const void> holder, const int16_t* pcm, size_t frames) {
+  stop_music();
+  if (!pcm || !frames) return false;
+  music_slot_ = allocate_slot();
+  if (music_slot_ < 0) return false;
   music_holder_ = std::move(holder);
   music_pcm_ = pcm;
   music_frames_ = frames;
   music_pos_ = 0;
   music_ended = false;
+  return true;
 }
 
 size_t Mixer::active_voices() const {
@@ -97,7 +120,7 @@ void Mixer::mix(int16_t* out, int frames) {
     const int16_t* s = music_pcm_ + music_pos_ * 2;
     for (int i = 0; i < n; i++) { acc[size_t(i) * 2] += int32_t(s[i * 2] * music_volume); acc[size_t(i) * 2 + 1] += int32_t(s[i * 2 + 1] * music_volume); }
     music_pos_ += size_t(n);
-    if (music_pos_ >= music_frames_) { music_pcm_ = nullptr; music_holder_.reset(); music_ended = true; }
+    if (music_pos_ >= music_frames_) { stop_music(); music_ended = true; }
   }
   for (size_t i = 0; i < acc.size(); i++) out[i] = int16_t(std::clamp(acc[i], -32768, 32767));
 }

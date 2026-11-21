@@ -370,13 +370,7 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
         if (w.mission.towns[i].side == side && w.mission.towns[i].scenario_id == a.id)
           sim.transfer_town(w, int(i), to);
       auto members = tactic_members(w, side, a.id);
-      sim.script_stop(w, members);
-      for (uint32_t id : members) {
-        Object* o = w.find_mut(id);
-        o->side = to;
-        o->order = uint8_t(Order::Idle);
-        o->target = 0;
-      }
+      sim.transfer_objects(w, members, to);
       break;
     }
     default: // build/move commands remain unsupported

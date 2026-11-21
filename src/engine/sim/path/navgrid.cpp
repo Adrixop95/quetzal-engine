@@ -2,6 +2,39 @@
 
 namespace aztec::path {
 
+bool NavGrid::connected(int sx, int sy, int tx, int ty, MoveClass c) const {
+  if (blocked(tx, ty, c)) return false;
+  if (blocked(sx, sy, c) && !nearest_free(sx, sy, c, sx, sy)) return false;
+  auto& cache = regions_[size_t(c)];
+  if (cache.labels.empty() || cache.version != version_) {
+    cache.labels.assign(size_t(w_) * h_, 0);
+    std::vector<size_t> pending;
+    u32 region = 0;
+    for (int y = 0; y < h_; ++y) for (int x = 0; x < w_; ++x) {
+      const size_t start = size_t(y) * w_ + x;
+      if (cache.labels[start] || blocked(x, y, c)) continue;
+      cache.labels[start] = ++region;
+      pending.clear(); pending.push_back(start);
+      for (size_t i = 0; i < pending.size(); ++i) {
+        const int cx = int(pending[i] % w_), cy = int(pending[i] / w_);
+        // A permitted diagonal always has a two-edge orthogonal alternative.
+        // Four neighbours therefore preserve the field's no-corner-cut connectivity.
+        constexpr int dx[] = {1, -1, 0, 0}, dy[] = {0, 0, 1, -1};
+        for (int d = 0; d < 4; ++d) {
+          const int nx = cx + dx[d], ny = cy + dy[d];
+          if (blocked(nx, ny, c)) continue;
+          const size_t next = size_t(ny) * w_ + nx;
+          if (!cache.labels[next]) {
+            cache.labels[next] = region; pending.push_back(next);
+          }
+        }
+      }
+    }
+    cache.version = version_;
+  }
+  return cache.labels[size_t(sy) * w_ + sx] == cache.labels[size_t(ty) * w_ + tx];
+}
+
 u64 NavGrid::state_hash() const {
   if (cached_hash_ && hash_version_ == version_) return cached_hash_;
   u64 h = 1469598103934665603ull;

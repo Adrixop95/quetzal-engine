@@ -300,12 +300,13 @@ bool RulesData::load_dir(const std::string& dir) {
       return w;
     }
     if (w.klass == 8) {
-      auto r = row(throws, w.parameter);
-      w.payload_id = num(r, 1, -1); w.spread_px = std::clamp(num(r, 2), 0, 1 << 14);
-      w.range = num(r, 3); w.reload = num(r, 4); w.duration = 10;
+      const auto volley = row(throws, w.parameter);
+      w.payload_id = num(volley, 1, -1);
+      w.spread_px = std::clamp(num(volley, 2), 0, 1 << 14);
+      w.range = num(volley, 3); w.reload = num(volley, 4); w.duration = 10;
       auto payload = visual_weapon(w.payload_id, depth + 1);
       w.impact_anim = payload.impact_anim;
-      return w;
+      return w; // volley scheduling is separate from the explosion payload
     }
     if (w.klass == 11) {
       w.anim = 157; w.range = 96; w.reload = 40; w.duration = 10;
@@ -391,6 +392,10 @@ bool RulesData::load_dir(const std::string& dir) {
   // Scripted vessels and cameras have a zero maximum getter, not inferred health.
   for (auto& t : types_) if (t.kind == 8 || t.kind == 10 || t.kind == 11) {
     t.hp_max = 0; t.hp_src = Src::Verified;
+    if (t.kind == 10) {
+      t.weapon_id = 54; t.armed = true;
+      t.weapon = visual_weapon(t.weapon_id, 0);
+    }
   }
   std::map<int, std::map<int, std::vector<int>>> tables;
   for (const auto& entry : std::vector<std::pair<int, std::string>>{

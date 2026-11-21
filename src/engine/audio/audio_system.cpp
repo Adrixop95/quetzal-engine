@@ -25,18 +25,62 @@ void write_audio_event(FILE* file, const AudioEvent& e, uint64_t sequence) {
 
 AudioSystem::~AudioSystem() {
   if (dev_) { SDL_CloseAudioDevice(dev_); dev_ = 0; }
+  if (output_stream_) SDL_FreeAudioStream(output_stream_);
 }
 
 void AudioSystem::callback(void* user, Uint8* stream, int len) {
   AudioSystem* a = static_cast<AudioSystem*>(user);
-  std::lock_guard<std::mutex> lock(a->mu_);
-  a->mixer_.mix_at_rate(reinterpret_cast<int16_t*>(stream), len / 4, a->sampling_rate_);
+  a->render_samples(reinterpret_cast<int16_t*>(stream), len / 4);
+}
+
+void AudioSystem::render_samples(int16_t* out, int frames) {
+  if (frames <= 0) return;
+  std::lock_guard<std::mutex> lock(mu_);
+  if (!output_stream_) { mixer_.mix(out, frames); return; }
+  const int bytes = frames * 4;
+  int16_t chunk[1024];
+  while (SDL_AudioStreamAvailable(output_stream_) < bytes) {
+    mixer_.mix(chunk, 512);
+    if (SDL_AudioStreamPut(output_stream_, chunk, sizeof chunk) != 0) {
+      std::fill_n(out, size_t(frames) * 2, int16_t(0));
+      return;
+    }
+  }
+  if (SDL_AudioStreamGet(output_stream_, out, bytes) != bytes)
+    std::fill_n(out, size_t(frames) * 2, int16_t(0));
+}
+
+bool AudioSystem::set_sampling_rate(int rate) {
+  if (rate != 11025 && rate != 22050 && rate != 44100) return false;
+  if (rate == sampling_rate_) return true;
+  SDL_AudioStream* stream = rate == kMixRate ? nullptr :
+      SDL_NewAudioStream(AUDIO_S16SYS, 2, kMixRate, AUDIO_S16SYS, 2, rate);
+  if (rate != kMixRate && !stream) return false;
+  const bool reopen = dev_ != 0;
+  if (dev_) { SDL_CloseAudioDevice(dev_); dev_ = 0; }
+  if (output_stream_) SDL_FreeAudioStream(output_stream_);
+  output_stream_ = stream;
+  sampling_rate_ = rate;
+  if (reopen) open_device();
+  return true;
+}
+
+void AudioSystem::open_device() {
+  if (!SDL_WasInit(SDL_INIT_AUDIO) && SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
+    std::fprintf(stderr, "note: audio unavailable (%s)\n", SDL_GetError()); return;
+  }
+  SDL_AudioSpec want{};
+  want.freq = sampling_rate_; want.format = AUDIO_S16SYS; want.channels = 2; want.samples = 1024;
+  want.callback = &AudioSystem::callback; want.userdata = this;
+  dev_ = SDL_OpenAudioDevice(nullptr, 0, &want, nullptr, 0);
+  if (!dev_) { std::fprintf(stderr, "note: no audio device (%s)\n", SDL_GetError()); return; }
+  SDL_PauseAudioDevice(dev_, 0);
 }
 
 bool AudioSystem::init(const std::string& game_dir, bool open_device, int sampling_rate) {
   if (sampling_rate != 11025 && sampling_rate != 22050 && sampling_rate != kMixRate) return false;
   if (dev_) { SDL_CloseAudioDevice(dev_); dev_ = 0; }
-  sampling_rate_ = sampling_rate;
+  if (!set_sampling_rate(sampling_rate)) return false;
   stop_effects(); stop_music(); tracks_.clear(); cache_.clear();
   std::string snd = find_file_ci(game_dir + "/Res", "Snd.xbe");
   bank_ok_ = !snd.empty() && bank_.open(snd);
@@ -51,26 +95,6 @@ bool AudioSystem::init(const std::string& game_dir, bool open_device, int sampli
   if (!open_device) return bank_ok_;
   this->open_device();
   return bank_ok_;
-}
-
-bool AudioSystem::open_device() {
-  if (!SDL_WasInit(SDL_INIT_AUDIO) && SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) return false;
-  SDL_AudioSpec want{};
-  want.freq = sampling_rate_; want.format = AUDIO_S16SYS; want.channels = 2; want.samples = 1024;
-  want.callback = &AudioSystem::callback; want.userdata = this;
-  dev_ = SDL_OpenAudioDevice(nullptr, 0, &want, nullptr, 0);
-  if (!dev_) { std::fprintf(stderr, "note: no audio device (%s)\n", SDL_GetError()); return false; }
-  SDL_PauseAudioDevice(dev_, 0);
-  return true;
-}
-
-bool AudioSystem::set_sampling_rate(int rate) {
-  if (rate != 11025 && rate != 22050 && rate != kMixRate) return false;
-  if (rate == sampling_rate_) return true;
-  const bool reopen = dev_ != 0;
-  if (dev_) { SDL_CloseAudioDevice(dev_); dev_ = 0; }
-  sampling_rate_ = rate;
-  return !reopen || open_device();
 }
 
 uint32_t AudioSystem::play_speech_set(uint32_t ross_set, int race, int style, bool ack) {
@@ -90,23 +114,43 @@ void AudioSystem::set_volumes(float sfx, float music, float speech) {
 
 uint32_t AudioSystem::play_speech(uint32_t id, bool is_acknowledgement) {
   if (!id || !bank_ok_ || (is_acknowledgement && !acknowledgement)) return 0;
+  return start_speech(id, 0, 1, 1);
+}
+
+uint32_t AudioSystem::queue_speech_set(uint32_t set, bool ack, float left, float right, bool protected_pending) {
+  if (!bank_ok_ || (ack && !acknowledgement)) return 0;
+  const uint32_t id = choose(set);
+  if (!id) return 0;
+  SpeechRequest request{id, set, ack, left, right, event_trigger, protected_pending};
+  if (!speech_queue_.empty() && !speech_queue_.back().protected_pending)
+    speech_queue_.back() = request;
+  else {
+    // G: bounded presentation queue; exact exhaustion behavior needs a native run.
+    if (speech_queue_.size() == 32) return 0;
+    speech_queue_.push_back(request);
+  }
+  return id;
+}
+
+uint32_t AudioSystem::start_speech(uint32_t id, uint32_t set, float left, float right, bool protected_voice) {
   subtitle_.clear(); subtitle_left_ = 0;
   auto pcm = sound_pcm(id);
-  const bool playable = pcm && !pcm->empty() && speech_volume_ > 0;
+  bool playable = pcm && !pcm->empty() && speech_volume_ > 0;
   {
     std::lock_guard<std::mutex> lock(mu_);
     mixer_.stop(speech_voice_);
-    speech_voice_ = playable ? mixer_.play(pcm, 1, 1, false, true) : 0;
+    speech_voice_ = playable ? mixer_.play(pcm, left, right, false, true, protected_voice) : 0;
+    playable = speech_voice_ != 0;
   }
   // Captions also work without a device, muted speech or a readable WAV.
   if (subtitles) {
     subtitle_ = cp1250_to_utf8(bank_.subtitle(id));
     if (!subtitle_.empty()) {
       subtitle_left_ = 6; // Engine presentation policy, independent of simulation pause/speed.
-      emit({AudioEvent::Kind::Subtitle, 0, 0, id});
+      emit({AudioEvent::Kind::Subtitle, 0, set, id});
     }
   }
-  if (playable) emit({AudioEvent::Kind::Speech, 0, 0, id});
+  if (playable) emit({AudioEvent::Kind::Speech, 0, set, id});
   return playable ? id : 0;
 }
 
@@ -124,7 +168,7 @@ uint32_t AudioSystem::play_sound(uint32_t id, float l, float r) {
   if (!bank_ok_ || id == 0) return 0;
   std::shared_ptr<const Pcm> pcm = sound_pcm(id);
   if (!pcm || pcm->empty()) return 0;
-  { std::lock_guard<std::mutex> lock(mu_); mixer_.play(pcm, l, r); }
+  { std::lock_guard<std::mutex> lock(mu_); if (!mixer_.play(pcm, l, r)) return 0; }
   emit({AudioEvent::Kind::Sound, 0, 0, id});
   return id;
 }
@@ -143,7 +187,7 @@ uint32_t AudioSystem::play_set_at(uint32_t set_id, float x, float y, float cx, f
   const auto id = choose(set_id);
   auto pcm = sound_pcm(id);
   if (!pcm || pcm->empty()) return 0;
-  { std::lock_guard<std::mutex> lock(mu_); mixer_.play(pcm, p.left, p.right); }
+  { std::lock_guard<std::mutex> lock(mu_); if (!mixer_.play(pcm, p.left, p.right)) return 0; }
   emit({AudioEvent::Kind::Sound, 0, set_id, id});
   return id;
 }
@@ -169,6 +213,7 @@ void AudioSystem::loop_at(uint64_t source, uint32_t set, float x, float y, float
   if (!pcm || pcm->empty()) return;
   uint64_t voice;
   { std::lock_guard<std::mutex> lock(mu_); voice = mixer_.play(pcm, p.left, p.right, true); }
+  if (!voice) return;
   loops_[source] = {set, id, voice, true, event_trigger};
   emit({AudioEvent::Kind::LoopStart, source, set, id});
 }
@@ -185,6 +230,8 @@ void AudioSystem::stop_effects() {
   std::lock_guard<std::mutex> lock(mu_);
   mixer_.stop_effects();
   speech_voice_ = 0;
+  speech_queue_.clear();
+  if (output_stream_) SDL_AudioStreamClear(output_stream_);
   subtitle_.clear(); subtitle_left_ = 0;
 }
 
@@ -222,7 +269,7 @@ void AudioSystem::pick_and_play_music() {
       auto pcm = to_stereo_44k(w);
       if (!pcm || pcm->empty()) continue;
       { std::lock_guard<std::mutex> lock(mu_);
-        mixer_.play_music(pcm, pcm->data(), pcm->size() / 2); }
+        if (!mixer_.play_music(pcm, pcm->data(), pcm->size() / 2)) continue; }
       track_ = n;
       emit({AudioEvent::Kind::Music, 0, 0, uint32_t(n)});
       return;
@@ -240,6 +287,17 @@ void AudioSystem::update(double seconds) {
   bool ended;
   { std::lock_guard<std::mutex> lock(mu_); ended = mixer_.music_ended; mixer_.music_ended = false; }
   if (ended) pick_and_play_music();
+  bool speaking;
+  { std::lock_guard<std::mutex> lock(mu_); speaking = mixer_.playing(speech_voice_); }
+  // G: drain one pending utterance per presentation update, independently of ticks.
+  if (!speaking && !speech_queue_.empty()) {
+    const auto request = speech_queue_.front(); speech_queue_.pop_front();
+    if (request.acknowledgement && !acknowledgement) return;
+    const auto previous = event_trigger;
+    event_trigger = request.trigger;
+    start_speech(request.id, request.set, request.left, request.right, request.protected_pending);
+    event_trigger = previous;
+  }
 }
 
 }  // namespace aztec::engine
