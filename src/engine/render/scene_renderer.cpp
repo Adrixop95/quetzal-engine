@@ -289,9 +289,9 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
   }
   flush(cur_page);
   mod_ = body_mod;
-  // Health bars of selected objects.
+  // Items have already passed the visibility filter; ViewAll never reveals fog.
   for (const Item& it : items) {
-    if (it.effect || it.tree || !it.primary || is_ferry(*it.o) || !world_.selection.contains(it.o->id) || it.o->type < 0) continue;
+    if (it.effect || it.tree || !it.primary || is_ferry(*it.o) || (!opts.all_status && !world_.selection.contains(it.o->id)) || it.o->type < 0) continue;
     const TypeInfo* ti = type_info(it.o->type);
     bool structure = ti && ti->is_structure();
     int hpmax = it.o->hp_max;

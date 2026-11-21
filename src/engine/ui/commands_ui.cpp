@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 #include "engine/ui/hud.hpp"
 #include "engine/ui/names.hpp"
@@ -63,7 +64,9 @@ void border(SDL_Renderer* r, const SDL_Rect& box, bool highlight) {
 
 CommandsUi::CommandsUi(GameSim* sim) : sim_(sim) {
   // Fallback for installations without Keys.ini. Engine extensions use M/X/H.
-  parse_keys_ini("Add lshift\nAdd rshift\nGarrison `\nAutoRepair q\nRepair w\nDestroy e\n"
+  parse_keys_ini("Add lshift\nAdd rshift\nInv lcontrol\nInv rcontrol\nCenter lalt\nCenter ralt\n"
+                 "FastScroll caps\nViewAll v\nTemporary tab\nPutOnTop t\nLastCaller space\n"
+                 "Garrison `\nAutoRepair q\nRepair w\nDestroy e\n"
                  "Aggressive a\nDefencive s\nNormal d\nDirectControl f\n"
                  "ToggleInterface f12\nScrollLeft left\nScrollRight right\nScrollUp up\nScrollDown down\n"
                  "ScrollLeft pad4\nScrollRight pad6\nScrollUp pad8\nScrollDown pad2\nPrintScreen printscreen\n", bindings_);
@@ -115,11 +118,13 @@ SDL_Scancode CommandsUi::sdl_scancode(int dik) {
 }
 
 bool CommandsUi::action_hit(const Input& in, const char* action) const {
+  if (!in.focused) return false;
   int id = key_action_id(action);
   for (const KeyBinding& b : bindings_) if (b.action == id && sdl_scancode(b.dik) != SDL_SCANCODE_UNKNOWN && in.hit(sdl_scancode(b.dik))) return true;
   return false;
 }
 bool CommandsUi::action_down(const Input& in, const char* action) const {
+  if (!in.focused) return false;
   int id = key_action_id(action);
   for (const KeyBinding& b : bindings_) if (b.action == id && sdl_scancode(b.dik) != SDL_SCANCODE_UNKNOWN && in.down(sdl_scancode(b.dik))) return true;
   return false;
@@ -129,6 +134,26 @@ bool CommandsUi::key_bound(SDL_Scancode key) const {
   return false;
 }
 bool CommandsUi::bound_hit(const Input& in, SDL_Scancode key) const { return !in.ctrl && !in.alt && !key_bound(key) && in.hit(key); }
+
+bool CommandsUi::fast_scrolling(const Input& in) const {
+  return in.focused && in.mouse_inside && !in.alt && action_down(in, "FastScroll");
+}
+
+bool CommandsUi::center_selection(const Input& in, const World& w, Camera& cam, float alpha) const {
+  if (!action_hit(in, "Center") && !action_down(in, "Center")) return false;
+  float x = 0, y = 0;
+  size_t count = 0;
+  for (auto id : w.selection.ids) {
+    const auto* object = w.find(id);
+    if (!object || !object->alive || object->removed || object->side != w.local_side) continue;
+    const auto p = object->interpolated(alpha);
+    x += p.x; y += p.y; ++count;
+  }
+  if (!count) return false;
+  // The clone has individual selected IDs, rather than an original tactic origin.
+  cam.center_on(x / float(count), y / float(count));
+  return true;
+}
 
 CommandPanelLayout CommandsUi::layout(const SDL_Rect& p, int sc) {
   sc = std::max(1, sc);
@@ -173,6 +198,25 @@ bool CommandsUi::action_enabled(PanelAction action, const World& w, const RulesD
     } else if (ti && !ti->is_structure()) return true;
   }
   return false;
+}
+
+const char* CommandsUi::disabled_reason(PanelAction action, const World& w, const RulesData* rules) {
+  if (action_enabled(action, w, rules)) return "";
+  bool owned = false, transport = false;
+  for (auto id : w.selection.ids) {
+    const auto* o = w.find(id);
+    if (!o || !o->alive || o->removed || o->side != w.local_side || o->type < 0) continue;
+    owned = true; transport |= is_transport(o->type);
+  }
+  if (!owned) return "Select an owned unit or town";
+  switch (action) {
+    case PanelAction::Move: case PanelAction::Stop: return "Select a mobile unit";
+    case PanelAction::Attack: return "Select an armed mobile unit";
+    case PanelAction::Repair: return "Select a town hall";
+    case PanelAction::Garrison: return transport ? "Select an enabled vessel with passengers" : "Select a town hall";
+    case PanelAction::Destroy: return "Select an eligible building in a town with marked service enabled";
+  }
+  return "Command unavailable";
 }
 
 int CommandsUi::icon_slot(int kind) {
@@ -248,6 +292,11 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
     right_down_ = right_moved_ = false;
     return false;
   }
+  if (fast_scrolling(in)) {
+    pressed_control_ = 0;
+    right_down_ = right_moved_ = false;
+    return true;
+  }
   ++ui_frame_;
   w.selection.ids.erase(std::remove_if(w.selection.ids.begin(), w.selection.ids.end(), [&](uint32_t id) {
     const Object* o = w.find(id); return !o || o->removed || !o->alive || is_ferry(*o);
@@ -269,9 +318,26 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
   if (!in.ctrl && !in.alt && action_hit(in, "Repair")) activate(PanelAction::Repair, w);
   if (!in.ctrl && !in.alt && action_hit(in, "Garrison")) activate(PanelAction::Garrison, w);
   if (!in.ctrl && !in.alt && action_hit(in, "Destroy")) activate(PanelAction::Destroy, w);
+  if (!in.ctrl && !in.alt) {
+    for (const auto& binding : std::array<std::pair<const char*, AttackMode>, 4>{{
+             {"Aggressive", AttackMode::Aggressive}, {"Defencive", AttackMode::Defensive},
+             {"Normal", AttackMode::Balanced}, {"DirectControl", AttackMode::Direct}}}) {
+      if (!action_hit(in, binding.first)) continue;
+      Command c; c.type = Pct::AttackMode; c.a = int(binding.second);
+      issue_to_selection(w, std::move(c));
+    }
+    if (action_hit(in, "AutoRepair")) {
+      for (auto id : w.selection.ids) {
+        const auto* o = w.find(id);
+        if (!o || !o->alive || o->removed || o->side != w.local_side || !o->town_hall) continue;
+        Command c; c.type = Pct::RepairMode; c.side = uint8_t(w.local_side); c.b = o->town;
+        sim_->submit(std::move(c)); break;
+      }
+    }
+  }
   for (int k = 0; k < 10; k++) {
     SDL_Scancode sc = SDL_Scancode(k == 0 ? SDL_SCANCODE_0 : SDL_SCANCODE_1 + k - 1);
-    if (!in.hit(sc)) continue;
+    if (!in.hit(sc) || in.alt) continue;
     cancel_mode();
     if (in.ctrl) { Command c; c.type = in.shift ? Pct::AddToGroup : Pct::CreateGroup; c.a = k; issue_to_selection(w, c); }
     else if (w.local_side >= 0 && w.local_side < int(w.side_state.size())) {
@@ -294,6 +360,11 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
         const Object* t = in_world ? pick_object(w, wx, wy, alpha, 24.f / cam.zoom + 8) : nullptr;
         Command c;
         if (t && is_ferry(*t) && (t->side == w.local_side || (t->side >= 0 && t->side < 8 && w.relation[w.local_side][t->side] == kFriend))) { c.type = Pct::Attack; c.a = int(t->id); }
+        else if (t && t->side == w.local_side && is_transport(t->type)) { c.type = Pct::Board; c.a = int(t->id); }
+        else if (t && t->side == w.local_side && t->type >= 0 && t->tactic >= 0 &&
+                 (sim_->rules().type(t->type).mobile || sim_->rules().type(t->type).flier)) {
+          c.type = Pct::FollowTeam; c.a = t->tactic;
+        }
         else if (t && t->side != w.local_side && t->alive && !t->removed && t->type >= 0) { c.type = Pct::Attack; c.a = int(t->id); }
         else { c.type = Pct::Move; c.a = int(wx); c.b = int(wy); }
         issue_to_selection(w, c);
@@ -497,7 +568,6 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
       }
       else if (i == 4) tip += "\nExtract the selected town's troops";
       else if (i == 5) tip += "\nToggle buildings in the town's active repairer list";
-      else if (!enabled) tip += "\nSelect an owned unit";
       else if (i == 1) tip += "\nClick an enemy to attack, or terrain to attack-move";
       if (i == 1) for (auto id : w.selection.ids) {
         const auto* o = w.find(id);
@@ -516,6 +586,7 @@ std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Fon
         tip += "\nReload: " + std::to_string(rule.reload + 1) + " ticks";
         break;
       }
+      if (!enabled) tip += std::string("\nUnavailable: ") + disabled_reason(PanelAction(i), w, &sim_->rules());
     }
   }
   int town = production_town(w);

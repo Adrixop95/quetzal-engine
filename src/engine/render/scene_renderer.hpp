@@ -29,6 +29,7 @@ struct SceneOptions {
   unsigned wind_counter = 0;  // supplied by unpaused view updates
   unsigned view_counter = 0;  // V: water and selection advance with unpaused view updates
   bool overlays = true;       // terrain overlay layer (high 16 bits of .map cells)
+  bool all_status = false;    // ViewAll shows bars for every visible object, without changing fog
 };
 
 struct RenderStats {

@@ -736,17 +736,141 @@ static void test_commands_ui() {
     CHECK(w.side_state[0].money == money - menu[size_t(build_index)].price);
     CHECK(w.objects.back().progress < 1000);
   }
-  // Original unsupported mode keys never submit gameplay packets or activate engine targeting.
+  // Bound tactic keys submit simulation commands without entering a targeting mode.
   size_t mode_log_size = sim.log().size();
   for (SDL_Scancode code : {SDL_SCANCODE_W, SDL_SCANCODE_Q, SDL_SCANCODE_A, SDL_SCANCODE_S, SDL_SCANCODE_D, SDL_SCANCODE_GRAVE}) {
     Input mode; mode.key_hit[code] = true;
     ui.update(mode, w, cam, 1, mm, true, panel);
     CHECK(!ui.wants_left_click());
   }
-  tick(); CHECK(sim.log().size() == mode_log_size);
+  tick(); CHECK(sim.log().size() == mode_log_size + 3);
   // Every UI action above replays with the same simulation hash.
   auto replay = GameSim::replay(fresh, rules, sim.log(), sim.tick_count());
   CHECK(replay->state_hash(fresh) == sim.state_hash(w));
+}
+
+static void test_input_audit() {
+  World w;
+  w.terrain.w = w.terrain.h = 40; w.terrain.cells.resize(1600);
+  w.mission.sides.push_back(SideDef{}); w.mission.towns.push_back(TownDef{});
+  Object a; a.id = 1; a.type = 0; a.tactic = 10; a.teleport(to_fixed(200), to_fixed(200));
+  Object b = a; b.id = 2; b.teleport(to_fixed(300), to_fixed(200));
+  Object enemy = a; enemy.id = 3; enemy.side = 1; enemy.teleport(to_fixed(1400), to_fixed(1400));
+  Object dead = a; dead.id = 4; dead.alive = false;
+  Object hall = a; hall.id = 5; hall.type = 11; hall.town_hall = true; hall.town = 0;
+  hall.teleport(to_fixed(600), to_fixed(600));
+  w.objects = {a, b, enemy, dead, hall};
+  Camera camera; camera.set_world(1920, 1920); camera.set_view(400, 400);
+  SelectionUi selection;
+  auto click = [&](int x, int y, bool ctrl, bool shift) {
+    Input in; in.mx = x; in.my = y; in.ctrl = ctrl; in.shift = shift;
+    in.pressed[SDL_BUTTON_LEFT] = in.buttons[SDL_BUTTON_LEFT] = true;
+    CHECK(selection.update(in, w, camera, 1, true));
+    in.pressed[SDL_BUTTON_LEFT] = in.buttons[SDL_BUTTON_LEFT] = false;
+    in.released[SDL_BUTTON_LEFT] = true;
+    CHECK(selection.update(in, w, camera, 1, true));
+  };
+  click(300, 200, false, false);
+  CHECK(w.selection.ids == (std::vector<uint32_t>{2, 1}));
+  click(300, 200, true, false);
+  CHECK(w.selection.ids == std::vector<uint32_t>{2});
+  click(200, 200, true, true);
+  CHECK(w.selection.ids == (std::vector<uint32_t>{2, 1}));
+  click(1400, 1400, false, false);
+  CHECK(w.selection.ids.empty());
+  // Dragging picks mobile members only, even when a structure shares their tactic.
+  Input drag; drag.mx = drag.my = 100;
+  drag.pressed[SDL_BUTTON_LEFT] = drag.buttons[SDL_BUTTON_LEFT] = true;
+  selection.update(drag, w, camera, 1, true);
+  drag.mx = drag.my = 650; drag.pressed[SDL_BUTTON_LEFT] = false;
+  selection.update(drag, w, camera, 1, true);
+  drag.buttons[SDL_BUTTON_LEFT] = false; drag.released[SDL_BUTTON_LEFT] = true;
+  selection.update(drag, w, camera, 1, true);
+  CHECK(w.selection.ids == (std::vector<uint32_t>{1, 2}));
+  // A focus loss or modal transition cancels a held gesture.
+  for (bool focus_loss : {false, true}) {
+    Input held; held.mx = held.my = 100;
+    held.pressed[SDL_BUTTON_LEFT] = held.buttons[SDL_BUTTON_LEFT] = true;
+    selection.update(held, w, camera, 1, true);
+    held.pressed[SDL_BUTTON_LEFT] = false; held.focused = !focus_loss;
+    selection.update(held, w, camera, 1, focus_loss);
+    held.focused = true; held.buttons[SDL_BUTTON_LEFT] = false; held.released[SDL_BUTTON_LEFT] = true;
+    selection.update(held, w, camera, 1, true);
+    CHECK(w.selection.ids == (std::vector<uint32_t>{1, 2}));
+  }
+  CommandsUi controls;
+  Input center; center.key_hit[SDL_SCANCODE_LALT] = true;
+  CHECK(controls.key_bound(SDL_SCANCODE_SPACE));
+  CHECK(controls.center_selection(center, w, camera, 1));
+  CHECK(camera.x == 50 && camera.y == 0);
+  center.key_hit[SDL_SCANCODE_LALT] = false;
+  center.key_down[SDL_SCANCODE_LALT] = true;
+  camera.x = 100;
+  CHECK(controls.center_selection(center, w, camera, 1) && camera.x == 50);
+  center.focused = false;
+  CHECK(!controls.center_selection(center, w, camera, 1));
+  center.focused = true; w.selection.ids = {3, 4, 999};
+  CHECK(!controls.center_selection(center, w, camera, 1));
+  Input fast; fast.key_down[SDL_SCANCODE_CAPSLOCK] = true;
+  CHECK(controls.fast_scrolling(fast));
+  fast.mouse_inside = false; CHECK(!controls.fast_scrolling(fast));
+  fast.mouse_inside = true; fast.focused = false; CHECK(!controls.fast_scrolling(fast));
+  std::vector<KeyBinding> bindings;
+  CHECK(parse_keys_ini("Center z\nFastScroll c\nAggressive r\n", bindings));
+  controls.set_bindings(bindings);
+  w.selection.ids = {1}; center.key_hit[SDL_SCANCODE_Z] = true;
+  CHECK(controls.center_selection(center, w, camera, 1));
+  center.key_hit[SDL_SCANCODE_Z] = false;
+  CHECK(!controls.center_selection(center, w, camera, 1));
+  fast.focused = true; CHECK(!controls.fast_scrolling(fast));
+  fast.key_down[SDL_SCANCODE_C] = true; CHECK(controls.fast_scrolling(fast));
+
+  auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  b.tactic = 20; w.objects = {a, b, enemy, dead, hall};
+  GameSim sim(rules, Modifications::faithful()); sim.init(w);
+  World initial = w;
+  CommandsUi ui(&sim); Minimap minimap; SDL_Rect panel{796, 0, 204, 700};
+  camera.x = camera.y = 0; w.selection.ids = {1};
+  for (auto [key, expected] : std::array<std::pair<SDL_Scancode, AttackMode>, 4>{{
+           {SDL_SCANCODE_A, AttackMode::Aggressive}, {SDL_SCANCODE_S, AttackMode::Defensive},
+           {SDL_SCANCODE_D, AttackMode::Balanced}, {SDL_SCANCODE_F, AttackMode::Direct}}}) {
+    Input in; in.key_hit[key] = true;
+    const auto size = sim.pending_commands().size();
+    ui.update(in, w, camera, 1, minimap, true, panel);
+    CHECK(sim.pending_commands().size() == size + 1);
+    CHECK(!sim.pending_commands().empty() && sim.pending_commands().back().type == Pct::AttackMode);
+    CHECK(!sim.pending_commands().empty() && sim.pending_commands().back().a == int(expected));
+    w.begin_tick(); sim.tick(w);
+    CHECK(w.find(1)->attack_mode == expected);
+    in.ctrl = true; ui.update(in, w, camera, 1, minimap, true, panel);
+    CHECK(sim.pending_commands().empty());
+  }
+  w.selection.ids = {5};
+  w.town_state[0].repair_mode = RepairMode::Repair;
+  Input automatic; automatic.key_hit[SDL_SCANCODE_Q] = true;
+  ui.update(automatic, w, camera, 1, minimap, true, panel);
+  CHECK(!sim.pending_commands().empty() && sim.pending_commands().back().type == Pct::RepairMode && sim.pending_commands().back().a == 0);
+  // Restore the fixture before applying the packet so replay starts from identical state.
+  w.town_state[0].repair_mode = RepairMode::Off;
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.town_state[0].repair_mode == RepairMode::Off);
+  w.selection.ids = {1};
+  Input right; const auto p = w.find(2)->interpolated(1);
+  right.mx = int(p.x); right.my = int(p.y);
+  right.pressed[SDL_BUTTON_RIGHT] = right.buttons[SDL_BUTTON_RIGHT] = true;
+  ui.update(right, w, camera, 1, minimap, true, panel);
+  right.pressed[SDL_BUTTON_RIGHT] = right.buttons[SDL_BUTTON_RIGHT] = false;
+  right.released[SDL_BUTTON_RIGHT] = true;
+  ui.update(right, w, camera, 1, minimap, true, panel);
+  CHECK(!sim.pending_commands().empty() && sim.pending_commands().back().type == Pct::FollowTeam && sim.pending_commands().back().a == 20);
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.find(1)->follow_tactic == 20);
+  auto replay = GameSim::replay(initial, rules, sim.log(), sim.tick_count());
+  CHECK(replay->state_hash(initial) == sim.state_hash(w));
+  CHECK(std::string(CommandsUi::disabled_reason(PanelAction::Move, w, rules.get())).empty());
+  CHECK(std::string(CommandsUi::disabled_reason(PanelAction::Repair, w, rules.get())) == "Select a town hall");
+  w.selection.clear();
+  CHECK(std::string(CommandsUi::disabled_reason(PanelAction::Move, w, rules.get())) == "Select an owned unit or town");
 }
 
 static void test_data(const std::string& dir) {
@@ -4169,6 +4293,7 @@ int main(int argc, char** argv) {
     test_sprite_metadata();
     test_audio_pure();
     test_commands_ui();
+    test_input_audit();
     test_population_difficulty_modes();
     test_group_reach();
     test_group_follow_commands();

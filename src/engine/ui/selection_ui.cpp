@@ -9,6 +9,10 @@
 namespace aztec::engine {
 
 bool SelectionUi::update(const Input& in, World& w, const Camera& cam, float alpha, bool active) {
+  if (!in.focused || !active) {
+    down_ = dragging_ = false;
+    return false;
+  }
   bool consumed = false;
   if (in.pressed[SDL_BUTTON_LEFT] && active) { down_ = true; dragging_ = false; x0_ = x1_ = in.mx; y0_ = y1_ = in.my; }
   if (down_ && in.buttons[SDL_BUTTON_LEFT]) {
@@ -31,7 +35,17 @@ bool SelectionUi::update(const Input& in, World& w, const Camera& cam, float alp
         if (p.x >= ax && p.x <= bx && p.y >= ay && p.y <= by) hit.push_back(o.id);
       }
     } else if (const Object* o = pick_object(w, cam.to_world_x(float(in.mx)), cam.to_world_y(float(in.my)), alpha, 24.f / cam.zoom + 8)) {
-      if (o->side == w.local_side && o->type >= 0 && !is_ferry(*o)) hit.push_back(o->id);
+      if (o->side == w.local_side && o->type >= 0 && !is_ferry(*o)) {
+        hit.push_back(o->id);
+        const auto* ti = type_info(o->type);
+        if (!in.ctrl && o->tactic >= 0 && ti && !ti->is_structure()) {
+          for (const auto& member : w.objects) {
+            const auto* mt = type_info(member.type);
+            if (member.id != o->id && member.alive && !member.removed && member.side == w.local_side && !is_ferry(member) &&
+                member.tactic == o->tactic && mt && !mt->is_structure()) hit.push_back(member.id);
+          }
+        }
+      }
     }
     if (!in.shift) w.selection.clear();
     for (uint32_t id : hit)

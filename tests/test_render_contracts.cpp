@@ -337,6 +337,16 @@ static void headless_controls() {
     CHECK(world.objects[0].attack_tick == 9 && world.objects[0].body_tick == 0);
     world.objects[0].attack_tick = 12;
     CHECK(pixels(0) == first); // resource duration completes, returning to idle
+    // ViewAll changes status display without changing selection or revealing fog.
+    world.objects[0].teleport(to_fixed(32), to_fixed(55));
+    world.objects[0].hp = 50; world.objects[0].hp_max = 100;
+    const auto no_status = pixels(0);
+    scene.opts.all_status = true;
+    CHECK(pixels(0) != no_status);
+    CHECK(world.selection.ids.empty());
+    scene.opts.all_status = false;
+    CHECK(pixels(0) == no_status);
+    world.objects[0].teleport(to_fixed(32), to_fixed(32));
     world.terrain.w = world.terrain.h = 2; world.terrain.cells.resize(4);
     world.visibility_brightness = true;
     world.visibility.sides = {{3, 4, std::vector<uint8_t>(12, 32)}};
@@ -349,6 +359,17 @@ static void headless_controls() {
       ++world.fog_version;
       scene.draw(camera, 0);
       CHECK(scene.stats.sprites == (brightness > 32 ? 1 : 0));
+      std::vector<uint32_t> hidden_before(64 * 64), hidden_after(64 * 64);
+      if (brightness <= 32)
+        CHECK(SDL_RenderReadPixels(win.renderer(), nullptr, SDL_PIXELFORMAT_ARGB8888, hidden_before.data(), 64 * 4) == 0);
+      scene.opts.all_status = true;
+      scene.draw(camera, 0);
+      CHECK(scene.stats.sprites == (brightness > 32 ? 1 : 0));
+      if (brightness <= 32) {
+        CHECK(SDL_RenderReadPixels(win.renderer(), nullptr, SDL_PIXELFORMAT_ARGB8888, hidden_after.data(), 64 * 4) == 0);
+        CHECK(hidden_before == hidden_after);
+      }
+      scene.opts.all_status = false;
       CHECK(scene.fog().darkness(world, 0, 0) == 152 - brightness);
       for (int type : {0, 14}) {
         world.objects[0].type = type;

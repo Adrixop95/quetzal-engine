@@ -238,11 +238,13 @@ class VisualTests(unittest.TestCase):
             self.assertEqual(row['modifiers'], [int(frame <= 3), int(5 <= frame <= 11), int(18 <= frame <= 19)])
             self.assertEqual(row['left_down'], frame in (7, 8))
         self.assertGreater(rows[15]['camera'][0], rows[11]['camera'][0])
-        # The current camera coasts after release; check deceleration rather than
-        # claiming that its unmeasured reference behaviour stops immediately.
-        self.assertGreater(rows[19]['camera'][0], rows[16]['camera'][0])
-        self.assertLess(rows[19]['camera'][0] - rows[18]['camera'][0],
-                        rows[16]['camera'][0] - rows[15]['camera'][0])
+        # The camera coasts after releasing Right, then held Alt centres the
+        # selected synthetic unit and clears that velocity. This tests the clone
+        # gesture, not the original tactic-origin or scroll-speed measurements.
+        self.assertGreater(rows[16]['camera'][0], rows[15]['camera'][0])
+        expected_center = [8 * 48 + 24 - (800 - 204) / 2, 8 * 48 + 24 - 600 / 2]
+        for row in rows[17:20]:
+            self.assertEqual(row['camera'][:2], expected_center)
         original = trace.read_text()
         original_pixels = visual.image_file(capture)
         result = subprocess.run(argv, env=dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy'),

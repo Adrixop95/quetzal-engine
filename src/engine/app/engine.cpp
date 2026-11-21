@@ -471,6 +471,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       if (in.hit(SDL_SCANCODE_F10)) show_hud = !show_hud;
       if (in.hit(SDL_SCANCODE_SPACE) && !cmdui.key_bound(SDL_SCANCODE_SPACE)) paused = !paused;
       if (panel_available && cmdui.action_hit(in, "ToggleInterface")) show_panel = !show_panel;
+      if (cmdui.action_hit(in, "ViewAll")) scene.opts.all_status = !scene.opts.all_status;
       if (cmdui.action_hit(in, "PrintScreen")) {
         std::string p = "aztec_shot_" + std::to_string(++shot_no) + ".png";
         std::printf(save_screenshot(win.renderer(), p) ? "saved %s\n" : "screenshot failed %s\n", p.c_str());
@@ -542,10 +543,11 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       }
       ci.move_x = std::clamp(ci.move_x, -1.f, 1.f);
       ci.move_y = std::clamp(ci.move_y, -1.f, 1.f);
-      bool pan = in.buttons[SDL_BUTTON_MIDDLE] || cmdui.right_dragging();
+      const bool fast_scroll = cmdui.fast_scrolling(in) && !pause.open && !submodal && world.outcome == kRunning;
+      bool pan = in.buttons[SDL_BUTTON_MIDDLE] || cmdui.right_dragging() || fast_scroll;
       ci.dragging = pan;
-      ci.drag_dx = float(in.dx);
-      ci.drag_dy = float(in.dy);
+      ci.drag_dx = float(fast_scroll ? -in.dx : in.dx);
+      ci.drag_dy = float(fast_scroll ? -in.dy : in.dy);
 
       if (in.pressed[SDL_BUTTON_LEFT] && on_mm && !cmdui.wants_left_click()) drag_minimap = true;
       if (!in.buttons[SDL_BUTTON_LEFT]) drag_minimap = false;
@@ -556,9 +558,11 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         bool consumed = cmdui.update(in, world, cam, alpha, minimap, in_world, show_panel ? panel.rect() : SDL_Rect{ow, 0, 0, oh});
         Input selection_input = in;
         selection_input.shift = cmdui.action_down(in, "Add");
+        selection_input.ctrl = cmdui.action_down(in, "Inv");
         selui.update(selection_input, world, cam, alpha, in_world && !consumed && !cmdui.wants_left_click());
       }
       if (in.focused && !in.alt && !pause.open) cam.update(ci, float(std::min(dt, 0.1)));
+      if (!pause.open && !submodal && world.outcome == kRunning) cmdui.center_selection(in, world, cam, alpha);
       if (drag_minimap) {
         int mx = std::clamp(in.mx, minimap.rect().x, minimap.rect().x + minimap.rect().w - 1);
         int my = std::clamp(in.my, minimap.rect().y, minimap.rect().y + minimap.rect().h - 1);
