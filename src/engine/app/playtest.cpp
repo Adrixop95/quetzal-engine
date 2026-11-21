@@ -197,9 +197,9 @@ bool PlaytestScript::player_command(World& w, GameSim* sim, const Line& l) {
       if ((action == "harvest" || action == "gather") && rules.harvest.rate_a <= 0 && rules.harvest.rate_b <= 0)
         throw std::invalid_argument("harvest requires an income producing structure");
       const char* why = nullptr;
-      if (!sim->can_place(w, w.local_side, c.a, c.b, c.c, &why, nullptr, producer.town))
+      if (item->place && !sim->can_place(w, w.local_side, c.a, c.b, c.c, &why, nullptr, producer.town))
         throw std::invalid_argument(why ? why : "invalid placement");
-      c.type = item->construct ? Pct::Build : Pct::PlaceBuilding;
+      c.type = item->construct || !item->place ? Pct::Build : Pct::PlaceBuilding;
     } else {
       if (c.ids.empty()) throw std::invalid_argument("empty selection");
       for (auto id : c.ids) owned(int(id));

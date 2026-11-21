@@ -120,6 +120,11 @@ producer. Queues can contain unpaid work, and engine command rejection can still
 occur after validation. Always witness completion with a count/checkpoint. The
 ignored-order detector catches requests not queued/created in full.
 
+`build` also accepts in-place hall upgrades. These submit the normal `Build`
+command, as the UI does. Their coordinates must be inside the map but do not
+choose a new site. Payment, prerequisites, the town queue and placement checks
+at completion still apply; successful completion preserves the hall's identity.
+
 Conditions use `NAME OP INTEGER`, where OP is `==`, `!=`, `<`, `<=`, `>` or `>=`:
 
 | Condition | Observed value |

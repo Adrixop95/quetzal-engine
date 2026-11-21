@@ -79,6 +79,22 @@ class FrameworkTests(unittest.TestCase):
                 self.assertTrue((output / anomaly['capture']).is_file(), anomaly)
         self.assertEqual(report['process']['returncode'], 3)
 
+    def test_hall_upgrade_uses_normal_build(self):
+        mission = self.game / 'Maps/demo.mp'
+        mission.write_text(mission.read_text().replace('Type=1', 'Type=0'))
+        (self.game / 'Maps/demo.scn').write_text('')
+        script = 'build 19 5 6 3\nawait 1000 count 19 == 1\ncheckpoint complete 3 == 1\nquit\n'
+        report, output = self.run_route(script)
+        self.assertEqual(report['process']['returncode'], 0)
+        self.assertTrue(report['script_complete'])
+        self.assertEqual(report['anomalies'], [])
+        rows = list(route.read_observations(output / 'observations.jsonl'))
+        commands = [c for row in rows for c in row['commands']]
+        self.assertEqual([(c['type'], c['a'], c['ids']) for c in commands], [(0x1c, 19, [3])])
+        self.assertEqual(rows[1]['money'], 8500)
+        halls = [o for o in rows[-1]['objects'] if o['type'] in (10, 19)]
+        self.assertEqual([(o['id'], o['type'], o['position']) for o in halls], [(3, 19, [264, 312])])
+
     def test_repeated_unreachable_requests_have_measured_path_failures(self):
         self.args.goal_ticks = 10
         report, _ = self.run_route('select id 1\norder-move 26 12\norder-move 26 12\norder-move 26 12\nwait 40\nquit\n')

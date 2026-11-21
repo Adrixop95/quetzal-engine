@@ -428,9 +428,9 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o) const {
   const Object* best = nullptr;
   const auto [anchor_x, anchor_y] = o.order == uint8_t(Order::Idle) ? idle_anchor(w, o) :
       std::pair{px(o.cur_x), px(o.cur_y)};
+  // Without private sight inputs, weapon and group reach below still bound
+  // automatic acquisition and preserve asset-free simulation combat.
   int64_t bd = std::numeric_limits<int64_t>::max();
-  path::FlowField reachable;
-  bool have_reachable = false;
   // G: scripted ferries are excluded from automatic combat assignment; direct damage remains possible.
   for (const Object& t : w.objects) {
     if (t.removed || !t.alive || !damageable(t) || ferry_protected(t) || t.type < 0 || t.type == 84 || !w.hostile(o.side, t.side) || t.progress < 1000) continue;
@@ -453,17 +453,14 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o) const {
       // Automatic pursuit needs reachable firing ground. Side-wide visibility
       // alone must not repeatedly send land units across disconnected water.
       const auto& agent = mover_->agents()[size_t(o.mover)];
-      if (!have_reachable) {
-        path::Cell start{px(o.cur_x) / kTilePx, px(o.cur_y) / kTilePx};
-        reachable.build(nav_, agent.cls, &start, 1); have_reachable = true;
-      }
+      const int sx = px(o.cur_x) / kTilePx, sy = px(o.cur_y) / kTilePx;
       bool can_fire = false;
       const int tx = px(t.cur_x), ty = px(t.cur_y);
       for (int y = std::max(0, int((ty - reach) / kTilePx)); !can_fire && y <= std::min(nav_.height() - 1, int((ty + reach) / kTilePx)); ++y)
         for (int x = std::max(0, int((tx - reach) / kTilePx)); x <= std::min(nav_.width() - 1, int((tx + reach) / kTilePx)); ++x) {
           const path::Vec2 candidate{tile_center_fixed(x), tile_center_fixed(y)};
           const int64_t dx = px(candidate.x) - tx, dy = px(candidate.y) - ty;
-          if (weapon_in_range(source, dx, dy, reach) && reachable.reachable(x, y) &&
+          if (weapon_in_range(source, dx, dy, reach) && nav_.connected(sx, sy, x, y, agent.cls) &&
               !nav_.disc_hits(candidate, agent.radius, agent.cls)) { can_fire = true; break; }
         }
       if (!can_fire) continue;
