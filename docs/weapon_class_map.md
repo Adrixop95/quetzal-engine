@@ -363,3 +363,9 @@ tenfold damage getter does not prove ten executed burn applications.
 See [descriptor_fields.md](descriptor_fields.md) for descriptor weapon IDs and
 the field-coverage checks. Earlier descriptions of the generated file as
 guessed/unread are historical, not the current metadata status.
+
+## Correction (2026-11-21, from docs/specials_commands.md)
+
+V: the hit effect `0x46ed90` belongs to weapon class 13 (Hypno weapon 56 and the hypno tower
+weapon 57, vtable `0x494f10`); weapon class 2 uses vtable `0x495130` with hit effect
+`0x46e0d0`. Earlier tables in this file had the two swapped.

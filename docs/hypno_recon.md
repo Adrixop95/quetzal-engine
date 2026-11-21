@@ -46,3 +46,9 @@ special kill-time estimate for the computer players. The clone should keep ordin
 handling for weapon 56 and implement only the secondary-HP kill-time estimate when the AI
 work needs it (task 108). Buildings of the hypno family (hypno tower, hypno school) still
 need their own check, because they may spawn or train units differently.
+
+## Correction (2026-11-21, from docs/specials_commands.md)
+
+V: the hit effect `0x46ed90` belongs to weapon class 13 (Hypno weapon 56 and the hypno tower
+weapon 57, vtable `0x494f10`); weapon class 2 uses vtable `0x495130` with hit effect
+`0x46e0d0`. Earlier tables in this file had the two swapped.
