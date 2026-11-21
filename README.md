@@ -36,9 +36,11 @@ changes it (see `docs/gap_recon.md` for the open items behind each row).
 | Saves and resume | ~90% | ~65% | ~20% |
 | Interface and menus | ~82% | ~55% | ~15% |
 | Audio | ~90% | ~50% | ~10% |
+| Rendering (draw order, light, palettes, health bars) | ~85% (draw order, light surface, shade rules; exact colours open) | ~60% (interpolated modern renderer) | ~10% |
+| Multiplayer (packets, lockstep, lobby) | ~85% (packet layout, lockstep completion, transport) | ~0% (not planned for v1) | none |
 | Campaign (missions 1 to 15) | ~78% | ~70% (scripts) | ~7% (one mission played honestly) |
 
-Overall (rough): about 95% of the original's rules understood, about 45 to 50% implemented,
+Overall (rough): about 94% of the original's rules understood (14 areas), about 45 to 50% implemented,
 about 15 to 20% checked against the original or by play. The reference oracle (the original
 executable running headless under an observer, plus its decompilation) covers about 35% of
 the logic so far; the decompilation corpus now holds 5468 functions with an index of one-line annotations used as leads, not as truth; missions 4 to 15 have not been measured.
