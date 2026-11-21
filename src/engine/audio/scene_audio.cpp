@@ -4,6 +4,34 @@
 #include "engine/world/type_info.hpp"
 
 namespace aztec::engine {
+uint32_t selection_speech_set(int type, int style) {
+  if (style < 0 || style > 3 || type < 0 || type >= kNumTypes) return 0;
+  // V: native voice follows representative type, including shared/special units,
+  // rather than its current owner's race (f_00454240).
+  const int native = type <= 26 || type == 82 || type == 83 || type == 85 ? 1 :
+      type <= 52 || type == 87 ? 2 : 3;
+  const int voice = style ? style : native;
+  // V: selection groups in f_00453d50; their members remain runtime data.
+  return voice == 1 ? 101 : voice == 2 ? 401 : 301;
+}
+
+void emit_selection_audio(const World& world, AudioSystem& audio, int style, float cx) {
+  if (!audio.acknowledgement) return;
+  for (const auto id : world.selection.ids) {
+    const auto* object = world.find(id);
+    if (!object || object->removed || !object->alive || object->side != world.local_side) continue;
+    const auto* type = type_info(object->type);
+    if (!type || type->is_structure()) continue;
+    const auto pan = positional_gain(object->cur_x / 256.f - cx, 0);
+    const auto previous = audio.event_trigger;
+    audio.event_tick = world.tick;
+    audio.event_trigger = AudioEvent::Trigger::Selection;
+    audio.queue_speech_set(selection_speech_set(object->type, style), true, pan.left, pan.right);
+    audio.event_trigger = previous;
+    return;
+  }
+}
+
 void emit_scene_audio(const World& world, const AnimSpriteProvider& provider,
                       const Archive& units, AudioSystem& audio, float cx, float cy,
                       const std::function<bool(float, float, int)>& visible) {

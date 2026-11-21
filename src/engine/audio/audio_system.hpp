@@ -3,6 +3,7 @@
 #include <SDL.h>
 #include <cstdio>
 #include <map>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -39,16 +40,22 @@ class AudioSystem {
   void loop_at(uint64_t source, uint32_t set, float x, float y, float cx, float cy);
   void end_scene_tick();
   void stop_effects();
-  bool set_sampling_rate(int rate);
-  int sampling_rate() const { return sampling_rate_; }
   // V: explicit style overrides the speaker's race; set membership comes from Snd.xbe.
   uint32_t play_speech_set(uint32_t ross_set, int race, int style, bool is_acknowledgement);
   bool device_ok() const { return dev_ != 0; }
   bool bank_ok() const { return bank_ok_; }
   void set_volumes(float sfx, float music, float speech = 0.8f);
+  // Output sampling only; the simulation and internal PCM clock remain unchanged.
+  bool set_sampling_rate(int rate);
+  int sampling_rate() const { return sampling_rate_; }
+  void render_samples(int16_t* out, int frames); // recording backend; also used by SDL
   bool acknowledgement = true, subtitles = true;
   // Explicit speech WAV IDs only. Event/type/race mappings must be evidenced by callers.
   uint32_t play_speech(uint32_t sound_id, bool is_acknowledgement = false);
+  // V: replace an unprotected pending tail, retain protected announcements.
+  // Playback starts in update(); active speech is never interrupted by this API.
+  uint32_t queue_speech_set(uint32_t set, bool is_acknowledgement, float left = 1, float right = 1,
+                            bool protected_pending = true);
   const std::string& subtitle() const { return subtitle_; }
 
   // Plays sound set `set_id` (a random member) at world position (x, y) heard from the view centre (cx, cy), all in px.
@@ -65,6 +72,8 @@ class AudioSystem {
 
  private:
   static void callback(void* user, Uint8* stream, int len);
+  void open_device();
+  uint32_t start_speech(uint32_t id, uint32_t set, float left, float right, bool protected_voice = true);
   void emit(AudioEvent event) {
     event.tick = event_tick;
     if (event.kind == AudioEvent::Kind::Music || event.kind == AudioEvent::Kind::MusicStop)
@@ -78,9 +87,9 @@ class AudioSystem {
   std::shared_ptr<const Pcm> sound_pcm(uint32_t id);
   void pick_and_play_music();
 
-  bool open_device();
-  int sampling_rate_ = kMixRate;
   SDL_AudioDeviceID dev_ = 0;
+  SDL_AudioStream* output_stream_ = nullptr;
+  int sampling_rate_ = kMixRate;
   std::mutex mu_;
   Mixer mixer_;
   SoundBank bank_;
@@ -93,6 +102,8 @@ class AudioSystem {
   size_t pick_ = 0;
   uint32_t rand_ = 7;
   uint64_t speech_voice_ = 0;
+  struct SpeechRequest { uint32_t id, set; bool acknowledgement; float left, right; AudioEvent::Trigger trigger; bool protected_pending; };
+  std::deque<SpeechRequest> speech_queue_;
   float speech_volume_ = 0.8f;
   std::string subtitle_;
   double subtitle_left_ = 0;

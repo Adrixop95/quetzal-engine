@@ -8,6 +8,7 @@
 #include "engine/sim/game_sim.hpp"
 #include "core/endian.hpp"
 #include <limits>
+#include <array>
 
 using namespace aztec;
 using namespace aztec::engine;
@@ -64,7 +65,10 @@ int main(int argc, char** argv) {
   std::filesystem::create_directory(root / "Res");
   std::filesystem::create_directory(root / "Music");
   Bytes set(4); put(set, 0, 1);
-  write(root / "Res/Snd.xbe", archive({{0x460, {wav(), Bytes{}, wav(8)}}, {0x3e8, {set, set, set}},
+  std::vector<Bytes> sets(401);
+  for (int id : {1, 2, 3, 4, 101, 301, 401}) sets[id - 1] = set;
+  put(sets[3], 0, 3); // distinct invented speech member, long enough to stay active across updates
+  write(root / "Res/Snd.xbe", archive({{0x460, {wav(), Bytes{}, wav(8)}}, {0x3e8, sets},
       {0x6, {Bytes{'R', 'e', 'a', 'd', 'y', 0}, Bytes{'N', 'o', ' ', 'W', 'A', 'V', 0}}}}));
   write(root / "Music/music.xbe", archive({{0x460, {wav(), wav(), wav(8)}}}));
   std::vector<Bytes> animations(200);
@@ -258,6 +262,34 @@ int main(int argc, char** argv) {
   CHECK(samples[0] == 100 && samples[15] == 200 && mixer.active_voices() == 1);
   CHECK(mixer.gain(handle, 0, 1)); mixer.mix(samples, 8); CHECK(samples[0] == 0);
   mixer.stop(handle); CHECK(mixer.active_voices() == 0 && !mixer.gain(handle, 1, 1));
+  // The shared budget includes protected speech and music. Saturation steals cyclically.
+  {
+    Mixer budget; budget.sfx_volume = budget.music_volume = budget.speech_volume = 1;
+    auto long_pcm = std::make_shared<Pcm>(200, int16_t(100));
+    auto short_pcm = std::make_shared<Pcm>(20, int16_t(10));
+    CHECK(budget.play_music(long_pcm, long_pcm->data(), 100));
+    const auto speech = budget.play(long_pcm, 1, 1, false, true);
+    std::vector<uint64_t> effects;
+    for (int i = 0; i < 6; ++i) effects.push_back(budget.play(i == 5 ? short_pcm : long_pcm, 1, 1));
+    CHECK(budget.active_voices() == 7);
+    CHECK(budget.play(long_pcm, 1, 1) != 0);
+    CHECK(!budget.playing(effects.front()) && budget.playing(effects.back()));
+    for (int i = 0; i < 20; ++i) CHECK(budget.play(long_pcm, 1, 1));
+    CHECK(budget.playing(speech) && budget.music_playing() && budget.active_voices() == 7);
+    budget.stop_effects(); CHECK(budget.music_playing());
+    for (int i = 0; i < 7; ++i) CHECK(budget.play(long_pcm, 1, 1, false, true));
+    CHECK(!budget.play(long_pcm, 1, 1) && budget.active_voices() == 7);
+    budget.stop_music(); CHECK(budget.play(long_pcm, 1, 1));
+    budget.stop_effects();
+    CHECK(budget.play_music(long_pcm, long_pcm->data(), 1));
+    budget.mix(samples, 1); CHECK(budget.music_ended && !budget.music_playing());
+    for (int i = 0; i < 8; ++i) CHECK(budget.play(long_pcm, 1, 1, false, true));
+    CHECK(!budget.play_music(long_pcm, long_pcm->data(), 1));
+    budget.stop_effects();
+    const auto casual = budget.play(long_pcm, 1, 1, false, true, false);
+    for (int i = 0; i < 7; ++i) CHECK(budget.play(long_pcm, 1, 1, false, true));
+    CHECK(budget.play(long_pcm, 1, 1) && !budget.playing(casual));
+  }
   // Speech has its own gain, with captions for missing WAVs and no audio device.
   events.clear(); audio.event_tick = 42;
   audio.set_volumes(0, 0, 1);
@@ -318,11 +350,73 @@ int main(int argc, char** argv) {
   audio.mixer().mix(samples, 1); CHECK(samples[0] == 300 && samples[1] == 300);
   CHECK(events.size() == live_events && audio.current_track() == 3);
   audio.stop_music(); audio.stop_effects();
+  // Queue priority, acknowledgement suppression, provenance and scene cleanup, with no device.
+  events.clear(); audio.acknowledgement = true; audio.subtitles = false;
+  audio.event_trigger = AudioEvent::Trigger::Selection;
+  CHECK(audio.queue_speech_set(4, true, 0, 1) == 3);
+  audio.update(); CHECK(events.size() == 1 && events[0].set == 4);
+  audio.update(); audio.mixer().mix(samples, 1);
+  CHECK(samples[0] == 0 && samples[1] == 100); // updates must preserve speech pan
+  audio.event_trigger = AudioEvent::Trigger::Production;
+  CHECK(audio.queue_speech_set(1, false) == 1);
+  audio.event_trigger = AudioEvent::Trigger::Orders;
+  CHECK(audio.queue_speech_set(4, true, 1, 1, false) == 3);
+  CHECK(audio.queue_speech_set(3, true) == 1); // replaces only the unprotected pending tail
+  audio.update(); CHECK(events.size() == 1); // active utterance is retained
+  audio.mixer().mix(samples, 8); audio.event_tick = 601; audio.update();
+  CHECK(events.size() == 2 && events.back().trigger == AudioEvent::Trigger::Production && events.back().tick == 601);
+  audio.mixer().mix(samples, 1); audio.update();
+  CHECK(events.size() == 3 && events.back().set == 3 && events.back().trigger == AudioEvent::Trigger::Orders);
+  audio.mixer().mix(samples, 1);
+  CHECK(audio.queue_speech_set(1, true)); audio.acknowledgement = false; audio.update();
+  CHECK(events.size() == 3 && !audio.queue_speech_set(1, true));
+  CHECK(audio.queue_speech_set(1, false)); audio.stop_effects(); audio.update();
+  CHECK(events.size() == 3);
+  // Recording through the output converter exercises every supported sampling rate without SDL devices.
+  audio.acknowledgement = true; events.clear();
+  audio.loop_at(9001, 1, 0, 0, 0, 0);
+  const auto before_sampling = events.size();
+  std::vector<int16_t> recording(4096);
+  for (int rate : {11025, 22050, 44100}) {
+    CHECK(audio.set_sampling_rate(rate) && audio.sampling_rate() == rate && !audio.device_ok());
+    audio.render_samples(recording.data(), 2048);
+    CHECK(recording[recording.size() - 2] >= 98 && recording.back() <= 102);
+    CHECK(audio.mixer().active_voices() == 1 && events.size() == before_sampling);
+  }
+  CHECK(!audio.set_sampling_rate(12345) && audio.sampling_rate() == 44100);
+  audio.stop_effects();
+  // Invented bank members behind real resource namespaces; no original audio or captions.
+  w.mission.sides = {{}}; w.local_side = 0; w.selection.ids = {1};
+  w.objects.clear(); Object selected; selected.id = 1; selected.type = 0; w.objects.push_back(selected);
+  for (const auto [type, style, expected] : {std::array<int, 3>{0, 0, 101}, {27, 0, 401}, {53, 0, 301}, {53, 1, 101}, {0, 2, 401}, {27, 3, 301}}) {
+    w.objects[0].type = type; events.clear();
+    emit_selection_audio(w, audio, style, 0); audio.update();
+    CHECK(events.size() == 1 && events[0].set == uint32_t(expected) && events[0].trigger == AudioEvent::Trigger::Selection);
+    audio.stop_effects();
+  }
+  events.clear(); audio.acknowledgement = false;
+  emit_selection_audio(w, audio, 0, 0); audio.update(); CHECK(events.empty());
+  audio.acknowledgement = true; w.objects[0].side = 1;
+  emit_selection_audio(w, audio, 0, 0); audio.update(); CHECK(events.empty());
+  w.objects[0].side = 0; w.objects[0].type = 10; // a structure
+  emit_selection_audio(w, audio, 0, 0); audio.update(); CHECK(events.empty());
+  CHECK(selection_speech_set(-1, 0) == 0 && selection_speech_set(0, 4) == 0);
+  CHECK(selection_speech_set(82, 0) == 101 && selection_speech_set(83, 0) == 101);
+  CHECK(selection_speech_set(85, 0) == 101 && selection_speech_set(87, 0) == 401);
+  // Rejected requests must not be reported as accepted playback or retained loops.
+  audio.stop_effects(); events.clear();
+  auto protected_pcm = std::make_shared<Pcm>(20, int16_t(100));
+  for (int i = 0; i < 8; ++i) CHECK(audio.mixer().play(protected_pcm, 1, 1, false, true));
+  CHECK(audio.play_sound(1) == 0 && audio.play_set_at(1, 0, 0, 0, 0) == 0);
+  audio.loop_at(99, 1, 0, 0, 0, 0); audio.start_music(1, 0, 0);
+  CHECK(events.empty() && audio.current_track() == 0);
+  audio.stop_effects(); audio.end_scene_tick(); CHECK(events.empty());
   // Identical commands and seed must yield identical complete state hashes at every tick.
   // Exercise real movement and commands with dispatch disabled, muted and audible, changing views and mix cadence.
   auto rules = std::make_shared<RulesData>(); rules->init_defaults();
   World initial; initial.terrain.w = initial.terrain.h = 24; initial.terrain.cells.resize(24 * 24);
   initial.mission.sides.resize(1); initial.mission.sides[0].index = 0;
+  initial.selection.ids = {1};
   Object unit; unit.id = 1; unit.type = 0; unit.hp = unit.hp_max = 100;
   unit.cur_x = unit.prev_x = to_fixed(100); unit.cur_y = unit.prev_y = to_fixed(100);
   initial.objects.push_back(unit);
@@ -345,14 +439,16 @@ int main(int argc, char** argv) {
     audio.acknowledgement = t % 7; audio.subtitles = t % 11;
     emit_scene_audio(presented, provider, units, audio, float(t % 1000), 0,
         [&](float, float, int) { return t % 4 != 0; });
-    if (t % 13 == 0) audio.play_speech(1, true);
-    audio.mixer().mix(samples, t % 8 + 1); audio.update(1.0 / 12);
+    if (t % 13 == 0) emit_selection_audio(presented, audio, t % 4, 0);
+    if (t % 200 == 0) CHECK(audio.set_sampling_rate(t % 400 ? 11025 : 22050));
+    audio.render_samples(samples, t % 8 + 1); audio.update(1.0 / 12);
     CHECK(silent_sim.state_hash(silent) == presented_sim.state_hash(presented));
   }
   auto replayed = initial;
   auto replay_sim = GameSim::replay(replayed, rules, presented_sim.log(), presented_sim.tick_count());
   CHECK(replay_sim->state_hash(replayed) == presented_sim.state_hash(presented));
   audio.stop_music(); audio.stop_effects();
+  CHECK(audio.set_sampling_rate(44100));
   // Music works even when the effects archive is absent.
   std::filesystem::remove(root / "Res/Snd.xbe");
   AudioSystem music_only; CHECK(!music_only.init(root.string(), false));

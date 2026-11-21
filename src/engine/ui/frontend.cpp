@@ -643,14 +643,15 @@ bool run_frontend(Window& win, GameData& data, Options& opts, FrontendResult& ou
 
 SDL_Rect AudioOptions::row(int i, int w, int h, int sc) {
   const int width = std::min(w - 16, 400 * sc);
-  return {(w - width) / 2, (h - 6 * 48 * sc) / 2 + i * 48 * sc, width, 36 * sc};
+  const int step = std::min(48 * sc, (h - 16) / 9);
+  return {(w - width) / 2, (h - 9 * step) / 2 + i * step, width, std::min(36 * sc, step - 2)};
 }
 void AudioOptions::update(const Input& in, Options& o, int w, int h, int sc) {
   if (!open) return;
   if (in.hit(SDL_SCANCODE_ESCAPE) || (in.hit(SDL_SCANCODE_RETURN) && !in.alt)) open = false;
   if (!in.pressed[SDL_BUTTON_LEFT]) return;
   const SDL_Point point{in.mx, in.my};
-  for (int i = 0; i < 7; ++i) {
+  for (int i = 0; i < 9; ++i) {
     const auto rect = row(i, w, h, sc);
     if (!SDL_PointInRect(&point, &rect)) continue;
     if (i < 3) {
@@ -658,9 +659,11 @@ void AudioOptions::update(const Input& in, Options& o, int w, int h, int sc) {
       *volumes[i] = std::clamp(*volumes[i] + (in.mx < rect.x + rect.w / 2 ? -0.1f : 0.1f), 0.f, 1.f);
     } else if (i == 3) o.acknowledgement = !o.acknowledgement;
     else if (i == 4) o.subtitles = !o.subtitles;
-    else if (i == 5) open = false;
+    else if (i == 5) o.speech_style = (o.speech_style + 1) % 4;
+    else if (i == 6) o.sampling_rate = o.sampling_rate == 11025 ? 22050 : o.sampling_rate == 22050 ? 44100 : 11025;
+    else if (i == 7) open = false;
     else { open = false; settings_requested = true; }
-    if (i < 5 && !save_frontend_options(user_file("frontend-options.txt"), o))
+    if (i < 7 && !save_frontend_options(user_file("frontend-options.txt"), o))
       std::fprintf(stderr, "Cannot persist audio options\n");
   }
 }
@@ -668,12 +671,15 @@ void AudioOptions::draw(SDL_Renderer* r, const Font& font, const Options& o, int
   if (!open) return;
   SDL_Rect all{0, 0, w, h};
   if (backdrop) { SDL_SetRenderDrawColor(r, 20, 18, 14, 255); SDL_RenderFillRect(r, &all); }
+  const char* styles[] = {"Native", "Russian", "Aztec", "Chinese"};
   std::string labels[] = {"-  Effects: " + std::to_string(int(std::lround(o.sfx_volume * 100))) + "%  +",
       "-  Music: " + std::to_string(int(std::lround(o.music_volume * 100))) + "%  +",
       "-  Speech: " + std::to_string(int(std::lround(o.speech_volume * 100))) + "%  +",
-      std::string("Confirmation speech: ") + (o.acknowledgement ? "on" : "off"),
-      std::string("Subtitles: ") + (o.subtitles ? "on" : "off"), "Back", "Other settings"};
-  for (int i = 0; i < 7; ++i) {
+      std::string("Acknowledgements: ") + (o.acknowledgement ? "on" : "off"),
+      std::string("Subtitles: ") + (o.subtitles ? "on" : "off"),
+      std::string("Speech style: ") + styles[std::clamp(o.speech_style, 0, 3)],
+      "Sampling: " + std::to_string(o.sampling_rate) + " Hz", "Back", "Other settings"};
+  for (int i = 0; i < 9; ++i) {
     const auto rect = row(i, w, h, sc);
     SDL_SetRenderDrawColor(r, 55, 42, 25, 255); SDL_RenderFillRect(r, &rect);
     const int ts = 2 * sc;
