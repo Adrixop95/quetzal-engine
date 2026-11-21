@@ -16,7 +16,7 @@ routine `0x43ea30`.
 
 | Vtable | Damage `+0x5c` | Effect `+0x7c` | Weapon classes | State |
 | --- | --- | --- | --- | --- |
-| `0x494f10` | `0x46dfe0` | `0x46ed90` | 2 (footman, rifleman, bear, bizon, chief, watch tower, Abdula) | V formula; the effect `0x46ed90` is O |
+| `0x494f10` | `0x46dfe0` | `0x46ed90` | 13 (Hypno weapons 56 and 57; the earlier label class 2 for this vtable was wrong, class 2 uses vtable `0x495130` and hit effect `0x46e0d0`) | V formula; the effect `0x46ed90` is read, see the correction section |
 | `0x495130` | `0x46dfe0` | `0x46e0d0` | 13 (Hypno, hypno tower) | V: direct damage through `+0x124`, optional damage-over-time helper only when the record carries a duration (not for Hypno); no side change |
 | `0x494f98` | `0x46ec90` | `0x46ed00` | 10 (Jaguar) | V: 1800 base, 1125 against non-organic or structure, 1.25 for two category flags, zero against air; the effect deals the damage and then calls the attacker's virtual `+0x104` with damage divided by 3 (likely a heal or recoil, O) |
 | `0x495020` | `0x46ead0` | `0x46eb10` | 6 (Snowman) | V: 18000, 9000 against non-organic, zero against air; the effect deals the damage and then applies a status through virtual `+0x9c` with value `0x12` to every non-allied, non-airborne object of the two Marine categories within about 96 px of the target (an area freeze or slow, status meaning O) |

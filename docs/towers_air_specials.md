@@ -120,5 +120,5 @@ garrison, research bonuses, Zeppelin/Eagle steering. Read in this pass:
 - Exact Snowman box edges and class 12 muzzle offset geometry (decompilation garbled).
 - Whether the shot animation has exactly one marker frame (a second marker would fire twice); needs the sprite data.
 - Local_assign `0x452c70` scoring for towers and air targets was not re-read here (see `work/gaps/idle_autoengage.md`).
-- Class 2 effect `0x46ed90`, fire stream lifecycle, Mage/Chief/Abdula actives, invisibility: not read in this pass.
+- Read later (see docs/specials_commands.md and docs/projectiles_effects.md): the class 13 effect `0x46ed90`, the class 2 effect `0x46e0d0`, the fire stream lifecycle; Mage, Chief and Abdula have no active abilities and invisibility does not exist as a mechanic.
 - Zeppelin (type 7) purpose: no cargo code found in the Zeppelin class; a script-level use was not searched.

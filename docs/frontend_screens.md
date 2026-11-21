@@ -67,7 +67,7 @@ input policy; native drag-out/re-entry and keyboard focus need comparison.
 ## Campaign / new game and custom missions
 
 V: `f_0041eef0` constructs Load Game at the top left, Custom Mission at the top
-right, Play Mission at the bottom left, Begin Campaign at the bottom middle,
+right, Play Mission at the bottom left, (no Begin Campaign button exists in the original, see docs/interface_ingame.md),
 and Cancel at the bottom right, using the same six outer rectangles. The string
 ordinals are 138, 37, 139, 140 and 148 respectively. The list construction at
 0x41fd91 specifies origin `(140,250)` and nine rows. The list widget uses a
@@ -76,7 +76,7 @@ ordinals are 138, 37, 139, 140 and 148 respectively. The list construction at
 
 G: the current list width is 450, title position is `(400,192)`, and selection
 uses a text prefix. The engine selects a row before Play/Enter opens its briefing;
-Begin Campaign opens mission 1. Fifteen engine campaign missions use two pages.
+Mission 1 is opened from the campaign list (there is no Begin Campaign button). Fifteen engine campaign missions use two pages.
 The existing engine completion mask controls unlocks; this is not original player
 profile compatibility. Options occupies a convenient top-middle shortcut (G).
 Custom missions reuse the list and paging geometry (G), with direct row-to-briefing

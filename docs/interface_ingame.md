@@ -111,7 +111,7 @@ Digits are ids 0x36..0x3f (V `0x434af0`: `0x35 < id < 0x40`). Followed by the ke
 ### Command panel buttons -> packets (V: functions that write the local ring `0x4dd150`)
 | Handler | Packet | G meaning |
 |---|---|---|
-| `0x443490`, `0x4435e0`, `0x443730`, `0x443880` | 0x1f ATTACKMODE (2,1,3,0) | Aggressive/Defensive/Normal/Direct |
+| `0x443490`, `0x4435e0`, `0x443730`, `0x443880` | 0x1f ATTACKMODE (2,1,3,0) | mode 0 Direct Control, mode 3 Balanced (V, see the corrections section); modes 1 and 2 unnamed (G) |
 | `0x4439d0`, `0x443b60` | 0x1e REPEARMODE | AutoRepair / Repair |
 | `0x443cf0` | 0x20 BUILDMODE | fast/economy production |
 | `0x443068` | 0x21 PAUSEBUILD | pause/resume current item |
@@ -202,7 +202,7 @@ class (the visibility predicate) was **not** traced; the panel chain is `0x443f0
   Both 0x1e buttons send only when the selected object's virtual `+0x80` returns 1 (V).
   G: 1 = town, and the buttons are AutoRepair (value 1) and Repair (value 2).
   Inference from the ordinals: the 0x1f modes match keys A/S/D/F as 2 = Aggressive,
-  1 = Defensive, 0 = Normal, 3 = Direct (G).
+  1 = Defensive, 0 = Normal, 3 = Direct (G; superseded by the corrections section: mode 0 is Direct Control and mode 3 is Balanced).
 - Slot `+0x5c` of each button (`0x443580`, `0x4436d0`, `0x443820`, `0x443970`, `0x443b00`,
   `0x443c90`, `0x443e20`, `0x442f10`) is a per-button update hook (G: highlight or enable state).
   Not read.
