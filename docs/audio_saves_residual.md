@@ -142,3 +142,12 @@ Determinism implication (G):
 - What the weapon prototypes reset by `0x46fd00` hold (`0x46d900`).
 - Whether `0x43a160` (which resets the music cursor) runs on every mission start (callers at corpus lines 9522, 17431, 33526 and others not read).
 - Whether the order in which two fresh-process loads consume `rand()` matches (L).
+
+## Correction (2026-11-21, from docs/tick_order_and_rand.md)
+
+V: `srand` is called once, at `0x42ecbf` at the start of the mission loader `0x42ec90`, with the
+seed in `0x4dd15c` (0 at process start; only a multiplayer start writes it). The earlier
+statement that no `srand` exists was wrong. The rand state is per thread (the CRT in use is the
+multithreaded one at `0x481070`), so rand calls on the renderer, audio, view timer and network
+threads cannot shift the simulation sequence. Also: `0x4577b0` is the run loop of a whole
+mission, not a single tick; one tick is one pass of its loop.
