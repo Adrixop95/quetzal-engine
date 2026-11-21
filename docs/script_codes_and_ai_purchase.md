@@ -220,3 +220,9 @@ Caps:
 - The build-tree wait in `0x459bb0` (`value < 0x5a` test before payment) is not decoded.
 - Town `+0x174` (`0x45d160`) is an income estimate from buildings with a producer field;
   its formula (`0x45c450`, `0x410580`) was not read.
+
+## Correction (2026-11-21, from docs/ai_phases.md)
+
+V: `0x461180` has no default value 2. A preference of 1 falls through to 2 and then to 3, and
+the function fails when no preference is free. The build filter out index is the first missing
+prerequisite type (0x5a means the type is not in the tree, -1 means it can be built).
