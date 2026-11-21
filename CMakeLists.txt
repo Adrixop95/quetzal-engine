@@ -180,6 +180,11 @@ set_tests_properties(formats engine PROPERTIES SKIP_RETURN_CODE 77 LABELS "game-
 add_test(NAME engine_unit COMMAND test_engine --pure)
 set_tests_properties(engine_unit path PROPERTIES LABELS "unit")
 target_compile_definitions(test_engine PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data")
+add_executable(test_ground_weapons tests/test_ground_weapons.cpp)
+target_link_libraries(test_ground_weapons PRIVATE aztec_engine_lib)
+target_compile_definitions(test_ground_weapons PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data")
+add_test(NAME ground_weapons COMMAND test_ground_weapons)
+set_tests_properties(ground_weapons PROPERTIES LABELS "unit")
 
 # Synthetic malformed-input coverage, independent of user game files.
 add_executable(test_fuzz tests/test_fuzz.cpp)

@@ -307,15 +307,17 @@ bool RulesData::load_dir(const std::string& dir) {
       if (w.klass == 1) w.shockwave = num(r, 14);
       int secondary_id = w.klass == 0 ? num(r, 5, -1) : w.klass == 1 ? num(r, 13, -1) : num(r, 6, -1);
       auto secondary = row(ids, secondary_id);
+      if (secondary_id > 0) w.payload_id = secondary_id;
       if (num(secondary, 1, -1) == 7) {
         auto splash = row(flames, num(secondary, 2));
         w.payload_id = secondary_id;
         w.impact_anim = num(splash, 1); w.splash_px = num(splash, 3);
       }
     } else if (w.klass == 7) {
-      const auto r = row(flames, w.parameter);
+      auto r = row(flames, w.parameter);
       w.range = num(r, 4); w.reload = num(r, 7);
-      w.payload_id = id; w.impact_anim = num(r, 1);
+      w.payload_id = id;
+      w.impact_anim = num(r, 1); w.splash_px = num(r, 3);
     } else if (w.klass == 2 || w.klass == 13) {
       auto r = row(direct, w.parameter);
       w.range = num(r, 5); w.reload = num(r, 1);
@@ -367,8 +369,7 @@ bool RulesData::load_dir(const std::string& dir) {
       t.weapon_id = f.weapon >= 0 ? num(r, f.weapon + 1, -1) : -1;
       t.armed = t.weapon_id >= 0;
       t.weapon = visual_weapon(t.weapon_id, 0);
-      if (t.kind == 0 || t.kind == 4 || t.kind == 6)
-        t.blast_multiplier = num(r, (t.kind == 6 ? 14 : t.kind == 0 ? 12 : 11) + 1, 256);
+      t.blast_multiplier = num(r, f.armor, 256); // fire armor precedes physical armor
     }
   }
   // Scripted vessels and cameras have a zero maximum getter, not inferred health.
@@ -458,6 +459,18 @@ int estimated_kill_time(const TypeRules& attacker, int hp, int secondary_hp, con
 
 WeaponResult RulesData::weapon(int id, const TypeRules& target, bool allied) const {
   return weapon_impl(id, target, allied, 0);
+}
+
+int RulesData::weapon_class(int id) const {
+  auto it = weapons_.find(id);
+  return it == weapons_.end() ? -1 : it->second.kind;
+}
+
+int RulesData::contact_damage(int id, const TypeRules& target, bool allied) const {
+  auto it = weapons_.find(id);
+  if (it == weapons_.end() || it->second.kind != 3 || it->second.data.size() < 6 ||
+      target.flier || allied) return 0;
+  return category_damage(it->second.data[4], {target.nonorganic ? 176 : 256});
 }
 
 int RulesData::blast_damage(int id, const TypeRules& target, int distance) const {

@@ -76,6 +76,25 @@ int facing_from(int dx, int dy) {
 Order resumed_order(uint8_t resume) {
   return resume == 3 ? Order::Follow : resume == 2 ? Order::Move : resume == 1 ? Order::AttackMove : Order::Idle;
 }
+
+bool contains_point(const Object& o, const TypeRules& rules, Fixed x, Fixed y) {
+  // Use descriptor bounds for buildings and the common hit rectangle for units.
+  const Fixed y0 = o.cur_y - to_fixed(o.render_height);
+  const auto& bounds = rules.combat_bounds;
+  return x >= o.cur_x + to_fixed(bounds[0]) && x < o.cur_x + to_fixed(bounds[2]) &&
+         y >= y0 + to_fixed(bounds[1]) && y < y0 + to_fixed(bounds[3]);
+}
+
+bool in_sector(const Object& source, const Object& target, int angle, int width) {
+  if (d2(source, target) > 96 * 96) return false;
+  const int bearing = (256 - path::angle_of(target.cur_x - source.cur_x, target.cur_y - source.cur_y)) & 255;
+  const int difference = ((bearing - angle + 128) & 255) - 128;
+  return difference >= -width / 2 && difference <= width / 2;
+}
+
+bool weapon_allied(const World& w, int a, int b) {
+  return a == b || (a >= 0 && a < 8 && b >= 0 && b < 8 && w.relation[a][b] == kFriend);
+}
 }  // namespace
 
 GameSim::GameSim(std::shared_ptr<const RulesData> rules, Modifications modifications)
@@ -1410,6 +1429,35 @@ void GameSim::fire(World& w, const Object& source, Object& target, int damage) {
   fire_weapon(w, rules_->type(source.type).weapon, source, target, damage);
 }
 
+void GameSim::damage_object(World& w, Object& target, int damage, const Effect& hit) {
+  if (damage <= 0 || !target.alive || target.removed || target.carrier ||
+      !damageable(target) || ferry_protected(target)) return;
+  trace_combat("damage", hit, target.id, target.hp, target.hp - damage);
+  target.hp -= damage; record_hit(w, target, hit.source);
+  if (target.hp <= 0) kill(w, target);
+}
+
+void GameSim::impact_weapon(World& w, int weapon, const Effect& hit) {
+  const int klass = rules_->weapon_class(weapon);
+  if (klass == 7) {
+    Effect blast = hit; blast.payload_id = weapon;
+    apply_blast(w, blast);
+    return;
+  }
+  int candidates = 0;
+  for (auto& o : w.objects) {
+    if (!o.alive || o.removed || o.carrier || !damageable(o) || ferry_protected(o)) continue;
+    const auto& r = rules_->type(o.type);
+    int damage = 0;
+    if (contains_point(o, r, hit.x, hit.y)) {
+      if (candidates++ == kWeaponQueryLimit) break;
+      auto shot = rules_->weapon(weapon, r, weapon_allied(w, hit.side, o.side));
+      if (shot.damage_known) damage = shot.damage;
+    }
+    damage_object(w, o, damage, hit);
+  }
+}
+
 void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& source, Object& target, int damage) {
   if (!damageable(target) || target.carrier || ferry_protected(target)) return;
   if (weapon.klass == 7) {
@@ -1429,7 +1477,7 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
                                           weapon.spread_px * 256);
     for (size_t i = 0; i < weapon.components.size(); ++i) {
       const auto& child = weapon.components[i];
-      auto shot = rules_->weapon(child.id, rules_->type(target.type), !w.hostile(source.side, target.side));
+      auto shot = rules_->weapon(child.id, rules_->type(target.type), weapon_allied(w, source.side, target.side));
       Object muzzle = source;
       const int sign = i == 0 ? 1 : -1;
       muzzle.cur_x += sign * offset.x; muzzle.cur_y += sign * offset.y;
@@ -1456,30 +1504,34 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
     trace_combat("launch", hit);
     hit.x = target.cur_x; hit.y = target.cur_y;
     trace_combat("impact", hit);
-    trace_combat("damage", hit, target.id, target.hp, target.hp - damage);
-    target.hp -= damage;
-    if (damage > 0) record_hit(w, target, source.id);
-    if (target.hp <= 0) kill(w, target);
-    if (weapon.klass == 10) {
-      // V: life drain uses one third of calculated damage, including overkill,
-      // then the ordinary capped-healing operation on the attacker.
-      if (auto* attacker = w.find_mut(source.id))
-        attacker->hp = int(std::min(int64_t(attacker->hp_max), int64_t(attacker->hp) + damage / 3));
-    }
-    if (weapon.klass == 6) {
-      // V: the secondary reaction adds eighteen to the recipient's attack
-      // countdown. The spatial query is a 96-pixel square about the source.
-      // G: stable engine object order supplies the original's bounded query.
-      int candidates = 0;
-      for (auto& victim : w.objects) {
-        if (!victim.alive || victim.removed || std::abs(px(victim.cur_x) - px(source.cur_x)) > 48 ||
-            std::abs(px(victim.cur_y) - px(source.cur_y)) > 48) continue;
-        if (++candidates > 128) break;
-        const auto& type = rules_->type(victim.type);
-        if (victim.side == source.side || (source.side >= 0 && source.side < 8 && victim.side >= 0 &&
-            victim.side < 8 && w.relation[source.side][victim.side] == kFriend) || type.flier ||
-            !(type.category_e8 || type.category_f4)) continue;
-        victim.cooldown = int(std::min(int64_t(std::numeric_limits<int>::max()), int64_t(victim.cooldown) + 18));
+    if (weapon.klass == 4 || weapon.klass == 5) {
+      // Central sweep and two flanking sectors are separate reference scans.
+      const int direction = source.facing * 32;
+      for (int pass = 0; pass < 3; ++pass) for (auto& o : w.objects) {
+        if (!o.alive || o.removed || o.carrier || o.id == source.id) continue;
+        const int offset = pass == 0 ? 0 : pass == 1 ? -25 : 25;
+        if (!in_sector(source, o, direction + offset, pass == 0 ? 20 : 30)) continue;
+        auto shot = rules_->weapon(weapon.id, rules_->type(o.type), weapon_allied(w, source.side, o.side));
+        damage_object(w, o, pass == 0 ? shot.damage : shot.damage / 2, hit);
+      }
+    } else {
+      damage_object(w, target, damage, hit);
+      if (weapon.klass == 10) {
+        if (auto* attacker = w.find_mut(source.id); attacker && attacker->alive)
+          attacker->hp = int(std::min(int64_t(attacker->hp_max), int64_t(attacker->hp) + damage / 3));
+      } else if (weapon.klass == 6) {
+        int candidates = 0;
+        for (auto& o : w.objects) {
+          const auto& r = rules_->type(o.type);
+          if (!o.alive || o.removed || o.carrier || !damageable(o) || ferry_protected(o)) continue;
+          const int dx = px(o.cur_x) - px(source.cur_x);
+          const int dy = px(o.cur_y) - o.render_height - px(source.cur_y);
+          if (dx <= -48 - kHitHalfWidth || dx >= 48 + kHitHalfWidth ||
+              dy <= -48 - kHitBottom || dy >= 48 + kHitTop) continue;
+          if (candidates++ == kWeaponQueryLimit) break;
+          if (!weapon_allied(w, source.side, o.side) && !r.flier && (r.category_e8 || r.category_f4))
+            o.cooldown = int(std::min(int64_t(std::numeric_limits<int>::max()), int64_t(o.cooldown) + 18));
+        }
       }
     }
     return;
@@ -1497,6 +1549,18 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
   // Snapshot aim; ball projectiles retain a separate vertical fall.
   e.speed = std::max(1, weapon.speed) * 256;
   e.damage = damage; e.flight = true;
+  if (weapon.klass == 0 || weapon.klass == 3) e.payload_id = weapon.payload_id;
+  if (weapon.klass == 3) {
+    e.weapon_id = weapon.id;
+    // The straight projectile clamps its destination to the record range.
+    const auto delta = path::Vec2{e.end_x - e.x, e.end_y - e.y};
+    if (path::len2(delta) > int64_t(to_fixed(weapon.range)) * to_fixed(weapon.range)) {
+      const auto step = path::with_length(delta, to_fixed(weapon.range));
+      e.end_x = e.x + step.x; e.end_y = e.y + step.y;
+    }
+    const auto velocity = path::with_length({e.end_x - e.x, e.end_y - e.y}, e.speed);
+    e.velocity_x = velocity.x; e.velocity_y = velocity.y;
+  }
   if (weapon.klass == 0) {
     e.payload_id = weapon.payload_id;
     e.end_y += to_fixed(2);
@@ -1514,7 +1578,7 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
 
 void GameSim::apply_blast(World& w, const Effect& e) {
   for (auto& o : w.objects) {
-    if (!o.alive || o.removed || !damageable(o) || ferry_protected(o)) continue;
+    if (!o.alive || o.removed || o.carrier || !damageable(o) || ferry_protected(o)) continue;
     const int distance = int(combat_distance(int64_t(o.cur_x / 256) - e.x / 256,
                                            int64_t(o.cur_y / 256) - e.y / 256));
     const int damage = rules_->blast_damage(e.payload_id, rules_->type(o.type), distance);
@@ -1532,6 +1596,9 @@ void GameSim::advance_effects(World& w) {
   for (auto e : effects) {
     e.prev_x = e.x; e.prev_y = e.y;
     if (!e.flight) {
+      if (e.weapon_id >= 0) { // class 3's visual tail drifts without further hits
+        e.x += e.velocity_x; e.y += e.velocity_y;
+      }
       if (e.source && e.loop) {
         const auto* o = w.find(e.source);
         if (!o || !o->alive || o->removed || o->hp_max <= 0 || int64_t(o->hp) * 4 > int64_t(o->hp_max) * 3) continue;
@@ -1546,7 +1613,32 @@ void GameSim::advance_effects(World& w) {
     }
     const bool ball = e.kind == data::EffectClass::BallExpl;
     path::Vec2 delta{e.end_x - e.x, e.end_y - e.y};
-    if (ball) {
+    if (e.weapon_id >= 0 && rules_->weapon_class(e.weapon_id) == 3) {
+      e.x += e.velocity_x; e.y += e.velocity_y; ++e.age;
+      trace_combat("position", e);
+      int candidates = 0;
+      for (auto& o : w.objects) {
+        if (!o.alive || o.removed || o.carrier || !damageable(o) || ferry_protected(o)) continue;
+        const auto& r = rules_->type(o.type);
+        if (!contains_point(o, r, e.x, e.y)) continue;
+        if (candidates++ == kWeaponQueryLimit) break;
+        damage_object(w, o, rules_->contact_damage(e.weapon_id, r, weapon_allied(w, e.side, o.side)), e);
+      }
+      delta = {e.end_x - e.x, e.end_y - e.y};
+      if (path::len2(delta) >= int64_t(e.speed) * e.speed) {
+        w.effects.push_back(e); continue;
+      }
+      // Secondary impact occurs at the clamped aim point; contact ticks have
+      // their own damage and must not deliver the kill-time estimate as a hit.
+      Effect hit = e; hit.x = e.end_x; hit.y = e.end_y;
+      trace_combat("impact", hit);
+      if (e.payload_id > 0) impact_weapon(w, e.payload_id, hit);
+      if (e.impact_anim) decoration(w, e.impact_anim, int(next_visual_rand() % 3), hit.x, hit.y, 0, e.side);
+      e.flight = false; e.loop = false; e.slot = 32; e.age = 0;
+      e.lifetime = data::effect_lifetime(e.anim, e.slot);
+      if (e.lifetime > 0) w.effects.push_back(e);
+      continue;
+    } else if (ball) {
       e.x += e.velocity_x; e.y += e.velocity_y;
       e.altitude -= e.vertical_speed; e.vertical_speed += e.gravity;
       e.height = std::max(0, e.altitude / 256); ++e.age;
@@ -1563,9 +1655,12 @@ void GameSim::advance_effects(World& w) {
     trace_combat("impact", e);
     if (e.impact_anim) decoration(w, e.impact_anim, int(next_visual_rand() % 3), e.x, e.y, 0, e.side);
     if (e.shockwave == data::kShockwaveAnim) decoration(w, e.shockwave, 0, e.x, e.y, 0, e.side);
-    if (e.payload_id >= 0) { apply_blast(w, e); continue; }
+    if (e.payload_id > 0) {
+      impact_weapon(w, e.payload_id, e);
+      continue;
+    }
     for (auto& o : w.objects) {
-      if (!o.alive || o.removed || !damageable(o) || ferry_protected(o)) continue;
+      if (!o.alive || o.removed || o.carrier || !damageable(o) || ferry_protected(o)) continue;
       int64_t dx = int64_t(o.cur_x) - e.x, dy = int64_t(o.cur_y) - e.y;
       bool splash = e.splash_px > 0 && w.hostile(e.side, o.side) &&
                     dx * dx + dy * dy <= int64_t(e.splash_px * 256) * (e.splash_px * 256);
@@ -1955,7 +2050,7 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(uint32_t(e.end_x)); mix(uint32_t(e.end_y)); mix(uint32_t(e.height));
     mix(uint32_t(e.prev_x)); mix(uint32_t(e.prev_y));
     mix(e.age); mix(e.lifetime); mix(e.speed); mix(e.damage); mix(e.splash_px);
-    mix(e.impact_anim); mix(e.shockwave); mix(e.payload_id); mix(e.flight); mix(e.loop);
+    mix(e.impact_anim); mix(e.shockwave); mix(e.payload_id); mix(e.weapon_id); mix(e.flight); mix(e.loop);
     mix(e.velocity_x); mix(e.velocity_y); mix(e.altitude); mix(e.vertical_speed); mix(e.gravity);
   }
   mix(w.town_state.size());
