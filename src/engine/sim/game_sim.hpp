@@ -123,6 +123,7 @@ class GameSim : public Simulation {
   void ferry_follow(World& w, const std::vector<uint32_t>& ids, int side, Object& ferry);
   void unload(World& w, Object& vessel, int tx, int ty);
   void follow_tactics(World& w);
+  bool advance_aircraft(Object& object, path::Vec2 goal, bool attacking, int range = 0);
   void advance_effects(World& w);
   void advance_attack(World& w, Object& source);
   void fire(World& w, const Object& source, Object& target, int damage);
@@ -146,6 +147,12 @@ class GameSim : public Simulation {
   void block_footprint(const TypeRules& r, int tx, int ty, int delta);
   bool finish_structure(World& w, int side, const QueueItem& item);
   bool automatic_site(const World& w, int side, int type, int tx, int ty, int town) const;
+  // Combat scatter is isolated from decoration choices. Reference RNG parity is pending.
+  uint32_t next_combat_rand() {
+    combat_rng_ = (combat_rng_ ? combat_rng_ : 12345u) * 1664525u + 1013904223u;
+    return combat_rng_ >> 8;
+  }
+  uint32_t combat_rng_ = 0;
   // Only spawn variants and effect slots consume this stream; audio has its own stream.
   uint32_t next_visual_rand() { visual_rng_ = visual_rng_ * 1664525u + 1013904223u; return visual_rng_ >> 8; }
 

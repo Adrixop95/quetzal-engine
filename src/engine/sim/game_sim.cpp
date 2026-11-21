@@ -206,12 +206,19 @@ void GameSim::init(World& w) {
   spawn_counter_ = 0;
   std::fill(std::begin(income_total_), std::end(income_total_), 0);
   visual_rng_ = 12345;
+  combat_rng_ = 0;
   if (script_.loaded() && !w.original_save) script_.init(w);
   for (Object& o : w.objects) {
     if (o.type < 0 || o.type >= kNumTypes) { o.type = -1; o.alive = true; continue; }   // unknown types become inert markers
     const TypeRules& r = rules_->type(o.type);
     o.initialize_health(r, bool(w.original_save));
     if (!w.original_save) {
+      if (r.flier && r.cruise_height > 0 && o.render_height == 0) o.render_height = 30;
+      if (r.flier) o.air_speed_px = o.air_min_speed_px = 0;
+      if (r.kind == 5 && r.cruise_height > 0) {
+        o.air_min_speed_px = 6 + int((next_combat_rand() % 32768) * 6 / 32767);
+        o.air_speed_px = o.air_min_speed_px;
+      }
       o.progress = 1000;
       o.gold_harvest = {}; o.repair_harvest = {}; o.harvest_ready = false;
       o.body_angle = o.facing * 32; o.turret_angle = o.body_angle;
@@ -364,6 +371,11 @@ uint32_t GameSim::spawn(World& w, int type, int side, int pxx, int pyy, int hp, 
   const TypeRules& r = rules_->type(type);
   o.hp = hp;
   o.initialize_health(r);
+  if (r.flier && r.cruise_height > 0) o.render_height = 30;
+  if (r.kind == 5 && r.cruise_height > 0) {
+    o.air_min_speed_px = 6 + int((next_combat_rand() % 32768) * 6 / 32767);
+    o.air_speed_px = o.air_min_speed_px;
+  }
   o.anim_variant = next_visual_rand();
   o.teleport(to_fixed(pxx), to_fixed(pyy));
   if (constructing) {
@@ -1250,6 +1262,52 @@ void GameSim::record_hit(World& w, Object& target, uint32_t source) {
   script_.notify_attack(w, target, attacker->side);
 }
 
+bool GameSim::advance_aircraft(Object& o, path::Vec2 goal, bool attacking, int range) {
+  const auto& r = rules_->type(o.type);
+  const auto delta = goal - path::Vec2{o.cur_x, o.cur_y};
+  if (r.cruise_height <= 0) {
+    // Explicit fallback when no aircraft descriptor was supplied.
+    if (path::len2(delta) <= int64_t(r.speed) * r.speed) {
+      o.cur_x = goal.x; o.cur_y = goal.y;
+      if (o.order != uint8_t(Order::Follow)) o.order = uint8_t(Order::Idle);
+      o.set_anim(kAnimIdle);
+    } else {
+      const auto step = path::with_length(delta, r.speed);
+      o.cur_x += step.x; o.cur_y += step.y; o.set_anim(kAnimMove);
+    }
+    return true;
+  }
+  const int distance = path::length(delta) / 256, maximum = r.speed / 256;
+  const int desired = path::angle_of(delta.x, delta.y);
+  int heading = (256 - o.body_angle) & 255;
+  const int difference = ((desired - heading + 128) & 255) - 128;
+  const int error = std::abs(difference);
+  int turn = r.turn_rate;
+  if (r.kind == 5 && attacking && error > 64 && distance < 2 * range) turn /= 3;
+  turn = std::max(1, turn);
+  const bool aligned = error < turn;
+  heading = aligned ? desired : (heading + (difference < 0 ? -turn : turn)) & 255;
+  o.body_angle = (256 - heading) & 255;
+  const auto step = path::from_angle(heading, to_fixed(o.air_speed_px));
+  o.cur_x += step.x; o.cur_y += step.y;
+  if (r.kind == 5) {
+    if (!attacking && distance < maximum + 24) {
+      const int braking = 2 + (maximum * maximum / 2) / std::max(1, maximum * 3 + 24);
+      o.air_speed_px = std::max(o.air_min_speed_px, o.air_speed_px - braking);
+    } else if (error < 56) o.air_speed_px = std::min(maximum, o.air_speed_px + 2);
+  } else {
+    const int acceleration = maximum * maximum / 48 + 1;
+    if (distance < 24 || (distance >= o.air_speed_px + 24 && error >= 56))
+      o.air_speed_px = std::max(0, o.air_speed_px - acceleration);
+    else if (distance >= o.air_speed_px + 24)
+      o.air_speed_px = std::min(maximum, o.air_speed_px + acceleration);
+    if (!attacking && distance < 24 && o.air_speed_px == 0 && o.order != uint8_t(Order::Follow))
+      o.order = uint8_t(Order::Idle);
+  }
+  o.set_anim(kAnimMove);
+  return aligned;
+}
+
 void GameSim::run_orders(World& w) {
   follow_tactics(w);
   for (size_t i = 0; i < w.objects.size(); i++) {
@@ -1262,6 +1320,7 @@ void GameSim::run_orders(World& w) {
     }
     const TypeRules& r = rules_->type(o.type);
     if (o.cooldown > 0) o.cooldown--;
+    if (r.flier && o.render_height < r.cruise_height) ++o.render_height;
     if (o.progress < 1000) {
       if (o.regen_service_ticks > 0) --o.regen_service_ticks;
       continue;
@@ -1270,6 +1329,7 @@ void GameSim::run_orders(World& w) {
     if (o.regen_service_ticks > 0) --o.regen_service_ticks;
     path::Agent* ag = o.mover >= 0 ? &mover_->agents_mut()[size_t(o.mover)] : nullptr;
     bool moving = ag && ag->state == path::AgentState::Moving;
+    bool flight_advanced = false;
 
     if (o.release_target) {
       if (ag && moving) mover_->stop(uint32_t(o.mover));
@@ -1285,19 +1345,8 @@ void GameSim::run_orders(World& w) {
     if ((o.order == uint8_t(Order::Move) ||
          (r.flier && (o.order == uint8_t(Order::AttackMove) || o.order == uint8_t(Order::Follow)))) && !moving) {
       if (r.flier) {
-        path::Vec2 delta{to_fixed(o.dest_x) - o.cur_x, to_fixed(o.dest_y) - o.cur_y};
-        int step = std::max(1, r.speed);
-        if (path::len2(delta) <= int64_t(step) * step) {
-          o.cur_x = to_fixed(o.dest_x); o.cur_y = to_fixed(o.dest_y);
-          if (o.order != uint8_t(Order::Follow)) o.order = uint8_t(Order::Idle);
-          o.set_anim(kAnimIdle);
-        }
-        else {
-          path::Vec2 v = path::with_length(delta, step);
-          o.cur_x += v.x; o.cur_y += v.y;
-          int f = facing_from(delta.x, delta.y); if (f >= 0) o.facing = uint8_t(f);
-          o.set_anim(kAnimMove);
-        }
+        advance_aircraft(o, {to_fixed(o.dest_x), to_fixed(o.dest_y)}, false);
+        flight_advanced = true;
       } else {
         o.order = uint8_t(Order::Idle);
       }
@@ -1339,6 +1388,15 @@ void GameSim::run_orders(World& w) {
     const TypeRules& tr = rules_->type(t->type);
     const auto shot = rules_->attack(o.type, t->type, !w.hostile(o.side, t->side));
     if (!shot.damage_known || !shot.getters_known || shot.damage <= 0) continue;
+    bool flight_aligned = true;
+    if (r.flier && o.attack_mode != AttackMode::Direct) {
+      if (!flight_advanced) flight_aligned = advance_aircraft(o, {t->cur_x, t->cur_y}, true, shot.range_px);
+      else {
+        const int desired = path::angle_of(t->cur_x - o.cur_x, t->cur_y - o.cur_y);
+        const int difference = ((desired + o.body_angle + 128) & 255) - 128;
+        flight_aligned = std::abs(difference) < r.turn_rate;
+      }
+    }
     const int64_t reach = weapon_reach(r, tr, shot);
     if (weapon_in_range(r, int64_t(px(t->cur_x)) - px(o.cur_x), int64_t(px(t->cur_y)) - px(o.cur_y), reach)) {
       if (ag && moving) mover_->stop(uint32_t(o.mover));
@@ -1347,11 +1405,12 @@ void GameSim::run_orders(World& w) {
       const int ax = t->cur_x - o.cur_x, ay = t->cur_y - o.cur_y;
       if (ax || ay) {
         o.turret_angle = (256 - path::angle_of(ax, ay)) & 255;
-        if (!data::kTypeAnims[o.type].anim2) o.body_angle = o.turret_angle;
+        if (!r.flier && !data::kTypeAnims[o.type].anim2) o.body_angle = o.turret_angle;
       }
-      if (o.cooldown == 0) {
+      if (o.cooldown == 0 && (r.kind != 5 || flight_aligned)) {
         // Descriptor damage/reload feed provisional projectile flight; direct weapons hit immediately.
-        const bool siege = (r.kind == 4 || r.kind == 6) && (r.weapon.klass == 0 || r.weapon.klass == 3);
+        const bool siege = r.flier || r.weapon.klass == 8 || r.weapon.klass == 11 ||
+            ((r.kind == 4 || r.kind == 6 || r.kind == 9) && (r.weapon.klass == 0 || r.weapon.klass == 3));
         o.cooldown = std::max(1, shot.reload + (siege ? 0 : 1));
         o.has_fired = true;
         o.anim_state = kAnimAttack; o.anim_tick = 0; o.attack_tick = 0;
@@ -1472,6 +1531,22 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
     apply_blast(w, hit);
     return;
   }
+  if (weapon.klass == 8) {
+    // The reference stores sixteen positions and ten dispatch buckets, not flying rockets.
+    for (int i = 0; i < 16; ++i) {
+      Effect e;
+      e.trace_id = ++next_trace_id_; e.source = source.id; e.target = target.id; e.side = source.side;
+      e.delay_ticks = int(next_combat_rand() % 10);
+      const int radius = weapon.spread_px > 0 ? int(next_combat_rand() % weapon.spread_px) : 0;
+      const auto scatter = path::from_angle(int(next_combat_rand() & 255), to_fixed(radius));
+      e.x = e.prev_x = e.end_x = target.cur_x + scatter.x;
+      e.y = e.prev_y = e.end_y = target.cur_y + scatter.y;
+      e.payload_id = weapon.payload_id; e.impact_anim = weapon.impact_anim;
+      e.height = target.render_height; e.flight = true;
+      trace_combat("launch", e); w.effects.push_back(e);
+    }
+    return;
+  }
   if (!weapon.components.empty()) {
     const auto offset = path::with_length({target.cur_y - source.cur_y, source.cur_x - target.cur_x},
                                           weapon.spread_px * 256);
@@ -1487,6 +1562,18 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
   }
   int dx = target.cur_x - source.cur_x, dy = target.cur_y - source.cur_y;
   int angle = (256 - path::angle_of(dx, dy)) & 255;
+  if (weapon.klass == 11) {
+    Effect e;
+    e.trace_id = ++next_trace_id_; e.source = source.id; e.side = source.side;
+    e.flame = true; e.anim = weapon.anim; e.kind = data::EffectClass::FireThrow;
+    e.slot = data::direction32_from_angle(angle); e.angle = angle;
+    e.lifetime = weapon.duration; e.splash_px = weapon.range;
+    e.height = source.render_height;
+    const auto offset = path::from_angle((256 - angle) & 255, to_fixed(24));
+    e.x = e.prev_x = source.cur_x + offset.x; e.y = e.prev_y = source.cur_y + offset.y;
+    trace_combat("launch", e); w.effects.push_back(e);
+    return;
+  }
   if (weapon.muzzle) {
     auto offset = path::with_length({dx, dy}, 20 * 256);
     decoration(w, data::kBeamMuzzleAnim, 0, source.cur_x + offset.x, source.cur_y + offset.y, 0, source.side);
@@ -1561,13 +1648,15 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
     const auto velocity = path::with_length({e.end_x - e.x, e.end_y - e.y}, e.speed);
     e.velocity_x = velocity.x; e.velocity_y = velocity.y;
   }
+  // Deltaplan arrows dispatch an explosion at the endpoint rather than a direct hit.
+  if (weapon.klass == 1 && weapon.payload_id >= 0) e.payload_id = weapon.payload_id;
   if (weapon.klass == 0) {
     e.payload_id = weapon.payload_id;
     e.end_y += to_fixed(2);
     const path::Vec2 delta{e.end_x - e.x, e.end_y - e.y};
     const auto velocity = path::with_length(delta, std::max(0, weapon.speed) * 256);
     e.velocity_x = velocity.x; e.velocity_y = velocity.y;
-    e.altitude = to_fixed(24); e.height = 24;
+    e.altitude = to_fixed(source.render_height ? source.render_height : 24); e.height = e.altitude / 256;
     const int duration = weapon.speed > 0 ? path::length(delta) / (weapon.speed * 256) : 0;
     e.gravity = duration > 0 ? int(int64_t(e.altitude) * 2 / (int64_t(duration) * duration)) : 2 * 256;
   }
@@ -1595,6 +1684,54 @@ void GameSim::advance_effects(World& w) {
   w.effects.clear();
   for (auto e : effects) {
     e.prev_x = e.x; e.prev_y = e.y;
+    if (e.flame) {
+      const auto* source = w.find(e.source);
+      if (!source || e.age >= e.lifetime) continue;
+      e.side = source->side;
+      const int angle = source->turret_angle >= 0 ? source->turret_angle : source->facing * 32;
+      const auto offset = path::from_angle((256 - angle) & 255, to_fixed(24));
+      e.x = source->cur_x + offset.x; e.y = source->cur_y + offset.y;
+      e.angle = angle; e.slot = data::direction32_from_angle(angle);
+      e.height = source->render_height;
+      const auto direction = path::from_angle((256 - angle) & 255, to_fixed(e.splash_px));
+      // Segment/box intersection. Object extents remain the engine's provisional boxes.
+      for (auto& victim : w.objects) {
+        if (!victim.alive || victim.removed || victim.type < 0) continue;
+        const auto& type = rules_->type(victim.type);
+        const bool allied = e.side == victim.side || (e.side >= 0 && e.side < 8 && victim.side >= 0 &&
+            victim.side < 8 && w.relation[e.side][victim.side] == kFriend);
+        const int amount = rules_->flame_damage(type, allied, victim.id == e.source);
+        if (amount <= 0) continue;
+        const int rx = to_fixed(type.structure ? type.foot_w * 24 : type.radius_px);
+        const int ry = to_fixed(type.structure ? type.foot_h * 24 : type.radius_px);
+        // Test both endpoints and crossings of the four box edges using integer ratios.
+        const int64_t x = int64_t(e.x) - victim.cur_x, y = int64_t(e.y) - victim.cur_y;
+        const int64_t ex = x + direction.x, ey = y + direction.y;
+        bool hit = (x >= -rx && x < rx && y >= -ry && y < ry) ||
+                   (ex >= -rx && ex < rx && ey >= -ry && ey < ry);
+        if (direction.x) for (int edge : {-rx, rx - 1}) {
+          const int64_t n = edge - x, d = direction.x;
+          if ((d > 0 && n >= 0 && n <= d) || (d < 0 && n <= 0 && n >= d)) {
+            const int64_t cross = y + int64_t(direction.y) * n / d;
+            hit = hit || (cross >= -ry && cross < ry);
+          }
+        }
+        if (direction.y) for (int edge : {-ry, ry - 1}) {
+          const int64_t n = edge - y, d = direction.y;
+          if ((d > 0 && n >= 0 && n <= d) || (d < 0 && n <= 0 && n >= d)) {
+            const int64_t cross = x + int64_t(direction.x) * n / d;
+            hit = hit || (cross >= -rx && cross < rx);
+          }
+        }
+        if (!hit) continue;
+        damage_object(w, victim, amount, e);
+      }
+      if (++e.age < e.lifetime) w.effects.push_back(e);
+      continue;
+    }
+    if (e.delay_ticks >= 0) {
+      if (e.delay_ticks-- > 0) { w.effects.push_back(e); continue; }
+    }
     if (!e.flight) {
       if (e.weapon_id >= 0) { // class 3's visual tail drifts without further hits
         e.x += e.velocity_x; e.y += e.velocity_y;
@@ -1723,7 +1860,7 @@ void GameSim::update_animation_state(World& w) {
     if (o.body_angle < 0) o.body_angle = o.facing * 32;
     if (o.turret_angle < 0) o.turret_angle = o.body_angle;
     // Use actual displacement, including the final flight step. This is an
-    // engine steering policy; turn rates and Bird cooldown remain unmeasured.
+    // integer flight model; resource-driven Bird cycle alignment remains open.
     const int dx = o.cur_x - o.prev_x, dy = o.cur_y - o.prev_y;
     if (dx || dy) o.body_angle = (256 - path::angle_of(dx, dy)) & 255;
     if (r.flier && !(o.anim_state == kAnimAttack && o.anim_tick < 8))
@@ -1735,7 +1872,7 @@ void GameSim::update_animation_state(World& w) {
         if (tx || ty) {
           const int aim = (256 - path::angle_of(tx, ty)) & 255;
           o.turret_angle = aim;
-          if (!turret && !o.body_moving) o.body_angle = aim;
+          if (!r.flier && !turret && !o.body_moving) o.body_angle = aim;
         }
       }
     } else if (!turret) o.turret_angle = o.body_angle;
@@ -2014,6 +2151,7 @@ uint64_t GameSim::state_hash(const World& w) const {
   mix(w.town_speed.size()); for (int speed : w.town_speed) mix(speed);
   mix(w.repair_credits.size()); for (int credits : w.repair_credits) mix(credits);
   mix(tick_); mix(visual_rng_); mix(paused_); mix(spawn_counter_); mix(w.objects.size());
+  if (combat_rng_) { mix(0x53434154); mix(combat_rng_); }
   for (const Object& o : w.objects) {
     mix(uint8_t(o.source)); mix(uint32_t(o.prev_x)); mix(uint32_t(o.prev_y));
     mix(uint32_t(o.town)); mix(o.harvest_ready);
@@ -2033,6 +2171,7 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(uint8_t(o.attack_mode)); mix(uint32_t(o.follow_tactic)); mix(o.order); mix(o.target); mix(uint32_t(o.cooldown)); mix(o.alive); mix(o.removed); mix(uint32_t(o.progress));
     if (o.release_target) { mix(o.release_target); mix(o.attack_facing); }
     mix(uint32_t(o.render_height)); mix(uint32_t(o.destruction_radius));
+    if (o.air_speed_px || o.air_min_speed_px) { mix(0x414952); mix(o.air_speed_px); mix(o.air_min_speed_px); }
     mix(uint32_t(o.transport_phase)); mix(uint32_t(o.orientation)); mix(o.construction_overlay); mix(o.has_fired);
     mix(o.body_tick); mix(o.attack_tick); mix(o.body_moving); mix(o.anim_tick);
     mix(uint32_t(o.body_angle)); mix(uint32_t(o.turret_angle));
@@ -2052,6 +2191,7 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(e.age); mix(e.lifetime); mix(e.speed); mix(e.damage); mix(e.splash_px);
     mix(e.impact_anim); mix(e.shockwave); mix(e.payload_id); mix(e.weapon_id); mix(e.flight); mix(e.loop);
     mix(e.velocity_x); mix(e.velocity_y); mix(e.altitude); mix(e.vertical_speed); mix(e.gravity);
+    if (e.flame || e.delay_ticks >= 0) { mix(0x46495245); mix(e.flame); mix(e.delay_ticks); }
   }
   mix(w.town_state.size());
   for (const TownState& t : w.town_state) {

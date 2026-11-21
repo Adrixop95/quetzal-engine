@@ -48,6 +48,7 @@ struct Object {
   uint32_t anim_variant = 0;
   // Unresolved altitude/radius inputs are retained without guessed dynamics.
   int render_height = 0, destruction_radius = -1;
+  int air_speed_px = 0, air_min_speed_px = 0;
   int transport_phase = 0, orientation = 0;
   bool construction_overlay = false;
   bool has_fired = false;
