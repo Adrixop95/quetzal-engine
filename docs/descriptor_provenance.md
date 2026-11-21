@@ -48,3 +48,14 @@ building 42, zeppelin 1), record 0 comes from the file.
 - The heap-pointer last word of each record is a runtime value; do not compare or embed.
 - Dump-specific dynamic words: config-derived cells (marine records at stride 0x4c after +0x30c reads)
   reflect the dump session's settings.
+
+## Correction (2026-11-21, from docs/descriptor_config_cells.md)
+
+V: `DAT_004c4f40` is the string table, not a numeric configuration. Offsets `+0x30c` onward
+are unit name strings that feed only the last word of each record (a heap pointer, so it
+should be stored as a string id). Hit points, speed, reload and costs are not scaled by any
+configuration. Marine word 11 equals 257 because `0x432210` stores the three flag bytes
+(`+0x2c` = 1, `+0x2d` = 1, `+0x2e` = 0) with byte stores that the first scan missed. The
+non-immediate cells are register stores of constants loaded once; no cell is copied from
+another cell or computed from a table. Marine, Defence, Headtruck and Building records 1 and
+up therefore reproduce from the start-up code alone.
