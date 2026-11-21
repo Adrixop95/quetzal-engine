@@ -50,7 +50,8 @@ def course(name):
         for y in range(HEIGHT):
             for x in range(10, 30):
                 terrain[y][x] = 0
-        # Johnkas accept player movement; ferries use a scripted shuttle controller.
+        # Non-scripted type-88 units exercise the generic water mover.
+        # Scripted Johnkas patrol independently; ferries use a shuttle controller.
         units, goals = [(12, 12, 88)], {88: (27, 12) if name == 'water' else (29, 12)}
     if name == 'opposing':
         units = [(x, 12, 0) for x in range(3, 7)] + [(x, 12, 1) for x in range(32, 36)]
@@ -78,18 +79,15 @@ def generate(directory, spec):
     """Invented maps and rules only; never reads an installation or research data."""
     game = route.demo_game(directory)
     base = game / 'Maps/demo'
-    vessels = [u for u in spec['units'] if u[2] == 88]
-    ground = [u for u in spec['units'] if u[2] != 88]
+    units = spec['units']
     town = spec['name'] == 'construction'
-    text = (f'[Globals]\nMapSize={WIDTH},{HEIGHT}\nSides=1\nTeams={int(bool(ground))}\n'
-            f'Towns={int(town)}\nJohnkas={len(vessels)}\n[Side0]\nStart_X=3\nStart_Y=12\nStartMoney=10000\n')
+    text = (f'[Globals]\nMapSize={WIDTH},{HEIGHT}\nSides=1\nTeams={int(bool(units))}\n'
+            f'Towns={int(town)}\nJohnkas=0\n[Side0]\nStart_X=3\nStart_Y=12\nStartMoney=10000\n')
     if town:
         text += '[Town0]\nSide=0\nX=14\nY=6\nType=0\nRace=0\n'
-    if ground:
-        text += f'[Team0]\nSide=0\nUnits={len(ground)}\n'
-        text += ''.join(f'Unit{i}={x},{y},{kind},100\n' for i, (x, y, kind) in enumerate(ground))
-    for i, (x, y, _) in enumerate(vessels):
-        text += f'[Johnka{i}]\nSide=0\nX={x}\nY={y}\nEnabled=1\n'
+    if units:
+        text += f'[Team0]\nSide=0\nUnits={len(units)}\n'
+        text += ''.join(f'Unit{i}={x},{y},{kind},100\n' for i, (x, y, kind) in enumerate(units))
     base.with_suffix('.mp').write_text(text)
     base.with_suffix('.map').write_bytes(struct.pack('<HH', WIDTH, HEIGHT) + bytes(WIDTH * HEIGHT * 4))
     base.with_suffix('.dat').write_bytes(bytes(v for row in spec['terrain'] for v in row))

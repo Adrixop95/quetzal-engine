@@ -118,8 +118,17 @@ void GameSim::unload(World& w, Object& boat, int, int) {
 bool GameSim::activate_vessel(World& w, int scenario, ObjectSource source, bool enabled) {
   bool found = false;
   for (auto& o : w.objects) {
-    if (!o.alive || o.removed || o.scenario != scenario || o.source != source) continue;
+    if (!o.alive || (o.removed && source != ObjectSource::Johnka) ||
+        o.scenario != scenario || o.source != source) continue;
     found = true; o.vessel_enabled = enabled;
+    if (source == ObjectSource::Johnka) {
+      // V: disabling waits for the next turn; enabling starts a dormant patrol.
+      if (enabled && !o.vessel_route) {
+        o.removed = false; o.vessel_route = true; o.transport_phase = 1;
+        o.teleport(tile_center_fixed(tile(o.cur_x)), tile_center_fixed(tile(o.cur_y)));
+      }
+      continue;
+    }
     if (source == ObjectSource::Submarine) {
       if (!enabled || o.vessel_arrived) continue;
       decoration(w, 27, 1, o.cur_x, o.cur_y, 0, o.side, o.id);
@@ -129,12 +138,32 @@ bool GameSim::activate_vessel(World& w, int scenario, ObjectSource source, bool 
       o.ferry_destination = o.cargo.empty() ? -1 : w.find(o.cargo.front())->tactic;
       o.ferry_group_side = o.side;
       phase(o, 3, data::BoatPhase::Closed, kFerryTravelPause);
-    } else if (source == ObjectSource::Johnka && !enabled) script_stop(w, {o.id});
+    }
   }
   return found;
 }
 
 void GameSim::transport_tick(World& w) {
+  for (auto& vessel : w.objects) {
+    if (vessel.source != ObjectSource::Johnka || !vessel.alive || !vessel.vessel_route) continue;
+    if (vessel.transport_phase == 1 && !vessel.vessel_enabled) {
+      vessel.vessel_route = false; vessel.removed = true;
+      vessel.target = 0; vessel.order = uint8_t(Order::Idle);
+      continue;
+    }
+    vessel.transport_phase = 2;
+    // V: five pixels on each axis per visual think, independent of terrain.
+    // G: one visual think per engine tick; native scheduling needs a live run.
+    const int step = (vessel.orientation ? -5 : 5) * 256;
+    vessel.cur_x += step; vessel.cur_y += step;
+    const int x = vessel.cur_x / 256, y = vessel.cur_y / 256;
+    const int tx = x / kTilePx, ty = y / kTilePx;
+    if (std::abs(tx * kTilePx + kTilePx / 2 - x) < 5 &&
+        (tx < -3 || tx >= w.terrain.w + 3 || ty < -3 || ty >= w.terrain.h + 3)) {
+      vessel.orientation ^= 1;
+      vessel.transport_phase = 1;
+    }
+  }
   // Follow is generic: approach the allied target anchor, then ask a ready ferry.
   // Group anchors are currently centroids, a documented engine approximation.
   for (auto& o : w.objects) {
