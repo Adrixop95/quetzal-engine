@@ -317,3 +317,8 @@ level 2: 19, 47, 71; level 3: 24, none, 76. `0x45c4f0` maps 11/38/64 -> 1, 19/47
 10. Race 1 level 3 tree is empty and has no hall type: assumed unused.
 11. Division by zero in `0x40a3c0` if the computed time is 0 (types with BuildTime 0: 10,
     37, 63, 89) is not guarded; those types are presumably never queued.
+
+## Correction (2026-11-21, from docs/ai_tables_and_light.md)
+
+V: build tree byte `+0x2e1 == 0` makes nothing buildable; it does not make everything
+available. Admission `0x45cec0` clears it for a hall upgrade and `0x45cfd0` sets it back.
