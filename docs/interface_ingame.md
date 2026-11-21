@@ -230,3 +230,12 @@ class (the visibility predicate) was **not** traced; the panel chain is `0x443f0
   constructor `0x462860` (`this[0xe037]`). Steps `0x469980` / `0x4699a0` / `0x4698f0` / `0x469910`
   move camera `+0x30/+0x34` (= `0x4dd330/0x4dd334`) and clamp at 0 (V for left).
 - G: frame rate and wall-clock speed not measured.
+
+## Corrections (2026-11-21, from docs/worldview_mouse_cursors.md)
+
+- V: `0x4353a0` receives (left previous, right previous, left now, right now), so slot `+0x30`
+  is the left release, not the left press.
+- G (strong): `0x5154e9 != 0` most likely means the interface is shown, the opposite of
+  what the panel notes above say.
+- V: the world view is not a region of list `0x515530`; its input runs in the game thread
+  mouse pump `0x435bc0`, which writes frame packets into the local ring.
