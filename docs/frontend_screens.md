@@ -257,3 +257,9 @@ route completed 71 frames and 15 private captures covering all ten supported
 front-end modes. This verifies resource loading and clone navigation only. The
 reference executable was not launched. Pre-commit gates cover tracked changes
 and the two new files separately because git metadata is read-only.
+
+## Correction (2026-11-21, from docs/interface_ingame.md)
+
+V: there is no "Begin Campaign" button in the original. None of the 41 button constructors
+loads string ordinal 140, and the campaign list screen has only 7 buttons. Earlier text that
+places a Begin Campaign button at the bottom middle is wrong.
