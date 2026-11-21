@@ -134,7 +134,7 @@ void GameSim::attach_agent(Object& o) {
     o.idle_anchor_x = px(o.cur_x); o.idle_anchor_y = px(o.cur_y);
   }
   const TypeRules& r = rules_->type(o.type);
-  if (is_ferry(o) || !r.mobile || r.flier || !mover_) { o.mover = -1; return; }
+  if (is_ferry(o) || o.source == ObjectSource::Johnka || !r.mobile || r.flier || !mover_) { o.mover = -1; return; }
   o.mover = int32_t(mover_->add_agent({o.cur_x, o.cur_y}, r.radius_px * 256, std::max(256, r.speed),
                                       is_transport(o.type) ? path::MoveClass::Water : r.large ? path::MoveClass::Large : path::MoveClass::Small, o.side));
 }
@@ -215,6 +215,11 @@ void GameSim::init(World& w) {
       o.progress = 1000;
       o.gold_harvest = {}; o.repair_harvest = {}; o.harvest_ready = false;
       o.body_angle = o.facing * 32; o.turret_angle = o.body_angle;
+      if (o.source == ObjectSource::Johnka) {
+        o.removed = !o.vessel_enabled;
+        o.vessel_route = o.vessel_enabled;
+        o.transport_phase = 1;
+      }
     }
     if (o.removed || !o.alive) continue;
     if (is_ferry(o)) {
@@ -1301,7 +1306,8 @@ void GameSim::run_orders(World& w) {
     }
     if (o.order == uint8_t(Order::AttackMove) && ag && !moving) o.order = uint8_t(Order::Idle);
 
-    if (!r.armed || o.boarding || o.type == 84 || (o.type == 88 && !o.vessel_enabled)) continue;
+    if (!r.armed || o.boarding || o.type == 84 ||
+        (o.type == 88 && !(o.source == ObjectSource::Johnka ? o.vessel_route : o.vessel_enabled))) continue;
     // Mode gates are independent of the provisional nearest-visible-enemy policy.
     const bool engage_moving = o.attack_mode == AttackMode::Aggressive || o.attack_mode == AttackMode::Balanced;
     if (o.order == uint8_t(Order::Idle) ||
@@ -1832,7 +1838,7 @@ void GameSim::tick(World& w) {
   maintain_town_marks(w);
   service_towns(w);
   capture_towns(w);
-  // Ownership may change during hypnosis; cooperation follows current sides.
+  // Cooperation follows ownership changes from capture and scripted gifts.
   if (modifications_.unit_unstick) for (const auto& object : w.objects)
     if (object.mover >= 0) mover_->agents_mut()[size_t(object.mover)].team = object.side;
   mover_->tick();
@@ -1885,30 +1891,52 @@ void GameSim::script_stop(World& w, const std::vector<uint32_t>& ids) {
 }
 
 void GameSim::capture_towns(World& w) {
-  // V: the reference checks nearby ground attackers and nearby friendly defenders.
-  // G: deterministic nearest attacker, two-tile capture and four-tile defence
-  // radii; exact eligibility, scan ordering and expanded alert radius need a live probe.
+  // V: squared tile distances, <5 for capture, 4/8 tiles for defence.
+  // G: stable object order substitutes for the reference spatial-list scan.
   for (size_t i = 0; i < w.mission.towns.size(); ++i) {
     const auto* hall = town_hall(w, int(i));
     if (!hall || hall->progress < 1000) continue;
     const int owner = hall->side;
+    if (owner < 0 || owner >= 8) continue;
     uint32_t candidate = 0;
-    int64_t nearest = int64_t(2 * kTilePx) * (2 * kTilePx) + 1;
+    const int radius = w.mission.towns[i].type == 0 ? 4 : 8;
     bool defended = false;
     for (const auto& object : w.objects) {
-      if (!object.alive || object.removed || object.type < 0) continue;
+      if (!object.alive || object.removed || object.type < 0 || object.side < 0 || object.side >= 8) continue;
       const auto& type = rules_->type(object.type);
-      if (!type.mobile || type.flier || is_transport(object.type)) continue;
-      const auto distance = d2(*hall, object);
+      const int64_t dx = px(object.cur_x) / kTilePx - px(hall->cur_x) / kTilePx;
+      const int64_t dy = px(object.cur_y) / kTilePx - px(hall->cur_y) / kTilePx;
+      const auto distance = dx * dx + dy * dy;
+      // Ordinary buildings (including the hall) answer false to +0xfc;
+      // defence structures answer true, even the unarmed shipyard.
       if ((object.side == owner || w.relation[owner][object.side] == kFriend) &&
-          distance <= int64_t(4 * kTilePx) * (4 * kTilePx))
+          (type.kind != 2) && distance <= radius * radius)
         defended = true;
-      if (w.hostile(owner, object.side) && distance < nearest) {
-        nearest = distance;
+      if (object.side != owner && w.relation[owner][object.side] != kFriend &&
+          !type.flier && distance < 5) {
         candidate = object.id;
       }
     }
+    // V: an active Defence in the town's construction helper also protects it.
+    // The engine's active queue object represents that helper's current object.
+    for (const auto& item : w.side_state[size_t(owner)].queue)
+      if (item.started && item.town == int(i)) {
+        const auto* object = w.find(item.object);
+        if (object && object->alive && !object->removed && rules_->type(object->type).kind == 7)
+          defended = true;
+      }
     if (candidate && !defended) transfer_town(w, int(i), w.find(candidate)->side);
+  }
+}
+
+void GameSim::transfer_objects(World& w, const std::vector<uint32_t>& ids, int recipient) {
+  if (recipient < 0 || recipient >= int(w.side_state.size())) return;
+  script_stop(w, ids);
+  for (auto id : ids) {
+    auto* object = w.find_mut(id);
+    if (!object || !object->alive) continue;
+    object->side = recipient;
+    if (object->mover >= 0) mover_->agents_mut()[size_t(object->mover)].team = recipient;
   }
 }
 
@@ -1928,12 +1956,7 @@ void GameSim::transfer_town(World& w, int town, int recipient) {
   for (const auto& object : w.objects)
     if (object.alive && object.side == previous && object.town == definition.index)
       members.push_back(object.id);
-  script_stop(w, members);
-  for (auto id : members) {
-    auto* object = w.find_mut(id);
-    object->side = recipient;
-    if (object->mover >= 0) mover_->agents_mut()[size_t(object->mover)].team = recipient;
-  }
+  transfer_objects(w, members, recipient);
   definition.side = recipient;
   if (size_t(town) < w.town_state.size()) {
     auto& state = w.town_state[size_t(town)];

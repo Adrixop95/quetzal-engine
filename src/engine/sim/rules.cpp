@@ -299,7 +299,12 @@ bool RulesData::load_dir(const std::string& dir) {
       w.spread_px = num(pair, 3);
       return w;
     }
-    if (w.klass == 8) return visual_weapon(num(row(throws, w.parameter), 1, -1), depth + 1);
+    if (w.klass == 8) {
+      const auto volley = row(throws, w.parameter);
+      w.payload_id = num(volley, 1, -1);
+      w.spread_px = num(volley, 2); w.range = num(volley, 3);
+      return w; // volley scheduling is separate from the explosion payload
+    }
     if (w.klass == 0 || w.klass == 1 || w.klass == 3) {
       auto r = row(w.klass == 0 ? balls : w.klass == 1 ? arrows : axes, w.parameter);
       if (r.empty()) return w;
@@ -375,6 +380,10 @@ bool RulesData::load_dir(const std::string& dir) {
   // Scripted vessels and cameras have a zero maximum getter, not inferred health.
   for (auto& t : types_) if (t.kind == 8 || t.kind == 10 || t.kind == 11) {
     t.hp_max = 0; t.hp_src = Src::Verified;
+    if (t.kind == 10) {
+      t.weapon_id = 54; t.armed = true;
+      t.weapon = visual_weapon(t.weapon_id, 0);
+    }
   }
   std::map<int, std::map<int, std::vector<int>>> tables;
   for (const auto& entry : std::vector<std::pair<int, std::string>>{

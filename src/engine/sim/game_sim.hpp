@@ -87,6 +87,7 @@ class GameSim : public Simulation {
   void script_stop(World& w, const std::vector<uint32_t>& ids);
   void script_kill(World& w, uint32_t id);
   void transfer_town(World& w, int town, int recipient);
+  void transfer_objects(World& w, const std::vector<uint32_t>& ids, int recipient);
   // Debug/editor helper (not a lockstep command): moves an object and its movement agent instantly.
   bool activate_vessel(World& w, int scenario, ObjectSource source, bool enabled = true);
   void teleport(World& w, uint32_t id, int px, int py);
