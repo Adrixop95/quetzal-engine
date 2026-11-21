@@ -33,12 +33,12 @@ changes it (see `docs/gap_recon.md` for the open items behind each row).
 | Mission scripts (conditions, actions, flow) | ~97% (all action codes, 22 condition codes, trigger timing, victory flow) | ~85% | forced-state tests only |
 | Transport (ferries) | ~95% (control flow, request conditions, passenger rule, tick timeline) | ~35% (model to be replaced) | one measured cycle |
 | Special mechanics (towers, air units, fire, town capture) | ~90% (capture rule, ownership mechanism, hypno resolved) | ~30% | ~15% |
-| Saves and resume | ~80% | ~65% | ~20% |
-| Interface and menus | ~70% | ~55% | ~15% |
-| Audio | ~80% | ~50% | ~10% |
-| Campaign (missions 1 to 15) | ~60% | ~70% (scripts) | ~7% (one mission played honestly) |
+| Saves and resume | ~90% | ~65% | ~20% |
+| Interface and menus | ~82% | ~55% | ~15% |
+| Audio | ~90% | ~50% | ~10% |
+| Campaign (missions 1 to 15) | ~78% | ~70% (scripts) | ~7% (one mission played honestly) |
 
-Overall (rough): about 88% of the original's rules understood, about 45 to 50% implemented,
+Overall (rough): about 91% of the original's rules understood, about 45 to 50% implemented,
 about 15 to 20% checked against the original or by play. The reference oracle (the original
 executable running headless under an observer, plus its decompilation) covers about 35% of
 the logic so far; the decompilation corpus now holds 5468 functions with an index of one-line annotations used as leads, not as truth; missions 4 to 15 have not been measured.
