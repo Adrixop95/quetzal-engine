@@ -49,6 +49,9 @@ class CommandsUi {
   bool action_hit(const Input& in, const char* action) const;
   bool action_down(const Input& in, const char* action) const;
   bool key_bound(SDL_Scancode key) const;
+  // Presentation-only camera controls; bindings also work without a simulation.
+  bool fast_scrolling(const Input& in) const;
+  bool center_selection(const Input& in, const World& w, Camera& cam, float alpha) const;
   static SDL_Scancode sdl_scancode(int dik);
   bool open_sprites(const std::string& path) { return icons_.open(path); }
   // Returns true if a targeting click was consumed, including the frame that completes the order.
@@ -65,6 +68,7 @@ class CommandsUi {
   void draw_ghost(SDL_Renderer* r, const World& w, const Camera& cam, int mx, int my) const;
   static CommandPanelLayout layout(const SDL_Rect& panel, int scale);
   static bool action_enabled(PanelAction action, const World& w, const RulesData* rules = nullptr);
+  static const char* disabled_reason(PanelAction action, const World& w, const RulesData* rules = nullptr);
   // Shared presentation state for rendering and UI observations; hover only adds a tooltip.
   CommandButtonState button_state(PanelAction action, const World& w) const;
   static int icon_slot(int kind);

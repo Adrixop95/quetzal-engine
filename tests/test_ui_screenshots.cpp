@@ -148,6 +148,9 @@ static void run(const std::filesystem::path& output, bool original, int sc, int 
     auto tip = commands.draw_menu(r, store, font, strings, world, panel.rect(), sc,
                                   layout.commands[0].x + sc, layout.commands[0].y + sc);
     CHECK(tip.find("Move (M)") == 0);
+    const auto repair_tip = commands.draw_menu(r, store, font, strings, world, panel.rect(), sc,
+        layout.commands[3].x + sc, layout.commands[3].y + sc);
+    CHECK(repair_tip.find("Unavailable: Select a town hall") != std::string::npos);
     auto commands_shot = capture(r, width, height);
     // Enabled Move icon is white throughout its interior, not a fallback label.
     auto icon_expected = commands_shot;

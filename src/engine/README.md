@@ -66,7 +66,7 @@ right panel. Scripted playtests and screenshots do not grab the mouse.
   about 1.3x too bright. The +1 level and the missing per-tile light map are approximations. `--no-light`, `--time T`.
 - Fonts: `fnts.xbe` base 1200 (small, anti-aliased, palette 53), glyph = base + cp1250 byte; the built-in 3x5 font remains as a fallback and for placeholder labels.
 - `core/strbase.*` parses `strbase.bds` (UTF-8); `ui/names.*` maps type ids to display names (ordinals 166-210, matched by name).
-- Selection: click or left-drag a box (own units only, Shift adds), animated selection ring (common 309 / 314), health bar (descriptor maximum from object state),
+- Selection: click a squad member, Ctrl-click an individual, or left-drag a box (own units only, Shift adds), animated selection ring (common 309 / 314), health bar (descriptor maximum from object state),
   panel summary, hover tooltip ("Name\nPrice: %i Time: %i" when `docs/data` is available). `--select X0,Y0,X1,Y1` selects in screenshot mode.
 
 ## Simulation
@@ -78,7 +78,10 @@ right panel. Scripted playtests and screenshots do not grab the mouse.
 - Controls (`ui/commands_ui.*`): right click = move / attack (right-drag pans), `M` + click = move, `X` + click = attack an enemy / attack-move on terrain,
   `H` = stop, Ctrl+0-9 / 0-9 = groups, Ctrl+Shift+0-9 adds to a group, `P` = pause the simulation. M/X/H/P are engine extensions, available only when
   the key is unbound in `Keys.ini`. Original Destroy, Add, scrolling, ToggleInterface and PrintScreen bindings are loaded through `core/userfiles.*`.
-  Unsupported repair, garrison and stance bindings perform no gameplay action. Arrow/keypad scrolling avoids conflicting with W/A/S/D mode bindings.
+  Bound tactic-mode keys submit AttackMode; Q selects automatic town service. Existing repair/garrison controls use the town-service and extraction commands.
+  Alt centres the selection, Caps-held mouse motion scrolls, and V toggles visible-object status bars. These actions follow remapped bindings.
+  Arrow/keypad scrolling avoids conflicting with W/A/S/D mode bindings. Friendly mobile squads accept follow orders on right-click.
+  Persistent squad edits, waypoint append, town rally routing and several original list controls remain missing; see [the input audit](../../docs/121-input-hotkeys-commands-audit.md).
   Targeting also works on the minimap; right-click or Escape cancels it. Target clicks preserve selection.
   Panel: production icons from the side's build tree, prerequisites / money / queue-full tooltips, paged entries for short windows, and `[B]` placement icons.
   Click queued icons to cancel with the simulation's refund; click the queue header to pause/resume production. All gameplay actions use `sim/commands.hpp`.
