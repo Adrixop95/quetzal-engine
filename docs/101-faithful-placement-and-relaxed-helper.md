@@ -1,5 +1,11 @@
 # Placement policy and optional relaxed placement (task 101)
 
+**Historical implementation report:** task 150 supersedes the predicate, helper
+semantics and waiting-site revalidation described below. See
+[placement rules](placement_rules.md) for the current implementation and V/G
+evidence boundaries. The old 16-tile radius, value-1 clearance, overlay/mineral
+rejections and mine terrain exceptions no longer apply.
+
 The default now rejects map overlays and mineral tiles for ordinary buildings,
 checks descriptor clearance as well as body cells, and protects other buildings'
 clearance from new bodies. `relaxed_placement=on` retains the previous placement

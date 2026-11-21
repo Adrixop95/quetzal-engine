@@ -84,7 +84,7 @@ def generate(directory, spec):
     text = (f'[Globals]\nMapSize={WIDTH},{HEIGHT}\nSides=1\nTeams={int(bool(units))}\n'
             f'Towns={int(town)}\nJohnkas=0\n[Side0]\nStart_X=3\nStart_Y=12\nStartMoney=10000\n')
     if town:
-        text += '[Town0]\nSide=0\nX=14\nY=6\nType=0\nRace=0\n'
+        text += '[Town0]\nSide=0\nX=16\nY=7\nType=0\nRace=0\n'
     if units:
         text += f'[Team0]\nSide=0\nUnits={len(units)}\n'
         text += ''.join(f'Unit{i}={x},{y},{kind},100\n' for i, (x, y, kind) in enumerate(units))
@@ -127,7 +127,7 @@ def grid_distance(spec, start, area, water=False):
 
     def free(x, y):
         construction = spec['name'] == 'construction' and ((19 <= x <= 20 and 12 <= y <= 13)
-                                                         or (14 <= x <= 15 and 6 <= y <= 7))
+                                                         or (16 <= x <= 17 and 7 <= y <= 8))
         return (0 <= x < WIDTH and 0 <= y < HEIGHT and not construction
                 and (terrain[y][x] == 0 if water else terrain[y][x] >= 1))
 
