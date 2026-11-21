@@ -153,3 +153,10 @@ Glow mask accessors (virtual `+0x70`): Building `0x40fa10` (current animation re
 - Whether the minimap redraw is throttled by its caller, and what the proxy flag `+0x128` is set from.
 - Whether aircraft height changes the stamp position (the stamp receives the plain position from
   virtual `+0x14`; height `+0x18` is not passed, V for the call site only).
+
+## Correction (2026-11-21, from docs/renderer_rules.md)
+
+V: the terrain shade is `(fog byte + 4) >> 3` only for tiles whose four corners are equal.
+Other tiles use the per pixel light surface (bilinear blocks plus a 4x4 ordered dither,
+built by `0x47d5e0` and `0x480dec`). Unit bodies sample only one row of that surface, at
+their ground y.
