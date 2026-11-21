@@ -28,3 +28,11 @@ plus the shared records of the Marine kind), reached through object field `+0x68
 Result: of the 15 Marine words that are non-zero in some type, 14 now have a name or a
 verified use; word 15 stays a guess. The kind is therefore at about 93 percent, up from 13
 of 15.
+
+## Correction (2026-11-21, from docs/leftovers_scripts_descriptors.md)
+
+V: Marine word 15 (`+0x3c`) is the spawn sound list id (Marine vtable `0x4932cc`, slot `+0xc4`
+= `0x4334d0`, read at `0x4335ed`). It replaces the earlier "likely unused". The Marine
+physical armor is word 13 (slot `+0x10c` = `0x45ff20`, see the armor slot check in the
+Marine vtable); the third armor accessor (virtual `+0x110`) has only two call sites in the
+whole executable, both on script tactics, so no unit consumer exists.
