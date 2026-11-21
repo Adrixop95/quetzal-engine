@@ -2,6 +2,7 @@
 // Terrain bytes are the original .dat passability map: 0 = blocked for everyone, 1 = blocked for large units only,
 // 2 = open (verified in WaveSearch layer construction, docs/rules_movement.md).
 #pragma once
+#include <array>
 #include <vector>
 #include "fixed.hpp"
 
@@ -42,6 +43,9 @@ class NavGrid {
   bool push_out(Vec2& p, i32 r, MoveClass c) const;
   // Nearest passable tile centre to a tile (spiral); false when none within the map.
   bool nearest_free(int x, int y, MoveClass c, int& ox, int& oy) const;
+  // Same reachability as a field rooted at (sx,sy), including blocked-root relocation.
+  // Region labels are query caches; they do not participate in simulation hashes.
+  bool connected(int sx, int sy, int tx, int ty, MoveClass c) const;
 
  private:
   int w_ = 0, h_ = 0;
@@ -50,6 +54,11 @@ class NavGrid {
   std::vector<u16> dyn_;
   mutable u32 hash_version_ = 0;
   mutable u64 cached_hash_ = 0;
+  struct Regions {
+    u32 version = 0;
+    std::vector<u32> labels;
+  };
+  mutable std::array<Regions, 3> regions_;
 };
 
 }  // namespace aztec::path

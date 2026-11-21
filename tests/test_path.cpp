@@ -55,6 +55,56 @@ static void test_no_corner_cut() {
   CHECK(a.found); CHECK(a.tiles.size() > 2);   // must go around, not through the diagonal gap
 }
 
+static void check_connectivity(const NavGrid& g, Cell start, MoveClass cls) {
+  const u64 before = g.state_hash();
+  FlowField field; field.build(g, cls, &start, 1);
+  for (int y = -1; y <= g.height(); ++y) for (int x = -1; x <= g.width(); ++x)
+    CHECK(g.connected(start.x, start.y, x, y, cls) == field.reachable(x, y));
+  CHECK(g.state_hash() == before);
+}
+
+static void test_connectivity_cache() {
+  for (int trial = 0; trial < 12; ++trial) {
+    NavGrid g; random_grid(g, 17, 13, 35);
+    for (auto cls : {MoveClass::Small, MoveClass::Large, MoveClass::Water}) {
+      for (int root = 0; root < 12; ++root)
+        check_connectivity(g, {int(rnd() % 19) - 1, int(rnd() % 15) - 1}, cls);
+    }
+  }
+  NavGrid g(9, 7);
+  for (int y = 0; y < 7; ++y) g.set_terrain(4, y, 0);
+  for (auto cls : {MoveClass::Small, MoveClass::Large, MoveClass::Water})
+    check_connectivity(g, {1, 3}, cls);
+  CHECK(!g.connected(1, 3, 7, 3, MoveClass::Small));
+  g.set_terrain(4, 3, 1);
+  CHECK(g.connected(1, 3, 7, 3, MoveClass::Small));
+  CHECK(!g.connected(1, 3, 7, 3, MoveClass::Large));
+  g.set_terrain(4, 3, 2);
+  CHECK(g.connected(1, 3, 7, 3, MoveClass::Large));
+  g.add_block(4, 3, 1, 1, 2);
+  CHECK(!g.connected(1, 3, 7, 3, MoveClass::Small));
+  g.add_block(4, 3, 1, 1, -1);
+  CHECK(!g.connected(1, 3, 7, 3, MoveClass::Small));
+  g.add_block(4, 3, 1, 1, -1);
+  CHECK(g.connected(1, 3, 7, 3, MoveClass::Small));
+  for (auto cls : {MoveClass::Small, MoveClass::Large, MoveClass::Water})
+    check_connectivity(g, {4, 3}, cls);
+  NavGrid copy = g;
+  copy.reset(3, 4);
+  for (int y = 0; y < 4; ++y) copy.set_terrain(1, y, 0);
+  check_connectivity(copy, {0, 0}, MoveClass::Small);
+  CHECK(!copy.connected(0, 0, 2, 0, MoveClass::Small));
+  CHECK(g.connected(1, 3, 7, 3, MoveClass::Small));
+  std::vector<u8> blocked(12, 0);
+  copy.load_dat(3, 4, blocked.data());
+  check_connectivity(copy, {0, 0}, MoveClass::Small);
+  check_connectivity(copy, {0, 0}, MoveClass::Water);
+  // Two open diagonal cells cannot connect through blocked orthogonal neighbours.
+  copy.reset(2, 2); copy.set_terrain(1, 0, 0); copy.set_terrain(0, 1, 0);
+  CHECK(!copy.connected(0, 0, 1, 1, MoveClass::Small));
+  check_connectivity(copy, {0, 0}, MoveClass::Small);
+}
+
 static u64 run_course(const char* name, int n, int ticks, int* arrived = nullptr, bool check_walls = true) {
   Course c; CHECK(make_course(name, n, c));
   NavGrid g(c.w, c.h); g.load_dat(c.w, c.h, c.dat.data());
@@ -297,6 +347,7 @@ static void test_dense_unstick_arrival() {
 }
 
 int main() {
+  test_connectivity_cache();
   test_math(); test_field_vs_astar(); test_no_corner_cut(); test_courses(); test_determinism(); test_unreachable_goal(); test_large_class(); test_dynamic_block();
   const u64 wall_run = run_goal_beside_wall();
   CHECK(wall_run == run_goal_beside_wall());
