@@ -210,9 +210,9 @@ bool RulesData::load_dir(const std::string& dir) {
           if (mask >= 64 && mask <= 71) { types_[id].vision_mask = mask; types_[id].sight_src = Src::Verified; }
         }
   }
-  // Established getters only (rules_summary.md). Bird speed remains unresolved.
+  // Bird d5 is maximum cruise speed; its acceleration and steering are separate.
   for (auto [kind, family, field] : {std::tuple{1, "spider", 7}, {3, "zeppelin", 5},
-                                   {4, "truck", 5}, {6, "headtruck", 7}}) {
+                                   {4, "truck", 5}, {5, "bird", 5}, {6, "headtruck", 7}}) {
     for (const auto& row : read_csv(dir + "/desc_" + family + ".csv"))
       for (int id = 0; id < kNumTypes; ++id)
         if (kind_param[id] == std::pair{kind, num(row, 0)} && row.size() > size_t(field + 1)) {
@@ -302,8 +302,15 @@ bool RulesData::load_dir(const std::string& dir) {
     if (w.klass == 8) {
       const auto volley = row(throws, w.parameter);
       w.payload_id = num(volley, 1, -1);
-      w.spread_px = num(volley, 2); w.range = num(volley, 3);
+      w.spread_px = std::clamp(num(volley, 2), 0, 1 << 14);
+      w.range = num(volley, 3); w.reload = num(volley, 4); w.duration = 10;
+      auto payload = visual_weapon(w.payload_id, depth + 1);
+      w.impact_anim = payload.impact_anim;
       return w; // volley scheduling is separate from the explosion payload
+    }
+    if (w.klass == 11) {
+      w.anim = 157; w.range = 96; w.reload = 40; w.duration = 10;
+      return w;
     }
     if (w.klass == 0 || w.klass == 1 || w.klass == 3) {
       auto r = row(w.klass == 0 ? balls : w.klass == 1 ? arrows : axes, w.parameter);
@@ -374,7 +381,12 @@ bool RulesData::load_dir(const std::string& dir) {
       t.weapon_id = f.weapon >= 0 ? num(r, f.weapon + 1, -1) : -1;
       t.armed = t.weapon_id >= 0;
       t.weapon = visual_weapon(t.weapon_id, 0);
-      t.blast_multiplier = num(r, f.armor, 256); // fire armor precedes physical armor
+      // Virtual +0x108 supplies the same multiplier to blast and flame damage.
+      const int multiplier = f.kind == 0 ? 12 : f.kind == 2 ? 56 : f.kind == 3 ? 12 :
+          f.kind == 4 ? 11 : f.kind == 7 ? 64 : f.kind == 9 ? 11 : 14;
+      t.blast_multiplier = num(r, multiplier + 1, 256);
+      if (f.kind == 3 || f.kind == 5) t.cruise_height = num(r, (f.kind == 3 ? 6 : 7) + 1);
+      if (f.kind == 5) t.turn_rate = std::clamp(num(r, 7), 1, 128);
     }
   }
   // Scripted vessels and cameras have a zero maximum getter, not inferred health.
@@ -399,6 +411,11 @@ bool RulesData::load_dir(const std::string& dir) {
   for (const auto& row : read_csv(dir + "/weapons_ids.csv")) {
     int kind = num(row, 1);
     weapons_[num(row, 0)] = {kind, tables[kind][num(row, 2)]};
+  }
+  // Johnka's special getter selects prototype 54 rather than a descriptor field.
+  if (weapons_.contains(54)) {
+    auto& johnka = types_[88];
+    johnka.weapon_id = 54; johnka.armed = true; johnka.weapon = visual_weapon(54, 0);
   }
   for (auto& t : types_) if (t.weapon_id >= 0) {
     auto shot = weapon(t.weapon_id, TypeRules{});
@@ -482,6 +499,11 @@ int RulesData::contact_damage(int id, const TypeRules& target, bool allied) cons
   return category_damage(it->second.data[4], {target.nonorganic ? 176 : 256});
 }
 
+int RulesData::flame_damage(const TypeRules& target, bool allied, bool self) const {
+  if (self || target.flier) return 0;
+  return category_damage(allied ? 500 : 2000, {target.blast_multiplier});
+}
+
 int RulesData::blast_damage(int id, const TypeRules& target, int distance) const {
   auto it = weapons_.find(id);
   if (it == weapons_.end() || it->second.kind != 7 || it->second.data.size() < 9) return 0;
@@ -500,6 +522,7 @@ int RulesData::blast_damage(int id, const TypeRules& target, int distance) const
 WeaponResult RulesData::attack(int attacker, int target, bool allied) const {
   const auto& a = type(attacker);
   if (a.weapon_id >= 0) return weapon(a.weapon_id, type(target), allied);
+  if (loaded_ && !a.armed) return {0, 0, 0, 0, true, true};
   // No descriptor weapon: retain explicitly marked placeholder behavior, never duel intervals.
   return {a.dmg, a.reload, a.range_px, 0, true, true, true};
 }
@@ -511,11 +534,15 @@ WeaponResult RulesData::weapon_impl(int id, const TypeRules& target, bool allied
   if (it == weapons_.end() || depth >= 16) return out;
   const auto& w = it->second;
   const auto& d = w.data;
-  if (w.kind == 8 && !d.empty()) {
+  if (w.kind == 8 && d.size() >= 4) {
     out = weapon_impl(d[0], target, allied, depth + 1);
-    // The scatter launcher owns its range/reload and timed salvo. A child's
-    // established getters must not enable it as a single immediate blast.
-    out.getters_known = false;
+    out.range_px = d[2]; out.reload = d[3]; out.getters_known = true;
+    return out;
+  }
+  if (w.kind == 11) {
+    out.damage = 10 * flame_damage(target, allied);
+    out.range_px = 96; out.reload = 40;
+    out.damage_known = out.getters_known = true;
     return out;
   }
   if (w.kind == 12 && d.size() >= 2) {
@@ -608,7 +635,7 @@ WeaponResult RulesData::weapon_impl(int id, const TypeRules& target, bool allied
     }
     if (target.flier) out.damage = 0;
   }
-  // Burn and standalone FireThrow scheduling remain unresolved.
+  // Unknown classes keep their explicit unresolved result.
   return out;
 }
 

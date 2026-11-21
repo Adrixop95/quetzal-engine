@@ -96,7 +96,7 @@ static void test_movement_rules() {
     CHECK(invented.type(id).speed_src == Src::Verified);
   }
   CHECK(invented.type(87).speed == 6 * 256 + 128 && invented.type(87).speed_src == Src::Measured);
-  CHECK(invented.type(33).speed_src == Src::Placeholder); // no established Bird speed getter
+  CHECK(invented.type(33).speed_src == Src::Placeholder); // this fixture supplies no Bird descriptor
 
   auto rules = std::make_shared<RulesData>();
   CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
@@ -145,10 +145,10 @@ static void test_movement_rules() {
       if (tick == 0) {
         path::Vec2 delta{w.objects[0].cur_x - initial.objects[0].cur_x,
                          w.objects[0].cur_y - initial.objects[0].cur_y};
-        CHECK(path::length(delta) >= 8 * 256 - 2 && path::length(delta) <= 8 * 256 + 2);
+        CHECK(path::length(delta) == 0 && w.objects[0].air_speed_px == 2); // starts at rest, then accelerates
       }
     }
-    CHECK(w.objects[0].cur_x == to_fixed(700) && w.objects[0].cur_y == to_fixed(600));
+    CHECK(path::length({w.objects[0].cur_x - to_fixed(700), w.objects[0].cur_y - to_fixed(600)}) < to_fixed(24));
     CHECK(w.objects[0].order == uint8_t(Order::Idle) && w.objects[0].anim_state == 0);
     CHECK(w.objects[2].cur_x == initial.objects[2].cur_x && w.objects[2].cur_y == initial.objects[2].cur_y);
     CHECK(w.objects[3].cur_x != initial.objects[3].cur_x || w.objects[3].cur_y != initial.objects[3].cur_y);
@@ -4000,6 +4000,217 @@ static void test_object_initialization() {
   }
 }
 
+static void test_fire_air_siege() {
+  auto rules = std::make_shared<RulesData>();
+  CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  for (auto [type, speed, height, weapon] : {
+      std::tuple{33,15,110,-1}, {34,18,110,35}, {60,12,85,52}, {7,8,95,-1}, {85,9,110,44}}) {
+    const auto& r = rules->type(type);
+    CHECK(r.flier && r.speed == speed * 256 && r.cruise_height == height && r.weapon_id == weapon);
+    CHECK(r.armed == (weapon >= 0));
+  }
+  for (int type : {25,52,68,79}) {
+    CHECK(rules->type(type).structure && !rules->type(type).armed);
+    CHECK(rules->attack(type, 0).damage == 0);
+  }
+  for (auto [race, hall, unit, producer] : {std::tuple{0,3,85,25}, {1,2,34,52}, {2,2,60,79}}) {
+    bool found = false;
+    for (const auto& recipe : rules->build_list(race, hall)) if (recipe.type == unit) {
+      for (const auto& need : recipe.prereq) found |= need.type == producer && !need.side_wide;
+    }
+    CHECK(found);
+  }
+  // Anti-air dispatch is determined by positive damage, never merely by possession of a weapon.
+  for (int type : {1,17,27,42,32,60,81}) CHECK(rules->attack(type, 33).damage > 0);
+  for (int type : {0,3,4,7,8,9,28,33,34,35,49,58,59,68,83,85,87})
+    CHECK(rules->attack(type, 33).damage == 0);
+  CHECK(rules->type(81).weapon.klass == 8 && rules->type(81).weapon.payload_id == 18);
+  CHECK(rules->attack(81, 0).damage == 0);
+  CHECK(rules->attack(9, 0).reload == 80 && rules->attack(81, 33).reload == 50);
+  CHECK(rules->type(88).weapon_id == 54 && rules->attack(88, 33).damage == 0);
+  CHECK(rules->attack(88, 0).reload == 30 && rules->attack(88, 0).range_px == 300);
+  CHECK(rules->attack(83, 0).reload == 30 && rules->attack(87, 0).reload == 37);
+  CHECK(rules->attack(85, 0).reload == 48); // pair offset d2 is not a reload
+  CHECK(rules->type(8).weapon.klass == 1 && rules->type(8).weapon.payload_id == -1);
+  TypeRules victim;
+  CHECK(rules->flame_damage(victim, false) == 2000);
+  CHECK(rules->flame_damage(victim, true) == 500);
+  CHECK(rules->flame_damage(victim, false, true) == 0);
+  victim.blast_multiplier = 128;
+  CHECK(rules->flame_damage(victim, false) == 1000);
+  victim.flier = true;
+  CHECK(rules->flame_damage(victim, false) == 0);
+  for (int type : {35,59}) {
+    const auto shot = rules->attack(type, 0);
+    CHECK(shot.damage == 20000 && shot.range_px == 96 && shot.reload == 40);
+  }
+  auto scene = [](int type, int target_type, int distance) {
+    World w; w.terrain.w = w.terrain.h = 40; w.terrain.cells.resize(1600);
+    for (int a = 0; a < 8; ++a) for (int b = 0; b < 8; ++b) w.relation[a][b] = a == b ? kFriend : kEnemy;
+    Object source; source.id = 1; source.type = type; source.hp = 100000;
+    source.teleport(to_fixed(400), to_fixed(400));
+    source.order = uint8_t(Order::Attack); source.target = 2;
+    Object target; target.id = 2; target.type = target_type == 0 ? 14 : target_type; target.side = 1; target.hp = 100000;
+    target.attack_mode = AttackMode::Direct;
+    target.teleport(to_fixed(400 + distance), to_fixed(400));
+    w.objects = {source, target}; return w;
+  };
+  Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
+  // A flame scans its whole segment each tick, with per-victim resistance and allied damage.
+  World initial = scene(59, 0, 80);
+  for (int i = 0; i < 4; ++i) {
+    Object o = initial.objects[1]; o.id = uint32_t(3 + i);
+    o.side = i == 0 ? 0 : i == 1 ? 2 : 3;
+    o.type = i == 2 ? 33 : 14;
+    o.teleport(to_fixed(i == 3 ? 700 : 450), to_fixed(400));
+    initial.objects.push_back(o);
+  }
+  initial.relation[0][2] = kNeutral;
+  World w = initial;
+  GameSim sim(rules, Modifications::faithful()); sim.init(w); sim.submit(attack);
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.objects[1].hp == 100000 && w.objects[0].cooldown == 40);
+  CHECK(w.effects.size() == 1 && w.effects[0].flame && !w.effects[0].flight);
+  for (int tick = 1; tick <= 10; ++tick) {
+    w.begin_tick(); sim.tick(w);
+    CHECK(w.objects[1].hp == 100000 - 2000 * tick);
+    CHECK(w.objects[2].hp == 100000 - 500 * tick);
+    CHECK(w.objects[3].hp == 100000 - 2000 * tick); // neutral is not allied
+    CHECK(w.objects[4].hp == 100000 && w.objects[5].hp == 100000);
+    World replay_world = initial;
+    auto replay = GameSim::replay(replay_world, rules, sim.log(), tick + 1);
+    CHECK(replay->state_hash(replay_world) == sim.state_hash(w));
+  }
+  CHECK(w.effects.empty());
+  Command stop; stop.type = Pct::Stop; stop.ids = {1}; sim.submit(stop);
+  for (int tick = 0; tick < 3; ++tick) { w.begin_tick(); sim.tick(w); }
+  CHECK(w.objects[1].hp == 80000); // no victim-attached burn tail
+  // Existing flame follows a moving caster and retains its source after death.
+  w = scene(59, 0, 80); sim.init(w); sim.submit(attack); w.begin_tick(); sim.tick(w);
+  sim.teleport(w, 1, 800, 400);
+  stop.ids = {1}; sim.submit(stop); w.begin_tick(); sim.tick(w);
+  CHECK(w.objects[1].hp == 100000 && !w.effects.empty());
+  if (!w.effects.empty()) CHECK(w.effects[0].x > to_fixed(800));
+  sim.teleport(w, 1, 400, 400); sim.script_kill(w, 1);
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.objects[1].hp == 98000);
+  w = scene(35, 14, 80);
+  GameSim spider(rules, Modifications::faithful()); spider.init(w);
+  for (int tick = 0; tick < 11; ++tick) { w.begin_tick(); spider.tick(w); }
+  CHECK(w.objects[1].hp == 80000 && w.effects.empty());
+  // The truck's named flame weapon is one ordinary arrow, with no residual helper.
+  w = scene(8, 14, 80); w.objects[0].attack_mode = AttackMode::Direct;
+  GameSim truck(rules, Modifications::faithful()); truck.init(w);
+  for (int tick = 0; tick < 20; ++tick) { w.begin_tick(); truck.tick(w); }
+  CHECK(w.objects[1].hp == 100000 - rules->attack(8, 14).damage);
+  for (const auto& e : w.effects) CHECK(!e.flame && !e.flight); // a cosmetic shockwave may remain
+  for (int type : {25,52,68,79}) {
+    w = scene(type, 14, 80);
+    GameSim facility(rules, Modifications::faithful()); facility.init(w);
+    for (int tick = 0; tick < 10; ++tick) { w.begin_tick(); facility.tick(w); }
+    CHECK(!w.objects[0].has_fired && w.effects.empty() && w.objects.size() == 2);
+  }
+  // Volleys retain sixteen snapshot positions, dispatch during ten ticks, and survive the source.
+  for (auto [type, target] : {std::pair{9,0}, {58,0}, {81,33}, {88,0}}) {
+    initial = scene(type, target, 180); w = initial;
+    GameSim volley(rules, Modifications::faithful()); volley.init(w); volley.submit(attack);
+    int impacts = 0;
+    volley.set_combat_observer([&](uint64_t, const char* event, const Effect&, uint32_t, int, int) {
+      impacts += std::string(event) == "impact";
+    });
+    w.begin_tick(); volley.tick(w);
+    CHECK(w.effects.size() == 16 && impacts == 0 && w.objects[1].hp == 100000);
+    for (const auto& e : w.effects) {
+      CHECK(e.delay_ticks >= 0 && e.delay_ticks < 10 && e.payload_id == (type == 81 ? 18 : type == 88 ? 53 : 17));
+      CHECK(path::length({e.x - initial.objects[1].cur_x, e.y - initial.objects[1].cur_y}) <= to_fixed(96));
+    }
+    if (w.effects.empty()) continue; // retain an assertion failure without indexing an absent launch
+    auto hash = volley.state_hash(w);
+    ++w.effects[0].delay_ticks; CHECK(volley.state_hash(w) != hash); --w.effects[0].delay_ticks;
+    // A command-log restore while scheduled must preserve all remaining explosion buckets.
+    World restored = initial;
+    auto replay = GameSim::replay(restored, rules, volley.log(), 1);
+    CHECK(replay->state_hash(restored) == volley.state_hash(w));
+    stop.ids = {1}; volley.submit(stop);
+    if (type == 9) volley.teleport(w, 2, 1400, 400);
+    if (type == 58) volley.script_kill(w, 1);
+    for (int tick = 1; tick <= 10; ++tick) { w.begin_tick(); volley.tick(w); }
+    CHECK(impacts == 16);
+    CHECK(type == 9 ? w.objects[1].hp == 100000 : w.objects[1].hp < 100000);
+    for (const auto& e : w.effects) CHECK(e.delay_ticks < 0);
+  }
+  // Pause freezes flame lifetime and pending volley buckets as well as aircraft ascent.
+  for (int type : {59,9}) {
+    w = scene(type, 14, 80);
+    GameSim paused(rules, Modifications::faithful()); paused.init(w);
+    w.begin_tick(); paused.tick(w);
+    CHECK(!w.effects.empty());
+    const auto before = w.effects;
+    Command pause; pause.type = Pct::PauseOn; paused.submit(pause);
+    for (int tick = 0; tick < 3; ++tick) { w.begin_tick(); paused.tick(w); }
+    CHECK(w.effects.size() == before.size());
+    for (size_t i = 0; i < before.size() && i < w.effects.size(); ++i)
+      CHECK(w.effects[i].age == before[i].age && w.effects[i].delay_ticks == before[i].delay_ticks);
+  }
+  // Deltaplan's arrows dispatch spatial payloads, including an allied bystander.
+  // Carrier range is measured between centres; keep the target inside the child range.
+  w = scene(34, 14, 130); w.objects[0].attack_mode = AttackMode::Direct;
+  Object bystander = w.objects[1]; bystander.id = 3; bystander.side = 0;
+  bystander.teleport(to_fixed(555), to_fixed(400)); w.objects.push_back(bystander);
+  GameSim arrows(rules, Modifications::faithful()); arrows.init(w);
+  w.begin_tick(); arrows.tick(w);
+  CHECK(w.effects.size() == 2);
+  for (const auto& e : w.effects) CHECK(e.payload_id == 37 && e.kind == data::EffectClass::Arrow);
+  for (int tick = 0; tick < 11; ++tick) { w.begin_tick(); arrows.tick(w); }
+  CHECK(w.objects[1].hp == 97000 && w.objects[2].hp == 97000);
+  // Ground carriers fall before dispatching the spatial blast, including Cannon-kind Hopcannon.
+  for (int type : {83,87}) {
+    w = scene(type, 14, 180); w.objects[0].attack_mode = AttackMode::Direct;
+    GameSim carrier(rules, Modifications::faithful()); carrier.init(w);
+    w.begin_tick(); carrier.tick(w);
+    CHECK(w.effects.size() == 1 && w.effects[0].height == 24);
+    for (int update = 1; update <= 7; ++update) {
+      w.begin_tick(); carrier.tick(w);
+      CHECK(w.objects[1].hp == (update < 7 ? 100000 : 97000));
+    }
+  }
+  w = scene(85, 14, 20); w.objects[0].attack_mode = AttackMode::Direct;
+  GameSim bombs(rules, Modifications::faithful()); bombs.init(w);
+  w.begin_tick(); bombs.tick(w);
+  CHECK(w.effects.size() == 2);
+  for (const auto& e : w.effects) {
+    CHECK(e.velocity_x == 0 && e.velocity_y == 0 && e.height == 31 && e.payload_id == 42);
+  }
+  for (int update = 1; update <= 7; ++update) {
+    w.begin_tick(); bombs.tick(w);
+    CHECK(w.objects[1].hp == (update < 7 ? 100000 : 94000));
+  }
+  // Heading changes are limited; Bird flight accelerates from its individual minimum.
+  w = scene(33, 14, 800); w.objects[0].order = uint8_t(Order::Move);
+  w.objects[0].dest_x = 1200; w.objects[0].dest_y = 400;
+  GameSim flight(rules, Modifications::faithful()); flight.init(w);
+  const int minimum = w.objects[0].air_min_speed_px;
+  CHECK(minimum >= 6 && minimum <= 12);
+  w.begin_tick(); flight.tick(w);
+  CHECK(w.objects[0].cur_x == to_fixed(400 + minimum));
+  CHECK(w.objects[0].air_speed_px == minimum + 2 && w.objects[0].render_height == 31);
+  w.objects[0].dest_x = 400; w.objects[0].dest_y = 1000;
+  w.begin_tick(); flight.tick(w);
+  CHECK(w.objects[0].body_angle == 250); // Eagle turns six angle units in screen coordinates
+  auto flight_hash = flight.state_hash(w);
+  ++w.objects[0].air_speed_px; CHECK(flight.state_hash(w) != flight_hash); --w.objects[0].air_speed_px;
+  ++w.objects[0].air_min_speed_px; CHECK(flight.state_hash(w) != flight_hash); --w.objects[0].air_min_speed_px;
+  // An aircraft pursues an out-of-range target, rises one pixel per tick and fires its own weapon.
+  for (int type : {34,60,85}) {
+    w = scene(type, type == 60 ? 33 : 14, 400);
+    GameSim air(rules, Modifications::faithful()); air.init(w); air.submit(attack);
+    CHECK(w.objects[0].render_height == 30);
+    for (int tick = 0; tick < 100; ++tick) { w.begin_tick(); air.tick(w); }
+    CHECK(w.objects[0].has_fired && w.objects[0].cur_x > to_fixed(400));
+    CHECK(w.objects[0].render_height == rules->type(type).cruise_height);
+  }
+}
+
 static void test_descriptor_combat() {
   auto rules = std::make_shared<RulesData>();
   CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
@@ -4037,9 +4248,9 @@ static void test_descriptor_combat() {
   CHECK(rules->weapon(11, ground).damage == 2250);
   CHECK(rules->weapon(16, ground).damage == 18000);
   CHECK(rules->weapon(7, ground).damage_known && rules->weapon(7, ground).getters_known);
-  CHECK(!rules->weapon(19, ground).getters_known); // scatter salvo remains unresolved
+  CHECK(rules->weapon(19, ground).getters_known); // class 8 owns its reload and range
   CHECK(rules->weapon(3, target).getters_known); // standalone area descriptor getters
-  CHECK(!rules->weapon(34, target).damage_known); // burn
+  CHECK(rules->weapon(34, target).damage_known && rules->weapon(34, target).damage == 0); // airborne
   CHECK(!rules->weapon(999, target).damage_known);
   CHECK(rules->attack(0, 0).reload == 9 && rules->attack(0, 0).range_px == 10);
   CHECK(rules->attack(27, 0).reload == 12 && rules->attack(27, 0).projectile_speed == 30);
@@ -4300,6 +4511,7 @@ int main(int argc, char** argv) {
     test_harvest_rate_lifecycle();
     test_siege_ranged();
     test_descriptor_combat();
+    test_fire_air_siege();
     test_script_animation_clocks();
     test_animation_producers();
     test_script_path_hash();

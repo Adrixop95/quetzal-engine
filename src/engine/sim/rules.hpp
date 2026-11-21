@@ -47,6 +47,7 @@ struct WeaponRules {
   int speed = 0, range = 0, reload = 0;
   int impact_anim = 0, splash_px = 0, shockwave = 0;
   int spread_px = 0;
+  int duration = 0; // class 11 active flame; class 8 dispatch window
   bool muzzle = false;
   std::vector<WeaponRules> components;  // class 12 sums both child weapons
 };
@@ -66,6 +67,8 @@ struct TypeRules {
   bool nonorganic = false, category_f4 = false, category_e8 = false, hypno = false;
   Src class_src = Src::Placeholder;
   int speed = 0;      Src speed_src = Src::Placeholder;   // fixed 24.8 px per tick; descriptor preferred over historical averages
+  int cruise_height = 0;
+  int turn_rate = 8; // angle units per tick; Bird d6, Zeppelin constant
   int radius_px = 14; Src radius_src = Src::Placeholder;
   // V: VisibleThing rectangle, overridden by Building/Defence descriptor bounds.
   std::array<int, 4> combat_bounds{-28, -48, 28, 16};
@@ -134,6 +137,7 @@ class RulesData {
   int weapon_class(int id) const;
   int contact_damage(int id, const TypeRules& target, bool allied) const;
   int blast_damage(int weapon_id, const TypeRules& target, int distance_px) const;
+  int flame_damage(const TypeRules& target, bool allied, bool self = false) const;
   WeaponResult attack(int attacker, int target, bool allied = false) const;
   // Historical observations for diagnostics only; never used to schedule attacks.
   bool has_duel(int attacker, int target, DuelEntry& out) const;

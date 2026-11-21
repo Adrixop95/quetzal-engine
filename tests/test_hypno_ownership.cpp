@@ -119,7 +119,20 @@ static void ordinary_damage() {
   CHECK(data->type(86).weapon_id == -1 && !data->type(86).armed);
   CHECK(data->type(88).weapon_id == 54 && data->type(88).weapon.klass == 8);
   CHECK(data->type(88).weapon.payload_id == 53 && data->type(88).weapon.range == 123);
-  CHECK(!data->attack(88,0).getters_known); // pending volley scheduler, no fabricated direct shot
+  const auto& volley = data->type(88).weapon;
+  CHECK(volley.spread_px == 9 && volley.reload == 3 && volley.duration == 10);
+  CHECK(volley.impact_anim == 1 && volley.splash_px == 0); // explosion belongs to the payload
+  const auto shot = data->attack(88,0);
+  CHECK(shot.damage_known && shot.getters_known && shot.range_px == 123 && shot.reload == 3);
+  World w = world(); add(w,88,0,10,10); add(w,0,1,11,10);
+  GameSim sim(data); sim.init(w);
+  Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2; sim.submit(attack);
+  ticks(sim,w);
+  CHECK(w.effects.size() == 16 && w.objects[1].hp == 500); // scheduled, no immediate direct shot
+  for (const auto& effect : w.effects) {
+    CHECK(effect.payload_id == 53 && effect.impact_anim == 1);
+    CHECK(effect.delay_ticks >= 0 && effect.delay_ticks < 10);
+  }
 }
 static World town(int level, int attacker_x = 12, int attacker_y = 10) {
   World w = world(); w.mission.towns = {{0,0,10,10,level,2,7}};
