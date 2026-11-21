@@ -392,7 +392,16 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         if (pa == PauseMenu::Action::Modifications) {
           modification_options.open = true;
         }
-        if (pa == PauseMenu::Action::Resume) pause.open = false;
+        if (pa == PauseMenu::Action::Resume) {
+          pause.open = false;
+          if (audio) {
+            // V: the reference return-to-game handler requests this direct WAV.
+            const auto previous = audio->event_trigger;
+            audio->event_tick = world.tick; audio->event_trigger = AudioEvent::Trigger::UI;
+            audio->play_sound(500);
+            audio->event_trigger = previous;
+          }
+        }
         if (pa == PauseMenu::Action::Save || pa == PauseMenu::Action::Load)
           slots.show(pa == PauseMenu::Action::Save);
         bool do_save = (confirmed_slot >= 0 && slot_saving) || (in.ctrl && in.hit(SDL_SCANCODE_S));
@@ -593,6 +602,8 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         audio->set_volumes(o.sfx_volume, o.music_volume, o.speech_volume);
         audio->acknowledgement = o.acknowledgement; audio->subtitles = o.subtitles;
         audio->event_tick = world.tick;
+        if (previous_selection != world.selection.ids)
+          emit_selection_audio(world, *audio, o.speech_style, cam.x + cam.view_w / (2 * cam.zoom));
         // G: use the owned speaker's side race until mixed-race speaker descriptors are exposed.
         if (!world.selection.ids.empty()) {
           const auto* speaker = world.find(world.selection.ids.front());
@@ -605,9 +616,9 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
               const auto kind = game->pending_commands()[i].type;
               order |= kind == Pct::Move || kind == Pct::Attack || kind == Pct::AttackMove || kind == Pct::Stop;
             }
-            if (order || previous_selection != world.selection.ids) {
-              audio->event_trigger = order ? AudioEvent::Trigger::Orders : AudioEvent::Trigger::Selection;
-              audio->play_speech_set(order ? 104 : 101, race, o.speech_style, true);
+            if (order) {
+              audio->event_trigger = AudioEvent::Trigger::Orders;
+              audio->play_speech_set(104, race, o.speech_style, true);
               audio->event_trigger = AudioEvent::Trigger::Unknown;
             }
           }

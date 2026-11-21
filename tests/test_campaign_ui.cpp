@@ -204,6 +204,16 @@ int main(int argc, char** argv) {
   CHECK(legacy.game_speed_ms == 83 && legacy.gamma == 1 && legacy.sampling_rate == 22050);
   CHECK(save_frontend_options(preferences_path, preferences));
   CHECK(restored.speech_volume == 0.25f && !restored.edge_scroll && !restored.subtitles);
+  CHECK(restored.speech_style == 3 && restored.sampling_rate == 11025);
+  write(preferences_path, "QUETZAL_OPTIONS_1\n0 1 1 1 900 800 700 1 1\n");
+  CHECK(load_frontend_options(preferences_path, restored) && restored.speech_style == 0 && restored.sampling_rate == 22050);
+  CHECK(save_frontend_options(preferences_path, preferences));
+  CHECK(load_frontend_options(preferences_path, restored));
+  write(preferences_path, "QUETZAL_OPTIONS_2\n0 1 1 1 900 800 700 1 1 2 44100\n");
+  CHECK(load_frontend_options(preferences_path, restored) && restored.speech_style == 2 && restored.sampling_rate == 44100);
+  CHECK(restored.window.width == 1024 && restored.game_speed_ms == 150);
+  CHECK(save_frontend_options(preferences_path, preferences));
+  CHECK(load_frontend_options(preferences_path, restored));
   write(preferences_path, "QUETZAL_OPTIONS_1\n0 1 1 1 900 800 1001 1 1\n");
   CHECK(!load_frontend_options(preferences_path, restored) && restored.speech_volume == 0.25f);
   CHECK(!save_frontend_options((root / "missing/preferences.txt").string(), preferences));
@@ -234,6 +244,14 @@ int main(int argc, char** argv) {
   aztec::PlayerFile profile_readback;
   CHECK(aztec::parse_player_file(aztec::serialize_player_file(profile), profile_readback));
   CHECK(profile_readback.options.speech_style == 3);
+  CHECK(parse({"engine", "--speech-style", "2", "--sampling-rate", "22050"}, parsed));
+  CHECK(parsed.speech_style == 2 && parsed.sampling_rate == 22050);
+  for (const char* bad : {"-1", "4", "", "2junk", "nan"}) {
+    Options invalid; CHECK(!parse({"engine", "--speech-style", bad}, invalid));
+  }
+  for (const char* bad : {"-1", "0", "48000", "22050junk", "999999999999999999999"}) {
+    Options invalid; CHECK(!parse({"engine", "--sampling-rate", bad}, invalid));
+  }
   std::filesystem::remove(user_file("frontend-options.txt"));
   for (const char* bad : {"nan", "inf", "-1", "2", "", "0.5junk"}) {
     Options invalid;
@@ -319,7 +337,7 @@ int main(int argc, char** argv) {
       OutcomeMenu::draw(renderer, font, w, h, sc, false, false, false);
       CHECK(capture("defeat") != victory_pixels);
       AudioOptions audio; audio.open = true; Options options;
-      for (int i = 0; i < 6; ++i) {
+      for (int i = 0; i < 9; ++i) {
         auto rect = AudioOptions::row(i, w, h, sc);
         CHECK(rect.x >= 0 && rect.y >= 0 && rect.x + rect.w <= w && rect.y + rect.h <= h);
       }
@@ -330,8 +348,15 @@ int main(int argc, char** argv) {
       click.mx = rect.x + rect.w - 1;
       for (int i = 0; i < 20; ++i) audio.update(click, options, w, h, sc);
       CHECK(options.speech_volume == 1);
+      for (int row : {5, 6}) {
+        auto control = AudioOptions::row(row, w, h, sc);
+        click.mx = control.x + 1; click.my = control.y + 1;
+        audio.update(click, options, w, h, sc);
+      }
+      CHECK(options.speech_style == 1 && options.sampling_rate == 44100 && audio.open);
       audio.draw(renderer, font, options, w, h, sc);
       capture("audio");
+      options = Options{};
       SettingsOptions settings; settings.open = true;
       for (int i = 0; i < 10; ++i) {
         const auto setting = SettingsOptions::row(i, w, h, sc);
@@ -375,7 +400,7 @@ int main(int argc, char** argv) {
       "key Escape\nexpect tick == 0\nclick 400 452\nclick 400 310\nexpect tick == 0\nkey Escape\nclick 400 200\nexpect tick == 0\n"
       "key M\nwait 2\nexpect tick == 0\nkey Escape\n"
       "click 400 238\nexpect tick == 0\nclick 590 270\nwait 2\nexpect tick == 0\n"
-      "click 400 410\nclick 400 160\nexpect tick == 2\nwait 10\n"
+      "key Escape\nclick 400 160\nexpect tick == 2\nwait 10\n"
       "expect outcome == 1\nexpect tick == 6\nkey M\nwait 2\nexpect tick == 6\nquit\n");
   Options options; options.modifications_file = (root / "mission-modifications.ini").string(); options.game_dir = root.string(); options.mission = "1";
   options.rules_dir = AZTEC_TEST_RULES_DIR; options.menu_session = true;
@@ -398,7 +423,7 @@ int main(int argc, char** argv) {
   options.resume_save.clear(); options.ui_trace.clear();
   // Navigate the paused mission into settings, change speed, close and resume.
   write(root / "settings-controls.txt",
-      "key Escape\nclick 400 238\nclick 400 455\nexpect tick == 0\n"
+      "key Escape\nclick 400 238\nclick 400 480\nexpect tick == 0\n"
       "click 720 171\nexpect tick == 0\nkey Escape\nclick 400 160\n"
       "expect tick == 2\nuntil 6\nexpect outcome == 1\nquit\n");
   options.script = (root / "settings-controls.txt").string();

@@ -104,9 +104,19 @@ bool load_frontend_options(const std::string& path, Options& out) {
       (magic != "QUETZAL_OPTIONS_1" && magic != "QUETZAL_OPTIONS_2") || mode < 0 || mode > 2) return false;
   for (int value : {edge, fog, light, acknowledgement, subtitles}) if (value < 0 || value > 1) return false;
   for (int value : {sfx, music, speech}) if (value < 0 || value > 1000) return false;
+  parsed.speech_style = 0; parsed.sampling_rate = Options{}.sampling_rate;
   if (magic == "QUETZAL_OPTIONS_2") {
-    if (!(in >> parsed.window.width >> parsed.window.height >> parsed.gamma >> parsed.sampling_rate
-          >> parsed.speech_style >> parsed.game_speed_ms >> parsed.scroll_speed >> parsed.network_provider)) return false;
+    int first;
+    if (!(in >> first)) return false;
+    // Accept the audio-only version-2 layout as well as the extended settings layout.
+    if (first >= 0 && first <= 3) {
+      parsed.speech_style = first;
+      if (!(in >> parsed.sampling_rate)) return false;
+    } else {
+      parsed.window.width = first;
+      if (!(in >> parsed.window.height >> parsed.gamma >> parsed.sampling_rate
+            >> parsed.speech_style >> parsed.game_speed_ms >> parsed.scroll_speed >> parsed.network_provider)) return false;
+    }
     if (parsed.window.width < 160 || parsed.window.width > 16384 || parsed.window.height < 120 || parsed.window.height > 16384 ||
         !std::isfinite(parsed.gamma) || parsed.gamma < 0.5 || parsed.gamma > 2.5 ||
         (parsed.sampling_rate != 11025 && parsed.sampling_rate != 22050 && parsed.sampling_rate != 44100) ||
