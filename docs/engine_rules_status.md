@@ -1,5 +1,34 @@
 # Engine: status of the simulation rules (verified / measured / placeholder)
 
+## Towers, aircraft and specials completion (2026-11-21)
+
+**V rules / synthetic implementation checks:** Defence now acquires on every
+ready tick, uses descriptor d4's whole-step heading gate, latches/clears targets,
+uses weapon reload without Marine's extra tick, and releases resource-backed
+base/turret shots on animation markers with descriptor d63 launch height.
+Non-positive-damage victim categories cannot become tower targets; construction
+blocks firing and no garrison/ammunition gate is added. Building d59 protection
+now applies consistently to every combat damage callback, including blast and
+projectile impacts.
+
+**V rules / synthetic checks:** Bird releases and re-picks after a nose-on shot,
+including Direct mode. Zeppelin retains range-only bombing targets and follows
+ordered destinations independently. Both remain airborne and rise one pixel per
+tick; Zeppelin's initial zero height corrects the prior shared 30-pixel start.
+Existing Snowman attack-delay, sixteen-explosion volley, fire-stream ally quarter
+factor, descriptor 8.8 resistance and plain Hypno-tower damage remain covered.
+Sweep values 20/30 denote angular sector widths within a 96-pixel reach, as
+established in the ground-weapon audit, rather than pixel radii.
+
+**G:** Native tactic scoring, activation RNG, exact flight paths, spatial query
+ordering and native pool/animation phases remain provisional. Missing animation
+resources retain immediate release; arrows use linear height interpolation.
+No original executable was run and no live parity is claimed. See
+[specials_implementation.md](specials_implementation.md) for evidence labels,
+regressions, remaining dependencies and actual verification results. This entry
+supersedes older statements below about generic tower timing, held Bird targets
+and missing protected-building combat callbacks.
+
 Simulation: `src/engine/sim/game_sim.*` (12 Hz, fixed-point harvests and original float32 price factors, driven by the command queue in `commands.hpp`). Data comes from `docs/data/*.csv`, loaded at run time (`rules.*`). The reference specification is [rules_summary.md](rules_summary.md) with details in [rules_types.md](rules_types.md) and [rules_ai.md](rules_ai.md). New reference findings below do not imply engine implementation changes.
 Movement and pathfinding: `src/engine/sim/path/` (movement agents; the interface is swappable: `GameSim` only uses `MoveSystem`).
 The [L3 iteration](rules_movement.md#10-l3-disconnected-selections-and-observation-budgets-2026-11-01)

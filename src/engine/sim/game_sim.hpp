@@ -125,6 +125,7 @@ class GameSim : public Simulation {
   void unload(World& w, Object& vessel, int tx, int ty);
   void follow_tactics(World& w);
   bool advance_aircraft(Object& object, path::Vec2 goal, bool attacking, int range = 0);
+  void run_tower(World& world, Object& tower);
   void advance_effects(World& w);
   void advance_attack(World& w, Object& source);
   void fire(World& w, const Object& source, Object& target, int damage);

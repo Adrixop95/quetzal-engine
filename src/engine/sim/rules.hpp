@@ -60,7 +60,7 @@ struct TypeRules {
   bool structure = false, mobile = false, flier = false, armed = false, large = false;
   int hp_max = 0;     Src hp_src = Src::Placeholder;      // descriptor maximum; never inferred from mission instances
   int secondary_hp = 0, regen = 0, regen_alt_threshold = 0;
-  bool service_damage_protected = false; // Building descriptor byte +0xec blocks explicit service damage
+  bool service_damage_protected = false; // Building descriptor byte +0xec blocks damage callbacks
   int weapon_id = -1;
   int physical_armor = 0;
   int blast_multiplier = 256;
@@ -69,6 +69,7 @@ struct TypeRules {
   int speed = 0;      Src speed_src = Src::Placeholder;   // fixed 24.8 px per tick; descriptor preferred over historical averages
   int cruise_height = 0;
   int turn_rate = 8; // angle units per tick; Bird d6, Zeppelin constant
+  int launch_height = 0; // Defence d63, in pixels
   int radius_px = 14; Src radius_src = Src::Placeholder;
   // V: VisibleThing rectangle, overridden by Building/Defence descriptor bounds.
   std::array<int, 4> combat_bounds{-28, -48, 28, 16};
@@ -126,8 +127,8 @@ class RulesData {
   bool load_sight(const std::string& game_dir);
   // Independent of daylight/executable availability; reads only the user's animation archive.
   bool load_combat_animations(const std::string& units_xbe);
-  // V: Marine attack slots and per-tick fire/displacement flags. Other kinds remain unresolved here.
-  AttackFrame attack_frame(int type, int facing, int64_t elapsed) const;
+  // Marine dir8 slots and Defence base/turret slots, with per-tick marker flags.
+  AttackFrame attack_frame(int type, int facing, int64_t elapsed, int angle = -1) const;
   void set_sight(std::shared_ptr<const SightData> data) { sight_ = std::move(data); }
   const SightData* sight() const { return sight_.get(); }
   // Built-in defaults only (tests, missing data).

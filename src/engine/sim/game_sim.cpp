@@ -213,7 +213,7 @@ void GameSim::init(World& w) {
     const TypeRules& r = rules_->type(o.type);
     o.initialize_health(r, bool(w.original_save));
     if (!w.original_save) {
-      if (r.flier && r.cruise_height > 0 && o.render_height == 0) o.render_height = 30;
+      if (r.kind == 5 && r.cruise_height > 0 && o.render_height == 0) o.render_height = 30;
       if (r.flier) o.air_speed_px = o.air_min_speed_px = 0;
       if (r.kind == 5 && r.cruise_height > 0) {
         o.air_min_speed_px = 6 + int((next_combat_rand() % 32768) * 6 / 32767);
@@ -382,7 +382,7 @@ uint32_t GameSim::spawn(World& w, int type, int side, int pxx, int pyy, int hp, 
   const TypeRules& r = rules_->type(type);
   o.hp = hp;
   o.initialize_health(r);
-  if (r.flier && r.cruise_height > 0) o.render_height = 30;
+  if (r.kind == 5 && r.cruise_height > 0) o.render_height = 30;
   if (r.kind == 5 && r.cruise_height > 0) {
     o.air_min_speed_px = 6 + int((next_combat_rand() % 32768) * 6 / 32767);
     o.air_speed_px = o.air_min_speed_px;
@@ -468,7 +468,7 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o) const {
     int64_t d = d2(o, t);
     const auto& source = rules_->type(o.type);
     const int64_t reach = weapon_reach(source, rules_->type(t.type), shot);
-    if (o.attack_mode == AttackMode::Direct) {
+    if (o.attack_mode == AttackMode::Direct || source.kind == 7) {
       if (!weapon_in_range(source, int64_t(px(t.cur_x)) - px(o.cur_x),
                            int64_t(px(t.cur_y)) - px(o.cur_y), reach)) continue;
     } else if (!within_group_reach(t, anchor_x, anchor_y, o.attack_mode, source.flier ? 0 : reach)) {
@@ -1344,6 +1344,62 @@ bool GameSim::advance_aircraft(Object& o, path::Vec2 goal, bool attacking, int r
   return aligned;
 }
 
+void GameSim::run_tower(World& w, Object& o) {
+  const auto& r = rules_->type(o.type);
+  auto usable = [&](const Object* target) {
+    if (!target || !target->alive || target->removed || !damageable(*target) || ferry_protected(*target)) return false;
+    if (rules_->sight() && !object_visible(w, o.side, *target)) return false;
+    const auto shot = rules_->attack(o.type, target->type, !w.hostile(o.side, target->side));
+    return shot.damage_known && shot.getters_known && shot.damage > 0 &&
+        weapon_in_range(r, int64_t(px(target->cur_x)) - px(o.cur_x),
+                        int64_t(px(target->cur_y)) - px(o.cur_y),
+                        weapon_reach(r, rules_->type(target->type), shot));
+  };
+  if (o.target && !usable(w.find(o.target))) o.target = 0;
+  // G: nearest eligible enemy substitutes for the original tactic's scoring.
+  if (!o.target && (o.cooldown == 0 || o.cooldown < (256 / r.turn_rate) / 2)) {
+    if (const auto* target = nearest_enemy(w, o)) o.target = target->id;
+  }
+  if (o.release_target) {
+    const auto frame = rules_->attack_frame(o.type, o.facing, o.attack_tick, o.turret_angle);
+    if (frame.active) {
+      if (frame.fire) if (auto* target = w.find_mut(o.release_target); target && target->alive && !target->removed) {
+        const auto shot = rules_->attack(o.type, target->type, !w.hostile(o.side, target->side));
+        if (shot.damage_known && shot.damage > 0) fire(w, o, *target, shot.damage);
+      }
+    } else {
+      o.release_target = 0; o.attack_tick = -1; o.set_anim(kAnimIdle);
+    }
+    return;
+  }
+  auto* target = w.find_mut(o.target);
+  if (!target) return;
+  const int wanted = (256 - path::angle_of(target->cur_x - o.cur_x, target->cur_y - o.cur_y)) & 255;
+  const int difference = ((wanted - o.turret_angle + 128) & 255) - 128;
+  if (std::abs(difference) >= r.turn_rate) {
+    o.turret_angle = (o.turret_angle + (difference < 0 ? -r.turn_rate : r.turn_rate)) & 255;
+    return;
+  }
+  o.turret_angle = wanted;
+  const auto* reassigned = nearest_enemy(w, o);
+  if (!reassigned || reassigned->id != o.target) {
+    o.target = reassigned ? reassigned->id : 0;
+    return; // a changed assignment must be aimed before starting its shot
+  }
+  if (o.cooldown || !usable(target)) return;
+  const auto shot = rules_->attack(o.type, target->type, !w.hostile(o.side, target->side));
+  o.cooldown = shot.reload; o.has_fired = true;
+  o.anim_state = kAnimAttack; o.anim_tick = 0; o.attack_tick = 0;
+  if (rules_->attack_frame(o.type, o.facing, 0, o.turret_angle).known) {
+    o.release_target = target->id; o.target = 0;
+    // Defence tests frame zero on the following tick, then advances it.
+    o.attack_tick = -1;
+  } else {
+    // G: asset-free worlds retain the established immediate-release fallback.
+    fire(w, o, *target, shot.damage); o.target = 0;
+  }
+}
+
 void GameSim::run_orders(World& w) {
   follow_tactics(w);
   for (size_t i = 0; i < w.objects.size(); i++) {
@@ -1367,6 +1423,10 @@ void GameSim::run_orders(World& w) {
     bool moving = ag && ag->state == path::AgentState::Moving;
     bool flight_advanced = false;
 
+    if (r.kind == 7) {
+      if (r.armed) run_tower(w, o);
+      continue;
+    }
     if (o.release_target) {
       if (ag && moving) mover_->stop(uint32_t(o.mover));
       advance_attack(w, o);
@@ -1392,11 +1452,11 @@ void GameSim::run_orders(World& w) {
     if (!r.armed || o.boarding || o.type == 84 ||
         (o.type == 88 && !(o.source == ObjectSource::Johnka ? o.vessel_route : o.vessel_enabled))) continue;
     // Mode gates are independent of the provisional nearest-visible-enemy policy.
-    const bool engage_moving = o.attack_mode == AttackMode::Aggressive || o.attack_mode == AttackMode::Balanced;
+    const bool engage_moving = r.kind == 5 || o.attack_mode == AttackMode::Aggressive || o.attack_mode == AttackMode::Balanced;
     if (o.order == uint8_t(Order::Idle) ||
         (engage_moving && (o.order == uint8_t(Order::AttackMove) || o.order == uint8_t(Order::Move) ||
                            o.order == uint8_t(Order::Follow)))) {
-      if ((tick_ + o.id) % 4 == 0) {
+      if (r.kind == 5 || (tick_ + o.id) % 4 == 0) {
         if (const Object* e = nearest_enemy(w, o)) {
           o.idle_attack = o.order == uint8_t(Order::Idle);
           o.resume = o.order == uint8_t(Order::Follow) ? 3 :
@@ -1410,15 +1470,16 @@ void GameSim::run_orders(World& w) {
     Object* t = w.find_mut(o.target);
     const bool lost_chase = t && r.kind == 0 &&
         (pursuit_distance(o,*t) > 1152 || (rules_->sight() && !object_visible(w,o.side,*t)));
+    const bool lost_air_sight = t && r.kind == 3 && rules_->sight() && !object_visible(w,o.side,*t);
     const auto [anchor_x, anchor_y] = idle_anchor(w, o);
     int64_t target_reach = 0;
     if (t && t->type >= 0) {
       const auto target_shot = rules_->attack(o.type, t->type, !w.hostile(o.side, t->side));
       target_reach = weapon_reach(r, rules_->type(t->type), target_shot);
     }
-    const bool leashed = o.idle_attack && t &&
+    const bool leashed = !r.flier && o.idle_attack && t &&
         !within_group_reach(*t, anchor_x, anchor_y, o.attack_mode, r.flier ? 0 : target_reach);
-    if (!t || t->removed || !t->alive || !damageable(*t) || ferry_protected(*t) || lost_chase || leashed) {
+    if (!t || t->removed || !t->alive || !damageable(*t) || ferry_protected(*t) || lost_chase || lost_air_sight || leashed) {
       finish_attack(o);
       continue;
     }
@@ -1426,7 +1487,12 @@ void GameSim::run_orders(World& w) {
     const auto shot = rules_->attack(o.type, t->type, !w.hostile(o.side, t->side));
     if (!shot.damage_known || !shot.getters_known || shot.damage <= 0) continue;
     bool flight_aligned = true;
-    if (r.flier && o.attack_mode != AttackMode::Direct) {
+    if (r.kind == 3 && o.resume && !flight_advanced) {
+      advance_aircraft(o, {to_fixed(o.dest_x), to_fixed(o.dest_y)}, false);
+      if (o.order == uint8_t(Order::Idle)) o.resume = 0;
+      o.order = uint8_t(Order::Attack); // arrival ends movement, not the retained bombing target
+    }
+    if (r.kind == 5) {
       if (!flight_advanced) flight_aligned = advance_aircraft(o, {t->cur_x, t->cur_y}, true, shot.range_px);
       else {
         const int desired = path::angle_of(t->cur_x - o.cur_x, t->cur_y - o.cur_y);
@@ -1458,6 +1524,15 @@ void GameSim::run_orders(World& w) {
         } else {
           // G: without resource timing, preserve the asset-free immediate-release fallback.
           fire(w, o, *t, shot.damage);
+        }
+        if (r.kind == 5) {
+          o.dest_x = px(t->cur_x); o.dest_y = px(t->cur_y);
+          finish_attack(o);
+          if (o.order == uint8_t(Order::Idle)) o.order = uint8_t(Order::Move);
+        }
+        if (r.flier) {
+          o.attack_tick = -1;
+          o.set_anim(o.air_speed_px ? kAnimMove : kAnimIdle);
         }
       }
     } else if (o.attack_mode != AttackMode::Direct && ag && ((tick_ + o.id) % 6 == 0 || !moving)) {
@@ -1527,7 +1602,7 @@ void GameSim::fire(World& w, const Object& source, Object& target, int damage) {
 
 void GameSim::damage_object(World& w, Object& target, int damage, const Effect& hit) {
   if (damage <= 0 || !target.alive || target.removed || target.carrier ||
-      !damageable(target) || ferry_protected(target)) return;
+      !damageable(target) || ferry_protected(target) || rules_->type(target.type).service_damage_protected) return;
   trace_combat("damage", hit, target.id, target.hp, target.hp - damage);
   target.hp -= damage; record_hit(w, target, hit.source);
   if (target.hp <= 0) kill(w, target);
@@ -1625,6 +1700,7 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
     Effect hit;
     hit.trace_id = ++next_trace_id_; hit.source = source.id; hit.target = target.id; hit.side = source.side;
     hit.x = source.cur_x; hit.y = source.cur_y;
+    hit.height = rules_->type(source.type).kind == 7 ? rules_->type(source.type).launch_height : source.render_height;
     trace_combat("launch", hit);
     hit.x = target.cur_x; hit.y = target.cur_y;
     trace_combat("impact", hit);
@@ -1673,6 +1749,8 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
   // Snapshot aim; ball projectiles retain a separate vertical fall.
   e.speed = std::max(1, weapon.speed) * 256;
   e.damage = damage; e.flight = true;
+  e.height = rules_->type(source.type).kind == 7 ? rules_->type(source.type).launch_height : source.render_height;
+  e.end_height = target.render_height;
   if (weapon.klass == 0 || weapon.klass == 3) e.payload_id = weapon.payload_id;
   if (weapon.klass == 3) {
     e.weapon_id = weapon.id;
@@ -1693,7 +1771,9 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
     const path::Vec2 delta{e.end_x - e.x, e.end_y - e.y};
     const auto velocity = path::with_length(delta, std::max(0, weapon.speed) * 256);
     e.velocity_x = velocity.x; e.velocity_y = velocity.y;
-    e.altitude = to_fixed(source.render_height ? source.render_height : 24); e.height = e.altitude / 256;
+    e.altitude = to_fixed(rules_->type(source.type).kind == 7 ? rules_->type(source.type).launch_height :
+                         (rules_->type(source.type).flier || source.render_height) ? source.render_height : 24);
+    e.height = e.altitude / 256;
     const int duration = weapon.speed > 0 ? path::length(delta) / (weapon.speed * 256) : 0;
     e.gravity = duration > 0 ? int(int64_t(e.altitude) * 2 / (int64_t(duration) * duration)) : 2 * 256;
   }
@@ -1709,9 +1789,7 @@ void GameSim::apply_blast(World& w, const Effect& e) {
                                            int64_t(o.cur_y / 256) - e.y / 256));
     const int damage = rules_->blast_damage(e.payload_id, rules_->type(o.type), distance);
     if (damage <= 0) { trace_combat("miss", e, o.id, o.hp, o.hp); continue; }
-    trace_combat("damage", e, o.id, o.hp, o.hp - damage);
-    o.hp -= damage; record_hit(w, o, e.source);
-    if (o.hp <= 0) kill(w, o);
+    damage_object(w, o, damage, e);
   }
 }
 
@@ -1819,13 +1897,17 @@ void GameSim::advance_effects(World& w) {
       trace_combat("position", e);
       if (e.altitude > 0) { w.effects.push_back(e); continue; }
     } else if (path::len2(delta) > int64_t(e.speed) * e.speed) {
+      // G: linear height interpolation preserves the muzzle and snapshotted aim
+      // while projectile subpixel trajectories await reference measurement.
+      const int distance = path::length(delta);
+      if (distance > 0) e.height += int(int64_t(e.end_height - e.height) * e.speed / distance);
       auto step = path::with_length(delta, e.speed);
       e.x += step.x; e.y += step.y; e.age++;
       trace_combat("position", e);
       w.effects.push_back(e);
       continue;
     }
-    if (!ball) { e.x = e.end_x; e.y = e.end_y; }
+    if (!ball) { e.x = e.end_x; e.y = e.end_y; e.height = e.end_height; }
     trace_combat("impact", e);
     if (e.impact_anim) decoration(w, e.impact_anim, int(next_visual_rand() % 3), e.x, e.y, 0, e.side);
     if (e.shockwave == data::kShockwaveAnim) decoration(w, e.shockwave, 0, e.x, e.y, 0, e.side);
@@ -1849,10 +1931,7 @@ void GameSim::advance_effects(World& w) {
         trace_combat("miss", e, o.id, o.hp, o.hp);
         continue;
       }
-      trace_combat("damage", e, o.id, o.hp, o.hp - e.damage);
-      o.hp -= e.damage;
-      if (e.damage > 0) record_hit(w, o, e.source);
-      if (o.hp <= 0) kill(w, o);
+      damage_object(w, o, e.damage, e);
     }
   }
   for (const auto& o : w.objects) {
@@ -1889,6 +1968,10 @@ void GameSim::update_animation_state(World& w) {
     if (o.removed || !o.alive) continue;
     const auto& r = rules_->type(o.type);
     const bool turret = o.type >= 0 && o.type < 90 && data::kTypeAnims[o.type].anim2 != 0;
+    if (r.kind == 7) {
+      o.construction_overlay = o.progress < 1000;
+      continue; // simulation owns the continuous tower heading
+    }
     if (o.release_target) {
       o.facing = o.attack_facing;
       o.body_angle = o.turret_angle = o.attack_facing * 32;
@@ -1998,7 +2081,7 @@ void GameSim::tick(World& w) {
   for (auto& o : w.objects) {
     if (o.removed) continue;
     ++o.anim_tick;
-    if (o.attack_tick >= 0) ++o.attack_tick;
+    if (o.attack_tick >= 0 || (o.release_target && rules_->type(o.type).kind == 7)) ++o.attack_tick;
   }
   if (script_.loaded() && !w.original_save) script_.tick(*this, w);
   w.day_clock = (w.day_clock + 1) % kDayTicks;
@@ -2245,6 +2328,7 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(e.age); mix(e.lifetime); mix(e.speed); mix(e.damage); mix(e.splash_px);
     mix(e.impact_anim); mix(e.shockwave); mix(e.payload_id); mix(e.weapon_id); mix(e.flight); mix(e.loop);
     mix(e.velocity_x); mix(e.velocity_y); mix(e.altitude); mix(e.vertical_speed); mix(e.gravity);
+    if (e.end_height) { mix(0x48454947); mix(e.end_height); }
     if (e.flame || e.delay_ticks >= 0) { mix(0x46495245); mix(e.flame); mix(e.delay_ticks); }
   }
   mix(w.town_state.size());

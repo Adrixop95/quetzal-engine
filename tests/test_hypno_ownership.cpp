@@ -103,6 +103,7 @@ static void ordinary_damage() {
   auto data = rules();
   for (int attacker : {54,55,69,82}) {
     World w = world(); add(w,attacker,0,10,10); add(w,0,1,11,10);
+    w.relation[0][1] = w.relation[1][0] = kEnemy; // towers re-pick an enemy after every shot
     GameSim sim(data); sim.init(w);
     w.objects[0].hp = 300;
     Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;

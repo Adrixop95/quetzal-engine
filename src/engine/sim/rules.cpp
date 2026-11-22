@@ -25,11 +25,16 @@ bool RulesData::load_combat_animations(const std::string& units_xbe) {
   return true;
 }
 
-AttackFrame RulesData::attack_frame(int type_id, int facing, int64_t elapsed) const {
-  if (!combat_animations_ || type(type_id).kind != 0 || type_id < 0 || type_id >= 90) return {};
-  auto animation = combat_animations_->anim(combat_animations_->anim_id(type_id));
+AttackFrame RulesData::attack_frame(int type_id, int facing, int64_t elapsed, int angle) const {
+  if (!combat_animations_ || type_id < 0 || type_id >= 90) return {};
+  const int kind = type(type_id).kind;
+  if (kind != 0 && kind != 7) return {};
+  const bool turret = kind == 7 && data::kTypeAnims[type_id].anim2 != 0;
+  auto animation = combat_animations_->anim(combat_animations_->anim_id(type_id, turret));
   if (!animation.ok()) return {};
-  auto frame = animation.at_tick(9 + (facing & 7), elapsed, false);
+  const int slot = kind == 0 ? 9 + (facing & 7) : turret ?
+      2 + data::direction32_from_angle(angle < 0 ? facing * 32 : angle) : 8;
+  auto frame = animation.at_tick(slot, elapsed, false);
   return {true, frame.valid(), frame.fire != 0, frame.dx, frame.dy};
 }
 
@@ -388,6 +393,10 @@ bool RulesData::load_dir(const std::string& dir) {
       t.blast_multiplier = num(r, multiplier + 1, 256);
       if (f.kind == 3 || f.kind == 5) t.cruise_height = num(r, (f.kind == 3 ? 6 : 7) + 1);
       if (f.kind == 5) t.turn_rate = std::clamp(num(r, 7), 1, 128);
+      if (f.kind == 7) {
+        t.turn_rate = std::clamp(num(r, 5), 1, 128);
+        t.launch_height = num(r, 64);
+      }
     }
   }
   // Scripted vessels and cameras have a zero maximum getter, not inferred health.
