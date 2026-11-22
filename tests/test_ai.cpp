@@ -208,10 +208,12 @@ static void army_scenarios(std::shared_ptr<const RulesData> rules) {
   CHECK(replay->state_hash(restored) == wave.state_hash(w));
 
   auto raid_initial = initial;
-  raid_initial.objects[0].tactic = 77;
   object(raid_initial, 0, 0, 0, 11, 10);
   // The attacked condition requires the source to belong to an active tactic.
   object(raid_initial, 0, 1, 1, 9, 8, 7);
+  // Halls are protected by their descriptor; provoke defence at an ordinary building.
+  object(raid_initial, 14, 0, 0, 9, 9, 77);
+  raid_initial.objects.back().hp = 1000000;
   TempDir raid_directory;
   const auto raid_script = raid_directory.path() / "raid-notification.scn";
   std::ofstream(raid_script) << "trigger(0) conditions side(0).tactic(77).attacked == 1 actions side(0).addMoney(7) trigger(0).disable end";
@@ -222,10 +224,10 @@ static void army_scenarios(std::shared_ptr<const RulesData> rules) {
   raid.set_ai_observer([&](uint64_t, const AiEvent& event) {
     if (event.side == 0 && std::string(event.kind) == "defence") defenders += event.composition[0];
   });
-  Command attack; attack.type = Pct::Attack; attack.side = 1; attack.ids = {4}; attack.a = 1;
+  Command attack; attack.type = Pct::Attack; attack.side = 1; attack.ids = {4}; attack.a = 5;
   raid.submit(attack);
   for (int tick = 0; tick < 100 && !defenders; ++tick) { w.begin_tick(); raid.tick(w); }
-  CHECK(w.objects[0].hp < 1000000 && defenders > 0);
+  CHECK(w.objects[0].hp == 1000000 && w.objects[4].hp < 1000000 && defenders > 0);
   CHECK(w.objects[2].order == uint8_t(Order::Attack) && w.objects[2].target == 4);
   for (int i = 0; i < 2; ++i) { w.begin_tick(); raid.tick(w); }
   CHECK(!raid.script().trigger_enabled(0));
@@ -877,7 +879,9 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
   // fixture producing on both sides without prescribing a planner force target.
   for (int side = 0; side < 2; ++side) {
     const auto& town = initial.mission.towns[size_t(side)];
-    object(initial, 0, side, side, town.x + 1, town.y, 7);
+    // Keep guards outside the hall footprint, facing the opposing town. Halls
+    // are damage-protected, so defenders must be able to reach incoming troops.
+    object(initial, 0, side, side, town.x + (side ? -3 : 3), town.y, 7);
     initial.objects.back().hp = 10000000;
   }
   auto a = initial, b = initial; b.local_side = 1;

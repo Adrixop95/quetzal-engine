@@ -12,6 +12,7 @@ struct Effect {
   int32_t x = 0, y = 0, prev_x = 0, prev_y = 0;
   int32_t end_x = 0, end_y = 0;
   int height = 0, age = 0, lifetime = 0, speed = 0;
+  int end_height = 0; // snapshotted arrow aim height
   int damage = 0, splash_px = 0, impact_anim = 0, shockwave = 0;
   int payload_id = -1; // spatial blast evaluated independently for every victim
   int weapon_id = -1; // class 3 contact damage is evaluated at each flight step

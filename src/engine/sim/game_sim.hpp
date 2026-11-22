@@ -130,6 +130,7 @@ class GameSim : public Simulation {
   void member_step(World& w, Object& o, int x, int y, bool combat);
   void path_tactic(UnitTactic& t, const Object& leader, int x, int y);
   bool advance_aircraft(Object& object, path::Vec2 goal, bool attacking, int range = 0);
+  void run_tower(World& world, Object& tower);
   void advance_effects(World& w);
   void advance_attack(World& w, Object& source);
   void fire(World& w, const Object& source, Object& target, int damage);

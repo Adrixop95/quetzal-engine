@@ -197,6 +197,13 @@ target_compile_definitions(test_ground_weapons PRIVATE AZTEC_TEST_RULES_DIR="${C
 add_test(NAME ground_weapons COMMAND test_ground_weapons)
 set_tests_properties(ground_weapons PROPERTIES LABELS "unit")
 
+add_executable(test_towers_specials tests/test_towers_specials.cpp)
+target_link_libraries(test_towers_specials PRIVATE aztec_engine_lib)
+target_compile_definitions(test_towers_specials PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data")
+aztec_warnings(test_towers_specials)
+add_test(NAME towers_specials COMMAND test_towers_specials)
+set_tests_properties(towers_specials PROPERTIES LABELS "unit")
+
 # Synthetic malformed-input coverage, independent of user game files.
 add_executable(test_fuzz tests/test_fuzz.cpp)
 target_link_libraries(test_fuzz aztec_engine_lib)

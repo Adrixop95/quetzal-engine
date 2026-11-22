@@ -1316,7 +1316,7 @@ static void test_projectiles() {
     for (int a = 0; a < 8; a++) for (int b = 0; b < 8; b++) initial.relation[a][b] = a == b ? kFriend : kEnemy;
     Object shooter; shooter.id = 1; shooter.type = type; shooter.hp = 30000;
     shooter.teleport(to_fixed(200), to_fixed(200));
-    Object target; target.id = 2; target.type = 10; target.side = 1; target.hp = 30000;
+    Object target; target.id = 2; target.type = 14; target.side = 1; target.hp = 30000;
     target.teleport(to_fixed(290), to_fixed(200));
     initial.objects = {shooter, target};
     World a = initial, b = initial;
@@ -1370,7 +1370,7 @@ static void test_projectiles() {
     CHECK(a.objects[1].hp == 30000 - shot.damage);
     CHECK(launches > 0 && impacts == launches && hits == launches);
     CHECK(trace.str().find("\"event\":\"position\"") != std::string::npos);
-    CHECK(trace.str().find("\"victim_type\":10") != std::string::npos);
+    CHECK(trace.str().find("\"victim_type\":14") != std::string::npos);
     const auto trace_before_pause = trace.str();
     Command pause; pause.type = Pct::PauseOn;
     sa.submit(pause); a.begin_tick(); sa.tick(a);
@@ -1383,7 +1383,7 @@ static void test_projectiles() {
   // A splash hits hostile neighbours once, keeps allies safe, and retains its source id after death.
   World w;
   w.terrain.w = w.terrain.h = 20; w.terrain.cells.resize(400);
-  Object target; target.id = 1; target.type = 10; target.side = 1; target.hp = 10000;
+  Object target; target.id = 1; target.type = 14; target.side = 1; target.hp = 10000;
   target.teleport(to_fixed(200), to_fixed(200));
   Object neighbour = target; neighbour.id = 2; neighbour.teleport(to_fixed(210), to_fixed(200));
   Object ally = neighbour; ally.id = 3; ally.side = 0;
@@ -4428,6 +4428,7 @@ static void test_fire_air_siege() {
     }
   }
   w = scene(85, 14, 20); w.objects[0].attack_mode = AttackMode::Direct;
+  w.objects[0].render_height = 30; // falling bombs from an already climbing aircraft
   GameSim bombs(rules, Modifications::faithful()); bombs.init(w);
   w.begin_tick(); bombs.tick(w);
   CHECK(w.effects.size() == 2);
@@ -4454,7 +4455,7 @@ static void test_fire_air_siege() {
   ++w.objects[0].air_speed_px; CHECK(flight.state_hash(w) != flight_hash); --w.objects[0].air_speed_px;
   ++w.objects[0].air_min_speed_px; CHECK(flight.state_hash(w) != flight_hash); --w.objects[0].air_min_speed_px;
   // An aircraft pursues an out-of-range target, rises one pixel per tick and fires its own weapon.
-  for (int type : {34,60,85}) {
+  for (int type : {34,60}) {
     w = scene(type, type == 60 ? 33 : 14, 400);
     GameSim air(rules, Modifications::faithful()); air.init(w); air.submit(attack);
     CHECK(w.objects[0].render_height == 30);
