@@ -29,26 +29,31 @@ struct PlayerOptions {          // block at plr+0x4c; field offsets are relative
 struct PlayerFile {
   uint8_t flag = 0;             // +0x00 (written from the caller's parameter; 1 for "ab")
   std::string name;             // +0x01, NUL-terminated, at most 0x42 chars
-  uint32_t const_one = 1;       // +0x44 (always written as 1)
+  uint32_t const_one = 1;       // +0x44 campaign progress (legacy member name); new profiles start at 1
+  uint32_t reserved = 0;        // +0x48 unknown; new profiles start at zero
   PlayerOptions options;
   std::vector<uint8_t> raw;     // the original 300 bytes (unknown parts preserved)
 };
 constexpr size_t kPlayerFileSize = 300;
-bool parse_player_file(const std::vector<uint8_t>& data, PlayerFile& out);
-std::vector<uint8_t> serialize_player_file(const PlayerFile& p);  // starts from p.raw when present
-bool load_player_file(const std::string& path, PlayerFile& out);
+// Failed reads clear output. Invalid names are rejected rather than truncated.
+bool parse_player_file(const std::vector<uint8_t>& data, PlayerFile& out, std::string* error = nullptr);
+std::vector<uint8_t> serialize_player_file(const PlayerFile& p, std::string* error = nullptr);
+bool load_player_file(const std::string& path, PlayerFile& out, std::string* error = nullptr);
+bool write_player_file(const std::string& path, const PlayerFile& p, std::string* error = nullptr);
 
 // ---- Saves/singleN.sav and multiN.sav (header only; the rest is a raw object stream)
 struct SaveHeader {
-  uint32_t zero0 = 0;           // +0x00
-  uint32_t zero1 = 0;           // +0x04 (read into DAT_004dd164)
+  uint32_t zero0 = 0;           // +0x00 game mode (legacy member name)
+  uint32_t zero1 = 0;           // +0x04 campaign mission number (legacy member name)
   std::string map_path;         // +0x08 char[256], path of the .mp the game was started from
   std::string description;      // +0x108 char[64], the name typed by the player
   uint16_t time[8] = {};        // +0x148 SYSTEMTIME: year, month, dow, day, hour, min, sec, ms
   size_t body_offset = 0x158;   // object stream starts here
+  std::vector<uint8_t> raw;     // header bytes, including unused string tails
 };
-bool parse_save_header(const std::vector<uint8_t>& data, SaveHeader& out);
-bool load_save_header(const std::string& path, SaveHeader& out);
+bool parse_save_header(const std::vector<uint8_t>& data, SaveHeader& out, std::string* error = nullptr);
+std::vector<uint8_t> serialize_save_header(const SaveHeader& h, std::string* error = nullptr);
+bool load_save_header(const std::string& path, SaveHeader& out, std::string* error = nullptr);
 
 // ---- Keys.ini: "Action key" per line; several lines may bind one action.
 struct KeyBinding { int action; int dik; };  // action: id of the table below, dik: DirectInput scancode

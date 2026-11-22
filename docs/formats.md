@@ -118,9 +118,12 @@ engine import. Order queues have at most 256 eight-byte entries.
 The independent importer restores the documented subset (units, ownership, HP,
 positions, money, restrictions, fog and clocks); complete simulation resume
 remains open. In particular, wire retention of orders, research, diplomacy and
-script/timer state does not execute them. Interoperability is **import only**;
-neither original `.sav` export nor conversion to engine command-replay saves is
-supported. See [savegame.md](savegame.md#resume-follow-up-evidence-and-policy)
+script/timer state does not execute them. The core codec also serializes retained
+original snapshots with scalar edits and opaque-byte preservation; see
+[save format implementation](save_format_implementation.md).
+Live engine interoperability remains **import only**: exporting advanced engine
+state or converting it to engine command-replay saves is unsupported. See
+[savegame.md](savegame.md#resume-follow-up-evidence-and-policy)
 for supported fields and unresolved mappings, and
 [EXPERIMENTS.md](EXPERIMENTS.md#original-save-tick-zero-run-sheet) for the private
 tick-zero comparison hook. Current reference status: **needs live run**.

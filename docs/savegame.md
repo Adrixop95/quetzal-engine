@@ -261,7 +261,8 @@ remaining bytes before multiplication. Some valid very large original states
 may exceed these deliberate resource limits. It does not validate referenced
 animation resources, descriptor indices, sparse reference existence, campaign
 paths, enum ranges or simulation invariants. It does not restore a live engine
-world or provide a save writer.
+world. The original-format writer and its editing contract are documented in
+[save format implementation](save_format_implementation.md).
 
 Corrections to earlier notes/Python labels: the second unit prefix word is a
 UGI type, not a size; animations are not paths; Camera has `u60,u64`; Side
@@ -438,10 +439,13 @@ does not interpret untyped words inside raw packets. Import failure leaves the
 active world unchanged. This strict policy can reject a save whose stale links
 the original loader might clear; no silent repair is attempted.
 
-Interoperability is import only. The original snapshot is immutable provenance,
-not a second simulation: it does not change when the engine advances. Export to
-original `.sav`, conversion to AZS3 command replay and resumed multiplayer are
-out of scope. Unknown state remains available to private investigation without
+Live engine interoperability is import only. The original snapshot is immutable
+provenance, not a second simulation: it does not change when the engine advances.
+Export of advanced engine state to
+original `.sav`, conversion to AZS3 command replay and resumed multiplayer remain
+unimplemented. The core codec can now write the retained original snapshot; see
+[save format implementation](save_format_implementation.md). Unknown state remains
+available to private investigation without
 pretending that retention restores engine execution. Synthetic fixture output
 is a test generator, not an original-save writer for gameplay.
 

@@ -1,4 +1,4 @@
-// Original singleN.sav / multiN.sav reader. See docs/savegame.md.
+// Original singleN.sav / multiN.sav codec. See docs/savegame.md.
 #pragma once
 #include "core/userfiles.hpp"
 #include <array>
@@ -43,6 +43,13 @@ struct SaveError { size_t offset = 0; std::string message; };
 // No executable, assets, or host pointers are needed. Trailing bytes are rejected.
 bool parse_savegame(const std::vector<uint8_t>& data, SaveGame& out, SaveError* error = nullptr);
 bool load_savegame(const std::string& path, SaveGame& out, SaveError* error = nullptr);
+// Emit fields in section/record order. Scalar SaveField::value is authoritative;
+// raw blocks use their checked ranges in game.bytes. IDs/type/kind in SaveRecord
+// are inspection metadata; edit the corresponding fields to change the stream.
+// Recomputed pool counts, structural parsing and reference checks precede output.
+// Failure clears out. File writes replace the destination only after success.
+bool serialize_savegame(const SaveGame& game, std::vector<uint8_t>& out, SaveError* error = nullptr);
+bool write_savegame(const std::string& path, const SaveGame& game, SaveError* error = nullptr);
 // Separate from structural parsing: check sparse pool identities and every typed
 // reference, including forward links in orders, routes, harvest and script state.
 bool validate_savegame_references(const SaveGame& game, SaveError* error = nullptr);

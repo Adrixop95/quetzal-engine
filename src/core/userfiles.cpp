@@ -1,5 +1,8 @@
 #include "core/loader_limits.hpp"
 #include "core/userfiles.hpp"
+#include "core/save_io.hpp"
+
+#include <algorithm>
 
 #include <cctype>
 #include <cstdio>
@@ -152,8 +155,10 @@ bool slurp(const std::string& path, std::vector<uint8_t>& d) {
     if (d.size() + n > detail::kFileBytes) { std::fclose(f); d.clear(); return false; }
     d.insert(d.end(), buf, buf + n);
   }
-  std::fclose(f);
-  return true;
+  bool ok = !std::ferror(f);
+  if (std::fclose(f) != 0) ok = false;
+  if (!ok) d.clear();
+  return ok;
 }
 std::string cstr(const std::vector<uint8_t>& d, size_t o, size_t max) {
   size_t n = 0;
@@ -164,13 +169,20 @@ std::string cstr(const std::vector<uint8_t>& d, size_t o, size_t max) {
 
 constexpr size_t kOpt = 0x4c;
 
-bool parse_player_file(const std::vector<uint8_t>& d, PlayerFile& p) {
-  if (d.size() != kPlayerFileSize) return false;
-  p = PlayerFile{};
+bool parse_player_file(const std::vector<uint8_t>& d, PlayerFile& out, std::string* error) {
+  if (error) error->clear();
+  if (d.size() != kPlayerFileSize) {
+    out = {}; if (error) *error = "Profile must contain exactly 300 bytes"; return false;
+  }
+  if (std::find(d.begin() + 1, d.begin() + 0x44, 0) == d.begin() + 0x44) {
+    out = {}; if (error) *error = "Profile name is not NUL-terminated"; return false;
+  }
+  PlayerFile p;
   p.raw = d;
   p.flag = d[0];
   p.name = cstr(d, 1, 0x43);
   p.const_one = rd32(d, 0x44);
+  p.reserved = rd32(d, 0x48);
   PlayerOptions& o = p.options;
   o.acknowledgement = rd32(d, kOpt + 0x08);
   o.speech_style = rd32(d, kOpt + 0x0c);
@@ -186,16 +198,27 @@ bool parse_player_file(const std::vector<uint8_t>& d, PlayerFile& p) {
   o.view_all = d[kOpt + 0xb8];
   o.b9 = d[kOpt + 0xb9];
   o.default_provider = d[kOpt + 0xba];
+  out = std::move(p);
   return true;
 }
 
-std::vector<uint8_t> serialize_player_file(const PlayerFile& p) {
+std::vector<uint8_t> serialize_player_file(const PlayerFile& p, std::string* error) {
+  if (error) error->clear();
+  if (p.name.size() > 0x42 || p.name.find('\0') != std::string::npos) {
+    if (error) *error = "Profile name must contain at most 66 bytes without NUL";
+    return {};
+  }
+  if (!p.raw.empty() && p.raw.size() != kPlayerFileSize) {
+    if (error) *error = "Retained profile must contain exactly 300 bytes";
+    return {};
+  }
   std::vector<uint8_t> d = p.raw.size() == kPlayerFileSize ? p.raw : std::vector<uint8_t>(kPlayerFileSize, 0);
   d[0] = p.flag;
-  size_t nl = p.name.size() > 0x42 ? 0x42 : p.name.size();
+  size_t nl = p.name.size();
   std::memcpy(&d[1], p.name.data(), nl);
   d[1 + nl] = 0;  // bytes after the NUL are uninitialised stack garbage in the original files
   wr32(d, 0x44, p.const_one);
+  wr32(d, 0x48, p.reserved);
   const PlayerOptions& o = p.options;
   wr32(d, kOpt + 0x08, o.acknowledgement);
   wr32(d, kOpt + 0x0c, o.speech_style);
@@ -216,24 +239,69 @@ std::vector<uint8_t> serialize_player_file(const PlayerFile& p) {
   return d;
 }
 
-bool load_player_file(const std::string& path, PlayerFile& out) {
+bool load_player_file(const std::string& path, PlayerFile& out, std::string* error) {
   std::vector<uint8_t> d;
-  return slurp(path, d) && parse_player_file(d, out);
+  if (!slurp(path, d)) {
+    out = {}; if (error) *error = "Cannot read profile"; return false;
+  }
+  return parse_player_file(d, out, error);
+}
+bool write_player_file(const std::string& path, const PlayerFile& p, std::string* error) {
+  auto d = serialize_player_file(p, error);
+  if (d.empty()) return false;
+  if (detail::write_save_bytes(path, d)) return true;
+  if (error) *error = "Cannot write profile";
+  return false;
 }
 
-bool parse_save_header(const std::vector<uint8_t>& d, SaveHeader& h) {
-  if (d.size() < 0x158) return false;
-  h = SaveHeader{};
+bool parse_save_header(const std::vector<uint8_t>& d, SaveHeader& out, std::string* error) {
+  if (error) error->clear();
+  if (d.size() < 0x158) {
+    out = {}; if (error) *error = "Truncated save header"; return false;
+  }
+  for (auto [offset, size] : {std::pair<size_t, size_t>{8, 256}, {0x108, 64}}) {
+    if (std::find(d.begin() + offset, d.begin() + offset + size, 0) == d.begin() + offset + size) {
+      out = {}; if (error) *error = "Save header string is not NUL-terminated"; return false;
+    }
+  }
+  SaveHeader h;
+  h.raw.assign(d.begin(), d.begin() + 0x158);
   h.zero0 = rd32(d, 0);
   h.zero1 = rd32(d, 4);
   h.map_path = cstr(d, 8, 256);
   h.description = cstr(d, 0x108, 64);
   for (int i = 0; i < 8; i++) h.time[i] = uint16_t(d[0x148 + 2 * i] | d[0x149 + 2 * i] << 8);
+  out = std::move(h);
   return true;
 }
-bool load_save_header(const std::string& path, SaveHeader& out) {
+std::vector<uint8_t> serialize_save_header(const SaveHeader& h, std::string* error) {
+  if (error) error->clear();
+  if (h.map_path.size() >= 256 || h.description.size() >= 64 ||
+      h.map_path.find('\0') != std::string::npos || h.description.find('\0') != std::string::npos) {
+    if (error) *error = "Save header strings exceed their fixed fields or contain NUL";
+    return {};
+  }
+  if (h.body_offset != 0x158 || (!h.raw.empty() && h.raw.size() != 0x158)) {
+    if (error) *error = "Invalid save header size";
+    return {};
+  }
+  auto d = h.raw.empty() ? std::vector<uint8_t>(0x158) : h.raw;
+  wr32(d, 0, h.zero0); wr32(d, 4, h.zero1);
+  std::copy(h.map_path.begin(), h.map_path.end(), d.begin() + 8);
+  d[8 + h.map_path.size()] = 0;
+  std::copy(h.description.begin(), h.description.end(), d.begin() + 0x108);
+  d[0x108 + h.description.size()] = 0;
+  for (size_t i = 0; i < 8; ++i) {
+    d[0x148 + 2 * i] = uint8_t(h.time[i]); d[0x149 + 2 * i] = uint8_t(h.time[i] >> 8);
+  }
+  return d;
+}
+bool load_save_header(const std::string& path, SaveHeader& out, std::string* error) {
   std::vector<uint8_t> d;
-  return slurp(path, d) && parse_save_header(d, out);
+  if (!slurp(path, d)) {
+    out = {}; if (error) *error = "Cannot read save header"; return false;
+  }
+  return parse_save_header(d, out, error);
 }
 
 int key_action_id(const std::string& name) {
