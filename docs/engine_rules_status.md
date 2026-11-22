@@ -1220,8 +1220,9 @@ The base update `0x43edc0` decrements the counter after Think; the setter
 `0x45d4d0` path. Headtruck/Defence instead override that service method with
 immediate capped healing (`0x41cbe0`); a countdown is not invented for that call.
 The engine implements countdown expiry and descriptor recovery. Automatic facility
-coverage/refresh is still absent: its small/large-pool category and spatial branches
-need validation before a universal service radius is introduced.
+coverage/refresh was added in the [capture and facility service update](#capture-and-facility-service-2026-11-21),
+with separate small/large-pool predicates and explicit spatial/timing approximations.
+Live reference validation remains open.
 
 **Engine construction checks:** synthetic placement covers all 90 public types,
 side ownership, sparse town IDs 4/9, hall linkage, colliding scenario IDs, separate
@@ -1247,8 +1248,8 @@ and configuration, private Maps/Saves directories, dummy SDL and `unshare -rn`.
 It failed at loopback setup with `Cannot open netlink socket: Operation not
 permitted`, before launching the game. Inputs and failure output remain under
 ignored `work/v04/`; there is no new M evidence, record/replay result or normalized
-reference comparison. V04 remains open for these dependencies, facility service,
-Hypno behavior and campaign-wide live transitions.
+reference comparison. V04 remains open for these dependencies, live facility service
+validation, Hypno behavior and campaign-wide live transitions.
 
 **Validation:** baseline Release build and 26 CTest entries passed; five entries
 skipped (four private-data checks and restricted UDP processes). Baseline
@@ -2257,3 +2258,57 @@ process was run and no live placement or whole-game parity is claimed. Synthetic
 regressions use invented maps/descriptors and software-renderer pixels. Older task
 47/101 statements about radius 16, clearance masks, mineral terrain exceptions
 and waiting-site revalidation are superseded by this update.
+
+## Capture and facility service (2026-11-21)
+
+**V reference facts:** the newer [special mechanics evidence](special_mechanics_residual.md)
+corrects the older ownership summary: ordinary buildings do not defend a town;
+units and Defence objects do. Candidate distance is squared tile distance <5,
+defence radius is 4/8 tiles, and capture has no hold timer. Buildings/towers
+change side; existing town units join an old-side receiving group. Waiting work
+is discarded. Active buildings continue with their progress except in the
+computer-to-human cancellation/refund branch; active trainees are discarded.
+Refunds go only to the old computer owner in that branch. No cash is transferred.
+
+**V engine construction checks:** automatic capture now preserves old-side units,
+continues active building work, discards trainees/waiting placeholders and gates
+refunds by owner control type. Tests cover all four human/computer combinations,
+continued completion without a second payment, selection/group cleanup,
+speed/repair resets, allied versus own-side defender scans and existing
+candidate/Defence/airborne/radius boundaries. Script gifts retain their existing
+separate policy and tests.
+
+Workshops service machines, including boats, Johnka, ordinary buildings and
+Defence objects. Stables service the six non-soldier Marine animal types. Air
+facilities participate only above 256 objects and require a workshop or stable.
+Ordinary service refreshes the regeneration window to 10; Building, Defence and
+Headtruck overrides instead add capped +10 HP. This is separate from paid repair.
+Synthetic tests cover all three races' facilities, category and allied/dead
+eligibility, completion, both range branches, object counts 256/257, instant
+caps, countdown expiry and replay. Existing explosion 152, debris 113 and smoke
+105 sprite metadata is retained and regression-tested. Debris has 20 one-frame
+variants, not a twenty-frame animation; smoke has one thirty-frame sequence.
+
+**G implementation limits:** insertion-order scan winners, numeric receiving
+groups, implicit standalone-object tactics, nonremoved-object pool counts,
+large-pool inclusive pixel boxes and town/object update interleaving stand in
+for the full reference model. Continuing work keeps its frozen rate and payment
+metadata. Modifications can expose several simultaneous active lanes, to which
+the same capture policy is applied. Computer-town alarm cancellation before
+capture, exact pointer/tactic lifetimes, rally/parent resets and capture
+messages/voices/pings remain incomplete. The audited reference adapter and
+aligned town/service observations remain missing dependencies. Independent
+corrections and synthetic checks were completed without them; no reference
+runtime or original executable was run and no original parity is claimed.
+
+See [capture_and_service_implementation.md](capture_and_service_implementation.md)
+for V/G boundaries, the comparison with prior engine behavior and test coverage.
+Baseline Release build, 73 runnable CTest checks (six skipped) and pre-commit
+passed. A final clone-only mission 1 smoke completed 120 ticks using a private
+installation copy, dummy SDL drivers and `unshare -rn`; its logs/report remain in
+ignored `work/capture-service/`. Final Release build, all 73 runnable CTest
+entries (six skipped), all-file pre-commit and explicit hooks for the new document
+passed. Separate `formats` and `engine` game-data checks passed with that private
+copy under dummy SDL and `unshare -rn`. The bounded smoke reached its requested
+120-tick limit with no script errors; it did not complete the mission. No private
+assets, executable-derived code or probe artifacts are included in the changes.

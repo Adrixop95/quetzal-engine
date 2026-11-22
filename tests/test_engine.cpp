@@ -1729,6 +1729,117 @@ static void production_steps(GameSim& sim, World& w, int ticks) {
   for (int t = 0; t < ticks; ++t) { w.begin_tick(); sim.tick(w); }
 }
 
+static void test_service_facilities() {
+  auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  auto base = [&] {
+    World w = production_world(); w.mission.towns.resize(1);
+    production_object(w, 11, 0, 10, 10); w.objects.back().town_hall = true;
+    return w;
+  };
+  // Test every service category against all three racial facility IDs.
+  for (int facility : {20,51,74,15,44,77,25,52,79}) {
+    World w = base(); production_object(w, facility, 0, 20, 20);
+    const bool workshop = facility == 20 || facility == 51 || facility == 74;
+    const bool stable = facility == 15 || facility == 44 || facility == 77;
+    for (int type : {0,1,27,53,5,6,31,32,56,57,30,83,3,87,84,88,17,12,33,7})
+      production_object(w, type, -1, 11, 10);
+    GameSim sim(rules, Modifications::faithful()); sim.init(w);
+    for (size_t i = 2; i < w.objects.size(); ++i) {
+      w.objects[i].hp = std::max(1, w.objects[i].hp_max / 2);
+      // Zero-HP-getter vessels still receive a countdown.
+    }
+    production_steps(sim, w, 1);
+    for (size_t i = 2; i < w.objects.size(); ++i) {
+      const auto& o = w.objects[i]; const auto& r = rules->type(o.type);
+      const bool animal = o.type == 5 || o.type == 6 || o.type == 31 || o.type == 32 || o.type == 56 || o.type == 57;
+      const bool immediate = r.kind == 2 || r.kind == 7 || r.kind == 6;
+      const bool machine = !r.flier && r.kind != 0;
+      CHECK(o.regen_service_ticks == ((workshop && machine && !immediate) || (stable && animal) ? 10 : 0));
+      if (immediate) CHECK(o.hp == std::min(o.hp_max,
+          std::max(1, o.hp_max / 2) + (workshop ? 10 : 0)));
+    }
+  }
+  // Above 256 objects an air facility alone still cannot service an aircraft.
+  {
+    World w = base(); production_object(w, 25, 0, 20, 20);
+    production_object(w, 33, -1, 11, 10);
+    while (w.objects.size() < 257) production_object(w, -1, -1, 35, 35);
+    GameSim sim(rules, Modifications::faithful()); sim.init(w); production_steps(sim, w, 1);
+    CHECK(w.objects[2].regen_service_ticks == 0);
+  }
+  // Small pools use the inclusive squared distance 64; large pools use a box.
+  for (int count : {256,257}) {
+    World w = base(); production_object(w, 20, 0, 20, 20);
+    production_object(w, 25, 0, 21, 20);
+    production_object(w, 33, -1, 11, 10);
+    production_object(w, 30, -1, 18, 10);
+    production_object(w, 30, -1, 18, 11); // squared distance 65
+    production_object(w, 30, -1, 18, 18); // box corner
+    production_object(w, 30, -1, 19, 10);
+    while (int(w.objects.size()) < count) production_object(w, -1, -1, 35, 35);
+    GameSim sim(rules, Modifications::faithful()); sim.init(w); production_steps(sim, w, 1);
+    CHECK(w.objects[3].regen_service_ticks == (count == 257 ? 10 : 0));
+    CHECK(w.objects[4].regen_service_ticks == 10);
+    CHECK(w.objects[5].regen_service_ticks == (count == 257 ? 10 : 0));
+    CHECK(w.objects[6].regen_service_ticks == (count == 257 ? 10 : 0));
+    CHECK(w.objects[7].regen_service_ticks == 0);
+  }
+  // Allied animals are serviced; enemies, dead objects and incomplete facilities are excluded.
+  World w = base(); production_object(w, 15, 0, 20, 20);
+  for (int side : {0,1,2}) { production_object(w, 5, -1, 11, 10); w.objects.back().side = side; }
+  GameSim sim(rules, Modifications::faithful()); sim.init(w);
+  w.objects[1].progress = 999; w.objects[1].build_total = 100;
+  for (auto& o : w.objects) o.cooldown = 1000;
+  production_steps(sim, w, 1);
+  CHECK(w.objects[2].regen_service_ticks == 0);
+  w.objects[1].progress = 1000; production_steps(sim, w, 1);
+  CHECK(w.objects[2].regen_service_ticks == 10 && w.objects[3].regen_service_ticks == 10);
+  CHECK(w.objects[4].regen_service_ticks == 0);
+  sim.script_kill(w, 5);
+  w.objects[4].side = 0; // a dead friendly animal must not refresh its window
+  production_steps(sim, w, 1); CHECK(w.objects[4].regen_service_ticks == 0);
+  w.objects[2].hp = rules->type(5).regen_alt_threshold;
+  const int hp = w.objects[2].hp;
+  w.objects[1].alive = false; production_steps(sim, w, 10);
+  CHECK(w.objects[2].regen_service_ticks == 0 && w.objects[2].hp == hp + 10 * rules->type(5).regen);
+  production_steps(sim, w, 1); CHECK(w.objects[2].hp == hp + 10 * rules->type(5).regen);
+  // Capped instant service has no countdown and is independent of credits or cash.
+  World instant = base(); production_object(instant, 20, 0, 20, 20);
+  production_object(instant, 17, -1, 11, 10);
+  GameSim capped(rules, Modifications::faithful()); capped.init(instant);
+  instant.objects[2].hp -= 3; production_steps(capped, instant, 1);
+  CHECK(instant.objects[2].hp == instant.objects[2].hp_max && instant.objects[2].regen_service_ticks == 0);
+  CHECK(instant.side_state[0].money == 0);
+  // Facility refresh and healing reconstruct through ordinary replay.
+  World initial = base(); production_object(initial, 15, 0, 20, 20);
+  production_object(initial, 5, -1, 11, 10); initial.objects.back().hp = rules->type(5).regen_alt_threshold;
+  World live = initial; GameSim original(rules, Modifications::faithful()); original.init(live);
+  production_steps(original, live, 14);
+  auto replay = GameSim::replay(initial, rules, original.log(), original.tick_count());
+  CHECK(replay->state_hash(initial) == original.state_hash(live));
+}
+
+static void test_special_effect_sets() {
+  using namespace aztec::data;
+  CHECK(kVehicleExplosionAnim == 152 && kVehicleDebrisAnim == 113 && kShockwaveAnim == 105);
+  for (const auto& info : kEffectAnims) {
+    if (info.id == 113) CHECK(info.slots == 20 && info.min_frames == 1 && info.max_frames == 1);
+    if (info.id == 105) CHECK(info.slots == 1 && info.min_frames == 30 && info.max_frames == 30);
+    if (info.id == 152) CHECK(info.slots == 3 && info.min_frames == 10 && info.max_frames == 11);
+  }
+  auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
+  World w = production_world(); production_object(w, 30, -1, 10, 10);
+  GameSim sim(rules, Modifications::faithful()); sim.init(w); sim.script_kill(w, 1);
+  CHECK(w.effects.size() == 2 && w.objects.size() == 1);
+  if (w.effects.size() != 2) return;
+  CHECK(w.effects[0].anim == 152 && w.effects[0].slot >= 0 && w.effects[0].slot < 3);
+  CHECK(w.effects[0].lifetime == effect_lifetime(152, w.effects[0].slot));
+  CHECK(w.effects[1].anim == 113 && w.effects[1].slot >= 0 && w.effects[1].slot < 20);
+  CHECK(w.effects[1].height == -1 && w.effects[1].lifetime == 250);
+  production_steps(sim, w, 11); CHECK(w.effects.size() == 1 && w.effects[0].anim == 113);
+  production_steps(sim, w, 239); CHECK(w.effects.empty() && w.objects.size() == 1);
+}
+
 // Synthetic behavior checks; live reference parity remains unverified.
 static void test_group_reach() {
   auto rules = std::make_shared<RulesData>();
@@ -4749,6 +4860,8 @@ int main(int argc, char** argv) {
     test_production();
     test_town_production();
     test_town_service();
+    test_service_facilities();
+    test_special_effect_sets();
     test_parallel_town_production();
     test_parallel_training();
     test_faithful_profile_hashes();

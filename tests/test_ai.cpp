@@ -863,6 +863,9 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
   CHECK(synthetic->load_dir(directory.path().string()));
   rules = synthetic;
   auto initial = world();
+  // Keep the pressure fronts close enough for both armies to stay in contact.
+  initial.mission.towns[1].x = initial.mission.towns[1].y = 24;
+  initial.objects[1].teleport(tile_center_fixed(24), tile_center_fixed(24));
   // Hold technology constant so this pressure/replay soak does not also assert
   // campaign balance across changing building masks and formation geometry.
   // Development branches and higher-tech offers have separate unit coverage.
