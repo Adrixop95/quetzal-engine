@@ -93,11 +93,16 @@ static void towers(const std::shared_ptr<RulesData>& rules) {
       CHECK(w.objects[1].side == 1 && w.objects[1].secondary_hp == rules->type(0).secondary_hp);
     }
   }
-  // A target arriving on a tick outside the former four-tick scan is acquired immediately.
+  // A tower acquires an arriving target between mobile tactic scans, without
+  // waiting for that tactic to discover and list the enemy team.
   World w = scene(69,0,1000); GameSim sim(rules); sim.init(w); tick(sim,w);
   CHECK(!w.objects[0].has_fired);
+  const auto& tactic = w.unit_tactics.at(tactic_key(w.objects[0]));
+  CHECK(tactic.enemies.empty() && tactic.scan_ticks > 1);
+  const int scan_ticks = tactic.scan_ticks;
   sim.teleport(w,2,500,400); tick(sim,w);
   CHECK(w.objects[0].release_target == 2);
+  CHECK(tactic.enemies.empty() && tactic.scan_ticks == scan_ticks - 1);
 
   // Stop/retarget cannot replace a shot already latched by its animation.
   w = scene(69); sim.init(w); tick(sim,w);

@@ -62,7 +62,7 @@ add_library(aztec_engine_lib
   src/engine/assets/game_data.cpp src/engine/assets/mission.cpp src/engine/assets/skirmish.cpp src/engine/assets/anim_provider.cpp src/engine/assets/daylight.cpp
   src/engine/platform/input.cpp src/engine/platform/window.cpp
   src/engine/world/world.cpp src/engine/world/camera.cpp src/engine/world/type_info.cpp
-  src/engine/sim/simulation.cpp src/engine/sim/commands.cpp src/engine/sim/savegame.cpp src/engine/sim/rules.cpp src/engine/sim/game_sim.cpp src/engine/sim/transport.cpp src/engine/sim/script_runner.cpp src/engine/sim/ai.cpp src/engine/ai/planner.cpp
+  src/engine/sim/simulation.cpp src/engine/sim/commands.cpp src/engine/sim/savegame.cpp src/engine/sim/rules.cpp src/engine/sim/game_sim.cpp src/engine/sim/unit_tactics.cpp src/engine/sim/transport.cpp src/engine/sim/script_runner.cpp src/engine/sim/ai.cpp src/engine/ai/planner.cpp
   src/engine/render/atlas.cpp src/engine/render/sprite_store.cpp src/engine/render/font.cpp
   src/engine/render/png.cpp src/engine/render/fog.cpp src/engine/render/scene_renderer.cpp
   src/engine/ui/cursor.cpp src/engine/ui/panel.cpp src/engine/ui/names.cpp src/engine/ui/selection_ui.cpp src/engine/ui/commands_ui.cpp src/engine/ui/frontend.cpp src/engine/ui/campaign.cpp src/engine/ui/minimap.cpp src/engine/ui/hud.cpp
@@ -145,6 +145,13 @@ target_link_libraries(path_bench aztec_path)
 add_executable(formation_probe tools/formation_probe.cpp)
 target_link_libraries(formation_probe aztec_engine_lib)
 aztec_warnings(formation_probe)
+add_executable(test_unit_tactics tests/test_unit_tactics.cpp)
+target_link_libraries(test_unit_tactics PRIVATE aztec_engine_lib)
+target_compile_definitions(test_unit_tactics PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data")
+aztec_warnings(test_unit_tactics)
+add_test(NAME unit_tactics COMMAND test_unit_tactics)
+set_tests_properties(unit_tactics PROPERTIES LABELS "unit")
+
 add_executable(test_formation tests/test_formation.cpp)
 target_link_libraries(test_formation aztec_engine_lib)
 aztec_warnings(test_formation)

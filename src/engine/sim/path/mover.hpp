@@ -43,6 +43,7 @@ struct Agent {
   u32 moved_ticks = 0;
   u64 path_failures = 0;       // Diagnostic only; excluded from state_hash: unreachable requests and failed local repaths.
   Vec2 target; u64 target_until = 0; int backoff_ticks = 0;   // cached steering target (recomputed every few ticks)
+  bool tile_step = false; // one tile goal, using the independent collision resolver
   int formation = -1;
   Vec2 step_goal;              // reserved tile centre during startup approach
   Vec2 step_from;
@@ -66,6 +67,8 @@ class MoveSystem {
   // This is a measured-data candidate, not a recovered original formation rule.
   void order_formation(const u32* ids, int n, Cell anchor);
   void block_formation_tile(Cell tile) { formation_obstacles_.push_back(tile); }
+  // Traverse one neighbouring tile at the agent's own speed, without destination offsets.
+  bool order_step(u32 id, Cell tile);
   void stop(u32 id);
   void tick();
   void set_unit_unstick(bool enabled);

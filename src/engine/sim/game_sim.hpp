@@ -124,6 +124,11 @@ class GameSim : public Simulation {
   void ferry_follow(World& w, const std::vector<uint32_t>& ids, int side, Object& ferry);
   void unload(World& w, Object& vessel, int tx, int ty);
   void follow_tactics(World& w);
+  void refresh_tactics(World& w);
+  void think_tactics(World& w);
+  void move_tactic(World& w, const std::vector<uint32_t>& ids, int x, int y);
+  void member_step(World& w, Object& o, int x, int y, bool combat);
+  void path_tactic(UnitTactic& t, const Object& leader, int x, int y);
   bool advance_aircraft(Object& object, path::Vec2 goal, bool attacking, int range = 0);
   void run_tower(World& world, Object& tower);
   void advance_effects(World& w);
@@ -140,7 +145,7 @@ class GameSim : public Simulation {
   uint32_t spawn(World& w, int type, int side, int px, int py, int hp, bool constructing);
   void attach_agent(Object& o);
   bool menu_ok(const World& w, int side, const BuildItem& it, int town, const char** why, const QueueItem* reservation = nullptr, bool admission = false) const;
-  const Object* nearest_enemy(const World& w, const Object& o) const;
+  const Object* nearest_enemy(const World& w, const Object& o, bool fire_only = false) const;
   int town_index(const World& w, int side) const;
   int producing_town(const World& w, int side, const std::vector<uint32_t>& ids) const;
   const Object* town_hall(const World& w, int town) const;

@@ -32,7 +32,38 @@ void MoveSystem::stop(u32 id) {
   a.wave_path.clear(); a.retries = 0; a.stepping = false; a.vehicle_speed_px = 0;
   a.state = AgentState::Idle; a.vel = {0, 0};
   a.target = {}; a.target_until = 0; a.backoff_ticks = 0;
-  a.formation = -1;
+  a.formation = -1; a.tile_step = false;
+}
+
+bool MoveSystem::order_step(u32 id, Cell tile) {
+  Agent& a = agents_[id];
+  const Cell from{floor_div(a.pos.x, kTileFix), floor_div(a.pos.y, kTileFix)};
+  const int dx = tile.x - from.x, dy = tile.y - from.y;
+  if (std::abs(dx) > 1 || std::abs(dy) > 1 || (!dx && !dy) || grid_.blocked(tile.x, tile.y, a.cls)) return false;
+  if (dx && dy && (grid_.blocked(tile.x, from.y, a.cls) || grid_.blocked(from.x, tile.y, a.cls))) return false;
+  for (const auto& other : agents_) {
+    if (!other.enabled || other.radius == 0 || other.team == a.team) continue;
+    if (floor_div(other.pos.x, kTileFix) == tile.x && floor_div(other.pos.y, kTileFix) == tile.y) return false;
+    if (other.tile_step && other.state == AgentState::Moving &&
+        floor_div(other.step_goal.x, kTileFix) == tile.x && floor_div(other.step_goal.y, kTileFix) == tile.y) return false;
+  }
+  const Vec2 goal = tile_center(tile.x, tile.y);
+  // Continuous crowd recovery can leave the starting disc touching a wall.
+  // Validate the destination; the mover resolves the starting overlap itself.
+  if (grid_.disc_hits(goal, a.radius, a.cls)) return false;
+  // One tile goal, no destination offset. The independent continuous collision
+  // resolver still handles crowds; original tile-exclusive arbitration is G.
+  stop(id);
+  int oi = -1;
+  for (size_t i = 0; i < orders_.size(); ++i) if (orders_[i]->refs == 0) { oi = int(i); break; }
+  if (oi < 0) { orders_.push_back(std::make_unique<Order>()); oi = int(orders_.size()) - 1; }
+  auto& order = *orders_[size_t(oi)];
+  order = {}; order.goal = goal; order.goal_cell = tile; order.refs = 1;
+  ensure_field(order, a.cls);
+  a.order = oi; a.state = AgentState::Moving; a.win_start = a.pos; a.win_ticks = 0;
+  a.stuck_level = 0; a.ghost_ticks = a.squeeze_ticks = 0; a.unstick_best = length(goal - a.pos);
+  a.slot = goal; a.step_goal = goal; a.step_from = a.pos; a.tile_step = true;
+  return true;
 }
 
 void MoveSystem::order_formation(const u32* ids, int n, Cell anchor) {
@@ -243,7 +274,7 @@ void MoveSystem::order_move(const u32* ids, int n, Vec2 goal) {
   std::sort(slots.begin(), slots.end(), [&](Vec2 a, Vec2 b) { i64 pa = dot(a, dir), pb = dot(b, dir); if (pa != pb) return pa > pb; if (a.y != b.y) return a.y < b.y; return a.x < b.x; });
   for (int i = 0; i < n; ++i) {
     Agent& a = agents_[ord[i]];
-    a.formation = -1;
+    a.formation = -1; a.tile_step = false;
     if (a.order >= 0 && a.order != oi) --orders_[a.order]->refs;
     a.target = {}; a.target_until = 0; a.backoff_ticks = 0;   // drop steering cached for the previous order
     a.local_path.clear(); a.unstick_ticks = 0; a.unstick_best = length(slots[i] - a.pos);
@@ -460,7 +491,10 @@ void MoveSystem::local_repath(Agent& a) {
 bool MoveSystem::cooperate(Agent& a) {
   Vec2 forward = a.slot - a.pos;
   for (Agent& b : agents_) {
-    if (b.id == a.id || b.team != a.team || b.radius <= 0 || b.hold || b.state == AgentState::Moving) continue;
+    if (b.id == a.id || b.team != a.team || b.radius <= 0 || b.hold) continue;
+    const bool opposing_steps = a.tile_step && b.tile_step && b.state == AgentState::Moving &&
+        dot(forward, b.slot - b.pos) < 0;
+    if (b.state == AgentState::Moving && !opposing_steps) continue;
     // Settled members of this order already occupy its arrival area. Moving
     // them repeatedly to side bays disperses a dense group after arrival.
     if (b.state == AgentState::Arrived && b.order == a.order) continue;
@@ -487,6 +521,7 @@ bool MoveSystem::cooperate(Agent& a) {
         !free_position(a, b.pos, int(b.id)) || !free_position(b, a.pos, int(a.id))) continue;
     std::swap(a.pos, b.pos); a.prev_pos = a.pos; b.prev_pos = b.pos;
     a.vel = b.vel = {}; a.target_until = b.target_until = 0; b.slot = b.pos;
+    if (opposing_steps) { a.slot = a.pos; a.state = b.state = AgentState::Arrived; }
     ++stats.swaps; return true;
   }
   return false;
@@ -514,7 +549,8 @@ void MoveSystem::recover(Agent& a) {
     if (cooperate(a)) a.local_path.clear();
     local_repath(a);
   }
-  if (a.unstick_ticks < 120) return;
+  // A one-tile request has no farther shared-field goal to recover toward.
+  if (a.unstick_ticks < (a.tile_step ? 60 : 120)) return;
   // Emergency relocation is deliberately explicit enhanced behavior. Select
   // the nearest free tile with strictly better field progress; otherwise the
   // nearest free tile. The current tile is excluded. Full disc and occupancy
@@ -590,7 +626,7 @@ void MoveSystem::tick() {
     if (!a.enabled || a.formation >= 0 || original_agent(a)) continue;
     if (a.state != AgentState::Moving) continue;
     i32 dist = length(a.slot - a.pos);
-    if (dist <= 2 * kFix) { a.state = AgentState::Arrived; a.vel = {0, 0}; continue; }
+    if (dist <= 2 * kFix) { if (a.tile_step) a.pos = a.slot; a.state = AgentState::Arrived; a.vel = {0, 0}; continue; }
     if (cfg_.unit_unstick) { recover(a); continue; }
     if (++a.win_ticks >= cfg_.stuck_window) {
       i32 moved = length(a.pos - a.win_start);
@@ -600,7 +636,7 @@ void MoveSystem::tick() {
         if (a.stuck_level >= 5) a.squeeze_ticks = cfg_.stuck_window * 2;
         if (a.stuck_level >= 4 && ((a.id + (u32)(tick_ / cfg_.stuck_window)) & 1)) { a.backoff_ticks = cfg_.stuck_window / 2; a.stuck_level = 2; }
         // close to the slot and others already settled: take the spot you are in
-        if (dist < 3 * kTileFix && a.stuck_level >= 2) {
+        if (!a.tile_step && dist < 3 * kTileFix && a.stuck_level >= 2) {
           neighbours(a, nb, a.radius * 2 + 8 * kFix);
           for (u32 j : nb) if (agents_[j].state == AgentState::Arrived) { a.state = AgentState::Arrived; a.vel = {0, 0}; break; }
         }
@@ -642,6 +678,7 @@ u64 MoveSystem::state_hash() const {
     mix((u32)a.slot.x); mix((u32)a.slot.y); mix((u32)a.facing); mix((u32)a.heading);
     mix((u32)a.win_start.x); mix((u32)a.win_start.y); mix((u32)a.win_ticks); mix((u32)a.stuck_level); mix((u32)a.squeeze_ticks); mix((u32)a.ghost_ticks); mix(a.moved_ticks);
     mix((u32)a.target.x); mix((u32)a.target.y); mix(a.target_until); mix((u32)a.backoff_ticks);
+    if (a.tile_step) { mix(0x74696c6573746570ULL); mix(u32(a.step_goal.x)); mix(u32(a.step_goal.y)); }
     if (!formations_.empty() || !formation_obstacles_.empty()) {
       mix(u32(a.formation)); mix(u32(a.step_goal.x)); mix(u32(a.step_goal.y));
       mix(u32(a.step_from.x)); mix(u32(a.step_from.y));

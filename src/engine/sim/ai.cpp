@@ -30,7 +30,6 @@ void GameSim::run_ai(World& w) {
       if (unit) w.find_mut(unit->id)->tactic = -2 - int(ti);
     }
     if (!state.plan.empty()) state.remaining = outstanding;
-    int speed = ai::build_speed(w, *rules_, state, int(ti));
     const bool hostile_all = w.enemy_all(town.side);
     std::vector<ai::Offer> offers;
     bool needs_offers = state.phase == 2 || state.phase == 3 || state.phase == 5 || state.phase == 7 ||
@@ -40,12 +39,13 @@ void GameSim::run_ai(World& w) {
     for (const auto& o : w.objects)
       if (o.alive && !o.removed && o.town == town.index && o.side == town.side && o.progress < 1000) production_busy = true;
     if (production_busy) needs_offers = false;
+    int speed = state.phase == 3 && !production_busy ? 1 : ai::build_speed(w, *rules_, state, int(ti));
     const auto items = needs_offers ? menu(w, town.side, int(ti)) : std::vector<MenuItem>{};
     for (const auto& item : items) {
       // Reprice with this tick's strategist speed before the BuildMode command is applied.
       bool available = item.enabled || std::string(item.why_not) == "no gold";
       int price = production_value(rules_->type(item.type).price, town.type, speed, true, hostile_all, false);
-      if (!available || w.side_state[town.side].money < price) continue;
+      if (!available) continue;
       ai::Offer offer; offer.type = item.type; offer.price = price;
       offer.placeable = !item.construct;
       if (item.construct) {
@@ -117,13 +117,10 @@ void GameSim::run_ai(World& w) {
         const int producer = producing_town(w, c.side, c.ids);
         if (producer < 0) continue;
         const int capacity = training_capacity(w, producer, training_producer(w, producer, c.a));
-        int price = 0;
-        for (const auto& offer : offers) if (offer.type == c.a) price = offer.price;
-        const int affordable = price > 0 ? w.side_state[town.side].money / price : capacity;
         int unassigned = 0;
         for (const auto& entry : decision.next.plan)
           if (entry.type == c.a && !entry.object && entry.producer < 0) ++unassigned;
-        const int count = std::max(1, std::min({capacity, affordable, unassigned + 1, kProductionQueueCapacity}));
+        const int count = std::max(1, std::min({capacity, unassigned + 1, kProductionQueueCapacity}));
         int added = 0;
         for (auto& entry : decision.next.plan) {
           if (added == count - 1) break;

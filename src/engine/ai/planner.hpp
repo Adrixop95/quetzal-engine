@@ -16,6 +16,8 @@ struct PlanEntry {
 struct Intelligence { int town = -1; std::array<int, 90> counts{}; };
 struct TownState {
   int phase = 0, science_timer = 50, target_town = -1, remaining = 0;
+  int wanted_type = 90;
+  int plan_target_town = -1;
   bool defence_enabled = true;
   uint64_t elapsed = 0;
   int64_t harvested = 0, spent = 0;
@@ -33,8 +35,11 @@ struct Offer {
 struct Decision { TownState next; std::vector<Command> commands; };
 
 int matchup(const RulesData& rules, int attacker, int target);
+// Returns the target score in 24.8 units; smaller scores are preferred.
+int target_score(const World& world, const RulesData& rules, int town, const Intelligence& record);
 std::vector<PlanEntry> make_plan(const World& world, const RulesData& rules, int town,
-                                 int target, bool offensive, uint32_t& random, const std::vector<Intelligence>& knowledge);
+                                 int target, bool offensive, uint32_t& random, const std::vector<Intelligence>& knowledge,
+                                 int* wanted_type = nullptr);
 bool visible(const World& world, int observer, uint32_t object);
 std::vector<Intelligence> intelligence(const World& world, const RulesData& rules, int observer);
 int development(const World& world, const RulesData& rules, int town);
