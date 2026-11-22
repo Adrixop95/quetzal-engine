@@ -29,7 +29,7 @@ class Mixer {
   // V: eight shared buffers, including music and speech (see docs/audio-parity.md).
   static constexpr int kMaxVoices = 8;
   uint64_t play(std::shared_ptr<const Pcm> pcm, float left, float right, bool loop = false,
-                bool speech = false, bool protected_speech = true, uint32_t rate_q16 = 65536);
+                bool speech = false, bool protected_speech = true, uint32_t rate_q16 = 65536, uint8_t flags = 1);
   bool gain(uint64_t voice, float left, float right);
   bool playing(uint64_t voice) const;
   void stop(uint64_t voice);
@@ -46,9 +46,10 @@ class Mixer {
   bool music_ended = false;   // set by mix() when the stream finished (the owner picks the next track)
 
  private:
-  int allocate_slot();
+  // V: bit 0 permits stealing; bit 1 protects the allocated buffer.
+  int allocate_slot(bool steal);
   struct Voice { std::shared_ptr<const Pcm> pcm; size_t pos = 0; float l = 1, r = 1; bool loop = false; uint64_t id = 0; bool speech = false, protected_voice = false; uint64_t phase = 0; uint32_t step = 65536; };
-  uint64_t next_voice_ = 0;
+  uint64_t generations_[kMaxVoices] = {};
   int last_slot_ = 0, music_slot_ = -1;
   Voice voices_[kMaxVoices];
   std::shared_ptr<const void> music_holder_;

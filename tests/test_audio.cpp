@@ -79,7 +79,7 @@ int main(int argc, char** argv) {
   std::filesystem::create_directory(root / "Music");
   Bytes set(4); put(set, 0, 1);
   std::vector<Bytes> sets(401);
-  for (int id : {1, 2, 3, 4, 101, 301, 401}) sets[id - 1] = set;
+  for (int id : {1, 2, 3, 4, 101, 103, 104, 107, 108, 301, 401}) sets[id - 1] = set;
   put(sets[3], 0, 3); // distinct invented speech member, long enough to stay active across updates
   write(root / "Res/Snd.xbe", archive({{0x460, {wav(), Bytes{}, wav(8)}}, {0x3e8, sets},
       {0x6, {Bytes{'R', 'e', 'a', 'd', 'y', 0}, Bytes{'N', 'o', ' ', 'W', 'A', 'V', 0}}}}));
@@ -113,7 +113,7 @@ int main(int argc, char** argv) {
   CHECK(!timed.at_tick(1, 4, false).valid());
   AnimSpriteProvider provider; CHECK(provider.open((root / "Res/Units.xbe").string()));
   Archive units; CHECK(units.open((root / "Res/Units.xbe").string()));
-  AudioSystem audio; CHECK(audio.init(root.string(), false)); CHECK(!audio.device_ok());
+  AudioSystem audio; audio.event_fallbacks = true; CHECK(audio.init(root.string(), false)); CHECK(!audio.device_ok());
   std::vector<AudioEvent> events;
   audio.event_sink = [&](const AudioEvent& event) {
     events.push_back(event);
@@ -236,10 +236,12 @@ int main(int argc, char** argv) {
   int16_t samples[16]{}; audio.mixer().mix(samples, 8); audio.update();
   CHECK(audio.current_track() == 2);
   audio.mixer().mix(samples, 8); audio.update(); CHECK(audio.current_track() == 1);
-  audio.start_music(2, 1, 0); CHECK(audio.current_track() == 2);
+  audio.start_music(2, 1, 0); CHECK(audio.current_track() == 1);
+  audio.mixer().mix(samples, 8); audio.update(); CHECK(audio.current_track() == 2);
   audio.mixer().mix(samples, 8); audio.stop_music(); audio.update();
   CHECK(audio.current_track() == 0 && !audio.mixer().music_playing());
   audio.start_music(1, 0, 0); audio.start_music(0, 0, 0);
+  audio.mixer().mix(samples, 8); audio.update();
   CHECK(audio.current_track() == 0 && !audio.mixer().music_playing());
   audio.stop_effects();
   // Explicit trigger context supports future selection/order/UI dispatchers;
@@ -540,8 +542,8 @@ int main(int argc, char** argv) {
     for (auto value : converted) CHECK(value == 0);
   }
   // Invented set contents test Auto/explicit families without copying game resources.
-  std::vector<Bytes> families(201);
-  for (int family = 0; family < 3; ++family) { families[family * 100].resize(4); put(families[family * 100], 0, family + 1); }
+  std::vector<Bytes> families(301);
+  for (int family = 0; family < 3; ++family) { const int offset = family == 1 ? 300 : family == 2 ? 200 : 0; families[offset].resize(4); put(families[offset], 0, family + 1); }
   write(root / "Res/Snd.xbe", archive({{1000, families}, {0x460, {wav(8), wav(8), wav(8)}}}));
   AudioSystem voices; CHECK(voices.init(root.string(), false));
   voices.set_volumes(1, 1, 1);
@@ -568,6 +570,118 @@ int main(int argc, char** argv) {
       CHECK(device.current_track() == track);
     }
   }
+  // Request flags and generation handles survive reuse without changing other voices.
+  {
+    Mixer flags;
+    auto pcm = std::make_shared<Pcm>(200, int16_t(100));
+    std::array<uint64_t, 8> handles{};
+    for (auto& handle : handles) handle = flags.play(pcm, 1, 1, true, false, false, 65536, 0);
+    CHECK(flags.active_voices() == 8);
+    CHECK(flags.play(pcm, 1, 1, false, false, false, 65536, 0) == 0);
+    const auto replacement = flags.play(pcm, 1, 1, true, false, false, 65536, 3);
+    CHECK((replacement & 7) == (handles.front() & 7));
+    CHECK(replacement == handles.front() + 8 && !flags.playing(handles.front()));
+    flags.stop(handles.front()); CHECK(flags.playing(replacement));
+    for (int i = 0; i < 32; ++i) CHECK(flags.play(pcm, 1, 1));
+    CHECK(flags.playing(replacement)); // bit 1 protects effects too
+    flags.stop_effects();
+    for (int i = 0; i < 8; ++i) CHECK(flags.play(pcm, 1, 1, true, false, false, 65536, 2));
+    CHECK(!flags.play(pcm, 1, 1));
+  }
+  // Original attenuation masters mute independently and apply logarithmic gain.
+  audio.stop_music(); audio.stop_effects(); audio.set_attenuations(-2000, -4000, -4000);
+  CHECK(audio.play_sound(1)); audio.render_samples(samples, 1); CHECK(samples[0] == 10);
+  CHECK(!audio.play_speech(1));
+  audio.stop_effects(); audio.set_attenuations(-4000, -4000, -4000);
+  CHECK(!audio.play_sound(1) && !audio.play_set_at(1, 0, 0, 0, 0));
+  audio.loop_at(78, 4, 0, 0, 0, 0);
+  CHECK(audio.mixer().active_voices() == 0);
+  audio.set_volumes(1, 1, 1);
+  // The documented fog threshold uses brightness, independently of ownership/UI fog switches.
+  World fog_world; fog_world.local_side = 0; fog_world.visibility.sides = {{2, 1, {32, 33}}};
+  fog_world.visibility_brightness = true;
+  CHECK(!audio_fog_visible(fog_world, 0, 0) && audio_fog_visible(fog_world, 48, 0));
+  CHECK(!audio_fog_visible(fog_world, -1, 0) && !audio_fog_visible(fog_world, 96, 0));
+  fog_world.visibility_brightness = false; fog_world.visibility.sides[0].v = {120, 119};
+  CHECK(!audio_fog_visible(fog_world, 0, 0) && audio_fog_visible(fog_world, 48, 0));
+  // Category gates precede queueing. Positional speech remains audible beyond 800 pixels.
+  audio.stop_effects(); audio.event_fallbacks = false; audio.acknowledgement = true; audio.subtitles = true;
+  audio.event_sink = [&](const AudioEvent& event) { events.push_back(event); };
+  audio.set_volumes(1, 1, 1); events.clear();
+  CHECK(!audio.queue_speech_at(4, 4, 1, 0, 0, 0, 0, 0, 100, 100));
+  CHECK(!audio.queue_speech_at(4, 6, 0, 0, 99, 99, 0, 0, 100, 100));
+  CHECK(!audio.queue_speech_at(4, 5, 0, 0, 900, 0, 0, 0, 100, 100, false));
+  CHECK(audio.queue_speech_at(4, 5, 0, 0, 900, 0, 0, 0, 100, 100));
+  audio.update(); audio.render_samples(samples, 1);
+  CHECK(samples[0] > 0 && samples[1] > samples[0]);
+  audio.stop_effects();
+  CHECK(audio.queue_speech_at(4, 6, 0, 0, 100, 99, 0, 0, 100, 100));
+  audio.update(); CHECK(audio.mixer().active_voices() == 1);
+  audio.stop_effects(); audio.acknowledgement = false;
+  CHECK(!audio.queue_speech_at(4, 4, 0, 0, 0, 0, 0, 0, 100, 100));
+  audio.acknowledgement = true;
+  // One-shot fog rejection does not kill an already playing ambient loop.
+  audio.begin_scene_tick(); audio.loop_at(77, 4, 0, 0, 0, 0); audio.end_scene_tick();
+  events.clear();
+  audio.begin_scene_tick(); audio.loop_at(77, 4, 0, 0, 0, 0, 0, 65536, false); audio.end_scene_tick();
+  CHECK(events.empty() && audio.mixer().active_voices() == 1);
+  audio.stop_effects(); events.clear();
+  audio.begin_scene_tick(); audio.loop_at(77, 4, 0, 0, 0, 0, 0, 65536, false); audio.end_scene_tick();
+  CHECK(events.empty() && audio.mixer().active_voices() == 0);
+  World loop_world; Object looping; looping.id = 1; looping.type = 0;
+  looping.anim_state = int(data::AnimState::Move); loop_world.objects.push_back(looping);
+  emit_scene_audio(loop_world, provider, units, audio, 0, 0, [](float, float, int) { return true; });
+  CHECK(audio.mixer().active_voices() == 2); events.clear();
+  loop_world.objects[0].anim_tick = 1;
+  emit_scene_audio(loop_world, provider, units, audio, 0, 0, [](float, float, int) { return false; });
+  CHECK(events.empty()); // the active loop survives the dispatcher fog gate
+  audio.stop_effects(); events.clear();
+  // A non-replacing incoming speech request appends after an unprotected tail.
+  CHECK(audio.queue_speech_set(4, false, 1, 1, false));
+  CHECK(audio.queue_speech_set(1, false, 1, 1, true, false));
+  audio.update(); CHECK(!events.empty() && events.back().set == 4);
+  audio.render_samples(samples, 8); audio.update(); CHECK(!events.empty() && events.back().set == 1);
+  audio.stop_effects(); events.clear();
+  // Verified order offsets use member type rather than the owner's race.
+  w.objects.clear(); selected.type = 0; selected.side = 0; selected.id = 1;
+  w.objects.push_back(selected);
+  Object target = selected; target.id = 2; target.side = 1; w.objects.push_back(target);
+  w.relation[0][1] = kEnemy; w.selection.ids = {1};
+  Command cue; cue.side = 0; cue.ids = {1}; cue.type = Pct::Attack; cue.a = 2;
+  emit_order_audio(w, cue, audio, 0, 0); audio.update();
+  CHECK(events.size() == 2 && events.back().set == 103 && events.back().trigger == AudioEvent::Trigger::Orders);
+  audio.stop_effects(); events.clear();
+  cue.type = Pct::FollowTeam; cue.b = 0;
+  emit_order_audio(w, cue, audio, 0, 0); audio.update(); CHECK(!events.empty() && events.back().set == 104);
+  audio.stop_effects(); events.clear(); cue.type = Pct::Move;
+  emit_order_audio(w, cue, audio, 0, 0); audio.update(); CHECK(events.empty());
+  cue.type = Pct::Stop;
+  emit_order_audio(w, cue, audio, 0, 0); audio.update(); CHECK(events.empty());
+  w.objects[0].follow_tactic = 1;
+  emit_order_audio(w, cue, audio, 0, 0); audio.update(); CHECK(!events.empty() && events.back().set == 107);
+  audio.stop_effects(); events.clear();
+  w.objects[1].side = 0; w.objects[1].type = 27; w.selection.ids = {1, 2};
+  emit_selection_audio(w, audio, 0, 0); audio.update(); CHECK(events.empty());
+  emit_selection_audio(w, audio, 1, 0); audio.update(); CHECK(!events.empty() && events.back().set == 101);
+  audio.stop_effects(); events.clear(); audio.event_fallbacks = true; cue.type = Pct::Move;
+  emit_order_audio(w, cue, audio, 0, 0); audio.update(); CHECK(!events.empty() && events.back().set == 104);
+  audio.stop_effects();
+  // Playlist reconfiguration retains the cursor and never interrupts an active track.
+  AudioSystem playlist; playlist.init(root.string(), false);
+  playlist.start_music(3, 0, 0); CHECK(playlist.current_track() == 3);
+  playlist.start_music(4, 0, 0); CHECK(playlist.current_track() == 3);
+  playlist.render_samples(samples, 8); playlist.update(); CHECK(playlist.current_track() == 4);
+  playlist.stop_music(); playlist.start_music(0, 12, 0); CHECK(playlist.current_track() == 3);
+  playlist.stop_music(); playlist.start_music(0, 12, 0); CHECK(playlist.current_track() == 4);
+  playlist.stop_music();
+  auto held_pcm = std::make_shared<Pcm>(40, int16_t(100));
+  uint64_t held_voice = 0;
+  for (int i = 0; i < 8; ++i) held_voice = playlist.mixer().play(held_pcm, 1, 1, true, true);
+  playlist.start_music(3, 0, 0); CHECK(playlist.current_track() == 0);
+  playlist.mixer().stop(held_voice); playlist.update();
+  CHECK(playlist.current_track() == 3 && playlist.mixer().music_playing());
+  CHECK(speech_list_id(120, 1, 2) == 420 && speech_list_id(120, 2, 3) == 320);
+  CHECK(!speech_list_id(0, 1, 1) && !speech_list_id(101, 0, 0));
   CHECK(silent_sim.random_state() != 0);
   return failures ? 1 : 0;
 }

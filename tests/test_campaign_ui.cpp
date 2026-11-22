@@ -271,6 +271,7 @@ int main(int argc, char** argv) {
   CHECK(parse({"engine", "--game-speed", "60", "--scroll-speed", "20", "--sampling-rate", "44100", "--speech-style", "2", "--gamma", "2.5"}, parsed));
   CHECK(parsed.game_speed_ms == 60 && parsed.scroll_speed == 20 && parsed.gamma == 2.5);
   CHECK(parsed.sampling_rate == 44100 && parsed.speech_style == 2);
+  CHECK(parse({"engine", "--audio-event-fallbacks"}, parsed) && parsed.audio_event_fallbacks);
   for (const char* bad : {"nan", "inf", "0", "3", "1.5junk"}) {
     Options invalid; CHECK(!parse({"engine", "--gamma", bad}, invalid));
   }

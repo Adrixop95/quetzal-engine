@@ -83,6 +83,7 @@ bool AudioSystem::init(const std::string& game_dir, bool open_device, int sampli
   if (dev_) { SDL_CloseAudioDevice(dev_); dev_ = 0; }
   if (!set_sampling_rate(sampling_rate)) return false;
   stop_effects(); stop_music(); tracks_.clear(); cache_.clear();
+  music_cursor_ = 0;
   std::string snd = find_file_ci(game_dir + "/Res", "Snd.xbe");
   bank_ok_ = !snd.empty() && bank_.open(snd);
   std::string mdir = game_dir + "/Music";
@@ -98,15 +99,26 @@ bool AudioSystem::init(const std::string& game_dir, bool open_device, int sampli
   return bank_ok_;
 }
 
+uint32_t speech_list_id(uint32_t ross_set, int native_style, int style) {
+  if (!ross_set || style < 0 || style > 3 || native_style < 1 || native_style > 3) return 0;
+  const int voice = style ? style : native_style;
+  return ross_set + (voice == 2 ? 300u : voice == 3 ? 200u : 0u);
+}
+
 uint32_t AudioSystem::play_speech_set(uint32_t ross_set, int race, int style, bool ack) {
-  if (style < 0 || style > 3 || race < 0 || race > 2 || (ack && !acknowledgement)) return 0;
-  const int family = style ? style - 1 : race;
-  const uint32_t id = choose(ross_set + uint32_t(family) * 100);
-  return play_speech(id, ack);
+  if (race < 0 || race > 2 || (ack && !acknowledgement)) return 0;
+  const auto set = speech_list_id(ross_set, race + 1, style);
+  if (!set) return 0;
+  return play_speech(choose(set), ack);
+}
+
+void AudioSystem::set_attenuations(int sfx, int music, int speech) {
+  auto gain = [](int value) { return value <= -4000 ? 0.f : std::pow(10.f, std::min(0, value) / 2000.f); };
+  set_volumes(gain(sfx), gain(music), gain(speech));
 }
 
 void AudioSystem::set_volumes(float sfx, float music, float speech) {
-  auto volume = [](float v) { return std::isfinite(v) ? std::clamp(v, 0.f, 1.f) : 0.f; };
+  auto volume = [](float v) { return std::isfinite(v) && v > 0.01f ? std::min(v, 1.f) : 0.f; };
   std::lock_guard<std::mutex> lock(mu_);
   mixer_.sfx_volume = volume(sfx);
   mixer_.music_volume = volume(music);
@@ -118,19 +130,32 @@ uint32_t AudioSystem::play_speech(uint32_t id, bool is_acknowledgement) {
   return start_speech(id, 0, 1, 1);
 }
 
-uint32_t AudioSystem::queue_speech_set(uint32_t set, bool ack, float left, float right, bool protected_pending) {
-  if (!bank_ok_ || (ack && !acknowledgement)) return 0;
+uint32_t AudioSystem::queue_speech_set(uint32_t set, bool ack, float left, float right, bool protected_pending, bool replace_pending) {
+  if (!set || !bank_ok_ || (ack && !acknowledgement)) return 0;
   const uint32_t id = choose(set);
   if (!id) return 0;
   SpeechRequest request{id, set, ack, left, right, event_trigger, protected_pending};
-  if (!speech_queue_.empty() && !speech_queue_.back().protected_pending)
+  if (replace_pending && !speech_queue_.empty() && !speech_queue_.back().protected_pending)
     speech_queue_.back() = request;
   else {
-    // G: bounded presentation queue; exact exhaustion behavior needs a native run.
-    if (speech_queue_.size() == 32) return 0;
     speech_queue_.push_back(request);
   }
   return id;
+}
+
+uint32_t AudioSystem::queue_speech_at(uint32_t set, int category, int owner, int local_player,
+    float x, float y, float vx, float vy, float vw, float vh, bool enabled) {
+  if (owner != local_player || (category == 4 && !acknowledgement) || (category == 5 && !enabled)) return 0;
+  if (category == 6 && x >= vx && x < vx + vw && y >= vy && y < vy + vh) return 0;
+  const float dx = x - (vx + vw / 2), dy = y - (vy + vh / 2);
+  auto pan = positional_gain(dx, 0);
+  if (category == 5) {
+    const float distance = std::sqrt(dx * dx + dy * dy);
+    const float attenuation = -700.f * std::clamp((distance - 500.f) / 300.f, 0.f, 1.f);
+    const float gain = std::pow(10.f, attenuation / 2000.f);
+    pan.left *= gain; pan.right *= gain;
+  }
+  return queue_speech_set(set, category == 4, pan.left, pan.right, category != 5);
 }
 
 uint32_t AudioSystem::start_speech(uint32_t id, uint32_t set, float left, float right, bool protected_voice) {
@@ -169,7 +194,7 @@ uint32_t AudioSystem::play_sound(uint32_t id, float l, float r) {
   if (!bank_ok_ || id == 0) return 0;
   std::shared_ptr<const Pcm> pcm = sound_pcm(id);
   if (!pcm || pcm->empty()) return 0;
-  { std::lock_guard<std::mutex> lock(mu_); if (!mixer_.play(pcm, l, r)) return 0; }
+  { std::lock_guard<std::mutex> lock(mu_); if (mixer_.sfx_volume == 0 || !mixer_.play(pcm, l, r)) return 0; }
   emit({AudioEvent::Kind::Sound, 0, 0, id});
   return id;
 }
@@ -187,14 +212,15 @@ uint32_t AudioSystem::play_set_at(uint32_t set_id, float x, float y, float cx, f
   const auto id = chosen_sound ? chosen_sound : choose(set_id);
   auto pcm = sound_pcm(id);
   if (!pcm || pcm->empty()) return 0;
-  { std::lock_guard<std::mutex> lock(mu_); if (!mixer_.play(pcm, p.left, p.right, false, false, true, rate_q16)) return 0; }
+  { std::lock_guard<std::mutex> lock(mu_); if (mixer_.sfx_volume * std::max(p.left, p.right) <= 0.01f ||
+        !mixer_.play(pcm, p.left, p.right, false, false, true, rate_q16)) return 0; }
   emit({AudioEvent::Kind::Sound, 0, set_id, id});
   return id;
 }
 void AudioSystem::begin_scene_tick() {
   for (auto& [source, loop] : loops_) loop.seen = false;
 }
-void AudioSystem::loop_at(uint64_t source, uint32_t set, float x, float y, float cx, float cy, uint32_t chosen_sound, uint32_t rate_q16) {
+void AudioSystem::loop_at(uint64_t source, uint32_t set, float x, float y, float cx, float cy, uint32_t chosen_sound, uint32_t rate_q16, bool start_allowed) {
   const float dx = x - cx, dy = y - cy;
   const auto p = positional_gain(dx, std::sqrt(dx * dx + dy * dy));
   if (!set || !bank_ok_ || !p.audible) return;
@@ -208,11 +234,13 @@ void AudioSystem::loop_at(uint64_t source, uint32_t set, float x, float y, float
     emit({AudioEvent::Kind::LoopStop, source, it->second.set, it->second.sound, 0, it->second.trigger});
     loops_.erase(it);
   }
+  if (!start_allowed) return;
   const uint32_t id = chosen_sound ? chosen_sound : choose(set);
   auto pcm = sound_pcm(id);
   if (!pcm || pcm->empty()) return;
   uint64_t voice;
-  { std::lock_guard<std::mutex> lock(mu_); voice = mixer_.play(pcm, p.left, p.right, true, false, true, rate_q16); }
+  { std::lock_guard<std::mutex> lock(mu_); voice = mixer_.sfx_volume * std::max(p.left, p.right) <= 0.01f ? 0 :
+        mixer_.play(pcm, p.left, p.right, true, false, true, rate_q16); }
   if (!voice) return;
   loops_[source] = {set, id, voice, true, event_trigger};
   emit({AudioEvent::Kind::LoopStart, source, set, id});
@@ -236,15 +264,15 @@ void AudioSystem::stop_effects() {
 }
 
 void AudioSystem::start_music(int music, uint32_t mask, int salt) {
-  stop_music();
   allowed_.clear();
   uint32_t available = 0;
   for (const auto& t : tracks_) if (t.first >= 1 && t.first <= 32) available |= 1u << (t.first - 1);
   uint32_t allowed = music_allowed_mask(music, mask, available);
   for (int n = 1; n <= 32; n++) if (allowed & (1u << (n - 1))) allowed_.push_back(n);
   (void)salt;
-  pick_ = 0;
-  if (!allowed_.empty()) pick_and_play_music();
+  bool playing;
+  { std::lock_guard<std::mutex> lock(mu_); playing = mixer_.music_playing(); }
+  if (!playing) { track_ = 0; if (!allowed_.empty()) pick_and_play_music(); }
 }
 
 void AudioSystem::stop_music() {
@@ -257,7 +285,9 @@ void AudioSystem::stop_music() {
 void AudioSystem::pick_and_play_music() {
   if (allowed_.empty()) return;
   for (size_t attempt = 0; attempt < allowed_.size(); ++attempt) {
-    int n = allowed_[pick_++ % allowed_.size()];
+    auto next = std::find_if(allowed_.begin(), allowed_.end(), [&](int n) { return n > music_cursor_; });
+    const int n = next == allowed_.end() ? allowed_.front() : *next;
+    music_cursor_ = n % 32;
     for (const auto& t : tracks_) {
       if (t.first != n) continue;
       auto buf = std::make_shared<std::vector<uint8_t>>();
@@ -269,7 +299,7 @@ void AudioSystem::pick_and_play_music() {
       auto pcm = to_stereo_44k(w);
       if (!pcm || pcm->empty()) continue;
       { std::lock_guard<std::mutex> lock(mu_);
-        if (!mixer_.play_music(pcm, pcm->data(), pcm->size() / 2)) continue; }
+        if (mixer_.music_volume == 0 || !mixer_.play_music(pcm, pcm->data(), pcm->size() / 2)) continue; }
       track_ = n;
       emit({AudioEvent::Kind::Music, 0, 0, uint32_t(n)});
       return;
@@ -284,9 +314,10 @@ void AudioSystem::update(double seconds) {
     subtitle_left_ = std::max(0.0, subtitle_left_ - seconds);
     if (subtitle_left_ == 0) subtitle_.clear();
   }
-  bool ended;
-  { std::lock_guard<std::mutex> lock(mu_); ended = mixer_.music_ended; mixer_.music_ended = false; }
-  if (ended) pick_and_play_music();
+  bool music_playing;
+  { std::lock_guard<std::mutex> lock(mu_); music_playing = mixer_.music_playing(); mixer_.music_ended = false; }
+  // V: poll whenever no music voice is active, including after slot exhaustion.
+  if (!music_playing) { track_ = 0; pick_and_play_music(); }
   bool speaking;
   { std::lock_guard<std::mutex> lock(mu_); speaking = mixer_.playing(speech_voice_); }
   // G: drain one pending utterance per presentation update, independently of ticks.

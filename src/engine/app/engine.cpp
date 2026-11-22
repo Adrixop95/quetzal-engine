@@ -269,6 +269,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       emit_scene_audio(world, *ap, data.archive(ArchiveId::Units), *audio,
           cam.x + cam.visible_w() / 2, cam.y + cam.visible_h() / 2,
           [&](float x, float y, int side) {
+            if (!audio->event_fallbacks) return audio_fog_visible(world, x, y);
             Object probe; probe.side = side;
             return scene.visible_in_fog(probe, {x, y});
           });
@@ -583,29 +584,14 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       if (audio) {
         audio->set_sampling_rate(o.sampling_rate);
         audio->set_volumes(o.sfx_volume, o.music_volume, o.speech_volume);
+        audio->event_fallbacks = o.audio_event_fallbacks;
         audio->acknowledgement = o.acknowledgement; audio->subtitles = o.subtitles;
         audio->event_tick = world.tick;
         if (previous_selection != world.selection.ids)
           emit_selection_audio(world, *audio, o.speech_style, cam.x + cam.view_w / (2 * cam.zoom));
-        // G: use the owned speaker's side race until mixed-race speaker descriptors are exposed.
-        if (!world.selection.ids.empty()) {
-          const auto* speaker = world.find(world.selection.ids.front());
-          int race = -1;
-          if (speaker && speaker->alive && !speaker->removed && speaker->side == world.local_side)
-            for (const auto& side : world.mission.sides) if (side.index == speaker->side) race = side.race;
-          if (race >= 0 && race <= 2) {
-            bool order = false;
-            if (game) for (size_t i = ui_command_start; i < game->pending_commands().size(); ++i) {
-              const auto kind = game->pending_commands()[i].type;
-              order |= kind == Pct::Move || kind == Pct::Attack || kind == Pct::AttackMove || kind == Pct::Stop;
-            }
-            if (order) {
-              audio->event_trigger = AudioEvent::Trigger::Orders;
-              audio->play_speech_set(104, race, o.speech_style, true);
-              audio->event_trigger = AudioEvent::Trigger::Unknown;
-            }
-          }
-        }
+        if (game) for (size_t i = ui_command_start; i < game->pending_commands().size(); ++i)
+          emit_order_audio(world, game->pending_commands()[i], *audio, o.speech_style,
+                           cam.x + cam.view_w / (2 * cam.zoom));
         audio->update(dt);
       }
       // Render. Day clock: mission StartTime + simulation ticks (+ interpolation).
@@ -813,7 +799,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
       write_audio_event(audio_log.get(), event, sequence++);
     };
     AudioSystem* audio_ptr = nullptr;
-    if (o.audio) { audio.init(o.game_dir, true, o.sampling_rate); audio.set_volumes(o.sfx_volume, o.music_volume, o.speech_volume); audio_ptr = &audio; }
+    if (o.audio) { audio.init(o.game_dir, true, o.sampling_rate); audio.event_fallbacks = o.audio_event_fallbacks; audio.set_volumes(o.sfx_volume, o.music_volume, o.speech_volume); audio_ptr = &audio; }
     for (;;) {
       if (menu) {
         FrontendResult fr;
