@@ -6,7 +6,7 @@ void place_mission_objects(World& w) {
   w.objects.clear();
   uint32_t next_id = 1;
   for (const PlacedObject& p : w.mission.objects) {
-    // Submarines remain untyped route controllers, separate from combat units.
+    // Submarines are untyped decoration controllers, separate from combat units.
     Object o;
     o.id = next_id++;
     o.type = p.type;
@@ -27,14 +27,14 @@ void place_mission_objects(World& w) {
     o.teleport(tile_center_fixed(p.x), tile_center_fixed(p.y));
     o.vessel_enabled = p.vessel_enabled; o.orientation = p.up ? 1 : 0;
     o.landing_x = p.landing_x; o.landing_y = p.landing_y;
-    o.ferry_direction = p.loaded ? -1 : 1;
+    o.ferry_direction = o.orientation ? 1 : -1;
     const uint32_t vessel = o.id;
     w.objects.push_back(o);
     for (const auto& unit : p.passengers) {
       Object passenger;
       passenger.id = next_id++; passenger.type = unit[2]; passenger.side = p.side;
       passenger.teleport(tile_center_fixed(unit[0]), tile_center_fixed(unit[1]));
-      if (p.loaded && w.objects[vessel - 1].cargo.size() < kTransportCapacity) {
+      if (p.loaded && (p.source == ObjectSource::Boat || w.objects[vessel - 1].cargo.size() < kTransportCapacity)) {
         passenger.carrier = vessel; passenger.removed = true;
         w.objects[vessel - 1].cargo.push_back(passenger.id);
       }

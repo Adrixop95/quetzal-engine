@@ -216,7 +216,9 @@ class FrontendCaptureTests(unittest.TestCase):
             self.assertFalse(setup_network)
             env = dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy', **extra)
             run = subprocess.run(list(map(str, argv)), cwd=directory, env=env, capture_output=True, timeout=timeout)
-            self.assertEqual(run.returncode, 0, run.stderr)
+            trace = directory / 'trace.jsonl'
+            last_frames = trace.read_text().splitlines()[-3:] if trace.exists() else []
+            self.assertEqual(run.returncode, 0, (run.stderr, last_frames))
         with patch.object(capture, 'execute', side_effect=synthetic):
             first = capture.capture_clone(args, spec, self.root / 'one')
             second = capture.capture_clone(args, spec, self.root / 'two')
