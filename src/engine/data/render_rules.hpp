@@ -48,12 +48,12 @@ inline constexpr ObjectRenderLayout kObjectRenderLayouts[] = {
   {"DecorationOnce",0x49406c,0x30, 0,    0x24, 0x28, PositionSource::Pixels,   HeightSource::ObjectPixels,   0x34, 0x5c},
 };
 
-// Every ordinary item draws base shadow, base body, turret shadow, turret body,
-// then any overlay (+0x2c virtual). Shadows are per item, not a global first pass.
-enum class DrawPart { BaseShadow, BaseBody, TurretShadow, TurretBody, Overlay };
+// Object underlays (+0x2c virtual) draw during collection, before the sorted
+// list. Each sorted item draws base shadow/body followed by turret shadow/body.
+enum class DrawPart { Underlay, BaseShadow, BaseBody, TurretShadow, TurretBody };
 inline constexpr DrawPart kObjectDrawParts[] = {
-  DrawPart::BaseShadow, DrawPart::BaseBody, DrawPart::TurretShadow,
-  DrawPart::TurretBody, DrawPart::Overlay
+  DrawPart::Underlay, DrawPart::BaseShadow, DrawPart::BaseBody,
+  DrawPart::TurretShadow, DrawPart::TurretBody
 };
 // Body: (world_x - hotspot_x, world_y - height - hotspot_y).
 // Shadows use the ground position, without height. Terrain overlay positions

@@ -32,6 +32,7 @@ struct Options {
   float zoom = 0;                  // 0 = automatic
   bool has_cam = false;
   float cam_tx = 0, cam_ty = 0;    // initial camera centre in tiles
+  bool original_look = false;      // tick-aligned screenshot presentation
   bool wander = false;             // demo simulation: units random-walk (tests interpolation)
   bool edge_scroll = true;
   bool mouse_grab = true;

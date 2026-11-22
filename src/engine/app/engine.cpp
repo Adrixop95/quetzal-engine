@@ -111,6 +111,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
   PlayExit exit_reason = PlayExit::Quit;
   {
     SceneRenderer scene(win, data, world);
+    scene.opts.original_look = o.original_look;
     scene.opts.terrain_palette = o.terrain_palette;
     scene.fog().set_enabled(o.fog);
     scene.opts.terrain_shade = o.terrain_shade;
@@ -296,7 +297,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
     bool leave = false;
     while (!in.quit && !leave) {
       uint64_t now = SDL_GetPerformanceCounter();
-      double dt = pt ? 1.0 / 12 : double(now - last) / double(freq);
+      double dt = pt ? 1.0 / 12 : o.original_look ? o.tick_seconds() : double(now - last) / double(freq);
       last = now;
       fps_acc += dt;
       fps_n++;
@@ -512,7 +513,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
           if (world.outcome != kRunning) break;
         }
       }
-      float alpha = (paused || pause.open) ? 1.f : float(stepper.alpha());
+      float alpha = (o.original_look || paused || pause.open) ? 1.f : float(stepper.alpha());
 
       // Script view jumps and mission end. Vision cameras do not control UI input.
       if (world.center_serial != seen_center) { seen_center = world.center_serial; cam.center_on(float(world.center_x), float(world.center_y)); }
@@ -628,7 +629,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       }
       // Render. Day clock: mission StartTime + simulation ticks (+ interpolation).
       if (use_light) {
-        double t = (o.time >= 0 ? o.time : world.mission.start_time) + (o.time >= 0 ? 0 : double(world.tick) + alpha);
+        double t = (o.time >= 0 ? o.time : world.mission.start_time) + (o.time >= 0 ? 0 : double(world.tick) + (o.original_look ? 0 : alpha));
         scene.set_light(daylight.sample(world.mission.tileset, t));
       }
       // V: the view clock is separate from simulation animation ages.
@@ -638,19 +639,23 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         ++scene.opts.view_counter;
         ++scene.opts.wind_counter;
       }
+      if (o.original_look) {
+        scene.opts.view_counter = unsigned(world.tick);
+        scene.opts.wind_counter = unsigned(world.tick);
+      }
       minimap.set_tint(scene.light_tint());
       bool placement_overlay_drawn = false;
       scene.draw(cam, alpha, [&] {
+        selui.draw_box(win.renderer());
         if (world.outcome == kRunning && !pause.open && !submodal && !on_mm && !on_panel &&
             !drag_minimap && !pan && in.mouse_inside) {
           placement_overlay_drawn = cmdui.placing() >= 0;
-          cmdui.draw_ghost(win.renderer(), world, cam, in.mx, in.my);
+          cmdui.draw_ghost(win.renderer(), world, cam, in.mx, in.my, &scene.store());
         }
       });
       if (!show_panel) minimap.draw(win.renderer(), cam, alpha, &scene.fog());
       hud.mouse_x = in.mx; hud.mouse_y = in.my; hud.alpha = alpha;
       hud.sprites = scene.stats.sprites; hud.placeholders = scene.stats.placeholders; hud.geometry_calls = scene.stats.geometry_calls;
-      selui.draw_box(win.renderer());
       {  // script messages (printString) and end-of-mission banner
         draw_messages(win.renderer(), scene.font(), world.messages,
                       SDL_Rect{10 * pscale, 20 * pscale, view_w - 20 * pscale, oh / 2}, pscale, true);
@@ -755,10 +760,10 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         break;
       }
       SDL_RenderPresent(win.renderer());
-      int cap = o.fps_cap > 0 ? o.fps_cap : (win.vsync() ? 0 : 240);
+      int cap = o.original_look ? std::max(1, int(1000.0 / o.game_speed_ms)) : o.fps_cap > 0 ? o.fps_cap : (win.vsync() ? 0 : 240);
       if (cap > 0) {
         double spent = double(SDL_GetPerformanceCounter() - now) / double(freq);
-        double want = 1.0 / cap;
+        double want = o.original_look ? o.tick_seconds() : 1.0 / cap;
         if (spent < want) SDL_Delay(Uint32((want - spent) * 1000));
       }
     }

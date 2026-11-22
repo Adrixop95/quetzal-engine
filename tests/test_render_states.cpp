@@ -173,17 +173,18 @@ static void gallery(const std::filesystem::path& path) {
   building.type = 23; building.hp = 100; building.construction_overlay = true;
   world.objects = {building}; draw(); CHECK(placements.size() == 5);
   CHECK(placements.back().key.index == 193 && placements.back().rect.y == 101);
-  label = "SELECTION AND HEALTH FALLBACK";
+  label = "SELECTION AND HEALTH ART";
   Object selected; selected.id = 3; selected.type = 0; selected.hp = 50; selected.hp_max = 100;
   selected.teleport(to_fixed(96), to_fixed(112)); world.objects = {selected}; world.selection.ids = {3};
   scene.opts.view_counter = 3; auto selected_pixels = draw();
-  CHECK(placements.size() == 3 && placements[0].key.index == 309 && placements[0].frame == 3);
-  CHECK((selected_pixels[66 * 192 + 83] & 0xffffff) == 0xe6d228);
-  CHECK((selected_pixels[66 * 192 + 100] & 0xffffff) != 0xe6d228);
+  CHECK(placements.size() == 4 && placements[0].key.index == 309 && placements[0].frame == 3);
+  CHECK(placements[3].key.index == 263 && placements[3].frame == 1 && placements[3].rect.w == 8);
+  CHECK((selected_pixels[59 * 192 + 88] & 0xffffff) == 0x080000);
+  CHECK((selected_pixels[59 * 192 + 96] & 0xffffff) != 0x080000);
   label = "SELECTION IN DISPLAY ORDER";
   Object behind = selected; behind.id = 4; behind.teleport(to_fixed(96), to_fixed(111));
   world.objects = {selected, behind}; draw();
-  CHECK(placements.size() == 5 && placements[0].key.shadow && placements[2].key.index == 309);
+  CHECK(placements.size() == 6 && placements[0].key.shadow && placements[2].key.index == 309);
   label = "FERRY SELECTION EXCLUSION";
   Object ferry = selected; ferry.type = 84; world.objects = {ferry};
   auto selected_ferry_pixels = draw();
@@ -233,6 +234,82 @@ static void gallery(const std::filesystem::path& path) {
   }
   std::printf("Rendered %d labelled synthetic type/state/direction/time cases\n", cases);
 }
+// A provider supplies presentation inputs independently of simulation flags.
+class RuleProvider : public SpriteProvider {
+ public:
+  bool flash = false;
+  bool underlay = false;
+  bool pick(const ObjectState&, SpriteDraw& out) const override { out.key.index = 1; return true; }
+  std::vector<SpriteItem> items(const ObjectState&) const override {
+    SpriteDraw body; body.key.index = 1; body.dy = -7;
+    SpriteDraw shadow; shadow.key.index = 1; shadow.key.group = 0x454; shadow.key.shadow = true;
+    SpriteDraw ground; ground.key.index = 2; ground.underlay = true;
+    SpriteItem item; item.height = 7; item.display_size = 24; item.flash = flash; item.marker = 1;
+    item.parts = underlay ? std::vector<SpriteDraw>{ground, shadow, body} : std::vector<SpriteDraw>{shadow, body};
+    return {item};
+  }
+};
+static void rule_gallery(const std::filesystem::path& path) {
+  label = "WORLD RULES";
+  Window win; WindowOptions options; options.width = options.height = 192;
+  options.software = true; options.vsync = false; CHECK(win.create(options));
+  if (!win.renderer()) return;
+  GameData assets; std::string error; CHECK(assets.open(path.string(), error));
+  World world; world.terrain = {3, 3, std::vector<uint32_t>(9, 1)};
+  world.visibility_brightness = true;
+  world.visibility.sides = {{4, 5, std::vector<uint8_t>(20, 76)}};
+  Object unit; unit.id = 1; unit.type = 0; unit.hp = 50; unit.hp_max = 100;
+  unit.teleport(to_fixed(60), to_fixed(80)); unit.prev_x = to_fixed(40);
+  world.objects.push_back(unit); world.selection.ids = {1};
+  SceneRenderer scene(win, assets, world);
+  auto provider = std::make_shared<RuleProvider>(); scene.set_sprite_provider(provider);
+  scene.opts.original_look = true; scene.opts.markers = scene.opts.labels = false;
+  Camera cam; cam.view_w = cam.view_h = 192;
+  std::vector<Placement> draws;
+  scene.observe_sprite = [&](const SpriteKey& key, int frame, const SDL_FRect& rect) { draws.push_back({key, frame, rect}); };
+  auto draw = [&] { draws.clear(); scene.draw(cam, 0); };
+  draw();
+  CHECK(draws.size() == 14); // nine tiles, selection, shadow/body, health, marker
+  CHECK(draws[0].key.shade == 10); // direct uniform terrain rounds
+  CHECK(draws[9].key.index == 309 && draws[9].key.palette == 3);
+  CHECK(draws[9].rect.y == 70.5f || draws[9].rect.y == 71); // ellipse follows height
+  CHECK(draws[10].key.shadow && draws[10].key.shade == 12);
+  CHECK(draws[11].key.shade == 9 && draws[11].rect.x == 59); // surface truncates; no interpolation
+  CHECK(draws[12].key.index == 263 && draws[12].frame == 1 && draws[12].rect.w == 8);
+  CHECK(draws[13].key.index == 5);
+  world.objects[0].hp = 1; world.objects[0].hp_max = 1000; draw();
+  CHECK(std::none_of(draws.begin(), draws.end(), [](const auto& part) {
+    return part.key.archive == ArchiveId::Common && part.key.index == 263;
+  })); // a zero 8.8 ratio suppresses the health entry
+  world.objects[0].hp = 50; world.objects[0].hp_max = 100;
+  Object next = unit; next.id = 2; next.teleport(to_fixed(60), to_fixed(81));
+  world.objects.push_back(next); draw();
+  CHECK(draws.size() == 17 && draws[12].key.index == 263 && draws[14].key.shadow &&
+      draws[15].key.archive == ArchiveId::Units && draws[16].key.index == 5);
+  world.objects.pop_back();
+  provider->flash = true; scene.opts.view_counter = 1; draw();
+  CHECK(draws[11].key.shade == 19);
+  scene.opts.view_counter = 2; draw(); CHECK(draws[11].key.shade == 9);
+  provider->flash = false; provider->underlay = true; draw();
+  CHECK(draws[9].key.index == 2 && draws[10].key.index == 2); // one full-2D row per call
+  CHECK(draws[14].key.index == 309); // collected underlay precedes sorted selection
+  // A vertical gradient changes terrain and underlay rows; bodies use one ground row.
+  for (int y = 0; y < 5; ++y) for (int x = 0; x < 4; ++x)
+    world.visibility.sides[0].v[size_t(y) * 4 + x] = uint8_t(48 + y * 24);
+  ++world.fog_version; draw();
+  std::set<int> terrain_shades, underlay_shades;
+  for (const auto& part : draws) {
+    if (part.key.archive == ArchiveId::Tiles0) terrain_shades.insert(part.key.shade);
+    if (part.key.archive == ArchiveId::Units && part.key.index == 2) underlay_shades.insert(part.key.shade);
+    if (part.key.archive == ArchiveId::Units && part.key.index == 1 && !part.key.shadow)
+      CHECK(part.rect.h == 5); // never a 2D body slice
+  }
+  CHECK(terrain_shades.size() > 2 && !underlay_shades.empty());
+  // The post-world overlay must be above bodies, status art and markers.
+  bool after = false;
+  scene.draw(cam, 1, [&] { after = !draws.empty() && draws.back().key.index == 5; });
+  CHECK(after);
+}
 int main() {
   TempDir dir; const auto root = dir.path(); std::filesystem::create_directory(root / "Res");
   Group body{0x44c, 1, 4097, {}}, shadow{0x454, 1, 4097, {}}, anim{0x515, 0, 417, {}};
@@ -243,12 +320,13 @@ int main() {
   archive(root / "Res/Units.xbe", {body, shadow, anim});
   Group common{0x44c, 0, 315, {}};
   for (int i = 0; i < 22; ++i) common.items[i] = sprite(3, 5, 1, 1, 4, uint16_t((i + 1) << 11));
+  common.items[263] = sprite(16, 4, 3, 0, 0, 0x07e0);
   for (int id : {309, 314}) common.items[id] = sprite(3, 5, 4, 1, 4, 0x001f);
   archive(root / "Res/common.xbe", {common});
   archive(root / "Res/Tiles0.xbe", {{0x44c, 1, 3, {{1, sprite(48, 48, 8, 0, 0, 0x07e0)}, {2, sprite(3, 5, 4, 1, 4, 0x001f)}}},
                                       {0x454, 2, 3, {{2, sprite(3, 5, 4, 1, 4, 0x001f)}}}});
   for (const auto* name : {"Pal", "Tiles1", "fnts", "light"}) archive(root / "Res" / (std::string(name) + ".xbe"), {});
   label = "SDL INITIALIZATION"; const int initialized = SDL_Init(SDL_INIT_VIDEO); CHECK(initialized == 0);
-  if (initialized == 0) gallery(root);
+  if (initialized == 0) { gallery(root); rule_gallery(root); }
   SDL_Quit(); return failures ? 1 : 0;
 }

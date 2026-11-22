@@ -1,3 +1,4 @@
+#include "engine/render/world_rules.hpp"
 #include "engine/ui/commands_ui.hpp"
 
 #include <algorithm>
@@ -658,9 +659,40 @@ PlacementPreview CommandsUi::placement_preview(const World& w, const Camera& cam
   return result;
 }
 
-void CommandsUi::draw_ghost(SDL_Renderer* r, const World& w, const Camera& cam, int mx, int my) const {
+void CommandsUi::draw_ghost(SDL_Renderer* r, const World& w, const Camera& cam, int mx, int my, SpriteStore* store) const {
   if (!sim_ || placing_ < 0) return;
   const auto preview = placement_preview(w, cam, mx, my);
+  if (store && placing_ < kNumTypes) {
+    // G: idle frame until the placement object's dedicated sprite selector is mapped.
+    const auto frame = icons_.anim(data::kTypeAnims[placing_].anim).frame(0, 0);
+    SpriteKey key; key.index = uint32_t(frame.sprite); key.team = uint8_t(w.side_color(w.local_side));
+    key.shade = 20;
+    const auto image = store->get(key);
+    if (frame.valid() && image.ok()) {
+      SDL_Rect previous{}; SDL_RenderGetClipRect(r, &previous);
+      bool clipped = SDL_RenderIsClipEnabled(r);
+      for (int dy = -3; dy <= 3; ++dy) for (int dx = -3; dx <= 3; ++dx) {
+        int x = preview.x + dx, y = preview.y + dy, status = 2;
+        for (const auto& cell : preview.cells) if (cell.x == x && cell.y == y) status = cell.blocked ? 1 : 0;
+        key.shade = uint8_t(placement_shade(status));
+        const auto& shaded = store->get(key);
+        if (!shaded.ok()) continue;
+        int x0 = int(std::lround(cam.to_screen_x(float(x * 48))));
+        int y0 = int(std::lround(cam.to_screen_y(float(y * 48))));
+        SDL_Rect clip{x0, y0, int(std::lround(cam.to_screen_x(float((x + 1) * 48)))) - x0,
+            int(std::lround(cam.to_screen_y(float((y + 1) * 48)))) - y0};
+        if (clipped && !SDL_IntersectRect(&clip, &previous, &clip)) continue;
+        SDL_RenderSetClipRect(r, &clip);
+        // Snap the ground anchor to the same 48-pixel cell as click validation.
+        SDL_FRect dest{cam.to_screen_x(float(preview.x * 48 - shaded.ox)),
+            cam.to_screen_y(float(preview.y * 48 - shaded.oy)), shaded.cw * cam.zoom, shaded.ch * cam.zoom};
+        const auto source = shaded.frame_rect(0);
+        SDL_RenderCopyF(r, store->atlas().page(shaded.region.page), &source, &dest);
+      }
+      SDL_RenderSetClipRect(r, clipped ? &previous : nullptr);
+      return;
+    }
+  }
   SDL_BlendMode old_blend; SDL_GetRenderDrawBlendMode(r, &old_blend);
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
   for (const auto& cell : preview.cells) {

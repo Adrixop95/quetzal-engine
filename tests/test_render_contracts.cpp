@@ -1,3 +1,4 @@
+#include "engine/render/world_rules.hpp"
 // Invented animation records and light samples; no game installation is needed.
 #include <algorithm>
 #include <array>
@@ -315,12 +316,44 @@ static void building_visibility_controls() {
   building.teleport(to_fixed(-100), to_fixed(-100)); CHECK(!object_visible(w, 0, building));
 }
 
+static void shade_controls() {
+  for (int byte = 0; byte <= 152; ++byte) {
+    CHECK(surface_shade(byte) == byte / 8);
+    CHECK(terrain_flat_shade(byte) == (byte + 4) / 8);
+    for (int y = 0; y < 4; ++y) for (int x = 0; x < 4; ++x)
+      CHECK(light_surface_shade(byte, byte, byte, byte, x, y) == byte / 8);
+  }
+  CHECK(surface_shade(76) == 9 && terrain_flat_shade(76) == 10);
+  CHECK(light_surface_shade(0, 152, 0, 152, 24, 0) == 9);
+  CHECK(light_surface_shade(0, 152, 0, 152, 24, 1) == 10);
+  CHECK(light_surface_shade(0, 0, 152, 152, 0, 24) == 9);
+  CHECK(health_frame(102) == 2 && health_frame(103) == 1);
+  CHECK(health_frame(178) == 1 && health_frame(179) == 0);
+  CHECK(health_width(31, 128) == 15 && health_width(31, 256) == 31);
+  CHECK(health_width(31, -1) == 0 && health_width(31, 999) == 31);
+  CHECK(placement_shade(0) == 20 && placement_shade(1) == 21 && placement_shade(-1) == 22);
+  CHECK(flash_tick(true, 1) && !flash_tick(true, 2) && !flash_tick(false, 1));
+  for (int side = 0; side < 8; ++side) for (int palette = 0; palette < 4; ++palette)
+    CHECK(team_palette(palette, side) == 16 + side * 4 + palette);
+  CHECK(team_palette(4, 7) == 4);
+  CHECK(status_art_index(22) == 0 && status_art_index(23) == 1);
+  CHECK(status_art_index(77) == 6 && status_art_index(95) == 7);
+}
+
 static void ordering_controls() {
   struct Key { float x, y; int height, id; };
   std::vector<Key> keys{{10, 20, 80, 1}, {20, 20, 0, 2}, {0, 21, -1, 3}, {0, 19, 0, 4}, {10, 20, 0, 5}};
   std::stable_sort(keys.begin(), keys.end(), [](auto a, auto b) { return display_before(a.x, a.y, a.height, b.x, b.y, b.height); });
   CHECK(keys[0].id == 3 && keys[1].id == 4 && keys[2].id == 2 && keys[3].id == 1 && keys[4].id == 5);
   CHECK(!display_before(0, 0, -1, 10, 20, -1));
+  for (auto a : keys) for (auto b : keys) {
+    CHECK(!(display_before(a.x, a.y, a.height, b.x, b.y, b.height) &&
+            display_before(b.x, b.y, b.height, a.x, a.y, a.height)));
+    for (auto c : keys)
+      if (display_before(a.x, a.y, a.height, b.x, b.y, b.height) &&
+          display_before(b.x, b.y, b.height, c.x, c.y, c.height))
+        CHECK(display_before(a.x, a.y, a.height, c.x, c.y, c.height));
+  }
 }
 // A real SceneRenderer check with invented raw RGB565 sprites. No game data is used.
 static void headless_controls() {
@@ -518,6 +551,6 @@ static void headless_controls() {
 }
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--headless") headless_controls();
-  else { provider_controls(); grid_controls(); visibility_controls(); building_visibility_controls(); ordering_controls(); }
+  else { provider_controls(); grid_controls(); visibility_controls(); building_visibility_controls(); ordering_controls(); shade_controls(); }
   return failures ? 1 : 0;
 }

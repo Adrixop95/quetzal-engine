@@ -1,5 +1,5 @@
 // Draws the game world (terrain, overlays, objects) for a Camera. Everything is batched through
-// texture atlases: a full-screen terrain is a few SDL_RenderGeometry calls.
+// texture atlases; original-style light sampling splits shade runs into quads.
 #pragma once
 #include <memory>
 #include <functional>
@@ -29,6 +29,7 @@ struct SceneOptions {
   unsigned wind_counter = 0;  // supplied by unpaused view updates
   unsigned view_counter = 0;  // V: water and selection advance with unpaused view updates
   bool overlays = true;       // terrain overlay layer (high 16 bits of .map cells)
+  bool original_look = false; // tick positions, per-pixel shade rows and fixed status art
   bool all_status = false;    // ViewAll shows bars for every visible object, without changing fog
 };
 
@@ -61,6 +62,8 @@ class SceneRenderer {
   void draw_terrain(const Camera& cam);
   data::SpriteRef effect_frame(const Effect& e) const;
   void draw_objects(const Camera& cam, float alpha);
+  void blit_lit(const Camera& cam, SpriteKey key, int frame, float wx, float wy, float ground_y, bool row, int& page);
+  int light_vertex(int x, int y) const;
   void blit(const Camera& cam, const StoredSprite& s, const SpriteKey& key, int frame, float wx, float wy, int& cur_page);
   ObjectState object_state(const Object& o) const;
 
