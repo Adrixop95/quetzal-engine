@@ -27,13 +27,24 @@ static void test_window(DisplayMode mode) {
   CHECK(pixel[2] == 255 && Window::gamma_channel(0, 2.0) == 0);
   for (int value = 0; value < 256; ++value) CHECK(Window::gamma_channel(uint8_t(value), 1.0) == value);
   CHECK(!window.apply_gamma(0));
-  window.set_size(1024, 768); int width, height; window.output_size(width, height);
+  CHECK(window.set_size(1024, 768));
+  // Resize notifications may be deferred by SDL2 compatibility backends.
+  SDL_PumpEvents();
+  int width = 0, height = 0;
+  SDL_GetWindowSize(window.sdl(), &width, &height);
   CHECK(width == 1024 && height == 768);
   SDL_SetRenderDrawColor(window.renderer(), 64, 64, 64, 255); SDL_RenderClear(window.renderer());
+  window.output_size(width, height);
+  const auto* surface = SDL_GetWindowSurface(window.sdl());
+  CHECK(surface && width == surface->w && height == surface->h);
+  // Output pixels can differ from window coordinates on HiDPI displays.
+  float sx = 0, sy = 0; window.mouse_scale(sx, sy);
+  CHECK(sx == float(width) / 1024 && sy == float(height) / 768);
   CHECK(window.apply_gamma(0.5));
   CHECK(SDL_RenderReadPixels(window.renderer(), &sample, SDL_PIXELFORMAT_RGBA32, pixel, 4) == 0);
   CHECK(pixel[0] < 64);
-  window.set_size(800, 600);
+  CHECK(window.set_size(800, 600));
+  SDL_PumpEvents();
   const Uint32 id = SDL_GetWindowID(window.sdl());
   auto grabbed = [&] { return (SDL_GetWindowFlags(window.sdl()) & SDL_WINDOW_MOUSE_GRABBED) != 0; };
   auto focus = [&](Uint8 kind) {

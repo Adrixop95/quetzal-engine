@@ -4,6 +4,7 @@
 #include <fstream>
 #include <memory>
 #include "temp_dir.hpp"
+#include "test_env.hpp"
 #include "core/endian.hpp"
 #include "engine/app/engine.hpp"
 #include "engine/ui/campaign.hpp"
@@ -36,7 +37,12 @@ class TerminalAttempt : public Simulation {
 int main() {
   TempDir temp;
   const auto root = temp.path();
-  CHECK(SDL_setenv("AZTEC_USER_DIR", (root / "profile").string().c_str(), 1) == 0);
+  CHECK(set_test_env("AZTEC_USER_DIR", (root / "profile").string().c_str()) == 0);
+  if (std::filesystem::path(user_file("Saves/engine_campaign.txt")) !=
+      root / "profile/Saves/engine_campaign.txt") {
+    std::fprintf(stderr, "FAIL: test profile override was not applied\n");
+    return 1;
+  }
   std::filesystem::create_directory(root / "Res");
   std::filesystem::create_directory(root / "Maps");
   for (const char* name : {"Pal", "Units", "Tiles0", "Tiles1", "common", "fnts", "light"})

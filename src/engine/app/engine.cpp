@@ -761,7 +761,9 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       }
       SDL_RenderPresent(win.renderer());
       int cap = o.original_look ? std::max(1, int(1000.0 / o.game_speed_ms)) : o.fps_cap > 0 ? o.fps_cap : (win.vsync() ? 0 : 240);
-      if (cap > 0) {
+      // Scripted playback advances virtual ticks; presentation pacing must not
+      // turn a deterministic route into a wall-clock test of the video backend.
+      if (!pt && cap > 0) {
         double spent = double(SDL_GetPerformanceCounter() - now) / double(freq);
         double want = o.original_look ? o.tick_seconds() : 1.0 / cap;
         if (spent < want) SDL_Delay(Uint32((want - spent) * 1000));
@@ -793,6 +795,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
     Window win;
     WindowOptions wo = o.window;
     wo.title = "Aztec Empire";
+    if (!o.script.empty()) wo.vsync = false;
     if (!win.create(wo)) { SDL_Quit(); return 1; }
     win.set_mouse_grab_enabled(o.mouse_grab);
     Options opts = o;
