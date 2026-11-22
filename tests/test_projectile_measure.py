@@ -147,8 +147,9 @@ class ProjectileControls(unittest.TestCase):
         orders.write_text('1 attack-move 0 7 5 1\n')
         def run(name, trace, observe_orders=False):
             hashes = self.root / f'{name}.hashes'
+            # Cover the tactic's 22-tick discovery window and projectile travel.
             argv = [str(ENGINE), '--headless', '--profile', 'faithful', '--game', str(game), '--rules-dir', str(ROOT / 'docs/data'),
-                    '--no-auto-orders', '--orders', str(orders), '--max-ticks', '10',
+                    '--no-auto-orders', '--orders', str(orders), '--max-ticks', '40',
                     '--tick-hashes', str(hashes)]
             if trace:
                 argv += ['--combat-trace', str(self.root / f'{name}.jsonl')]
@@ -169,7 +170,7 @@ class ProjectileControls(unittest.TestCase):
         rows = [json.loads(line) for line in (self.root / 'combined.objects.jsonl').read_text().splitlines()]
         self.assertEqual(rows[0]['phase'], 'before_commands')
         self.assertTrue({'order', 'dest_x', 'dest_y', 'target', 'tactic', 'scenario'} <= set(rows[0]['fields']))
-        self.assertEqual(len(rows), 11)
+        self.assertEqual(len(rows), 41)
         for row in rows[1:]:
             self.assertTrue(row['objects'])
             for obj in row['objects'].values():

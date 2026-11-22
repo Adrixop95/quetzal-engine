@@ -4,6 +4,7 @@
 #pragma once
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <map>
 #include "core/savegame.hpp"
@@ -70,6 +71,7 @@ struct Object {
   int ferry_request = -1, ferry_destination = -1, ferry_group_side = -1;
   // Stable idle origins prevent autonomous pursuit from moving its own leash.
   int32_t idle_anchor_x = -1, idle_anchor_y = -1; // world pixels; initialized on attachment
+  bool return_to_tactic = false; // autonomous disengagement returns to the tactic anchor
   bool idle_attack = false;   // autonomous attack acquired without a movement order
   uint32_t target = 0;         // object id for attack orders (0 = none)
   uint32_t release_target = 0; // retained while a resource-driven Marine attack animation runs
@@ -79,6 +81,7 @@ struct Object {
   int32_t corpse_ticks = 0;    // ticks since death
   bool defence = false;        // explicitly placed [SideN] Defence#, separate from team scenario IDs
   bool town_hall = false;      // explicit hall identity, independent of its upgrade type
+  int64_t transient_tactic = 0; // internal identity for teams without a script number
   int32_t tactic = -1;         // team (tactic) number for Team objects, changed by joinTactic
   int32_t follow_tactic = -1;  // side-local leader tactic, independent of combat target
   int32_t scenario = -1;       // ScenarioID of defences / vessels (script references)
@@ -175,6 +178,33 @@ struct Selection {
   void clear() { ids.clear(); }
 };
 
+// Numeric script tactics and private singleton identities share the same controller.
+using TacticKey = std::pair<int, int64_t>;
+inline TacticKey tactic_key(const Object& o) {
+  return {o.side, o.tactic != -1 ? o.tactic : o.transient_tactic ? o.transient_tactic : -(int64_t(1) << 32) - o.id};
+}
+inline int tactic_norm(int dx, int dy) {
+  const int a = std::max(std::abs(dx), std::abs(dy));
+  const int b = std::min(std::abs(dx), std::abs(dy)) * 3 / 2;
+  return a + b / 4 + b / 64 - a / 128 - a / 32;
+}
+inline int tactic_reach(AttackMode mode) {
+  constexpr int reach[] = {4, 8, 8, 6};
+  return reach[static_cast<unsigned>(mode)];
+}
+struct UnitTactic {
+  int x = 0, y = 0; // persistent tile anchor, initialized from the first member
+  std::vector<uint32_t> members;
+  std::vector<TacticKey> enemies;
+  int scan_ticks = 0, wait_ticks = 0, path_ticks = 0;
+  uint32_t random = 1; // G: independent deterministic stream, not reference RNG parity
+  bool walking = false, lost = false, urgent = false;
+  TacticKey parent = {-1, 0};
+  int dest_x = -1, dest_y = -1;
+  std::vector<std::pair<int, int>> path;
+  size_t node = 0;
+};
+
 struct World {
   bool skirmish = false;         // explicit single-player custom mission, retained by engine saves
   // Retains unresolved original research, script and pool state without inventing semantics.
@@ -189,6 +219,8 @@ struct World {
   Sprite preview;                // .spr minimap preview; w == 0 if absent
   std::vector<Object> objects;
   std::vector<Effect> effects;
+  std::map<TacticKey, UnitTactic> unit_tactics;
+  uint64_t next_unit_tactic = 1;
   std::vector<TownState> town_state;
   std::vector<SideState> side_state;   // indexed by side number
   // V: attacked is the notifying nonfriendly side, retained by the side-local tactic.

@@ -42,31 +42,6 @@ int64_t weapon_reach(const TypeRules& source, const TypeRules& target, const Wea
 bool weapon_in_range(const TypeRules& source, int64_t dx, int64_t dy, int64_t reach) {
   return source.weapon_id < 0 ? dx * dx + dy * dy <= reach * reach : combat_distance(dx, dy) <= reach;
 }
-// V mode distances; the clone's pixel-circle geometry and anchor approximation
-// are G. See docs/group_reach.md for the reference tile-distance contract.
-int group_reach_px(AttackMode mode) {
-  constexpr int tiles[] = {4, 8, 8, 6};
-  return tiles[static_cast<unsigned>(mode)] * kTilePx;
-}
-std::pair<int, int> idle_anchor(const World& w, const Object& o) {
-  int64_t x = 0, y = 0, count = 0;
-  for (const auto& member : w.objects) {
-    if (member.removed || !member.alive || member.type < 0 || member.side != o.side) continue;
-    const bool same_group = member.source == o.source &&
-        ((o.tactic >= 0 && member.tactic == o.tactic) ||
-         (o.source == ObjectSource::Town && o.town >= 0 && member.town == o.town));
-    if (member.id != o.id && !same_group) continue;
-    x += member.idle_anchor_x >= 0 ? member.idle_anchor_x : px(member.cur_x);
-    y += member.idle_anchor_y >= 0 ? member.idle_anchor_y : px(member.cur_y);
-    ++count;
-  }
-  return count ? std::pair{int(x / count), int(y / count)} : std::pair{px(o.cur_x), px(o.cur_y)};
-}
-bool within_group_reach(const Object& target, int x, int y, AttackMode mode, int64_t firing_reach = 0) {
-  const int64_t dx = px(target.cur_x) - x, dy = px(target.cur_y) - y;
-  const int64_t reach = group_reach_px(mode) + firing_reach;
-  return dx * dx + dy * dy <= reach * reach;
-}
 // 8-direction facing from a vector: 0 = east, counter-clockwise (2 = north), as used by the animation tables.
 int facing_from(int dx, int dy) {
   if (dx == 0 && dy == 0) return -1;
@@ -143,6 +118,7 @@ void GameSim::init(World& w) {
   modifications_ = initial_modifications_;
   tick_ = w.original_save ? w.tick : 0;
   w.tick = tick_;
+  w.unit_tactics.clear(); w.next_unit_tactic = 1;
   pending_.clear();
   log_.clear();
   next_trace_id_ = 0;
@@ -243,7 +219,7 @@ void GameSim::init(World& w) {
   if (!w.original_save) {
     // Placement ids include submarine controllers and each vessel's passengers.
     // Keep the source group, including teams without a script ScenarioID.
-    struct StartupGroup { path::Cell anchor; std::vector<uint32_t> agents; };
+    struct StartupGroup { path::Cell anchor; std::vector<uint32_t> agents; int64_t identity = 0; };
     std::map<std::pair<int, int>, StartupGroup> groups;
     uint32_t id = 0;
     for (const PlacedObject& p : w.mission.objects) {
@@ -259,6 +235,11 @@ void GameSim::init(World& w) {
         for (const auto& town : w.mission.towns)
           if (town.index == p.group) it->second.anchor = {town.x, town.y};
       }
+      if (inserted) it->second.identity = -(int64_t(1) << 40) - int64_t(w.next_unit_tactic++);
+      if (o->tactic == -1) {
+        // Stable private identity, separate from selectable script tactic numbers.
+        o->transient_tactic = it->second.identity;
+      }
       if (o->mover >= 0) it->second.agents.push_back(uint32_t(o->mover));
     }
     for (auto& [key, group] : groups) {
@@ -266,6 +247,7 @@ void GameSim::init(World& w) {
       mover_->order_formation(group.agents.data(), int(group.agents.size()), group.anchor);
     }
   }
+  refresh_tactics(w);
 }
 
 int GameSim::town_index(const World& w, int side) const {
@@ -449,50 +431,48 @@ void GameSim::kill(World& w, Object& o) {
   }
 }
 
-const Object* GameSim::nearest_enemy(const World& w, const Object& o) const {
-  const bool mask_sight = rules_->sight() != nullptr;
-  if (mask_sight && (o.side < 0 || o.side >= int(w.visibility.sides.size()))) return nullptr;
+const Object* GameSim::nearest_enemy(const World& w, const Object& o, bool fire_only) const {
+  const auto own = w.unit_tactics.find(tactic_key(o));
+  if (own == w.unit_tactics.end()) return nullptr;
+  const auto& tactic = own->second;
+  if (fire_only && tactic.walking && (o.attack_mode == AttackMode::Direct || o.attack_mode == AttackMode::Defensive)) return nullptr;
   const Object* best = nullptr;
-  const auto [anchor_x, anchor_y] = o.order == uint8_t(Order::Idle) ? idle_anchor(w, o) :
-      std::pair{px(o.cur_x), px(o.cur_y)};
-  // Without private sight inputs, weapon and group reach below still bound
-  // automatic acquisition and preserve asset-free simulation combat.
-  int64_t bd = std::numeric_limits<int64_t>::max();
-  // G: scripted ferries are excluded from automatic combat assignment; direct damage remains possible.
-  for (const Object& t : w.objects) {
-    if (t.removed || !t.alive || !damageable(t) || ferry_protected(t) || t.type < 0 || t.type == 84 || !w.hostile(o.side, t.side) || t.progress < 1000) continue;
-    if (rules_->type(o.type).kind == 0 && pursuit_distance(o,t) > 1152) continue;
-    if (mask_sight && !position_visible(w, o.side, px(t.cur_x), px(t.cur_y))) continue;
-    const auto shot = rules_->attack(o.type, t.type, !w.hostile(o.side, t.side));
-    if (!shot.damage_known || !shot.getters_known || shot.damage <= 0) continue;
-    int64_t d = d2(o, t);
+  int64_t distance = std::numeric_limits<int64_t>::max();
+  // G: nearest eligible member with lower-id ties substitutes for assignment scores.
+  // Discovery belongs entirely to the tactic; this only reads listed enemy teams.
+  for (const auto& t : w.objects) {
+    if (t.removed || !t.alive || t.type < 0 || t.carrier || t.type == 84 || !damageable(t) ||
+        ferry_protected(t) || weapon_allied(w, o.side, t.side) || !object_visible(w, o.side, t)) continue;
+    const auto enemy_key = tactic_key(t);
+    if (std::find(tactic.enemies.begin(), tactic.enemies.end(), enemy_key) == tactic.enemies.end()) continue;
+    auto enemy = w.unit_tactics.find(enemy_key);
+    if (enemy == w.unit_tactics.end() || tactic_norm(enemy->second.x - tactic.x, enemy->second.y - tactic.y) >= 25) continue;
+    if (rules_->type(o.type).kind == 0 && pursuit_distance(o, t) > 1152) continue;
     const auto& source = rules_->type(o.type);
-    const int64_t reach = weapon_reach(source, rules_->type(t.type), shot);
-    if (o.attack_mode == AttackMode::Direct) {
-      if (!weapon_in_range(source, int64_t(px(t.cur_x)) - px(o.cur_x),
-                           int64_t(px(t.cur_y)) - px(o.cur_y), reach)) continue;
-    } else if (!within_group_reach(t, anchor_x, anchor_y, o.attack_mode, source.flier ? 0 : reach)) {
-      continue;
+    const auto shot = rules_->attack(o.type, t.type, weapon_allied(w, o.side, t.side));
+    if (!shot.damage_known || !shot.getters_known || shot.damage <= 0) continue;
+    if (source.flier && tactic_norm(px(t.cur_x) / kTilePx - tactic.x, px(t.cur_y) / kTilePx - tactic.y) > tactic_reach(o.attack_mode)) continue;
+    if (fire_only || o.attack_mode == AttackMode::Direct) {
+      const auto reach = weapon_reach(source, rules_->type(t.type), shot);
+      if (!weapon_in_range(source, px(t.cur_x) - px(o.cur_x), px(t.cur_y) - px(o.cur_y), reach)) continue;
     }
-    if (d >= bd && !(d == bd && best && t.id < best->id)) continue;
-    if (o.mover >= 0 && !source.flier &&
-        !weapon_in_range(source, int64_t(px(t.cur_x)) - px(o.cur_x), int64_t(px(t.cur_y)) - px(o.cur_y), reach)) {
-      // Automatic pursuit needs reachable firing ground. Side-wide visibility
-      // alone must not repeatedly send land units across disconnected water.
+    if (o.mover >= 0 && !source.flier && !fire_only) {
+      // G: retain the engine's disconnected-water guard until reference member
+      // path failure/retaliation arbitration is established.
       const auto& agent = mover_->agents()[size_t(o.mover)];
-      const int sx = px(o.cur_x) / kTilePx, sy = px(o.cur_y) / kTilePx;
-      bool can_fire = false;
-      const int tx = px(t.cur_x), ty = px(t.cur_y);
-      for (int y = std::max(0, int((ty - reach) / kTilePx)); !can_fire && y <= std::min(nav_.height() - 1, int((ty + reach) / kTilePx)); ++y)
-        for (int x = std::max(0, int((tx - reach) / kTilePx)); x <= std::min(nav_.width() - 1, int((tx + reach) / kTilePx)); ++x) {
+      const auto reach = weapon_reach(source, rules_->type(t.type), shot);
+      bool reachable = weapon_in_range(source, px(t.cur_x) - px(o.cur_x), px(t.cur_y) - px(o.cur_y), reach);
+      for (int y = std::max(0, int((px(t.cur_y) - reach) / kTilePx)); !reachable && y <= std::min(nav_.height() - 1, int((px(t.cur_y) + reach) / kTilePx)); ++y)
+        for (int x = std::max(0, int((px(t.cur_x) - reach) / kTilePx)); x <= std::min(nav_.width() - 1, int((px(t.cur_x) + reach) / kTilePx)); ++x) {
           const path::Vec2 candidate{tile_center_fixed(x), tile_center_fixed(y)};
-          const int64_t dx = px(candidate.x) - tx, dy = px(candidate.y) - ty;
-          if (weapon_in_range(source, dx, dy, reach) && nav_.connected(sx, sy, x, y, agent.cls) &&
-              !nav_.disc_hits(candidate, agent.radius, agent.cls)) { can_fire = true; break; }
+          if (weapon_in_range(source, px(candidate.x) - px(t.cur_x), px(candidate.y) - px(t.cur_y), reach) &&
+              nav_.connected(px(o.cur_x) / kTilePx, px(o.cur_y) / kTilePx, x, y, agent.cls) &&
+              !nav_.disc_hits(candidate, agent.radius, agent.cls)) { reachable = true; break; }
         }
-      if (!can_fire) continue;
+      if (!reachable) continue;
     }
-    bd = d; best = &t;
+    const auto d = d2(o, t);
+    if (d < distance || (d == distance && best && t.id < best->id)) { best = &t; distance = d; }
   }
   return best;
 }
@@ -535,7 +515,7 @@ void GameSim::apply(World& w, const Command& c) {
     case Pct::Move:
     case Pct::AttackMove: {
       std::vector<Object*> v = own_ids(true);
-      std::vector<uint32_t> agents;
+      std::vector<uint32_t> members;
       // Coordinates come from untrusted command packets: clamp into the map before any fixed-point conversion.
       const int cx = std::clamp(c.a, 0, std::max(0, w.width_px() - 1)), cy = std::clamp(c.b, 0, std::max(0, w.height_px() - 1));
       for (Object* o : v) {
@@ -543,9 +523,9 @@ void GameSim::apply(World& w, const Command& c) {
         o->order = uint8_t(c.type == Pct::Move ? Order::Move : Order::AttackMove);
         o->dest_x = cx; o->dest_y = cy; o->target = 0; o->resume = 0;
         o->follow_tactic = -1;
-        if (o->mover >= 0) agents.push_back(uint32_t(o->mover));
+        members.push_back(o->id);
       }
-      if (!agents.empty()) mover_->order_move(agents.data(), int(agents.size()), {to_fixed(cx), to_fixed(cy)});
+      move_tactic(w, members, cx, cy);
       break;
     }
     case Pct::Attack: {
@@ -560,6 +540,10 @@ void GameSim::apply(World& w, const Command& c) {
       for (Object* o : own_ids(true)) {
         if (o->id == t->id || !rules_->type(o->type).armed) continue;
         o->boarding = 0;
+        if (auto it = w.unit_tactics.find(tactic_key(*o)); it != w.unit_tactics.end()) {
+          it->second.walking = false; it->second.path.clear(); it->second.enemies.clear();
+        }
+        o->return_to_tactic = false;
         o->order = uint8_t(Order::Attack); o->target = t->id; o->resume = 0; o->idle_attack = false;
         o->follow_tactic = -1;
         if (o->attack_mode == AttackMode::Direct && o->mover >= 0) mover_->stop(uint32_t(o->mover));
@@ -569,16 +553,17 @@ void GameSim::apply(World& w, const Command& c) {
     case Pct::AttackMode: {
       if (!ss || c.a < 0 || c.a > 3) break;
       const auto members = own_ids(true);
-      std::vector<int> tactics;
-      for (const Object* o : members) if (o->tactic >= 0) tactics.push_back(o->tactic);
+      std::vector<TacticKey> tactics;
+      for (const Object* o : members) tactics.push_back(tactic_key(*o));
       for (Object& o : w.objects) {
         if (o.removed || !o.alive || o.side != c.side || o.type < 0) continue;
         const auto& r = rules_->type(o.type);
         if (!(r.mobile || r.flier)) continue;
         const bool selected = std::find(command_ids.begin(), command_ids.end(), o.id) != command_ids.end();
-        const bool attached = o.tactic >= 0 && std::find(tactics.begin(), tactics.end(), o.tactic) != tactics.end();
+        const bool attached = std::find(tactics.begin(), tactics.end(), tactic_key(o)) != tactics.end();
         if (!selected && !attached) continue;
         o.attack_mode = AttackMode(c.a);
+        if (auto it = w.unit_tactics.find(tactic_key(o)); it != w.unit_tactics.end()) it->second.enemies.clear();
         // Clear combat assignment on a mode change; preserve the movement destination.
         if (o.order == uint8_t(Order::Attack)) {
           o.idle_attack = false;
@@ -1241,36 +1226,28 @@ void GameSim::economy(World& w) {
 // ---- orders, combat ----------------------------------------------------------------------------------------------
 
 void GameSim::follow_tactics(World& w) {
-  // Engine policy: track the live mobile leader centroid, replanning at six-tick
-  // intervals. Reference formation anchors and attachment flags remain unresolved.
+  std::vector<TacticKey> updated;
   for (Object& o : w.objects) {
     if (!o.alive || o.removed || o.follow_tactic < 0) continue;
-    int64_t x = 0, y = 0, count = 0;
-    for (const Object& leader : w.objects) {
-      if (!leader.alive || leader.removed || leader.type < 0 || leader.side != o.side ||
-          leader.tactic != o.follow_tactic) continue;
-      const auto& r = rules_->type(leader.type);
-      if (!(r.mobile || r.flier)) continue;
-      x += px(leader.cur_x); y += px(leader.cur_y); ++count;
-    }
-    if (!count || o.tactic == o.follow_tactic) {
+    auto own = w.unit_tactics.find(tactic_key(o));
+    auto leader = w.unit_tactics.find({o.side, o.follow_tactic});
+    if (leader == w.unit_tactics.end() || leader->second.members.empty() || o.tactic == o.follow_tactic) {
       o.follow_tactic = -1;
       if (o.order == uint8_t(Order::Follow) || o.resume == 3) {
-        o.order = uint8_t(Order::Idle); o.target = 0; o.resume = 0;
+        o.order = uint8_t(Order::Idle); o.target = 0; o.resume = 0; o.return_to_tactic = false;
         if (o.mover >= 0) mover_->stop(uint32_t(o.mover));
       }
+      if (own != w.unit_tactics.end()) own->second.walking = false;
       continue;
     }
+    if (own == w.unit_tactics.end()) continue;
+    o.dest_x = leader->second.x * kTilePx + 24; o.dest_y = leader->second.y * kTilePx + 24;
     if (o.order != uint8_t(Order::Follow)) continue;
-    int dx = int(x / count), dy = int(y / count);
-    if ((tick_ + o.id) % 6 != 0 && o.dest_x >= 0) continue;
-    const bool changed = o.dest_x != dx || o.dest_y != dy;
-    o.dest_x = dx; o.dest_y = dy;
-    if (o.mover >= 0 && changed) {
-      const path::Vec2 goal{to_fixed(dx), to_fixed(dy)};
-      uint32_t aid = uint32_t(o.mover);
-      mover_->order_move(&aid, 1, goal);
-    }
+    o.return_to_tactic = true;
+    auto& t = own->second;
+    if (std::find(updated.begin(), updated.end(), own->first) != updated.end()) continue;
+    updated.push_back(own->first);
+    if (!t.walking || ++t.path_ticks > 36) path_tactic(t, o, leader->second.x, leader->second.y);
   }
 }
 
@@ -1278,17 +1255,26 @@ void GameSim::finish_attack(Object& o) {
   o.order = uint8_t(resumed_order(o.resume));
   const bool return_to_anchor = o.idle_attack && o.attack_mode != AttackMode::Direct;
   o.target = 0; o.resume = 0; o.idle_attack = false;
+  o.return_to_tactic = return_to_anchor;
   if (o.mover < 0) return;
   const uint32_t aid = uint32_t(o.mover);
-  if (o.order == uint8_t(Order::Idle) && return_to_anchor)
-    mover_->order_move(&aid, 1, {to_fixed(o.idle_anchor_x), to_fixed(o.idle_anchor_y)});
-  else if (o.order == uint8_t(Order::Idle)) mover_->stop(aid);
-  else mover_->order_move(&aid, 1, {to_fixed(o.dest_x), to_fixed(o.dest_y)});
+  mover_->stop(aid);
 }
 
 void GameSim::record_hit(World& w, Object& target, uint32_t source) {
   target.last_hit_by = source;
   const Object* attacker = w.find(source);
+  if (attacker && attacker->type >= 0 && rules_->type(attacker->type).kind != 7 &&
+      !weapon_allied(w, target.side, attacker->side)) {
+    refresh_tactics(w);
+    auto own = w.unit_tactics.find(tactic_key(target));
+    if (own != w.unit_tactics.end()) {
+      const auto enemy = tactic_key(*attacker);
+      auto& t = own->second;
+      if (std::find(t.enemies.begin(), t.enemies.end(), enemy) == t.enemies.end()) t.enemies.push_back(enemy);
+      t.urgent = true;
+    }
+  }
   // V: defence towers, friendly sources and sources without a tactic do
   // not pass the enemy-notification path (see unit_automatic_behaviour.md).
   if (!attacker || attacker->type < 0 || rules_->type(attacker->type).kind == 7 ||
@@ -1345,6 +1331,7 @@ bool GameSim::advance_aircraft(Object& o, path::Vec2 goal, bool attacking, int r
 }
 
 void GameSim::run_orders(World& w) {
+  think_tactics(w);
   follow_tactics(w);
   for (size_t i = 0; i < w.objects.size(); i++) {
     Object& o = w.objects[i];
@@ -1373,57 +1360,54 @@ void GameSim::run_orders(World& w) {
       continue;
     }
 
-    if (o.order == uint8_t(Order::Move) || o.order == uint8_t(Order::AttackMove) ||
-        o.order == uint8_t(Order::Follow)) {
-      o.idle_anchor_x = px(o.cur_x); o.idle_anchor_y = px(o.cur_y);
-      o.idle_attack = false;
-    }
-    if ((o.order == uint8_t(Order::Move) ||
-         (r.flier && (o.order == uint8_t(Order::AttackMove) || o.order == uint8_t(Order::Follow)))) && !moving) {
+    if (o.carrier) continue;
+    const auto& tactic = w.unit_tactics.at(tactic_key(o));
+    const bool walking_order = o.order == uint8_t(Order::Move) || o.order == uint8_t(Order::AttackMove) || o.order == uint8_t(Order::Follow);
+    if (walking_order || (o.order == uint8_t(Order::Idle) && o.return_to_tactic)) {
       if (r.flier) {
         advance_aircraft(o, {to_fixed(o.dest_x), to_fixed(o.dest_y)}, false);
         flight_advanced = true;
       } else {
-        o.order = uint8_t(Order::Idle);
+        member_step(w, o, tactic.x, tactic.y, false);
+        moving = ag && ag->state == path::AgentState::Moving;
+        if (!tactic.walking && !tactic.lost && !moving && o.order != uint8_t(Order::Follow)) o.order = uint8_t(Order::Idle);
       }
     }
-    if (o.order == uint8_t(Order::AttackMove) && ag && !moving) o.order = uint8_t(Order::Idle);
 
     if (!r.armed || o.boarding || o.type == 84 ||
         (o.type == 88 && !(o.source == ObjectSource::Johnka ? o.vessel_route : o.vessel_enabled))) continue;
-    // Mode gates are independent of the provisional nearest-visible-enemy policy.
     const bool engage_moving = o.attack_mode == AttackMode::Aggressive || o.attack_mode == AttackMode::Balanced;
-    if (o.order == uint8_t(Order::Idle) ||
-        (engage_moving && (o.order == uint8_t(Order::AttackMove) || o.order == uint8_t(Order::Move) ||
-                           o.order == uint8_t(Order::Follow)))) {
-      if ((tick_ + o.id) % 4 == 0) {
-        if (const Object* e = nearest_enemy(w, o)) {
-          o.idle_attack = o.order == uint8_t(Order::Idle);
-          o.resume = o.order == uint8_t(Order::Follow) ? 3 :
-              o.order == uint8_t(Order::Move) ? 2 : o.order == uint8_t(Order::AttackMove) ? 1 : 0;
-          o.order = uint8_t(Order::Attack);
-          o.target = e->id;
-        }
+    if (o.order == uint8_t(Order::Idle) || (engage_moving && walking_order)) {
+      if (const Object* e = nearest_enemy(w, o)) {
+        o.idle_attack = true;
+        o.resume = o.order == uint8_t(Order::Follow) ? 3 : o.order == uint8_t(Order::Move) ? 2 :
+            o.order == uint8_t(Order::AttackMove) ? 1 : 0;
+        o.order = uint8_t(Order::Attack); o.target = e->id;
       }
     }
     if (o.order != uint8_t(Order::Attack)) continue;
     Object* t = w.find_mut(o.target);
     const bool lost_chase = t && r.kind == 0 &&
-        (pursuit_distance(o,*t) > 1152 || (rules_->sight() && !object_visible(w,o.side,*t)));
-    const auto [anchor_x, anchor_y] = idle_anchor(w, o);
-    int64_t target_reach = 0;
-    if (t && t->type >= 0) {
-      const auto target_shot = rules_->attack(o.type, t->type, !w.hostile(o.side, t->side));
-      target_reach = weapon_reach(r, rules_->type(t->type), target_shot);
-    }
-    const bool leashed = o.idle_attack && t &&
-        !within_group_reach(*t, anchor_x, anchor_y, o.attack_mode, r.flier ? 0 : target_reach);
-    if (!t || t->removed || !t->alive || !damageable(*t) || ferry_protected(*t) || lost_chase || leashed) {
+        (pursuit_distance(o,*t) > 1152 || !object_visible(w,o.side,*t));
+    if (!t || t->removed || !t->alive || !damageable(*t) || ferry_protected(*t) || lost_chase) {
+      const bool automatic = o.idle_attack;
       finish_attack(o);
+      if (automatic) {
+        if (const auto* replacement = nearest_enemy(w, o)) {
+          o.resume = o.order == uint8_t(Order::Follow) ? 3 : o.order == uint8_t(Order::Move) ? 2 :
+              o.order == uint8_t(Order::AttackMove) ? 1 : 0;
+          o.order = uint8_t(Order::Attack); o.target = replacement->id; o.idle_attack = true;
+        }
+      }
       continue;
     }
+    // Local assignment reads the existing table every ready tick and accepts
+    // only a fireable enemy; the chase target remains independently retained.
+    if (o.idle_attack && o.cooldown == 0) {
+      if (const auto* fire = nearest_enemy(w, o, true)) t = w.find_mut(fire->id);
+    }
     const TypeRules& tr = rules_->type(t->type);
-    const auto shot = rules_->attack(o.type, t->type, !w.hostile(o.side, t->side));
+    const auto shot = rules_->attack(o.type, t->type, weapon_allied(w, o.side, t->side));
     if (!shot.damage_known || !shot.getters_known || shot.damage <= 0) continue;
     bool flight_aligned = true;
     if (r.flier && o.attack_mode != AttackMode::Direct) {
@@ -1436,6 +1420,7 @@ void GameSim::run_orders(World& w) {
     }
     const int64_t reach = weapon_reach(r, tr, shot);
     if (weapon_in_range(r, int64_t(px(t->cur_x)) - px(o.cur_x), int64_t(px(t->cur_y)) - px(o.cur_y), reach)) {
+      if (ag && moving && ag->tile_step) continue; // finish the running tile before firing
       if (ag && moving) mover_->stop(uint32_t(o.mover));
       int f = facing_from(px(t->cur_x) - px(o.cur_x), px(t->cur_y) - px(o.cur_y));
       if (f >= 0) o.facing = uint8_t(f);
@@ -1460,32 +1445,18 @@ void GameSim::run_orders(World& w) {
           fire(w, o, *t, shot.damage);
         }
       }
-    } else if (o.attack_mode != AttackMode::Direct && ag && ((tick_ + o.id) % 6 == 0 || !moving)) {
-      uint32_t aid = uint32_t(o.mover);
-      path::Vec2 goal{t->cur_x, t->cur_y};
-      if (o.idle_attack || r.weapon.klass == 0 || r.weapon.klass == 3) {
-        // Idle attacks need a firing position inside the stable group leash.
-        // Ordered melee also needs a reachable tile beside a blocked target.
-        path::FlowField field;
-        path::Cell start{px(o.cur_x) / kTilePx, px(o.cur_y) / kTilePx};
-        field.build(nav_, ag->cls, &start, 1);
-        uint32_t best = path::FlowField::kInf;
-        bool found = false;
-        const int tx = px(t->cur_x), ty = px(t->cur_y);
-        const int64_t leash = group_reach_px(o.attack_mode);
-        for (int y = std::max(0, int((ty - reach) / kTilePx)); y <= std::min(nav_.height() - 1, int((ty + reach) / kTilePx)); ++y)
-          for (int x = std::max(0, int((tx - reach) / kTilePx)); x <= std::min(nav_.width() - 1, int((tx + reach) / kTilePx)); ++x) {
-            path::Vec2 candidate{tile_center_fixed(x), tile_center_fixed(y)};
-            const int64_t dx = px(candidate.x) - tx, dy = px(candidate.y) - ty;
-            const int64_t ax = px(candidate.x) - anchor_x, ay = px(candidate.y) - anchor_y;
-            if (o.idle_attack && ax * ax + ay * ay > leash * leash) continue;
-            if (!weapon_in_range(r, dx, dy, reach) || !field.reachable(x, y) ||
-                nav_.disc_hits(candidate, ag->radius, ag->cls)) continue;
-            if (field.cost(x, y) < best) { best = field.cost(x, y); goal = candidate; found = true; }
-          }
-        if (!found) { mover_->stop(aid); continue; }
+    } else if (o.attack_mode != AttackMode::Direct &&
+               !(o.attack_mode == AttackMode::Defensive && tactic.walking) && ag && !moving) {
+      if (o.idle_attack) {
+        // V: member position and candidate steps, rather than the target centre,
+        // are constrained by the tile leash. A retained target can be outside it.
+        member_step(w, o, px(t->cur_x) / kTilePx, px(t->cur_y) / kTilePx, true);
+      } else {
+        // Explicit focus orders retain their existing independent pursuit policy.
+        // Their tactic-level focus/urgent path arbitration remains G.
+        uint32_t aid = uint32_t(o.mover);
+        mover_->order_move(&aid, 1, {t->cur_x, t->cur_y});
       }
-      mover_->order_move(&aid, 1, goal);
     }
   }
 }
@@ -1508,7 +1479,7 @@ void GameSim::advance_attack(World& w, Object& source) {
   auto* target = w.find_mut(source.release_target);
   if (!target || !target->alive || target->removed) return;
   // V: release reselects the weapon for the retained victim; it does not restart CanFire.
-  const auto shot = rules_->attack(source.type, target->type, !w.hostile(source.side, target->side));
+  const auto shot = rules_->attack(source.type, target->type, weapon_allied(w, source.side, target->side));
   if (shot.damage_known && shot.damage > 0) fire(w, source, *target, shot.damage);
 }
 
@@ -2013,6 +1984,20 @@ void GameSim::tick(World& w) {
   if (modifications_.unit_unstick) for (const auto& object : w.objects)
     if (object.mover >= 0) mover_->agents_mut()[size_t(object.mover)].team = object.side;
   mover_->tick();
+  // Keep continuous collision steering from carrying an automatic ground step
+  // outside the tile leash. Members already outside can still return inward.
+  for (const auto& o : w.objects) {
+    if (!o.alive || o.removed || !o.idle_attack || o.mover < 0) continue;
+    auto it = w.unit_tactics.find(tactic_key(o));
+    if (it == w.unit_tactics.end()) continue;
+    auto& a = mover_->agents_mut()[size_t(o.mover)];
+    const auto& t = it->second;
+    const int reach = tactic_reach(o.attack_mode);
+    auto outside = [&](path::Vec2 p) { return tactic_norm(px(p.x) / kTilePx - t.x, px(p.y) / kTilePx - t.y) > reach; };
+    if (a.tile_step && !outside(a.prev_pos) && outside(a.pos)) {
+      a.pos = a.prev_pos; a.vel = {}; a.state = path::AgentState::Arrived;
+    }
+  }
   sync_movement(w);
   transport_tick(w);
   for (auto& o : w.objects) {
@@ -2029,7 +2014,7 @@ void GameSim::script_order(World& w, const std::vector<uint32_t>& ids, int pxx, 
   pxx = std::clamp(pxx, 0, std::max(0, w.width_px() - 1));
   pyy = std::clamp(pyy, 0, std::max(0, w.height_px() - 1));
   // Script orders bypass the side check of player commands: apply per owning side directly (not logged: scripts are deterministic).
-  std::vector<uint32_t> agents;
+  std::vector<uint32_t> members, shore_agents;
   for (uint32_t id : ids) {
     Object* o = w.find_mut(id);
     if (!o || o->removed || !o->alive || is_ferry(*o)) continue;
@@ -2038,9 +2023,11 @@ void GameSim::script_order(World& w, const std::vector<uint32_t>& ids, int pxx, 
     o->order = uint8_t(attack_move ? Order::AttackMove : Order::Move);
     o->dest_x = pxx; o->dest_y = pyy; o->target = 0; o->resume = 0;
     o->follow_tactic = -1;
-    if (o->mover >= 0) agents.push_back(uint32_t(o->mover));
+    if (o->boarding && o->mover >= 0) shore_agents.push_back(uint32_t(o->mover));
+    else members.push_back(o->id);
   }
-  if (!agents.empty()) mover_->order_move(agents.data(), int(agents.size()), {to_fixed(pxx), to_fixed(pyy)});
+  move_tactic(w, members, pxx, pyy);
+  if (!shore_agents.empty()) mover_->order_move(shore_agents.data(), int(shore_agents.size()), {to_fixed(pxx), to_fixed(pyy)});
 }
 
 void GameSim::script_stop(World& w, const std::vector<uint32_t>& ids) {
@@ -2054,7 +2041,10 @@ void GameSim::script_stop(World& w, const std::vector<uint32_t>& ids) {
     o->vessel_route = false;
     o->boarding = 0;
     o->order = uint8_t(Order::Idle); o->target = 0; o->resume = 0;
-    o->idle_attack = false;
+    o->idle_attack = false; o->return_to_tactic = false;
+    if (auto it = w.unit_tactics.find(tactic_key(*o)); it != w.unit_tactics.end()) {
+      it->second.walking = false; it->second.path.clear(); it->second.enemies.clear();
+    }
     o->idle_anchor_x = px(o->cur_x); o->idle_anchor_y = px(o->cur_y);
     o->follow_tactic = -1;
     if (o->mover >= 0) mover_->stop(uint32_t(o->mover));
@@ -2230,11 +2220,11 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(o.body_tick); mix(o.attack_tick); mix(o.body_moving); mix(o.anim_tick);
     mix(uint32_t(o.body_angle)); mix(uint32_t(o.turret_angle));
     mix(o.facing); mix(o.anim_state); mix(uint32_t(o.corpse_ticks));
-    mix(uint32_t(o.idle_anchor_x)); mix(uint32_t(o.idle_anchor_y)); mix(o.idle_attack);
+    mix(uint32_t(o.idle_anchor_x)); mix(uint32_t(o.idle_anchor_y)); mix(o.idle_attack); mix(o.return_to_tactic);
     mix(uint32_t(o.dest_x)); mix(uint32_t(o.dest_y)); mix(o.resume); mix(uint32_t(o.build_elapsed)); mix(uint32_t(o.build_total));
     mix(uint32_t(o.town)); mix(o.town_hall); mix(o.defence);
     mix(uint32_t(o.secondary_hp)); mix(uint32_t(o.regen_service_ticks));
-    mix(uint32_t(o.hp_max)); mix(uint32_t(o.tactic)); mix(uint32_t(o.scenario)); mix(o.last_hit_by); mix(uint32_t(o.mover)); mix(o.anim_variant);
+    mix(uint32_t(o.hp_max)); mix(uint32_t(o.tactic)); mix(uint64_t(o.transient_tactic)); mix(uint32_t(o.scenario)); mix(o.last_hit_by); mix(uint32_t(o.mover)); mix(o.anim_variant);
   }
   mix(w.effects.size());
   for (const auto& e : w.effects) {
@@ -2251,6 +2241,15 @@ uint64_t GameSim::state_hash(const World& w) const {
   for (const TownState& t : w.town_state) {
     mix(uint32_t(t.index)); mix(uint32_t(t.side)); mix(t.hall); mix(uint8_t(t.repair_mode)); mix(t.marked.size());
     for (uint32_t id : t.marked) mix(id);
+  }
+  mix(w.next_unit_tactic); mix(w.unit_tactics.size());
+  for (const auto& [key, t] : w.unit_tactics) {
+    mix(uint32_t(key.first)); mix(uint64_t(key.second)); mix(uint32_t(t.x)); mix(uint32_t(t.y));
+    mix(t.scan_ticks); mix(t.wait_ticks); mix(t.path_ticks); mix(t.random); mix(t.walking); mix(t.lost); mix(t.urgent);
+    mix(uint32_t(t.parent.first)); mix(uint64_t(t.parent.second)); mix(uint32_t(t.dest_x)); mix(uint32_t(t.dest_y)); mix(t.node);
+    mix(t.members.size()); for (auto id : t.members) mix(id);
+    mix(t.enemies.size()); for (auto enemy : t.enemies) { mix(uint32_t(enemy.first)); mix(uint64_t(enemy.second)); }
+    mix(t.path.size()); for (auto [x, y] : t.path) { mix(uint32_t(x)); mix(uint32_t(y)); }
   }
   if (!w.tactic_attacked_by.empty()) {
     mix(0x61747461636b6564ULL); mix(w.tactic_attacked_by.size());

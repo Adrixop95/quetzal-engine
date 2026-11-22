@@ -115,8 +115,8 @@ and `engine` checks pass with the complete private map copy under dummy SDL in
 | Weapon reload getters and cooldown | V getters / partial scheduling | Ball/Axe use d2/d3 for reload/range; class 12 uses its first child. Siege launch cooldown uses reload, following Truck/Headtruck decrement-before-check; Bird/Zeppelin, Cannon, class 8 and class 11 also use their inspected reload; other weapons retain reload+1. Animation-marker launch delays and exact hit intervals remain unverified |
 | Projectile and unresolved weapon behavior | partial | Ball/Axe and paired siege launchers now fire descriptor payloads; class 9 supplies chained category damage. Ball impacts evaluate a spatial blast per victim. Class 11 now scans a source-facing flame segment; class 8 schedules sixteen explosions over ten updates. See [fire_air_siege.md](fire_air_siege.md) for evidence and remaining geometry/timing approximations |
 | Weapon range | V getters / P geometry and fallback | Established weapon getters replace generic ranges; Euclidean centre distance plus mobile source radius and placeholder target radius/footprint remains. Types without loaded weapon descriptors retain 56/288/336 px placeholders |
-| Sight data and visibility predicate | V facts / synthetic checks | Descriptor mask IDs replace the scalar radius. Per-side interpolated brightness must exceed 32; daylight and frame glow contribute. User lighting resources enable these rules; asset-free acquisition uses the mode-dependent combat envelope (G geometry). See the [sight and fog notes](sight_fog.md) |
-| Auto-attack of visible enemies (idle and attack-moving units) | V visibility gate / P tactic integration | Side brightness >32, hostility and known weapon eligibility gate candidates. Nearest enemy, lower-id ties and four-tick per-object scanning remain placeholders; original tactic bounds, 100-entry arrays and 15..23-tick scans are not implemented |
+| Sight data and visibility predicate | V facts / synthetic checks | Descriptor mask IDs replace the scalar radius. Per-side interpolated brightness must exceed 32; daylight and frame glow contribute. User lighting resources enable these rules; asset-free acquisition uses tactic bounds and listed enemies with permissive visibility (G fallback). See the [sight and fog notes](sight_fog.md) |
+| Auto-attack of visible enemies (idle and moving units) | V rules integrated / G assignment | Persistent side-local tactics scan member/anchor bounds widened -6/+7 on a 15–22-think timer. Forced damage reports list enemy tactics in every mode; automatic ground steps use the 4/8/8/6 tile leash. Nearest eligible assignment, independent RNG and visibility details remain G. See [unit behaviour implementation](unit_behaviour_implementation.md) |
 | Death and corpses | P / V effect metadata | Marine corpses remain 480 ticks; vehicles spawn 152 and ground debris 113, known-radius structures select rubble 116/115/114 for 250 ticks; unknown radii retain provisional rubble 116. Airborne altitude remains open |
 | Simulation fog brightness and exploration | V formulas / synthetic checks | Every active tick: global daylight plus saturated glow (maximum 152), minimum side vision darkness, nonnegative difference; previous exploration capped at 32. Raw brightness replaces invented 0/96/152 states. Renderer integration remains separate |
 | Building construction: town queue, progress = adjusted build time, stages = animation slot 0 | V formula/stages / P live timing and worker semantics | Accepted placements immediately create unpaid, idle placeholders. Default production remains serial; the optional parallel construction modification gives each building an independent timer. Cancellation removes waiting placeholders without refund and refunds active unbuilt work. Progress adds HP without erasing damage. Original worker participation, start/completion tick alignment and damaged-construction transitions remain unmeasured; see task 47 |
@@ -126,8 +126,8 @@ and `engine` checks pass with the complete private map copy under dummy SDL in
 | Starting money = side `StartMoney` | V | `.mp` |
 | Garrison | engine / V semantic fact | Extracts live mobile town members into a fresh tactic and selects it. Explicit mission town membership and hall identity, invalid-owner checks, empty/repeated extraction, hash and save/replay checks. Reference packet field layout and live comparison remain unverified |
 | Repair/destroy mode and list commands | engine / partial | Modes 0/1/2; mode changes clear lists, same-mode commands preserve them. Eligible completed town structures toggle membership; halls, mobile units, foreign-town targets and construction are rejected. Off mode collects damaged ordinary buildings. Dead, repaired or reassigned targets are pruned. Commands do not delete or change HP. Harvested credits now drive priority-group repair/destruction and are cleared after service; exact tick alignment remains unverified |
-| Attack modes | V numeric modes / partial engine | Direct 0, defensive 1, aggressive 2, balanced 3 (default). Command, ownership/tactic propagation, direct range-only engagement, movement/follow gates and replay/hash state implemented. Group distance limits, attached-tactic graph and full assignment remain pending; see investigation below |
-| Selection and follow commands | partial engine / P formation | Deterministic control-group recall and side-local tactic selection, persistent ground/air follow, ownership/cycle checks and save continuation; engine payload conventions and centroid tracking are not reference packet/formation parity. See V10 update |
+| Attack modes | V numeric modes / partial engine | Direct 0, defensive 1, aggressive 2, balanced 3 (default). Command, ownership/tactic propagation, direct range-only engagement, movement/follow gates and replay/hash state implemented. Task 153 integrates tile leashes and persistent anchors; attached-tactic inheritance and full assignment remain pending; see investigation below |
+| Selection and follow commands | partial engine / P formation | Deterministic control-group recall and side-local tactic selection, persistent ground/air follow, ownership/cycle checks and save continuation; task 153 follows persistent tactic anchors; packet encoding, member readiness and collision arbitration still lack reference parity. See V10 update |
 | Universal population cap | O reference / engine correction | Task 13 removes the unsupported AI-only cap 80 in develop. Synthetic human/AI production above 110 units passes. Queue 50 and assignment arrays 100 do not establish a side cap; no live population measurement succeeded |
 | Difficulty bonuses | V map-key exclusion / O other effects | Map Difficulty stays editor metadata; synthetic 0/100 inputs produce identical simulation hashes. No HP, damage, income or price bonus is invented. Global difficulty effects remain unverified |
 
@@ -250,18 +250,18 @@ Negative tactic IDs do not connect unrelated units. Invalid modes, foreign,
 dead/removed, unknown and structure targets are ignored. These are engine command
 conventions, not original packet decoding. Mode changes clear the attack target
 and resume interrupted movement, or stop an idle pursuit. Direct control acquires
-only in-range targets and never issues pursuit movement. Defensive mode engages
-while idle and preserves movement orders; aggressive/balanced modes can interrupt
+only in-range targets and never issues pursuit movement. Defensive mode can engage listed enemies while idle and preserves movement orders; aggressive/balanced modes can interrupt
 movement and resume it after target death. Explicit attack orders remain available.
-The range geometry, four-tick acquisition cadence and nearest-enemy policy remain
-existing approximations. This is a useful partial integration, not full tactic
-parity: aggressive/balanced currently share that policy. Attached-tactic graphs,
-reference group centres and mode inheritance across later tactic joins/spawns
-still require the tactic model. The [group reach update](group_reach.md) replaces
-the fixed two-tile idle allowance with mode distances and bounded firing-position
-search, stable idle origins and return after target escape. Centroid origins,
-pixel-circle geometry and return timing remain G approximations; live acceptance
-is pending.
+Task 153 supersedes the old per-object acquisition cadence and averaged idle
+origins: persistent tactics now own the 15–22-think scan, expanded member box,
+enemy listing, tile leash, shared walking path and lost-team follow/merge.
+**V, construction:** anchors survive member removal; member movement requests
+one tile at a time with independent descriptor speeds. **G:** nearest-target
+assignment, A* routing, movement-state readiness, disconnected-member paths,
+explicit focus pursuit and reference timing/flag details remain approximations.
+See [unit_behaviour_implementation.md](unit_behaviour_implementation.md) for the
+V/G boundary, preserved mission 1 regression and unresolved auto-engage CSV rows
+above seven tiles. No original executable was run and live parity is unverified.
 
 Task 13 has removed the unsupported AI-only 80-unit cutoff in develop. This patch
 preserves that planner rather than modifying its superseded adapter. Human and computer production
@@ -420,7 +420,7 @@ commands are regenerated during replay rather than added to the player command l
 | Attack waves | P (G fallback) | States 1/2 prepare purchases and release idle autonomous combat units toward a known hostile non-outpost town. Local and threatened force targets use documented `3*(development+1)` and `7*(development+1)` counts. Offensive purchase count is a fallback, not a verified launch threshold |
 | Defence reactions | P (G fallback) | A new live visible hostile attacker of a town structure redirects eligible autonomous town troops, including moving troops. Idle reinforcements also respond to the ongoing alert while production is busy, without resetting active orders or the production plan. Eight-tile threat bounds and plan entry are explicit fallback choices. Script-owned tactics are preserved. Placement failure disables defence attempts; unaffordability does not |
 | Placement | P (G fallback) | Stable radius/row/column search within eight tiles, weighted resource bytes for terrain harvesters. Failed placement produces no purchase, payment or reservation. Map construction uses placement offers; flag-0 farms/mines/defences use queued automatic placement, while hall upgrades replace the existing hall |
-| Population and tactic limits | open | Removed the invented 80-unit cap. No difficulty bonuses or universal population limit. No reference kill-time assignment, 15..23-tick tactic scan or full side-response arbitration is claimed |
+| Population and tactic limits | open | Removed the invented 80-unit cap. No difficulty bonuses or universal population limit. Task 153 adds the tactic scan; reference kill-time assignment and full side-response arbitration remain open |
 | `Tendency`, `BuildSpeed`, `Difficulty` from `.mp` | no effect in rewrite | Runtime speed is selected by the strategist; mission loader keys do not override it |
 
 `ai_unit` checks synthetic economic preferences, development, speed changes,
