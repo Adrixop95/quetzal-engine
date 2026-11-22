@@ -276,6 +276,23 @@ static void test_sight() {
   enemy.teleport(to_fixed(20 * 48 + 7 * 48), to_fixed(20 * 48));
   initial.objects.push_back(enemy);
   initial.relation[0][1] = kEnemy;
+  // Automatic acquisition must use a building's corners, not its dark center.
+  for (int brightness : {32, 33}) {
+    World corner = initial;
+    corner.objects[0].attack_mode = AttackMode::Aggressive;
+    corner.objects[1].teleport(to_fixed(24 * 48), to_fixed(20 * 48));
+    corner.objects[1].attack_mode = AttackMode::Direct;
+    corner.visibility_brightness = true;
+    corner.visibility.sides.resize(8);
+    corner.visibility.sides[0] = {41, 42, std::vector<uint8_t>(41 * 42, 0)};
+    GameSim acquisition(rules, Modifications::faithful()); acquisition.init(corner);
+    const auto bounds = visibility_bounds(corner, corner.objects[1]);
+    corner.visibility.sides[0].v[(bounds[1] / 48) * 41 + bounds[0] / 48] = uint8_t(brightness);
+    CHECK(!position_visible(corner, 0, 24 * 48, 20 * 48));
+    CHECK(object_visible(corner, 0, corner.objects[1]) == (brightness == 33));
+    corner.begin_tick(); acquisition.tick(corner);
+    CHECK(corner.objects[0].target == (brightness == 33 ? 2u : 0u));
+  }
   // Tick 1 acquisition consumes startup daylight minus loaded darkness. Its
   // result must not depend on the object mask stamped at the end of that tick.
   for (int darkness : {47, 48}) {
@@ -355,7 +372,7 @@ static void test_sight() {
     };
     const Object& victim = duel.objects[1];
     CHECK((pick_object(duel, float(victim.cur_x >> 8), float(victim.cur_y >> 8), 1, 8) != nullptr) == (ambient == 33));
-    click(duel.objects[0]); CHECK(duel.selection.ids == std::vector<uint32_t>{1});
+    click(duel.objects[0]); CHECK(duel.selection.ids == (ambient == 33 ? std::vector<uint32_t>{1} : std::vector<uint32_t>{}));
     click(victim); CHECK(duel.selection.ids.empty());
     // Local mouse selection does not rewrite deterministic command selection.
     CHECK(duel.side_state[0].selected_ids == std::vector<uint32_t>{1});

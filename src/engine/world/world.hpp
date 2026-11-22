@@ -216,6 +216,9 @@ struct World {
   Grid<uint16_t> resources;      // .rm, may be empty
   VisFile visibility;            // Per-side layers, may be empty.
   bool visibility_brightness = false; // Simulation brightness; false for loaded .vis darkness.
+  // Derived presentation state, rebuilt by replay; never consulted by simulation decisions.
+  std::shared_ptr<const RulesData> visibility_rules;
+  std::vector<std::map<uint32_t, Object>> building_memory;
   Sprite preview;                // .spr minimap preview; w == 0 if absent
   std::vector<Object> objects;
   std::vector<Effect> effects;
@@ -242,7 +245,7 @@ struct World {
   int day_clock = 0;
   uint64_t tick = 0;
   int script_side = 0;           // what `side(local)` means in mission scripts: the mission's human side (shared by all peers)
-  int local_side = 0;            // side whose fog layer is shown / whose objects are always visible
+  int local_side = 0;            // side whose fog layer and remembered buildings are shown
   uint32_t fog_version = 1;      // bump when the local side's .vis layer changes
 
   int width_px() const { return terrain.w * kTilePx; }

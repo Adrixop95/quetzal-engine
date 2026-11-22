@@ -115,6 +115,8 @@ void GameSim::attach_agent(Object& o) {
 }
 
 void GameSim::init(World& w) {
+  w.visibility_rules = rules_;
+  w.building_memory.clear();
   modifications_ = initial_modifications_;
   tick_ = w.original_save ? w.tick : 0;
   w.tick = tick_;
@@ -247,6 +249,7 @@ void GameSim::init(World& w) {
       mover_->order_formation(group.agents.data(), int(group.agents.size()), group.anchor);
     }
   }
+  update_building_memory(w);
   refresh_tactics(w);
 }
 
@@ -441,7 +444,7 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o, bool fire_
   // G: nearest eligible member with lower-id ties substitutes for assignment scores.
   // Discovery belongs entirely to the tactic; this only reads listed enemy teams.
   for (const auto& t : w.objects) {
-    if (t.removed || !t.alive || t.type < 0 || t.carrier || t.type == 84 || !damageable(t) ||
+    if (t.removed || !t.alive || t.type < 0 || t.carrier || t.type == 84 || t.progress < 1000 || !damageable(t) ||
         ferry_protected(t) || weapon_allied(w, o.side, t.side) || !object_visible(w, o.side, t)) continue;
     const auto enemy_key = tactic_key(t);
     if (std::find(tactic.enemies.begin(), tactic.enemies.end(), enemy_key) == tactic.enemies.end()) continue;
@@ -2008,6 +2011,7 @@ void GameSim::tick(World& w) {
   }
   update_animation_state(w);
   update_fog(w);
+  update_building_memory(w);
 }
 
 void GameSim::script_order(World& w, const std::vector<uint32_t>& ids, int pxx, int pyy, bool attack_move) {

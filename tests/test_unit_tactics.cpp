@@ -3,6 +3,7 @@
 #include <memory>
 #include "engine/sim/game_sim.hpp"
 #include "engine/sim/path/mover.hpp"
+#include "engine/world/visibility.hpp"
 
 using namespace aztec;
 using namespace aztec::engine;
@@ -50,6 +51,35 @@ static void scan(std::shared_ptr<RulesData> rules) {
   allied.relation[0][1] = kFriend;
   GameSim friends(rules, Modifications::faithful()); friends.init(allied); step(friends, allied, 30);
   CHECK(allied.objects[0].target == 0 && allied.unit_tactics.size() == 2);
+}
+static void fog_and_tactics(std::shared_ptr<RulesData> rules) {
+  // Tactic discovery uses building corners and the strict brightness threshold;
+  // remembered buildings alone must never become combat targets.
+  for (int brightness : {32, 33}) for (int progress : {999, 1000}) {
+    auto w = map(); add(w, 0, 20, 20); add(w, 1, 24, 20, 8, 10);
+    w.objects[1].attack_mode = AttackMode::Direct;
+    w.visibility_brightness = true;
+    w.visibility.sides.resize(8);
+    w.visibility.sides[0] = {71, 72, std::vector<uint8_t>(71 * 72, 32)};
+    w.visibility_rules = rules;
+    const auto bounds = visibility_bounds(w, w.objects[1]);
+    auto& fog = w.visibility.sides[0].v;
+    fog[(bounds[1] / kTilePx) * 71 + bounds[0] / kTilePx] = uint8_t(brightness);
+    GameSim sim(rules, Modifications::faithful()); sim.init(w);
+    CHECK(w.unit_tactics.size() == 2);
+    CHECK(w.building_memory[0].contains(2) == (brightness == 33));
+    CHECK(!position_visible(w, 0, w.objects[1].cur_x >> 8, w.objects[1].cur_y >> 8));
+    w.objects[1].progress = progress;
+    w.objects[1].build_total = 1000; w.objects[1].build_elapsed = progress - 1;
+    step(sim, w);
+    const auto& tactic = w.unit_tactics.at(tactic_key(w.objects[0]));
+    CHECK(tactic.enemies.empty() == (brightness == 32));
+    CHECK(w.objects[0].target == (brightness == 33 && progress == 1000 ? 2u : 0u));
+    std::fill(fog.begin(), fog.end(), 32);
+    step(sim, w);
+    CHECK(w.objects[0].target == 0);
+    CHECK(w.building_memory[0].contains(2) == (brightness == 33));
+  }
 }
 static void leash(std::shared_ptr<RulesData> rules) {
   CHECK(tactic_norm(3, 3) == 4 && tactic_norm(4, 4) == 5 && tactic_norm(6, 6) == 8);
@@ -224,6 +254,6 @@ static void tile_steps() {
 }
 int main() {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
-  scan(rules); leash(rules); loss_and_visibility(rules); retaliation(rules); walking(rules); selection_split(rules); tile_steps();
+  scan(rules); fog_and_tactics(rules); leash(rules); loss_and_visibility(rules); retaliation(rules); walking(rules); selection_split(rules); tile_steps();
   std::puts(failures ? "FAILED" : "OK"); return failures ? 1 : 0;
 }
