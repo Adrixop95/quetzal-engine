@@ -1,7 +1,6 @@
 // Synthetic SDL policy checks; the dummy driver cannot prove desktop confinement.
 #include <SDL.h>
 #include <cstdio>
-#include <cstdint>
 #include <string>
 
 #include "engine/app/options.hpp"
@@ -29,20 +28,23 @@ static void test_window(DisplayMode mode) {
   for (int value = 0; value < 256; ++value) CHECK(Window::gamma_channel(uint8_t(value), 1.0) == value);
   CHECK(!window.apply_gamma(0));
   CHECK(window.set_size(1024, 768));
+  // Resize notifications may be deferred by SDL2 compatibility backends.
   SDL_PumpEvents();
-  SDL_RenderClear(window.renderer()); SDL_RenderPresent(window.renderer());
-  int logical_width = 0, logical_height = 0;
-  SDL_GetWindowSize(window.sdl(), &logical_width, &logical_height);
-  CHECK(logical_width == 1024 && logical_height == 768);
-  // Renderer output is measured in drawable pixels, which can be scaled on macOS.
-  int width = 0, height = 0; window.output_size(width, height);
-  CHECK(width >= logical_width && height >= logical_height);
-  CHECK(int64_t(width) * logical_height == int64_t(height) * logical_width);
+  int width = 0, height = 0;
+  SDL_GetWindowSize(window.sdl(), &width, &height);
+  CHECK(width == 1024 && height == 768);
   SDL_SetRenderDrawColor(window.renderer(), 64, 64, 64, 255); SDL_RenderClear(window.renderer());
+  window.output_size(width, height);
+  const auto* surface = SDL_GetWindowSurface(window.sdl());
+  CHECK(surface && width == surface->w && height == surface->h);
+  // Output pixels can differ from window coordinates on HiDPI displays.
+  float sx = 0, sy = 0; window.mouse_scale(sx, sy);
+  CHECK(sx == float(width) / 1024 && sy == float(height) / 768);
   CHECK(window.apply_gamma(0.5));
   CHECK(SDL_RenderReadPixels(window.renderer(), &sample, SDL_PIXELFORMAT_RGBA32, pixel, 4) == 0);
   CHECK(pixel[0] < 64);
-  window.set_size(800, 600);
+  CHECK(window.set_size(800, 600));
+  SDL_PumpEvents();
   const Uint32 id = SDL_GetWindowID(window.sdl());
   auto grabbed = [&] { return (SDL_GetWindowFlags(window.sdl()) & SDL_WINDOW_MOUSE_GRABBED) != 0; };
   auto focus = [&](Uint8 kind) {

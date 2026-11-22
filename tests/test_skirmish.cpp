@@ -229,7 +229,11 @@ int main() {
   SDL_SetMainReady();
   TempDir temp; const auto root = temp.path(); fixture(root);
   CHECK(set_test_env("AZTEC_USER_DIR", (root / "profile").string().c_str()) == 0);
-  CHECK(std::filesystem::path(user_file("probe.txt")) == root / "profile" / "probe.txt");
+  if (std::filesystem::path(user_file("Saves/engine_campaign.txt")) !=
+      root / "profile/Saves/engine_campaign.txt") {
+    std::fprintf(stderr, "FAIL: test profile override was not applied\n");
+    return 1;
+  }
   GameData data; std::string error; CHECK(data.open(root.string(), error));
   setup_and_replay(data, root); command_line(root); frontend_and_play(data, root);
   return failures ? 1 : 0;

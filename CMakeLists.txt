@@ -10,6 +10,9 @@ if(AZTEC_SANITIZERS)
     message(FATAL_ERROR "AZTEC_SANITIZERS requires GCC or Clang")
   endif()
   add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
+  # Check standard-library container bounds even when optimized sanitizer builds
+  # cannot instrument an inlined access to a constexpr array.
+  add_compile_definitions(_GLIBCXX_ASSERTIONS)
   add_link_options(-fsanitize=address,undefined)
 endif()
 

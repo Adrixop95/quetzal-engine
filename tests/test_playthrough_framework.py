@@ -117,6 +117,18 @@ class FrameworkTests(unittest.TestCase):
             report, _ = self.run_route(script)
             self.assertEqual((report['outcome'], report['ticks']), ('timeout', 12))
 
+    def test_virtual_ticks_ignore_presentation_frame_cap(self):
+        report, output = self.run_route('wait 12\nquit\n')
+        expected = list(route.read_observations(output / 'observations.jsonl'))
+        command = report['process']['command'] + ['--fps', '1']
+        env = dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy',
+                   AZTEC_USER_DIR=str(self.root / 'capped-profile'))
+        # A one-Hz presentation cap used to add over twelve seconds to these
+        # twelve virtual ticks. Keep every observation identical without waiting.
+        result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(list(route.read_observations(output / 'observations.jsonl')), expected)
+
     def test_terminal_checkpoints_are_executed_with_captures_enabled(self):
         self.args.capture_every = 400
         script = (ROOT / 'tests/playtest/playthrough_demo.txt').read_text().replace('checkpoint outcome == 1', 'checkpoint outcome == 2')

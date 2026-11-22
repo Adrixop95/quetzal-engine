@@ -26,7 +26,11 @@ int main(int argc, char** argv) {
   std::filesystem::create_directories(output);
   const auto root = temp.path();
   CHECK(set_test_env("AZTEC_USER_DIR", (root / "profile").string().c_str()) == 0);
-  CHECK(std::filesystem::path(user_file("probe.txt")) == root / "profile" / "probe.txt");
+  if (std::filesystem::path(user_file("Saves/engine_campaign.txt")) !=
+      root / "profile/Saves/engine_campaign.txt") {
+    std::fprintf(stderr, "FAIL: test profile override was not applied\n");
+    return 1;
+  }
   std::filesystem::create_directory(root / "Maps");
   std::filesystem::create_directory(root / "Res");
   for (const char* name : {"Pal", "Units", "Tiles0", "Tiles1", "common", "fnts", "light"})
@@ -358,6 +362,20 @@ int main(int argc, char** argv) {
       CHECK(options.speech_style == 1 && options.sampling_rate == 44100 && audio.open);
       audio.draw(renderer, font, options, w, h, sc);
       capture("audio");
+      // The former seventh row indexed beyond Modifications::names. Exercise
+      // drawing and clicks below Back, including the stale row's old location.
+      ModificationOptions modifications; modifications.open = true;
+      modifications.draw(renderer, font, options, w, h, sc);
+      capture("modifications");
+      const auto before_modifications = options.modifications.bits();
+      const auto outside = ModificationOptions::row(ModificationOptions::row_count, w, h, sc);
+      click.mx = outside.x + 1; click.my = outside.y + 1;
+      modifications.update(click, options, w, h, sc);
+      CHECK(modifications.open && options.modifications.bits() == before_modifications);
+      const auto back = ModificationOptions::row(ModificationOptions::back_row, w, h, sc);
+      click.mx = back.x + 1; click.my = back.y + 1;
+      modifications.update(click, options, w, h, sc);
+      CHECK(!modifications.open);
       options = Options{};
       SettingsOptions settings; settings.open = true;
       for (int i = 0; i < 10; ++i) {

@@ -1,4 +1,5 @@
-// Match std::getenv in the executable, including Windows builds using an SDL DLL.
+// Match the C runtime used by the engine's std::getenv reads. SDL's DLL may
+// have a separate environment on Windows.
 #pragma once
 #include <cstdlib>
 
