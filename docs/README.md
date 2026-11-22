@@ -173,3 +173,4 @@ Tool-generated images and other game assets must also remain private.
 - [pathfinding_implementation.md](pathfinding_implementation.md) - Original wave search: implementation and integration limits
 - [renderer_rules.md](renderer_rules.md) - World renderer rules (0x465a50 and callees)
 - [unit_behaviour_implementation.md](unit_behaviour_implementation.md) - Unit scans, chase and group walking
+- [measured_infantry_speed.md](measured_infantry_speed.md) - Measured walking speed of Rifleman, Footman, Archer and Bear (headless oracle).
