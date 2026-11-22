@@ -763,10 +763,10 @@ void ModificationOptions::update(const Input& in, Options& options, int w, int h
   if (in.hit(SDL_SCANCODE_ESCAPE)) open = false;
   if (!in.pressed[SDL_BUTTON_LEFT]) return;
   SDL_Point point{in.mx, in.my};
-  for (int i = 0; i < 7; ++i) {
+  for (int i = 0; i < row_count; ++i) {
     const auto rect = row(i, w, h, sc);
     if (!SDL_PointInRect(&point, &rect)) continue;
-    if (i == 5) { open = false; return; }
+    if (i == back_row) { open = false; return; }
     if (i == 1) options.modifications.set_profile(options.modifications.profile == PlayProfile::Faithful ? "enhanced" : "faithful");
     else {
       const size_t index = i == 0 ? 0 : size_t(i - 1);
@@ -785,10 +785,10 @@ void ModificationOptions::draw(SDL_Renderer* r, const Font& font, const Options&
   SDL_SetRenderDrawColor(r, 20, 18, 14, 255); SDL_RenderClear(r);
   const auto top = row(0, w, h, sc);
   font.draw(r, top.x, top.y - 44 * sc, "Game modifications (F9)", 2 * sc, {245, 230, 200, 255});
-  for (int i = 0; i < 7; ++i) {
+  for (int i = 0; i < row_count; ++i) {
     const auto rect = row(i, w, h, sc);
     std::string label;
-    if (i == 5) label = "Back";
+    if (i == back_row) label = "Back";
     else if (i == 1) label = std::string("Profile: ") + options.modifications.profile_name();
     else {
       const size_t index = i == 0 ? 0 : size_t(i - 1);
