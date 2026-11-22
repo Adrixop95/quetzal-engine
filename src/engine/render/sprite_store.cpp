@@ -1,6 +1,7 @@
 #include "engine/render/sprite_store.hpp"
 
 #include "core/sprite.hpp"
+#include "engine/render/world_rules.hpp"
 #include "core/sprite_alpha.hpp"
 
 namespace aztec::engine {
@@ -28,7 +29,7 @@ const StoredSprite& SpriteStore::get(const SpriteKey& k) {
     AlphaSprite as;
     if (decode_alpha_sprite(item, as)) {
       int pid = k.palette ? k.palette : ((as.palette < 4 && k.archive == ArchiveId::Units)
-          ? as.palette + 0x10 + k.team * 4 : as.palette);
+          ? team_palette(as.palette, k.team) : as.palette);
       const Palette* pal = palette(uint8_t(pid), k.shade);
       std::vector<uint32_t> px;
       if (k.shadow) {
@@ -55,7 +56,7 @@ const StoredSprite& SpriteStore::get(const SpriteKey& k) {
     } else {
       int pid = k.palette;
       // Header palette ids < 4 in Units.xbe are team palettes; elsewhere they name a fixed Pal.xbe item.
-      if (!pid) pid = (s.palette < 4 && k.archive == ArchiveId::Units) ? s.palette + 0x10 + k.team * 4 : s.palette;
+      if (!pid) pid = (s.palette < 4 && k.archive == ArchiveId::Units) ? team_palette(s.palette, k.team) : s.palette;
       const Palette* pal = palette(uint8_t(pid), k.shade);
       px = to_argb(s, pal ? *pal : kGrey);
     }

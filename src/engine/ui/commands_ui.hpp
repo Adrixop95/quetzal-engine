@@ -65,7 +65,7 @@ class CommandsUi {
   PlacementPreview placement_preview(const World& w, const Camera& cam, int mx, int my) const;
   std::string draw_menu(SDL_Renderer* r, SpriteStore& store, const Font& font, const StrBase& strings, const World& w,
                         const SDL_Rect& panel, int scale, int mx, int my) const;
-  void draw_ghost(SDL_Renderer* r, const World& w, const Camera& cam, int mx, int my) const;
+  void draw_ghost(SDL_Renderer* r, const World& w, const Camera& cam, int mx, int my, SpriteStore* store = nullptr) const;
   static CommandPanelLayout layout(const SDL_Rect& panel, int scale);
   static bool action_enabled(PanelAction action, const World& w, const RulesData* rules = nullptr);
   static const char* disabled_reason(PanelAction action, const World& w, const RulesData* rules = nullptr);

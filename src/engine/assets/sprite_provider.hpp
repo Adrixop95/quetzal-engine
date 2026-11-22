@@ -56,6 +56,7 @@ struct SpriteDraw {
   SpriteKey key;
   int dx = 0, dy = 0;     // extra pixel offset on top of the sprite's own hotspot (ox, oy)
   bool shadow = false;    // optional semantic tag; SpriteKey::shadow controls the stored image
+  bool underlay = false; // draw immediately during collection, below the sorted list
   int layer = 0;          // reserved for custom providers; common ordering uses SpriteItem height
 };
 
@@ -63,6 +64,9 @@ struct SpriteItem {
   int dx = 0, dy = 0, height = 0;
   std::vector<SpriteDraw> parts;
   int light = 0;
+  int display_size = -1; // unknown: renderer uses an explicitly approximate size
+  bool flash = false;
+  int marker = 0;
 };
 
 class SpriteProvider {

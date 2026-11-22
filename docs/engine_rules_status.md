@@ -15,6 +15,28 @@ factor is inferred and no original executable was run. See
 [shot_period_implementation.md](shot_period_implementation.md) for the complete
 Marine duration/period table and evidence limits. This supersedes older
 statements below that describe Marine scheduling solely as reload+1.
+## World rendering rules (2026-11-22)
+
+**V rules / synthetic implementation checks:** shared underlay/y-ascending/
+x-descending sorting is retained. Explicit collected underlays draw before sorted
+items; each item now finishes its health art and marker before the next item.
+Selection/health palette 3, the documented size table, strict HP bands and clipped
+bar width are implemented. Placement can draw a team-coloured building image in
+49 separately clipped 48-pixel cells using shade rows 20/21/22 after the drag box.
+`--original-look` selects tick positions, logic-rate presentation and per-pixel
+palette lighting: uniform terrain rounds, the light surface truncates, gradients
+use bilinear ordered quantization and bodies sample their ground row. Flash
+presentation inputs use flat row 19 on odd view ticks; shadows retain shade key 12.
+Interpolation and widescreen remain available in the ordinary presentation.
+
+**G / P integration:** native display-size/bar rectangles, flash/marker and
+collected-underlay producers, exact dither thresholds, shadow palette, daylight
+palette ramps and placement sprite/status mapping remain incomplete. Missing art
+retains diagnostic fallbacks. Path dots and original menu redraw/dim-box rules
+remain gaps. No original executable was run and no exact screenshot parity is
+claimed. See [render_implementation.md](render_implementation.md) for V/G labels,
+mode controls, construction tests and remaining dependencies. This entry
+supersedes the older two-size ellipse/final rectangular-bar rendering inventory.
 
 ## Towers, aircraft and specials completion (2026-11-21)
 
