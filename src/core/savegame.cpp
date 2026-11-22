@@ -1,6 +1,7 @@
 #include "core/savegame.hpp"
 #include "core/loader_limits.hpp"
 #include "core/mapfiles.hpp"
+#include "core/save_io.hpp"
 #include <initializer_list>
 #include <utility>
 #include <unordered_set>
@@ -263,7 +264,11 @@ bool parse_savegame(const std::vector<uint8_t>& data, SaveGame& out, SaveError* 
   if(error) *error={};
   if(data.size()>detail::kFileBytes) { out={}; if(error) *error={0,"Save game exceeds file budget"}; return false; }
   SaveGame parsed;
-  if(!parse_save_header(data,parsed.header)) { if(error) *error={data.size(),"Truncated save header"}; out={}; return false; }
+  std::string header_error;
+  if(!parse_save_header(data,parsed.header,&header_error)) {
+    if(error) *error={data.size() < 0x158 ? data.size() : 8,header_error};
+    out={}; return false;
+  }
   try { Reader(data,parsed).parse(); }
   catch(const Invalid& e) { if(error) *error={e.offset,e.message}; out={}; return false; }
   parsed.bytes=data; out=std::move(parsed); return true;
@@ -272,6 +277,59 @@ bool load_savegame(const std::string& path, SaveGame& out, SaveError* error) {
   std::vector<uint8_t> data;
   if(!read_file(path,data)) { out={}; if(error) *error={0,"Cannot read save game"}; return false; }
   return parse_savegame(data,out,error);
+}
+bool serialize_savegame(const SaveGame& game, std::vector<uint8_t>& out, SaveError* error) {
+  if (error) *error = {};
+  std::string header_error;
+  auto data = serialize_save_header(game.header, &header_error);
+  auto fail = [&](const std::string& message) {
+    if (error) *error = {data.size(), message};
+    out.clear(); return false;
+  };
+  if (data.empty()) return fail(header_error);
+  auto word = [&](uint32_t value) {
+    for (unsigned i = 0; i < 4; ++i) data.push_back(uint8_t(value >> (8 * i)));
+  };
+  word(uint32_t(game.view_x)); word(uint32_t(game.view_y));
+  for (auto value : game.globals) word(value);
+  constexpr const char* names[] = {"decorations", "towns", "sides", "tactics", "units", "weapons",
+    "effects", "transports", "scripts", "orders", "ui", "daylight"};
+  if (game.sections.size() != 12) return fail("Expected twelve save sections");
+  size_t fields = 0;
+  for (size_t i = 0; i < 12; ++i) {
+    const auto& section = game.sections[i];
+    if (section.name != names[i]) return fail("Invalid save section order");
+    if (section.records.size() > detail::kEntries || (i >= 10 && section.records.size() != 1))
+      return fail("Invalid save record count");
+    if (i < 10) {
+      if (data.size() > detail::kFileBytes - 4) return fail("Save game exceeds file budget");
+      word(uint32_t(section.records.size()));
+    }
+    for (const auto& record : section.records) for (const auto& field : record.fields) {
+      if (++fields > 1024 * 1024) return fail("Too many serialized fields");
+      if (field.size > detail::kFileBytes - data.size()) return fail("Save game exceeds file budget");
+      if (field.kind == SaveValue::bytes) {
+        if (field.offset > game.bytes.size() || field.size > game.bytes.size() - field.offset)
+          return fail("Invalid retained save block range");
+        data.insert(data.end(), game.bytes.begin() + field.offset, game.bytes.begin() + field.offset + field.size);
+      } else {
+        if (field.size != 4) return fail("Save scalar must occupy four bytes");
+        word(field.value);
+      }
+    }
+  }
+  SaveGame checked;
+  if (!parse_savegame(data, checked, error) || !validate_savegame_references(checked, error)) {
+    out.clear(); return false;
+  }
+  out = std::move(data); return true;
+}
+bool write_savegame(const std::string& path, const SaveGame& game, SaveError* error) {
+  std::vector<uint8_t> data;
+  if (!serialize_savegame(game, data, error)) return false;
+  if (detail::write_save_bytes(path, data)) return true;
+  if (error) *error = {0, "Cannot write save game"};
+  return false;
 }
 bool validate_savegame_references(const SaveGame& game, SaveError* error) {
   if (error) *error = {};
