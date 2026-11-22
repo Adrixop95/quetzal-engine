@@ -8,7 +8,7 @@ namespace aztec::script {
 
 constexpr int kLocal = -2;  // side(local): the human player's side
 
-enum class Cmp { Eq, Ne, Lt, Le, Gt, Ge };
+enum class Cmp : int { Eq = 0, Gt = 1, Ge = 2, Ne = 3, Lt = -1, Le = -2 };
 
 enum class CondKind {
   Always,

@@ -1654,9 +1654,10 @@ static void test_script_animation_clocks() {
     sim.submit(pause);
     w.begin_tick(); sim.tick(w);
     CHECK(w.objects[0].attack_tick == 5 && w.objects[0].body_tick == 0);
-    CHECK(w.outcome == (imported ? kRunning : kVictory));
+    CHECK(w.outcome == kRunning);
     w.begin_tick(); sim.tick(w);
     CHECK(w.objects[0].attack_tick == 6 && w.objects[0].body_tick == 1);
+    CHECK(w.outcome == (imported ? kRunning : kVictory));
   }
   std::filesystem::remove(path);
   std::filesystem::remove(directory);
@@ -1677,10 +1678,10 @@ static void test_script(const std::string& dir) {
   sim.init(w);
   // trigger 0 (localTime == 1400): side 1 tactic 7 attacks town 0
   bool ordered = false;
-  for (int t = 0; t < 1401; t++) {
+  for (int t = 0; t < 201; t++) {
     w.begin_tick();
     sim.tick(w);
-    if (t == 1390)
+    if (t == 190)
       for (const Object& o : w.objects) if (o.side == 1 && o.tactic == 7 && o.order != uint8_t(Order::Idle)) ordered = true;
   }
   CHECK(!ordered);
@@ -1692,6 +1693,8 @@ static void test_script(const std::string& dir) {
   for (const Object& o : w.objects) if (o.side == 1) sim.script_kill(w, o.id);
   w.begin_tick();
   sim.tick(w);
+  CHECK(w.outcome == kRunning);
+  w.begin_tick(); sim.tick(w);
   CHECK(w.outcome == kVictory);
   // determinism with scripts
   World a, b;

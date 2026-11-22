@@ -227,6 +227,7 @@ static void army_scenarios(std::shared_ptr<const RulesData> rules) {
   for (int tick = 0; tick < 100 && !defenders; ++tick) { w.begin_tick(); raid.tick(w); }
   CHECK(w.objects[0].hp < 1000000 && defenders > 0);
   CHECK(w.objects[2].order == uint8_t(Order::Attack) && w.objects[2].target == 4);
+  for (int i = 0; i < 2; ++i) { w.begin_tick(); raid.tick(w); }
   CHECK(!raid.script().trigger_enabled(0));
   restored = raid_initial;
   replay = GameSim::replay(restored, rules, raid.log(), raid.tick_count(), raid_script.string());
@@ -426,6 +427,7 @@ static void enemy_price_mask(std::shared_ptr<const RulesData> rules) {
   w.side_state[0].enemy_mask = UINT32_MAX;
   GameSim sim(rules, Modifications::faithful()); CHECK(sim.attach_script(path.string())); sim.init(w);
   CHECK(w.enemy_all(0));
+  w.begin_tick(); sim.tick(w); CHECK(w.enemy_all(0));
   w.begin_tick(); sim.tick(w); CHECK(!w.enemy_all(0));
   w.begin_tick(); sim.tick(w); CHECK(w.enemy_all(0));
 }
@@ -831,9 +833,9 @@ static void scripted(std::shared_ptr<const RulesData> rules) {
   for (int t = 1; t <= 20; ++t) {
     a.begin_tick(); b.begin_tick(); sa.tick(a); sb.tick(b);
     CHECK(sa.state_hash(a) == sb.state_hash(b));
-    if (t == 3) CHECK(a.objects[2].dest_x == 8 * kTilePx + 24);
-    if (t == 5) CHECK(a.objects[2].dest_x == 22 * kTilePx + 24 && a.objects[2].dest_y == 19 * kTilePx + 24);
-    if (t == 7) CHECK(a.objects[3].dest_x == 24 * kTilePx + 24);
+    if (t == 4) CHECK(a.objects[2].dest_x == 8 * kTilePx + 24);
+    if (t == 6) CHECK(a.objects[2].dest_x == 22 * kTilePx + 24 && a.objects[2].dest_y == 19 * kTilePx + 24);
+    if (t == 8) CHECK(a.objects[3].dest_x == 24 * kTilePx + 24);
   }
   CHECK(sa.script().unsupported() == 0);
 }
@@ -908,8 +910,8 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
                             (a.ai_towns[0].spent - previous[0].spent);
     for (size_t side = 0; side < 2; ++side)
       side_purchases[size_t(t / 3600)][side] += a.ai_towns[side].spent > previous[side].spent;
-    if (t == 999) CHECK(a.side_state[0].money == net_income);
-    if (t == 1199) CHECK(a.side_state[0].money == cash + 2000 + net_income);
+    if (t == 1000) CHECK(a.side_state[0].money == net_income);
+    if (t == 1200) CHECK(a.side_state[0].money == cash + 2000 + net_income);
     for (size_t i = 0; i < a.objects.size(); ++i) {
       const auto& o = a.objects[i];
       if (i >= objects.size()) {

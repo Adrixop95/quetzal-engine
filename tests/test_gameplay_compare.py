@@ -158,7 +158,7 @@ class TimelineTests(unittest.TestCase):
             result = subprocess.run(argv, env=env, capture_output=True, timeout=5)
             self.assertEqual(result.returncode, 0, result.stderr)
             rows = [json.loads(line) for line in trace.read_text().splitlines()]
-            self.assertEqual(rows[-1]['tick'], 10)
+            self.assertEqual(rows[-1]['tick'], 11)
             self.assertEqual(rows[-1]['outcome'], 2)
             (maps / 'mission_1.scn').unlink()
             script.write_text('until 0\nquit\n')

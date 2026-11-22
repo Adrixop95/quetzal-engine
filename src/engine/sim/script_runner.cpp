@@ -1,6 +1,7 @@
 #include "engine/sim/script_runner.hpp"
 
 #include <algorithm>
+#include <bit>
 
 #include "core/text.hpp"
 #include "engine/sim/game_sim.hpp"
@@ -14,6 +15,13 @@ using namespace aztec::script;
 // Hidden cargo must not count as a dead protected unit or a defeated side.
 static bool script_present(const Object& object) {
   return object.alive && (!object.removed || object.carrier != 0);
+}
+
+// V: runtime categories admit units, structures and vessels, but not cameras.
+// Construction-class numbers in TypeInfo use a different namespace.
+static bool script_rect_type(int type) {
+  const auto* info = type_info(type);
+  return info && info->kind != 11;
 }
 
 bool is_town_building(int t) {
@@ -77,28 +85,30 @@ void ScriptRunner::set(Script s) {
   trigger_traces_.assign(script_.triggers.size(), {});
 }
 
-void ScriptRunner::init(const World&) {
-  enabled_.clear();
+void ScriptRunner::init(const World& w) {
+  enabled_.assign(script_.triggers.size(), true);
+  latched_.assign(script_.triggers.size(), false);
   timers_.clear();
-  timers_[0] = Timer{};
   tactics_.clear();
-  local_time_ = 0;
+  local_time_ = (w.mission.start_time % 7200 + 7200) % 7200;
+  elapsed_ticks_ = 0;
   unsupported_ = 0;
   outcome_origin_.reset();
   trigger_traces_.assign(script_.triggers.size(), {});
-  // V: the reference trigger constructor starts enabled. Startup actions control later gates.
-  for (const Trigger& t : script_.triggers) {
-    enabled_[t.id] = true;
-    // G: eagerly create referenced timers at mission start. The reference creates
-    // missing timers on lookup; its first-evaluation tick still needs measurement.
-    for (const auto& condition : t.conditions)
-      if (condition.kind == CondKind::Timer) timers_.try_emplace(condition.id);
-  }
+  // G: placed scenario groups start reserved; map Locked loading is not available.
+  for (const auto& o : w.objects)
+    if (script_present(o) && o.tactic >= 0) tactics_.try_emplace({o.side, o.tactic});
+}
+
+void ScriptRunner::set_enabled(int id, bool enabled) {
+  for (size_t i = 0; i < script_.triggers.size(); ++i)
+    if (script_.triggers[i].id == id) { enabled_[i] = enabled; return; }
 }
 
 bool ScriptRunner::trigger_enabled(int id) const {
-  const auto it = enabled_.find(id);
-  return it != enabled_.end() && it->second;
+  for (size_t i = 0; i < script_.triggers.size(); ++i)
+    if (script_.triggers[i].id == id) return enabled_[i];
+  return false;
 }
 
 std::vector<ScriptActionObservation> ScriptRunner::action_observations(const World& w) const {
@@ -109,7 +119,7 @@ std::vector<ScriptActionObservation> ScriptRunner::action_observations(const Wor
     for (const auto& c : t.conditions) if (!eval(w, c)) false_lines.push_back(c.line);
     for (size_t j = 0; j < t.actions.size(); ++j) {
       const auto& a = t.actions[j];
-      result.push_back({i, j, t.id, a.line, a.kind, trigger_enabled(t.id), trigger_traces_[i], false_lines});
+      result.push_back({i, j, t.id, a.line, a.kind, enabled_[i], trigger_traces_[i], false_lines});
     }
   }
   return result;
@@ -134,8 +144,24 @@ int ScriptRunner::count_towns(const World& w, int side) const {
 
 std::vector<uint32_t> ScriptRunner::tactic_members(const World& w, int side, int tactic) const {
   std::vector<uint32_t> v;
-  for (const Object& o : w.objects)
-    if (script_present(o) && o.side == side && o.tactic == tactic && tactic >= 0) v.push_back(o.id);
+  const auto state = tactics_.find({side, tactic});
+  // V: only reserved plain tactics are addressable, with towns as the fallback.
+  if (state == tactics_.end() || state->second.locked) {
+    for (const Object& o : w.objects) {
+      const bool town_group = std::any_of(w.mission.towns.begin(), w.mission.towns.end(), [&](const TownDef& t) {
+        return t.side == side && t.index == o.town && t.scenario_id == tactic;
+      });
+      if (script_present(o) && o.side == side && !town_group && o.tactic == tactic && tactic >= 0)
+        v.push_back(o.id);
+    }
+  }
+  if (!v.empty()) return v;
+  for (const auto& town : w.mission.towns) {
+    if (town.side != side || town.scenario_id != tactic) continue;
+    for (const Object& o : w.objects)
+      if (script_present(o) && o.side == side && o.town == town.index) v.push_back(o.id);
+    break;
+  }
   return v;
 }
 
@@ -164,33 +190,37 @@ bool ScriptRunner::eval(const World& w, const Condition& c) const {
   int side = resolve_side(w, c.side);
   auto in_rect = [&](const Object& o) {
     int tx = (o.cur_x >> 8) / kTilePx, ty = (o.cur_y >> 8) / kTilePx;
-    return tx >= c.rect[0] && tx <= c.rect[2] && ty >= c.rect[1] && ty <= c.rect[3];
+    return tx >= std::min(c.rect[0], c.rect[2]) && tx <= std::max(c.rect[0], c.rect[2]) &&
+        ty >= std::min(c.rect[1], c.rect[3]) && ty <= std::max(c.rect[1], c.rect[3]);
   };
   switch (c.kind) {
     case CondKind::Always: return true;
-    case CondKind::LocalTime:
-    case CondKind::GlobalTime: return cmp(c.cmp, int64_t(local_time_), c.value);
+    case CondKind::LocalTime: return cmp(c.cmp, local_time_, c.value);
+    case CondKind::GlobalTime: return cmp(c.cmp, std::bit_cast<int32_t>(uint32_t(elapsed_ticks_)), c.value);
     case CondKind::Timer: {
       auto it = timers_.find(c.id);
       if (it == timers_.end()) return cmp(c.cmp, 0, c.value);
-      if (!it->second.exists) return false;
       return cmp(c.cmp, it->second.value, c.value);
     }
     case CondKind::SideUnits: return cmp(c.cmp, count_units(w, side), c.value);
     case CondKind::SideTowns: return cmp(c.cmp, count_towns(w, side), c.value);
     case CondKind::SideEnemies: {
       int n = 0;
-      for (const Object& o : w.objects) {
-        if (!script_present(o) || o.type < 0 || !w.hostile(side, o.side)) continue;
-        const TypeInfo* ti = type_info(o.type);
-        if (ti && (!ti->is_structure() || is_town_building(o.type))) n++;
+      for (int other = 0; other < 8; ++other) {
+        if (!w.hostile(side, other)) continue;
+        const bool has_tactic = std::any_of(w.objects.begin(), w.objects.end(), [&](const Object& o) {
+          const TypeInfo* ti = type_info(o.type);
+          return script_present(o) && o.side == other &&
+              (o.tactic != -1 || (ti && !ti->is_structure()));
+        });
+        if (has_tactic || count_towns(w, other) != 0) ++n;
       }
       return cmp(c.cmp, n, c.value);
     }
     case CondKind::SideTactics: {
       std::vector<int> seen;
       for (const Object& o : w.objects)
-        if (!o.removed && o.alive && o.side == side && o.tactic >= 0 && std::find(seen.begin(), seen.end(), o.tactic) == seen.end()) seen.push_back(o.tactic);
+        if (!o.removed && o.alive && o.side == side && o.tactic != -1 && std::find(seen.begin(), seen.end(), o.tactic) == seen.end()) seen.push_back(o.tactic);
       return cmp(c.cmp, int64_t(seen.size()), c.value);
     }
     case CondKind::SideMoney:
@@ -199,8 +229,7 @@ bool ScriptRunner::eval(const World& w, const Condition& c) const {
       int n = 0;
       for (const Object& o : w.objects) {
         if (o.removed || !o.alive || o.type < 0 || o.side != side) continue;
-        const TypeInfo* ti = type_info(o.type);
-        if (ti && !ti->is_structure() && in_rect(o)) n++;
+        if (script_rect_type(o.type) && in_rect(o)) n++;
       }
       return cmp(c.cmp, n, c.value);
     }
@@ -209,7 +238,7 @@ bool ScriptRunner::eval(const World& w, const Condition& c) const {
       int n = 0;
       for (const Object& o : w.objects)
         if (script_present(o) && o.side == side && o.type == c.ugi &&
-            (c.kind == CondKind::SideUnitsOfId || (!o.removed && in_rect(o)))) n++;
+            (c.kind == CondKind::SideUnitsOfId || (!o.removed && script_rect_type(o.type) && in_rect(o)))) n++;
       return cmp(c.cmp, n, c.value);
     }
     case CondKind::TacticValid:
@@ -267,18 +296,17 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
         w.messages.push_back({"Vessel action: no living vessel for scenario " + std::to_string(a.id), 72});
       break;
     }
-    case ActKind::TriggerEnable: enabled_[a.id] = true; break;
-    case ActKind::TriggerDisable: enabled_[a.id] = false; break;
+    case ActKind::TriggerEnable: set_enabled(a.id, true); break;
+    case ActKind::TriggerDisable: set_enabled(a.id, false); break;
     case ActKind::TimerSet: {
       auto& timer = timers_[a.id];
-      if (!timer.exists) timer = Timer{};
       // V: setting the counter does not clear an existing timer's stop flag.
       timer.value = a.a;
       break;
     }
-    case ActKind::TimerStart: { Timer& t = timers_[a.id]; t.running = true; t.exists = true; break; }
+    case ActKind::TimerStart: { timers_[a.id].running = true; break; }
     case ActKind::TimerStop: timers_[a.id].running = false; break;
-    case ActKind::TimerKill: timers_[a.id].exists = false; break;
+    case ActKind::TimerKill: timers_.erase(a.id); break;
     case ActKind::CenterView:
       // V: centerView uses tile origins; the view camera clamps its viewport.
       w.center_view = true;
@@ -318,11 +346,18 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
     case ActKind::SideVictory: case ActKind::SideDefeat: {
       uint8_t r = a.kind == ActKind::SideVictory ? kVictory : kDefeat;
       if (side >= 0 && side < 8 && w.side_outcome[side] == kRunning) w.side_outcome[side] = r;
-      if (side == w.script_side && w.outcome == kRunning) w.outcome = r;
+      if (side == w.script_side && w.outcome == kRunning) w.outcome = w.side_outcome[side];
       break;
     }
-    case ActKind::SideAddMoney: if (side >= 0 && side < int(w.side_state.size())) w.side_state[size_t(side)].money += a.a; break;
-    case ActKind::SideTakeMoney: if (side >= 0 && side < int(w.side_state.size())) w.side_state[size_t(side)].money = std::max(0, w.side_state[size_t(side)].money - a.a); break;
+    case ActKind::SideAddMoney:
+    case ActKind::SideTakeMoney:
+      if (side >= 0 && side < int(w.side_state.size())) {
+        auto& money = w.side_state[size_t(side)].money;
+        const uint32_t amount = uint32_t(a.a);
+        const uint32_t result = a.kind == ActKind::SideAddMoney ? uint32_t(money) + amount : uint32_t(money) - amount;
+        money = std::max(0, int(std::bit_cast<int32_t>(result)));
+      }
+      break;
     case ActKind::SideSetFriendlyTo: case ActKind::SideSetNeutralTo: case ActKind::SideSetEnemyTo: {
       int other = resolve_side(w, a.a);
       if (side < 0 || side >= 8 || other < 0 || other >= 8 || side == other) break;
@@ -347,7 +382,8 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
       tactics_[{side, a.id}].path = -1;
       break;
     case ActKind::TacticJoinTactic:
-      for (uint32_t id : tactic_members(w, side, a.id)) w.find_mut(id)->tactic = a.a;
+      if (!tactic_members(w, side, a.a).empty())
+        for (uint32_t id : tactic_members(w, side, a.id)) w.find_mut(id)->tactic = a.a;
       break;
     case ActKind::TacticSetPath: case ActKind::TacticSetInvertedPath: case ActKind::TacticSetCycledPath: case ActKind::TacticSetCycledInvertedPath: {
       TacticState& t = tactics_[{side, a.id}];
@@ -356,21 +392,55 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
       t.inverted = a.kind == ActKind::TacticSetInvertedPath || a.kind == ActKind::TacticSetCycledInvertedPath;
       break;
     }
-    case ActKind::TacticLock: tactics_[{side, a.id}].locked = true; break;
-    case ActKind::TacticUnlock: tactics_[{side, a.id}].locked = false; break;
+    case ActKind::TacticLock:
+      if (!tactic_members(w, side, a.id).empty()) tactics_[{side, a.id}].locked = true;
+      break;
+    case ActKind::TacticUnlock: {
+      auto members = tactic_members(w, side, a.id);
+      if (members.empty()) break;
+      tactics_[{side, a.id}].locked = false;
+      break;
+    }
     case ActKind::TacticKill:
       for (uint32_t id : tactic_members(w, side, a.id)) sim.script_kill(w, id);
       break;
     case ActKind::TacticGiftToSide: {
       int to = resolve_side(w, a.a);
       if (to < 0 || to >= int(w.side_state.size())) break;
-      // Towns share the script tactic namespace with teams (V). Transfer their
-      // ownership records too, so production and objective counts follow the gift.
-      for (size_t i = 0; i < w.mission.towns.size(); ++i)
-        if (w.mission.towns[i].side == side && w.mission.towns[i].scenario_id == a.id)
-          sim.transfer_town(w, int(i), to);
       auto members = tactic_members(w, side, a.id);
-      sim.transfer_objects(w, members, to);
+      if (members.empty()) break;
+      const Object* first = w.find(members.front());
+      const bool town_group = std::any_of(w.mission.towns.begin(), w.mission.towns.end(), [&](const TownDef& t) {
+        return t.side == side && t.index == first->town && t.scenario_id == a.id;
+      });
+      if (town_group) {
+        for (size_t i = 0; i < w.mission.towns.size(); ++i)
+          if (w.mission.towns[i].index == first->town && w.mission.towns[i].side == side) {
+            sim.transfer_town(w, int(i), to);
+            tactics_[{side, a.id}].path = -1;
+            tactics_[{to, a.id}] = TacticState{};
+            break;
+          }
+      } else {
+        // Allocate an independent receiving group, avoiding all existing identities.
+        int group = 0;
+        for (;;) {
+          const bool used = std::any_of(w.objects.begin(), w.objects.end(), [&](const Object& o) {
+            return o.side == to && o.tactic == group;
+          }) || std::any_of(w.mission.towns.begin(), w.mission.towns.end(), [&](const TownDef& t) {
+            return t.side == to && t.scenario_id == group;
+          });
+          if (!used) break;
+          ++group;
+        }
+        sim.transfer_objects(w, members, to);
+        for (uint32_t id : members) {
+          auto* member = w.find_mut(id);
+          member->tactic = group;
+          member->town = -1;
+        }
+        tactics_[{to, group}].locked = false;
+      }
       break;
     }
     default: // build/move commands remain unsupported
@@ -420,10 +490,11 @@ uint64_t ScriptRunner::state_hash() const {
     }
   }
   mix(local_time_);
+  if (loaded()) mix(elapsed_ticks_);
   mix(enabled_.size());
-  for (const auto& e : enabled_) { mix(uint64_t(e.first)); mix(e.second); }
+  for (size_t i = 0; i < enabled_.size(); ++i) { mix(enabled_[i]); mix(latched_[i]); }
   mix(timers_.size());
-  for (const auto& t : timers_) { mix(uint64_t(t.first)); mix(uint64_t(t.second.value)); mix(t.second.running * 2u + t.second.exists); }
+  for (const auto& t : timers_) { mix(uint64_t(t.first)); mix(uint64_t(t.second.value)); mix(t.second.running); }
   mix(tactics_.size());
   for (const auto& t : tactics_) {
     mix(uint64_t(t.first.first)); mix(uint64_t(t.first.second));
@@ -439,26 +510,33 @@ void ScriptRunner::tick(GameSim& sim, World& w) {
     if (camera.active && camera.ticks_left > 0 && --camera.ticks_left == 0) camera.active = false;
   w.script_cameras.erase(std::remove_if(w.script_cameras.begin(), w.script_cameras.end(),
       [](const ScriptCamera& camera) { return !camera.active && !camera.latest; }), w.script_cameras.end());
-  local_time_++;
+  local_time_ = (local_time_ + 1) % 7200;
+  ++elapsed_ticks_;
+  // G: existing timers advance before triggers; pool ordering still needs measurement.
   for (auto& kv : timers_)
-    if (kv.second.exists && kv.second.running) kv.second.value++;
+    if (kv.second.running) kv.second.value = std::bit_cast<int32_t>(uint32_t(kv.second.value) + 1u);
   for (size_t i = 0; i < script_.triggers.size(); ++i) {
     const Trigger& t = script_.triggers[i];
-    auto it = enabled_.find(t.id);
-    if (it != enabled_.end() && !it->second) continue;
-    bool ok = true;
-    for (const Condition& c : t.conditions) if (!eval(w, c)) { ok = false; break; }
-    if (!ok) continue;
-    auto& trace = trigger_traces_[i];
-    if (!trace.executions) trace.first_tick = local_time_;
-    ++trace.executions;
-    trace.last_tick = local_time_;
-    for (const Action& a : t.actions) {
-      const auto before = w.outcome;
-      run(sim, w, a);
-      if (before == kRunning && w.outcome != kRunning)
-        outcome_origin_ = ScriptOutcomeOrigin{t.id, a.line, w.tick};
+    if (!enabled_[i]) continue;
+    if (latched_[i]) {
+      auto& trace = trigger_traces_[i];
+      if (!trace.executions) trace.first_tick = elapsed_ticks_;
+      ++trace.executions;
+      trace.last_tick = elapsed_ticks_;
+      for (const Action& a : t.actions) {
+        const auto before = w.outcome;
+        run(sim, w, a);
+        if (before == kRunning && w.outcome != kRunning)
+          outcome_origin_ = ScriptOutcomeOrigin{t.id, a.line, w.tick};
+      }
     }
+    // Even a self-disabling action completes this update and re-latches.
+    bool ok = !t.conditions.empty();
+    for (const Condition& c : t.conditions) {
+      if (c.kind == CondKind::Timer) timers_.try_emplace(c.id);
+      if (!eval(w, c)) { ok = false; break; }
+    }
+    latched_[i] = ok;
   }
   follow_paths(sim, w);
   for (Message& m : w.messages) if (m.seconds_left < 0) m.ticks_left--;

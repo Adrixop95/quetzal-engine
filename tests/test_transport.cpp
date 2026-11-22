@@ -139,6 +139,8 @@ static void script_arrivals() {
   TempDir tmp; auto file=(tmp.path()/"transport.scn").string();
   std::ofstream(file)<<"trigger(1) conditions always actions boat(4).activate trigger(1).disable end";
   GameSim sim(rules()); CHECK(sim.attach_script(file)); sim.init(w); ticks(sim,w,1);
+  CHECK(w.objects[0].ferry_phase != 3);
+  ticks(sim,w,1);
   CHECK(sim.script().unsupported()==0 && w.objects[0].ferry_phase==3);
   CHECK(w.objects[0].ferry_destination==42 && w.objects[0].ferry_request==-1);
   const auto remaining=w.objects[0].ferry_wait;

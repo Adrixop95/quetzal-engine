@@ -43,15 +43,15 @@ class CampaignProbe(unittest.TestCase):
 
             first = run()
             self.assertEqual(first, run())
-            self.assertIn('status\tvictory\nticks\t2', first)
+            self.assertIn('status\tvictory\nticks\t3', first)
             self.assertIn('outcome_trigger\t0', first)
             isolated = run(0, '--mode', 'scripts')
             self.assertIn('mode\tscripts', isolated)
-            self.assertIn('status\tvictory\nticks\t2', isolated)
+            self.assertIn('status\tvictory\nticks\t3', isolated)
             events.write_text('')
             self.assertIn('status\ttimeout', run(1))
             run(0, '--expect', 'timeout')
-            events.write_text('2 kill-side 1\n3 kill-side 0\n')
+            events.write_text('2 kill-side 1\n4 kill-side 0\n')
             self.assertIn('unapplied_events\t1', run(1))
             for invalid in ('1 unsupported 1\n', '0 kill-side 1\n', '1 kill-side 8\n',
                             '1 kill-type 1\n', '2 kill-side 1\n1 kill-side 0\n', '1 kill-side 1 junk\n'):

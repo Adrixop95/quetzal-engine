@@ -111,7 +111,7 @@ static void setup_and_replay(GameData& data, const fs::path& root) {
   CHECK(fresh.skirmish && fresh.script_side == 1 && fresh.mission.sides[2].only_comp);
   CHECK(fresh.local_side == world.local_side && fresh.selection.ids == world.selection.ids);
   CHECK(resumed->state_hash(fresh) == sim.state_hash(world));
-  advance(sim, world, 60); advance(*resumed, fresh, 60);
+  advance(sim, world, 61); advance(*resumed, fresh, 61);
   CHECK(world.outcome == kVictory && fresh.outcome == kVictory);
   CHECK(sim.state_hash(world) == resumed->state_hash(fresh));
   World wrong; CHECK(load_world(data, spec, wrong, error));
@@ -133,7 +133,7 @@ static void setup_and_replay(GameData& data, const fs::path& root) {
     advance(battle, elimination, 2); CHECK(elimination.outcome == kRunning);
     for (const auto& object : elimination.objects)
       if (object.side == (lose ? 1 : 2)) battle.script_kill(elimination, object.id);
-    advance(battle, elimination, 1);
+    advance(battle, elimination, 2);
     CHECK(elimination.outcome == (lose ? kDefeat : kVictory));
   }
   // The map script also supports objectives other than elimination.
@@ -141,7 +141,7 @@ static void setup_and_replay(GameData& data, const fs::path& root) {
   write(root / "Maps" / (spec + ".scn"),
       "trigger(23) conditions localTime == 9 actions side(local).defeat end\n");
   GameSim losing(rules); CHECK(losing.attach_script(script)); losing.init(defeat);
-  advance(losing, defeat, 9); CHECK(defeat.outcome == kDefeat);
+  advance(losing, defeat, 10); CHECK(defeat.outcome == kDefeat);
 }
 static int headless(std::vector<std::string> args) {
   std::vector<char*> argv;
@@ -172,7 +172,7 @@ static void command_line(const fs::path& root) {
 class FirstDefeat : public Simulation {
  public:
   explicit FirstDefeat(int& ticks) : ticks_(ticks) {}
-  void tick(World& world) override { ++ticks_; if (++world.tick == 9) world.outcome = kDefeat; }
+  void tick(World& world) override { ++ticks_; if (++world.tick == 10) world.outcome = kDefeat; }
  private:
   int& ticks_;
 };
@@ -199,16 +199,16 @@ static void frontend_and_play(GameData& data, const fs::path& root) {
   options.menu_session = true; options.menu = false;
   options.script = (root / "play.txt").string(); options.ui_trace = (root / "play.jsonl").string();
   write(options.menu_script, "0 close\n");
-  write(options.script, "expect tick == 0\nuntil 9\nexpect outcome == 2\nwait 2\nexpect tick == 9\nkey Escape\n");
+  write(options.script, "expect tick == 0\nuntil 10\nexpect outcome == 2\nwait 2\nexpect tick == 10\nkey Escape\n");
   CHECK(run_engine(options) == 0);
   CHECK(read(options.ui_trace).find("\"screen\":\"mission-result-defeat\"") != std::string::npos);
   CHECK(read(options.menu_trace).find("\"rendered_screen\":\"main\"") != std::string::npos);
   write(root / "Maps" / (spec + ".scn"),
       "trigger(35) conditions localTime == 9 actions side(local).victory end\n");
-  write(options.script, "expect tick == 0\nuntil 9\nwait 2\nexpect tick == 9\nkey Return\n");
+  write(options.script, "expect tick == 0\nuntil 10\nwait 2\nexpect tick == 10\nkey Return\n");
   int ticks = 0;
   CHECK(run_engine(options, {}, std::make_unique<FirstDefeat>(ticks)) == 0);
-  CHECK(ticks == 9); // Retry rebuilds the real simulation and reaches the generated victory.
+  CHECK(ticks == 10); // Retry rebuilds the real simulation and reaches the generated victory.
   CHECK(read(options.ui_trace).find("\"outcome\":1") != std::string::npos);
   CHECK(read(options.menu_trace).find("\"rendered_screen\":\"main\"") != std::string::npos);
   CHECK(!fs::exists(user_file("Saves/engine_campaign.txt")));
