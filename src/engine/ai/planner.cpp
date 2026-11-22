@@ -8,6 +8,10 @@
 namespace aztec::engine::ai {
 namespace {
 bool live(const Object& o) { return o.alive && !o.removed && o.type >= 0; }
+bool computer(const World& w, int side) {
+  return std::any_of(w.mission.sides.begin(), w.mission.sides.end(),
+                     [side](const auto& s) { return s.index == side && s.only_comp; });
+}
 bool near(const TownDef& a, const TownDef& b) { return std::abs(a.x - b.x) < 8 && std::abs(a.y - b.y) < 8; }
 int count(const World& w, int town, int type) {
   int n = 0;
@@ -54,8 +58,28 @@ int matchup(const RulesData& rules, int attacker, int target) {
   return 255 - ticks;
 }
 
+int target_score(const World& w, const RulesData& rules, int town, const Intelligence& record) {
+  if (town < 0 || town >= int(w.mission.towns.size()) || record.town < 0 ||
+      record.town >= int(w.mission.towns.size())) return 0x7fff00;
+  const auto& source = w.mission.towns[size_t(town)];
+  const auto& target = w.mission.towns[size_t(record.town)];
+  int max_hp = 1;
+  for (int type = 0; type < 90; ++type) max_hp = std::max(max_hp, rules.type(type).hp_max);
+  int64_t count = 0, weight = 0;
+  for (int type = 0; type < 90; ++type) if (!rules.type(type).structure) {
+    const int n = std::max(0, record.counts[size_t(type)]);
+    count += n;
+    weight += int64_t(n) * (int64_t(rules.type(type).hp_max) * 256 / max_hp);
+  }
+  int64_t distance = combat_distance(source.x - target.x, source.y - target.y) * 256 /
+      std::max<int64_t>(1, combat_distance(w.terrain.w, w.terrain.h));
+  if (computer(w, target.side) && !w.enemy_all(target.side)) distance *= 3;
+  return int(distance + (count ? weight / count / 2 : 0) + std::min<int64_t>(count, 256) / 2);
+}
+
 std::vector<PlanEntry> make_plan(const World& w, const RulesData& rules, int town,
-                                 int target, bool offensive, uint32_t& random, const std::vector<Intelligence>& knowledge) {
+                                 int target, bool offensive, uint32_t& random, const std::vector<Intelligence>& knowledge,
+                                 int* wanted_type) {
   std::vector<PlanEntry> plan;
   if (town < 0 || target < 0 || town >= int(w.mission.towns.size()) || target >= int(w.mission.towns.size())) return plan;
   const auto& source = w.mission.towns[size_t(town)];
@@ -63,23 +87,26 @@ std::vector<PlanEntry> make_plan(const World& w, const RulesData& rules, int tow
   for (const auto& record : knowledge)
     if (record.town == target) demand = record.counts;
   // V: own intelligence describes buildings; opposing intelligence includes units.
-  int limit = 0, level = 0, max_hp = 1;
+  int64_t limit = 0;
+  int level = 0, max_hp = 1;
   for (int n : demand) limit += n;
   for (size_t ti = 0; ti < w.mission.towns.size(); ++ti)
     if (w.mission.towns[ti].side == source.side) level = std::max(level, development(w, rules, int(ti)));
   for (int type = 0; type < 90; ++type) max_hp = std::max(max_hp, rules.type(type).hp_max);
   std::array<std::vector<uint32_t>, 90> reusable;
-  if (!w.enemy_all(source.side) && offensive) {
+  if (!w.enemy_all(source.side)) {
     // V: offensive plans can reuse nearby town troops.
-    // G: squared Euclidean distance approximates the native integer distance test.
+    // G: town/member anchors stand in for the unresolved native coordinate operands.
     // G: script tactic eligibility has no complete adapter yet; preserve explicit script groups.
     for (const auto& o : w.objects) {
-      if (!live(o) || o.side != source.side || rules.type(o.type).structure || o.tactic < -1) continue;
+      if (!live(o) || o.type >= 90 || o.side != source.side || rules.type(o.type).structure || o.tactic < -1) continue;
       const auto home = std::find_if(w.mission.towns.begin(), w.mission.towns.end(),
           [&](const auto& td) { return td.side == o.side && td.index == o.town; });
-      if (home == w.mission.towns.end() || (o.tactic >= 0 && o.tactic != home->scenario_id)) continue;
-      const int dx = source.x - home->x, dy = source.y - home->y;
-      if (dx * dx + dy * dy <= 625 && reusable[size_t(o.type)].size() < 32)
+      if (home != w.mission.towns.end() && (!offensive || (o.tactic >= 0 && o.tactic != home->scenario_id))) continue;
+      if (home == w.mission.towns.end() && o.tactic >= 0) continue;
+      const int x = home == w.mission.towns.end() ? (o.cur_x >> 8) / kTilePx : home->x;
+      const int y = home == w.mission.towns.end() ? (o.cur_y >> 8) / kTilePx : home->y;
+      if (combat_distance(source.x - x, source.y - y) <= 25 && reusable[size_t(o.type)].size() < 32)
         reusable[size_t(o.type)].push_back(o.id);
     }
   }
@@ -89,7 +116,7 @@ std::vector<PlanEntry> make_plan(const World& w, const RulesData& rules, int tow
     return int((random >> 16) & 32767);
   };
   // V: ordinary new counters test the source town; the airborne pass uses side availability.
-  auto buildable = [&](int type, bool side_wide = false) {
+  auto buildable = [&](int type, bool side_wide = false, int* missing = nullptr) {
     for (size_t ti = 0; ti < w.mission.towns.size(); ++ti) {
       const auto& td = w.mission.towns[ti];
       if (td.side != source.side || (!side_wide && ti != size_t(town))) continue;
@@ -101,6 +128,7 @@ std::vector<PlanEntry> make_plan(const World& w, const RulesData& rules, int tow
             if (live(o) && o.side == source.side && o.type == p.type && o.progress == 1000 &&
                 (p.side_wide || o.town == td.index)) present = true;
           ok &= present;
+          if (!present && missing) *missing = p.type;
         }
         for (const auto& sd : w.mission.sides) if (sd.index == source.side)
           ok &= std::find(sd.disabled.begin(), sd.disabled.end(), type) == sd.disabled.end();
@@ -126,20 +154,35 @@ std::vector<PlanEntry> make_plan(const World& w, const RulesData& rules, int tow
     if (!demand[size_t(target_type)]) continue;
     for (int round = 0; round < 256 && plan.size() < 256; ++round) {
       int best = -1, best_score = 0;
+      bool best_reuse = false;
       for (int type : candidates) {
         if (type == 33) continue;
         int strength = matchup(rules, type, target_type);
         if (!strength) continue;
         const bool reuse = !reusable[size_t(type)].empty();
-        const int score = reuse ? strength : int(int64_t(rules.type(type).hp_max) * 256 / max_hp) * strength / 256 + draw() % 64;
-        if ((reuse ? (best < 0 || strength >= matchup(rules, best, target_type)) : score > best_score) && (reuse || buildable(type))) { best = type; best_score = score; }
+        const int score = reuse ? strength : int(int64_t(rules.type(type).hp_max) * 256 / max_hp) * strength / 256 + (draw() & 0x3f);
+        if (reuse) {
+          if (best < 0 || strength >= matchup(rules, best, target_type)) {
+            best = type; best_score = strength; best_reuse = true;
+          }
+        } else if (score >= best_score) {
+          int missing = 90;
+          if (buildable(type, false, &missing)) {
+            if (best < 0 || score > best_score) { best = type; best_score = score; best_reuse = false; }
+          } else if (wanted_type && missing < 90 && score > 0) {
+            // V: 0x44d701 leaves the wanted-score bar at zero. Last eligible failure wins.
+            *wanted_type = type;
+          }
+        }
       }
       if (best < 0) break;
-      int64_t residual = int64_t(2 * demand[size_t(target_type)]) * matchup(rules, target_type, best);
+      int64_t residual = 2LL * demand[size_t(target_type)] * matchup(rules, target_type, best);
       for (int type = 0; type < 90; ++type) residual -= int64_t(allocated[size_t(type)]) * matchup(rules, type, target_type);
       if (residual <= 0) break;
       const int batch = draw() % (level + 1) + 1;
       for (int i = 0; i < batch && (residual > 0 || int(plan.size()) < limit); ++i) {
+        // Exhaustion returns to candidate choice instead of silently buying an unbuildable type.
+        if (best_reuse && reusable[size_t(best)].empty()) break;
         if (!append(best)) break;
         residual -= matchup(rules, best, target_type);
       }
@@ -151,7 +194,7 @@ std::vector<PlanEntry> make_plan(const World& w, const RulesData& rules, int tow
   for (int target_type = 0; target_type < 90; ++target_type) {
     if (!rules.type(target_type).flier || !demand[size_t(target_type)]) continue;
     int best = -1, best_score = 0;
-    for (int type : candidates) if (buildable(type, true)) {
+    for (int type : candidates) if (type != 33 && buildable(type, true)) {
       const int strength = matchup(rules, type, target_type);
       if (strength > best_score) { best = type; best_score = strength + draw() % 32; }
     }
@@ -202,7 +245,8 @@ int development(const World& w, const RulesData& rules, int town) {
   for (const auto& o : w.objects)
     if (live(o) && o.town == w.mission.towns[town].index && o.side == w.mission.towns[town].side && rules.type(o.type).kind == 2) result += rules.type(o.type).dev_level;
   for (const auto& s : w.side_state) for (const auto& q : s.queue)
-    if (q.town == town && rules.type(q.type).kind == 2) result += rules.type(q.type).dev_level;
+    if (q.town == town && rules.type(q.type).kind == 2 &&
+        (!q.object || !w.find(q.object) || !live(*w.find(q.object)))) result += rules.type(q.type).dev_level;
   return std::clamp(result, 0, 9);
 }
 
@@ -241,7 +285,9 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
   }
   if (!anchor) return d;  // A destroyed town cannot issue purchases through a stale mission record.
   auto command = [&](Pct kind) { Command c; c.type = kind; c.side = uint8_t(t.side); return c; };
-  int speed = build_speed(w, rules, state, town);
+  const bool queued = std::any_of(w.side_state[t.side].queue.begin(), w.side_state[t.side].queue.end(),
+                                  [town](const auto& q) { return q.town == town; });
+  int speed = state.phase == 3 && !busy && !queued ? 1 : build_speed(w, rules, state, town);
   if (town >= int(w.town_speed.size()) || w.town_speed[town] != speed) {
     auto c = command(Pct::BuildMode); c.a = speed; c.ids = {anchor}; d.commands.push_back(c);
   }
@@ -263,9 +309,40 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
            std::find(s.known_towns.begin(), s.known_towns.end(), ti) != s.known_towns.end() &&
            std::any_of(w.objects.begin(), w.objects.end(), [&](const auto& o) { return live(o) && o.town == w.mission.towns[ti].index && o.side == w.mission.towns[ti].side; });
   };
-  if (!enemy(s.target_town)) {
-    s.target_town = -1;
-    for (int ti : s.known_towns) if (enemy(ti)) { s.target_town = ti; break; }
+  s.target_town = -1;
+  int best_score = std::numeric_limits<int>::max();
+  for (int ti : s.known_towns) if (enemy(ti)) {
+    Intelligence record; record.town = ti;
+    for (const auto& r : s.knowledge) if (r.town == ti) record = r;
+    const int score = target_score(w, rules, town, record);
+    if (score < best_score) { best_score = score; s.target_town = ti; }
+  }
+  bool entered_threat = false, foreign_nearby = false;
+  const int radius = t.type != 0 ? 8 : 4;
+  for (const auto& o : w.objects) {
+    if (!live(o) || o.side < 0 || o.side >= int(w.side_state.size()) || o.side == t.side) continue;
+    const int64_t dx = (o.cur_x >> 8) / kTilePx - t.x, dy = (o.cur_y >> 8) / kTilePx - t.y;
+    const int64_t distance = dx * dx + dy * dy;
+    foreign_nearby |= distance <= 64; // V: the phase-16 exit check includes allies.
+    if (computer(w, t.side) && !computer(w, o.side) && w.relation[t.side][o.side] != kFriend &&
+        distance <= radius * radius && s.phase < 16) entered_threat = true;
+  }
+  if (entered_threat) {
+    s.phase = 16; s.plan.clear(); s.remaining = 0; s.plan_target_town = -1;
+    busy = false; // All current town production is cancelled before the strategist runs.
+    const auto& queue = w.side_state[t.side].queue;
+    for (size_t i = queue.size(); i > 0; --i) if (queue[i - 1].town == town) {
+      auto c = command(Pct::QueueKill); c.a = int(i - 1); d.commands.push_back(c);
+      if (rules.type(queue[i - 1].type).kind == 2) s.science_timer = 0;
+    }
+    // G: autonomous members stand in for eligible unlocked tactics. Script tactics
+    // have no complete eligibility/lock adapter and retain their explicit orders.
+    auto recall = command(Pct::Move);
+    recall.a = t.x * kTilePx + kTilePx / 2; recall.b = t.y * kTilePx + kTilePx / 2;
+    for (const auto& o : w.objects)
+      if (live(o) && o.side == t.side && o.tactic == -1 && !rules.type(o.type).structure)
+        recall.ids.push_back(o.id);
+    if (!recall.ids.empty()) d.commands.push_back(recall);
   }
   if (attacker) {
     const bool new_alert = s.last_alert != attacker->id;
@@ -278,12 +355,10 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
           (rules.type(o.type).mobile || rules.type(o.type).flier) && rules.type(o.type).armed &&
           rules.attack(o.type, attacker->type).damage > 0) c.ids.push_back(o.id);
     if (!c.ids.empty()) d.commands.push_back(c);
-    // V: threat entry interrupts the normal branch, not an existing threatened plan.
-    if (new_alert && s.phase < 16) { s.phase = 16; s.remaining = 0; }
     s.last_alert = attacker->id;
   }
   if (!attacker) s.last_alert = 0;
-  for (const auto& q : w.side_state[t.side].queue) busy |= q.town == town;
+  if (!entered_threat) for (const auto& q : w.side_state[t.side].queue) busy |= q.town == town;
   if (busy) return d;
   const int dev = development(w, rules, town);
   bool poor = income(w, rules, state, town) < 2 * (state.spent * 256 / int64_t(state.elapsed + 1));
@@ -314,32 +389,44 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
   };
   auto prepare = [&](bool offensive) {
     ++s.plan_generation;
-    s.plan = make_plan(w, rules, town, offensive ? s.target_town : town, offensive, s.random, s.knowledge);
+    s.plan = make_plan(w, rules, town, offensive ? s.target_town : town, offensive, s.random, s.knowledge, &s.wanted_type);
     s.remaining = int(s.plan.size());
     const int target = offensive ? s.target_town : town;
+    s.plan_target_town = target;
     return std::any_of(s.knowledge.begin(), s.knowledge.end(), [&](const auto& r) { return r.town == target; });
   };
   auto progress = [&](int done, bool allow_economy = true) {
     if (allow_economy && poor && economy()) return;
     if (s.remaining > 0) return; // The side allocator owns outstanding production.
     s.plan.clear();
-    s.remaining = 0; s.phase = done;
+    s.remaining = 0; s.plan_target_town = -1; s.phase = done;
   };
   switch (s.phase) {
     case 0: s.phase = 10; break;
     case 1: s.phase = enemy(s.target_town) && prepare(true) ? 2 : 11; break;
-    case 2:
+    case 2: {
       if (s.remaining > 0) { progress(2); break; }
       for (const auto& entry : s.plan) if (entry.object) available.push_back(entry.object);
       s.plan.clear();
-      if (enemy(s.target_town) && !w.enemy_all(t.side) && !available.empty()) {
+      const int destination = s.plan_target_town >= 0 ? s.plan_target_town : s.target_town;
+      if (enemy(destination) && !w.enemy_all(t.side) && !available.empty()) {
         auto c = command(Pct::AttackMove); c.ids = available;
-        c.a = w.mission.towns[s.target_town].x * kTilePx + kTilePx / 2;
-        c.b = w.mission.towns[s.target_town].y * kTilePx + kTilePx / 2;
+        c.a = w.mission.towns[destination].x * kTilePx + kTilePx / 2;
+        c.b = w.mission.towns[destination].y * kTilePx + kTilePx / 2;
         d.commands.push_back(c);
       }
-      s.phase = 11; break;
-    case 3: if (s.science_timer > 0 && buy(choose(2))) s.phase = 4; else { s.science_timer = 0; s.phase = 13; } break;
+      s.plan_target_town = -1; s.phase = 11; break;
+    }
+    case 3: {
+      const Offer* science = choose(2);
+      // G: map the recommendation to a directly offered prerequisite; recursive
+      // reference development scoring is still unresolved.
+      for (const auto& item : rules.build_list(t.race, t.type)) if (item.type == s.wanted_type)
+        for (const auto& p : item.prereq) if (const auto* offer = find(p.type)) science = offer;
+      if (s.science_timer > 0 && science && science->price <= w.side_state[t.side].money && buy(science)) s.phase = 4;
+      else { s.science_timer = 0; s.phase = 13; }
+      break;
+    }
     case 4: s.phase = 13; break;
     case 5: case 18:
       if (buy(choose(1))) s.phase = s.phase == 5 ? 6 : 19;
@@ -353,13 +440,13 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
     case 7: economy(); s.phase = 8; break;
     // V: the non-outpost gate concerns the source town, not the target town.
     case 9: s.phase = t.type != 0 && enemy(s.target_town) ? 1 : 11; break;
-    case 10: s.phase = s.science_timer <= 100 * (dev + 1) ? 13 : 3; break;
+    case 10: s.phase = s.science_timer <= 100 * (dev + 1) && s.wanted_type == 90 ? 13 : 3; break;
     case 11: s.phase = poor ? 7 : 12; break;
     case 12: s.phase = !s.defence_enabled ? 11 : defences < dev ? 5 : 0; break;
     case 13: s.phase = forces < 3 * (dev + 1) ? 15 : 9; break;
     case 14: progress(9); break;
     case 15: s.phase = prepare(false) ? 14 : 9; break;
-    case 16: if (attacker) s.phase = 21; else { s.remaining = 0; s.phase = 0; } break;
+    case 16: if (foreign_nearby) s.phase = 21; else { s.plan.clear(); s.remaining = 0; s.plan_target_town = -1; s.phase = 0; } break;
     case 17: s.phase = 21; break;
     case 19: s.phase = 16; break;
     case 20: s.phase = s.defence_enabled && defences < dev ? 18 : 16; break;
