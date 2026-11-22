@@ -61,6 +61,8 @@ class SettingsOptions {
 
 class ModificationOptions {
  public:
+  static constexpr int back_row = int(Modifications::names.size()) + 1;
+  static constexpr int row_count = back_row + 1;
   bool open = false;
   static SDL_Rect row(int index, int width, int height, int scale);
   void update(const Input& in, Options& options, int width, int height, int scale);
