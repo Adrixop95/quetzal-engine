@@ -10,6 +10,7 @@
 #include "engine/ui/commands_ui.hpp"
 #include "engine/ui/hud.hpp"
 #include "engine/ui/panel.hpp"
+#include "engine/world/visibility.hpp"
 
 using namespace aztec;
 using namespace aztec::engine;
@@ -105,7 +106,12 @@ static void run(const std::filesystem::path& output, bool original, int sc, int 
   Bytes palette(20 * 512);
   for (int shade = 0; shade < 20; ++shade)
     write_le<uint16_t>(palette.data() + shade * 512 + 2, shade == 9 ? 0x07e0 : shade == 1 ? 0x001f : 0xffff);
-  archive_groups(res / "Pal.xbe", {{0x450, {{16, palette}}}});
+  // Raw minimap brightness indexes a single palette, independent of preview pixels.
+  Bytes fog_palette(512);
+  for (int index = 0; index < 20; ++index)
+    write_le<uint16_t>(fog_palette.data() + index * 2,
+        index == 9 ? 0x07e0 : index == 1 ? 0x001f : 0xf800);
+  archive_groups(res / "Pal.xbe", {{0x450, {{15, fog_palette}, {16, palette}}}});
   SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, width, height, 32, SDL_PIXELFORMAT_ARGB8888);
   CHECK(surface);
   SDL_Renderer* r = SDL_CreateSoftwareRenderer(surface); CHECK(r);
@@ -187,9 +193,9 @@ static void run(const std::filesystem::path& output, bool original, int sc, int 
         auto box = preview_map.rect();
         return image[size_t(box.y + box.h / 2) * width + box.x + box.w / 2] & 0xffffff;
       };
-      CHECK(pixel() == 0x0000ff); // 8 >> 3 selects shade 1
+      CHECK(pixel() == 0x0000ff); // 8 >> 3 selects index 1
       std::fill(preview_world.visibility.sides[0].v.begin(), preview_world.visibility.sides[0].v.end(), 79);
-      CHECK(pixel() == 0x00ff00); // 79 >> 3 selects shade 9, without rounding
+      CHECK(pixel() == 0x00ff00); // 79 >> 3 selects index 9, without rounding
       for (int y = 0; y < 92; ++y) for (int x = 0; x < 60; ++x)
         preview_world.visibility.sides[0].v[y * 121 + x] = 8;
       preview_map.draw(r, camera, 0, &fog);
@@ -202,8 +208,42 @@ static void run(const std::filesystem::path& output, bool original, int sc, int 
       preview_world.local_side = 1; CHECK(pixel() == 0x0000ff);
       fog.set_enabled(false); CHECK(pixel() != 0x0000ff);
       fog.set_enabled(true); CHECK(pixel() == 0x0000ff);
+      std::fill(preview_world.visibility.sides[1].v.begin(), preview_world.visibility.sides[1].v.end(), 0);
+      CHECK(pixel() == 0xff0000); // index zero, never a sample of terrain or preview
+      preview_world.preview = {};
+      CHECK(preview_map.init(r, data, preview_world, 0, 14));
+      preview_map.layout_in(panel.minimap_rect(), sc);
+      CHECK(pixel() == 0xff0000); // identical fog background without a preview
       // Reinitialization must release old textures and reset preview state.
       CHECK(preview_map.init(r, data, world, 0, 14)); CHECK(!preview_map.from_preview());
+    }
+    // Scene-independent building memory also drives minimap footprints.
+    {
+      World remembered = world; remembered.objects.clear(); remembered.preview = {};
+      remembered.visibility_brightness = true;
+      remembered.visibility.sides = {{121, 92, std::vector<uint8_t>(121 * 92, 32)}};
+      auto rules = std::make_shared<RulesData>(); rules->init_defaults();
+      remembered.visibility_rules = rules;
+      Object building; building.id = 1; building.type = 10; building.side = 1;
+      building.teleport(to_fixed(60 * 48), to_fixed(45 * 48));
+      remembered.objects.push_back(building);
+      Minimap memory_map; CHECK(memory_map.init(r, data, remembered, 0, 14));
+      memory_map.layout_in(panel.minimap_rect(), sc);
+      Fog fog;
+      auto image = [&]() { memory_map.draw(r, camera, 0, &fog); return capture(r, width, height); };
+      update_building_memory(remembered);
+      auto empty = image();
+      std::fill(remembered.visibility.sides[0].v.begin(), remembered.visibility.sides[0].v.end(), 33);
+      update_building_memory(remembered); auto seen = image();
+      size_t changed = 0;
+      for (size_t i = 0; i < seen.size(); ++i) changed += seen[i] != empty[i];
+      CHECK(changed > 4); // a multi-cell footprint, rather than one 2x2 dot
+      std::fill(remembered.visibility.sides[0].v.begin(), remembered.visibility.sides[0].v.end(), 32);
+      remembered.objects[0].side = 0; remembered.objects[0].removed = true;
+      remembered.objects[0].alive = false;
+      update_building_memory(remembered); CHECK(image() == seen);
+      std::fill(remembered.visibility.sides[0].v.begin(), remembered.visibility.sides[0].v.end(), 33);
+      update_building_memory(remembered); CHECK(image() == empty);
     }
     // Edge markers must not overwrite the surrounding minimap frame. Compare
     // the frame before/after adding dots, independently of terrain or dot color.

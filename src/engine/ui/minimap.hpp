@@ -1,5 +1,5 @@
-// Minimap: the mission's .spr preview (or a texture averaged from terrain tiles when absent),
-// object dots and the camera rectangle. Click/drag with the left button to move the camera.
+// Minimap: local fog brightness, remembered building footprints, unit dots and camera bounds.
+// Legacy/no-fog views use a preview or averaged terrain. Left click/drag moves the camera.
 #pragma once
 #include <SDL.h>
 #include <array>
@@ -31,6 +31,8 @@ class Minimap {
  private:
   const World* world_ = nullptr;
   SDL_Texture* tex_ = nullptr;
+  SDL_Texture* fog_tex_ = nullptr;
+  std::array<uint32_t, 256> fog_palette_{};
   // Runtime palette variants of the user's preview; no game pixels are embedded.
   std::array<std::vector<uint32_t>, 20> preview_shades_;
   int texture_w_ = 0, texture_h_ = 0, default_shade_ = 0;

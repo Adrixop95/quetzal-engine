@@ -254,13 +254,65 @@ static void visibility_controls() {
   w.objects[0].cur_x = 0;
   w.visibility.sides[0].v[0] = 32;
   CHECK(!ai::visible(w, 0, 1));
-  CHECK(object_visible(w, 1, w.objects[0]));
+  CHECK(!object_visible(w, 1, w.objects[0])); // ownership does not bypass raw fog
   // Owning a tactic never grants another side visibility of its hidden members.
   CHECK(pick_object(w, 0, 0, 0, 8) == nullptr);
   w.visibility.sides[0].v.pop_back();
   CHECK(!position_visible(w, 0, 24, 0)); // malformed raw layer fails closed
   w.visibility_brightness = false; w.visibility.sides.clear();
   CHECK(position_visible(w, 0, 24, 0)); // resource-free UI fallback
+}
+
+static void building_visibility_controls() {
+  World w; w.terrain.w = w.terrain.h = 8; w.visibility_brightness = true;
+  w.visibility.sides = {{9, 10, std::vector<uint8_t>(90, 0)}, {9, 10, std::vector<uint8_t>(90, 0)}};
+  Object building; building.id = 1; building.type = 10; building.side = 1;
+  building.teleport(to_fixed(3 * 48), to_fixed(3 * 48));
+  building.anim_tick = 17; building.progress = 500; building.hp = 100;
+  w.objects.push_back(building);
+  auto& fog = w.visibility.sides[0].v;
+  // G resource-free bounds: [-28,-48,28,16]. Only the four outer vertices count.
+  const std::array<int, 4> corners{2 * 9 + 2, 2 * 9 + 4, 4 * 9 + 2, 4 * 9 + 4};
+  for (int corner : corners) {
+    std::fill(fog.begin(), fog.end(), 0);
+    fog[corner] = 32; CHECK(!object_visible(w, 0, building));
+    fog[corner] = 33; CHECK(object_visible(w, 0, building));
+    CHECK(!position_visible(w, 0, 3 * 48, 3 * 48)); // center stays dark
+  }
+  std::fill(fog.begin(), fog.end(), 0); fog[3 * 9 + 3] = 152;
+  CHECK(!object_visible(w, 0, building)); // a lit interior does not suffice
+  update_building_memory(w); CHECK(w.building_memory[0].empty());
+  fog[corners[0]] = 33;
+  update_building_memory(w); CHECK(w.building_memory[0].size() == 1);
+  CHECK(w.building_memory[1].empty()); // ownership grants no implicit observation
+  std::fill(fog.begin(), fog.end(), 32);
+  w.objects[0].anim_tick = 91; w.objects[0].progress = 1000; w.objects[0].hp = 50;
+  w.objects[0].side = 0;
+  update_building_memory(w);
+  const auto frozen = w.building_memory[0].at(1);
+  CHECK(frozen.anim_tick == 17 && frozen.progress == 500 && frozen.hp == 100 && frozen.side == 1);
+  fog[corners[1]] = 33; update_building_memory(w);
+  CHECK(w.building_memory[0].at(1).anim_tick == 91 && w.building_memory[0].at(1).side == 0);
+  std::fill(fog.begin(), fog.end(), 32);
+  w.objects[0].alive = false; w.objects[0].removed = true;
+  update_building_memory(w); CHECK(w.building_memory[0].size() == 1);
+  fog[3 * 9 + 3] = 33;
+  update_building_memory(w); CHECK(w.building_memory[0].empty());
+  // A new observation removes an overlapping orphan even if its center is dark.
+  w.objects[0].alive = true; w.objects[0].removed = false;
+  std::fill(fog.begin(), fog.end(), 32); fog[corners[0]] = 33;
+  update_building_memory(w); CHECK(w.building_memory[0].contains(1));
+  w.objects[0].alive = false; w.objects[0].removed = true;
+  Object replacement = building; replacement.id = 2;
+  replacement.teleport(to_fixed(3 * 48 + 24), to_fixed(3 * 48));
+  w.objects.push_back(replacement);
+  update_building_memory(w);
+  CHECK(w.building_memory[0].size() == 1 && w.building_memory[0].contains(2));
+  // Clipped buildings sample border vertices; entirely off-map bounds reveal nothing.
+  building.teleport(0, 0); std::fill(fog.begin(), fog.end(), 0); fog[0] = 33;
+  CHECK(object_visible(w, 0, building));
+  building.teleport(to_fixed(-28), to_fixed(48)); CHECK(!object_visible(w, 0, building));
+  building.teleport(to_fixed(-100), to_fixed(-100)); CHECK(!object_visible(w, 0, building));
 }
 
 static void ordering_controls() {
@@ -418,12 +470,54 @@ static void headless_controls() {
     world.terrain.w = 3; world.visibility.sides[1] = {4, 4, std::vector<uint8_t>(16, 152)};
     scene.fog().update(win.renderer(), world); CHECK(scene.fog().enabled());
     CHECK(scene.fog().darkness(world, 2, 1) == 0);
+    // Owned effects obey the same strict brightness threshold as foreign effects.
+    world.objects[0].removed = true;
+    world.terrain.w = world.terrain.h = 2;
+    world.local_side = 0;
+    world.visibility.sides = {{3, 4, std::vector<uint8_t>(12, 32)}};
+    Effect effect; effect.anim = 4; effect.side = 0;
+    effect.x = effect.prev_x = to_fixed(32); effect.y = effect.prev_y = to_fixed(32);
+    world.effects = {effect};
+    ++world.fog_version; scene.draw(camera, 1); CHECK(scene.stats.sprites == 0);
+    std::fill(world.visibility.sides[0].v.begin(), world.visibility.sides[0].v.end(), 33);
+    ++world.fog_version; scene.draw(camera, 1); CHECK(scene.stats.sprites == 1);
+    world.effects.clear(); world.objects[0].removed = false;
+    // Frozen building proxies are rendered after the live source disappears.
+    struct BuildingProvider : SpriteProvider {
+      bool pick(const ObjectState& state, SpriteDraw& out) const override {
+        out.key.index = state.anim_tick < 20 ? 1 : 2; return true;
+      }
+    };
+    scene.set_sprite_provider(std::make_shared<BuildingProvider>());
+    world.local_side = 0; world.terrain.w = world.terrain.h = 2;
+    world.visibility.sides = {{3, 4, std::vector<uint8_t>(12, 33)}};
+    world.objects[0].type = 10; world.objects[0].anim_tick = 17;
+    world.objects[0].teleport(to_fixed(32), to_fixed(32));
+    update_building_memory(world); ++world.fog_version;
+    scene.draw(camera, 0); CHECK(scene.stats.sprites == 1);
+    auto remembered_pixels = [&]() {
+      scene.draw(camera, 1);
+      std::vector<uint32_t> result(64 * 64);
+      SDL_RenderReadPixels(win.renderer(), nullptr, SDL_PIXELFORMAT_ARGB8888, result.data(), 64 * 4);
+      return result;
+    };
+    std::fill(world.visibility.sides[0].v.begin(), world.visibility.sides[0].v.end(), 32);
+    ++world.fog_version; update_building_memory(world);
+    auto frozen = remembered_pixels();
+    world.objects[0].anim_tick = 90; world.objects[0].side = 0;
+    world.objects[0].alive = false; world.objects[0].removed = true;
+    update_building_memory(world);
+    CHECK(remembered_pixels() == frozen && scene.stats.sprites == 1);
+    std::fill(world.visibility.sides[0].v.begin(), world.visibility.sides[0].v.end(), 33);
+    ++world.fog_version; update_building_memory(world);
+    scene.draw(camera, 1); CHECK(scene.stats.sprites == 0);
+
 
   }
   SDL_Quit();
 }
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--headless") headless_controls();
-  else { provider_controls(); grid_controls(); visibility_controls(); ordering_controls(); }
+  else { provider_controls(); grid_controls(); visibility_controls(); building_visibility_controls(); ordering_controls(); }
   return failures ? 1 : 0;
 }

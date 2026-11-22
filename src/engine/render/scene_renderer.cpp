@@ -156,13 +156,25 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
   std::vector<Item> items;
   items.reserve(world_.objects.size() + 256);
   float pad = 96;
-  for (const Object& o : world_.objects) {
+  std::vector<const Object*> displayed;
+  const bool proxies = fog_.requested() && world_.visibility_brightness &&
+      world_.local_side >= 0 && world_.local_side < int(world_.building_memory.size());
+  for (const auto& o : world_.objects)
+    if (!proxies || !visibility_structure(world_, o)) displayed.push_back(&o);
+  if (proxies) for (const auto& [id, picture] : world_.building_memory[world_.local_side]) {
+    (void)id; displayed.push_back(&picture);
+  }
+  for (const Object* picture : displayed) {
+    const Object& o = *picture;
     if (o.removed || o.source == ObjectSource::Submarine) continue;
     Vec2f p = o.interpolated(alpha);
     if (p.x < cam.x - pad || p.y < cam.y - pad || p.x > cam.x + cam.visible_w() + pad || p.y > cam.y + cam.visible_h() + pad) continue;
-    if (!visible_in_fog(o, {o.cur_x / 256.f, o.cur_y / 256.f})) continue;
+    if (!(proxies && visibility_structure(world_, o)) &&
+        !visible_in_fog(o, {o.cur_x / 256.f, o.cur_y / 256.f})) continue;
     if (provider_) {
-      const bool simulated_fire = std::any_of(world_.effects.begin(), world_.effects.end(),
+      const bool frozen = proxies && visibility_structure(world_, o) &&
+          !object_visible(world_, world_.local_side, o);
+      const bool simulated_fire = !frozen && std::any_of(world_.effects.begin(), world_.effects.end(),
           [&](const Effect& e) { return e.loop && e.source == o.id; });
       bool primary = true;
       for (auto item : provider_->items(object_state(o))) {
@@ -175,7 +187,7 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
   for (const auto& e : world_.effects) {
     float x = (e.prev_x + (e.x - e.prev_x) * alpha) / 256.f;
     float y = (e.prev_y + (e.y - e.prev_y) * alpha) / 256.f;
-    if (fog_.requested() && e.side != world_.local_side &&
+    if (fog_.requested() &&
         !position_visible(world_, world_.local_side, e.x >> 8, e.y >> 8)) continue;
     if (x < cam.x - pad || y < cam.y - pad || x > cam.x + cam.visible_w() + pad || y > cam.y + cam.visible_h() + pad) continue;
     if (effect_frame(e).valid()) items.push_back({x, y, nullptr, e.height, 0, {}, false, &e});
@@ -311,7 +323,9 @@ ObjectState SceneRenderer::object_state(const Object& o) const {
 }
 
 bool SceneRenderer::visible_in_fog(const Object& o, Vec2f p) const {
-  if (!fog_.requested() || o.side == world_.local_side) return true;
+  if (!fog_.requested()) return true;
+  if (visibility_structure(world_, o)) return object_visible(world_, world_.local_side, o);
+  if (!world_.visibility_brightness && o.side == world_.local_side) return true;
   return position_visible(world_, world_.local_side, int(std::floor(p.x)), int(std::floor(p.y)));
 }
 

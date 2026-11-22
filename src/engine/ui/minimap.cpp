@@ -11,16 +11,29 @@
 
 namespace aztec::engine {
 
-Minimap::~Minimap() { if (tex_) SDL_DestroyTexture(tex_); }
+Minimap::~Minimap() {
+  if (tex_) SDL_DestroyTexture(tex_);
+  if (fog_tex_) SDL_DestroyTexture(fog_tex_);
+}
 
 bool Minimap::init(SDL_Renderer* r, const GameData& data, const World& world, int palette, int shade) {
   if (tex_) { SDL_DestroyTexture(tex_); tex_ = nullptr; }
+  if (fog_tex_) { SDL_DestroyTexture(fog_tex_); fog_tex_ = nullptr; }
   for (auto& pixels : preview_shades_) pixels.clear();
   from_preview_ = false;
   world_ = &world;
   default_shade_ = std::clamp(shade, 0, 19);
   Palette pal{};
   const Archive& pals = data.archive(ArchiveId::Pal);
+  // G: grayscale fallback when the user's minimap palette is unavailable.
+  for (int i = 0; i < 256; ++i) {
+    uint32_t value = uint32_t(std::min(i, 19) * 255 / 19);
+    fog_palette_[i] = 0xff000000u | value * 0x010101u;
+  }
+  load_palette(pals, 15, 0, fog_palette_);
+  fog_tex_ = SDL_CreateTexture(r, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, 180, 180);
+  if (!fog_tex_) return false;
+  SDL_SetTextureScaleMode(fog_tex_, SDL_ScaleModeNearest);
   (void)palette;
   if (world.preview.w > 0 && !load_palette(pals, uint32_t(world.preview.palette), uint32_t(shade), pal)) return false;
   std::vector<uint32_t> px;
@@ -110,34 +123,60 @@ void Minimap::draw(SDL_Renderer* r, const Camera& cam, float alpha, const Fog* f
   SDL_Rect clip = rect_;
   if (clipped && !SDL_IntersectRect(&rect_, &previous, &clip)) return;
   SDL_RenderSetClipRect(r, &clip);
-  // V: 0x464ba0 selects a palette shade from each tile's raw brightness >>3.
+  // V: the raw fog byte >>3 is the minimap palette index.
   // The minimap does not interpolate the world view's fog edge between vertices.
-  const bool raw = from_preview_ && world_->visibility_brightness && fog && fog->requested();
-  if (from_preview_) {
-    std::vector<uint32_t> pixels = preview_shades_[default_shade_];
-    if (raw) {
-      const auto* layer = visibility_layer(*world_, world_->local_side);
-      for (int y = 0; y < texture_h_; ++y) for (int x = 0; x < texture_w_; ++x) {
-        const int tx = x * world_->terrain.w / texture_w_, ty = y * world_->terrain.h / texture_h_;
-        const int brightness = layer ? layer->v[size_t(ty) * layer->w + tx] : 0;
-        const size_t index = size_t(y) * texture_w_ + x;
-        pixels[index] = preview_shades_[std::min(19, brightness >> 3)][index];
-      }
+  const bool raw = world_->visibility_brightness && fog && fog->requested();
+  if (raw) {
+    const auto* layer = visibility_layer(*world_, world_->local_side);
+    std::vector<uint32_t> pixels(180 * 180, fog_palette_[0]);
+    for (int y = 0; y < 180; ++y) for (int x = 0; x < 180; ++x) {
+      const int tx = x * world_->terrain.w / 180, ty = y * world_->terrain.h / 180;
+      const int brightness = layer ? layer->v[size_t(ty) * layer->w + tx] : 0;
+      pixels[size_t(y) * 180 + x] = fog_palette_[std::min(19, brightness >> 3)];
     }
-    SDL_UpdateTexture(tex_, nullptr, pixels.data(), texture_w_ * 4);
+    SDL_UpdateTexture(fog_tex_, nullptr, pixels.data(), 180 * 4);
+    SDL_RenderCopy(r, fog_tex_, nullptr, &rect_);
+  } else {
+    if (from_preview_) {
+      std::vector<uint32_t> pixels = preview_shades_[default_shade_];
+      SDL_UpdateTexture(tex_, nullptr, pixels.data(), texture_w_ * 4);
+    }
+    SDL_SetTextureColorMod(tex_, tint_.r, tint_.g, tint_.b);
+    SDL_RenderCopy(r, tex_, nullptr, &rect_);
+    if (fog) fog->draw_minimap(r, rect_);
   }
-  SDL_SetTextureColorMod(tex_, raw ? 255 : tint_.r, raw ? 255 : tint_.g, raw ? 255 : tint_.b);
-  SDL_RenderCopy(r, tex_, nullptr, &rect_);
-  if (fog && !raw) fog->draw_minimap(r, rect_);
   float sx = float(rect_.w) / world_->width_px(), sy = float(rect_.h) / world_->height_px();
-  for (const Object& o : world_->objects) {
+  std::vector<const Object*> displayed;
+  const bool proxies = raw && world_->local_side >= 0 && world_->local_side < int(world_->building_memory.size());
+  for (const auto& o : world_->objects)
+    if (!proxies || !visibility_structure(*world_, o)) displayed.push_back(&o);
+  if (proxies) for (const auto& [id, picture] : world_->building_memory[world_->local_side]) {
+    (void)id; displayed.push_back(&picture);
+  }
+  for (const Object* picture : displayed) {
+    const Object& o = *picture;
     if (!o.alive || o.removed || o.source == ObjectSource::Submarine) continue;
     Vec2f p = o.interpolated(alpha);
-    if (fog && fog->requested() && !object_visible(*world_, world_->local_side, o)) continue;
+    const bool structure = visibility_structure(*world_, o);
+    if (!(proxies && structure) && fog && fog->requested() && !object_visible(*world_, world_->local_side, o)) continue;
     SDL_Color c = side_color_rgb(world_->side_color(o.side));
     SDL_SetRenderDrawColor(r, c.r, c.g, c.b, 255);
-    SDL_Rect d{rect_.x + int(p.x * sx) - 1, rect_.y + int(p.y * sy) - 1, 2, 2};
-    SDL_RenderFillRect(r, &d);
+    const int extent = std::max(2, rect_.w / std::max(1, world_->terrain.w));
+    auto dot = [&](float x, float y) {
+      SDL_Rect d{rect_.x + int(x * sx) - 1, rect_.y + int(y * sy) - 1, extent, extent};
+      SDL_RenderFillRect(r, &d);
+    };
+    if (structure && world_->visibility_rules) {
+      const auto& rule = world_->visibility_rules->type(o.type);
+      const int tx = (o.cur_x >> 8) / kTilePx, ty = (o.cur_y >> 8) / kTilePx;
+      if (rule.has_footprint_mask) {
+        for (int i = 0; i < 49; ++i) if (rule.footprint_mask[i] == 2)
+          dot(float((tx + i % 7 - 3) * kTilePx), float((ty + i / 7 - 3) * kTilePx));
+      } else {
+        for (int y = 0; y < rule.foot_h; ++y) for (int x = 0; x < rule.foot_w; ++x)
+          dot(float((tx - rule.foot_w / 2 + x) * kTilePx), float((ty - rule.foot_h / 2 + y) * kTilePx));
+      }
+    } else dot(p.x, p.y);
   }
   SDL_FRect v{rect_.x + cam.x * sx, rect_.y + cam.y * sy, cam.visible_w() * sx, cam.visible_h() * sy};
   // clip the view rectangle to the minimap

@@ -140,6 +140,8 @@ void GameSim::attach_agent(Object& o) {
 }
 
 void GameSim::init(World& w) {
+  w.visibility_rules = rules_;
+  w.building_memory.clear();
   modifications_ = initial_modifications_;
   tick_ = w.original_save ? w.tick : 0;
   w.tick = tick_;
@@ -266,6 +268,7 @@ void GameSim::init(World& w) {
       mover_->order_formation(group.agents.data(), int(group.agents.size()), group.anchor);
     }
   }
+  update_building_memory(w);
 }
 
 int GameSim::town_index(const World& w, int side) const {
@@ -462,7 +465,7 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o) const {
   for (const Object& t : w.objects) {
     if (t.removed || !t.alive || !damageable(t) || ferry_protected(t) || t.type < 0 || t.type == 84 || !w.hostile(o.side, t.side) || t.progress < 1000) continue;
     if (rules_->type(o.type).kind == 0 && pursuit_distance(o,t) > 1152) continue;
-    if (mask_sight && !position_visible(w, o.side, px(t.cur_x), px(t.cur_y))) continue;
+    if (mask_sight && !object_visible(w, o.side, t)) continue;
     const auto shot = rules_->attack(o.type, t.type, !w.hostile(o.side, t.side));
     if (!shot.damage_known || !shot.getters_known || shot.damage <= 0) continue;
     int64_t d = d2(o, t);
@@ -2023,6 +2026,7 @@ void GameSim::tick(World& w) {
   }
   update_animation_state(w);
   update_fog(w);
+  update_building_memory(w);
 }
 
 void GameSim::script_order(World& w, const std::vector<uint32_t>& ids, int pxx, int pyy, bool attack_move) {
