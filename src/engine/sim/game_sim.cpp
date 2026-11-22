@@ -2196,6 +2196,8 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(s.phase); mix(s.science_timer); mix(s.target_town); mix(s.remaining);
     mix(s.defence_enabled); mix(s.elapsed); mix(s.harvested); mix(s.spent); mix(s.last_alert);
     mix(s.random); mix(s.plan_generation);
+    if (s.wanted_type != 90) { mix(0x57414e54); mix(s.wanted_type); }
+    if (s.plan_target_town != -1) { mix(0x504c414e); mix(s.plan_target_town); }
     mix(s.knowledge.size());
     for (const auto& record : s.knowledge) { mix(record.town); for (int n : record.counts) mix(n); }
     mix(s.plan.size());

@@ -82,7 +82,7 @@ static void unit(const RulesData& rules) {
   object(w, 0, 1, 1, 10, 9); w.objects[0].last_hit_by = 5; w.objects[2].order = uint8_t(Order::Move);
   s = {}; d = ai::step(w, rules, 0, s, {});
   CHECK(issued(d, Pct::Attack) && issued(d, Pct::Attack)->ids == std::vector<uint32_t>{3});
-  CHECK(d.next.phase == 21);
+  CHECK(d.next.phase == 10); // A computer attacker can draw defenders but cannot enter the human-threat branch.
   auto again = ai::step(w, rules, 0, d.next, {}); CHECK(!issued(again, Pct::Attack));
   w.relation[0][1] = kFriend;
   CHECK(!issued(ai::step(w, rules, 0, s, {}), Pct::Attack));
@@ -503,6 +503,323 @@ static void plan_allocation(std::shared_ptr<const RulesData> rules) {
   w.side_state[0].enemy_mask = 0; CHECK(sim.state_hash(w) != hash);
 }
 
+static void scoring(const RulesData& rules) {
+  auto w = world();
+  w.mission.sides[1].only_comp = false;
+  ai::Intelligence record; record.town = 1;
+  const int distance = int(combat_distance(20, 20) * 256 / combat_distance(40, 40));
+  CHECK(ai::target_score(w, rules, 0, record) == distance);
+  int max_hp = 1;
+  for (int t = 0; t < 90; ++t) max_hp = std::max(max_hp, rules.type(t).hp_max);
+  const int weight = int(int64_t(rules.type(0).hp_max) * 256 / max_hp);
+  record.counts[0] = 256;
+  CHECK(ai::target_score(w, rules, 0, record) == distance + weight / 2 + 128);
+  record.counts[0] = 512;
+  CHECK(ai::target_score(w, rules, 0, record) == distance + weight / 2 + 128);
+  record.counts[11] = 1000; // Ordinary buildings do not enter the mean unit weight/count.
+  CHECK(ai::target_score(w, rules, 0, record) == distance + weight / 2 + 128);
+  record.counts[0] = 2; record.counts[1] = 2;
+  const int other = int(int64_t(rules.type(1).hp_max) * 256 / max_hp);
+  const int force = (weight + other) / 2 / 2 + 2;
+  CHECK(ai::target_score(w, rules, 0, record) == distance + force);
+  w.mission.sides[1].only_comp = true;
+  CHECK(ai::target_score(w, rules, 0, record) == distance * 3 + force);
+  w.side_state[1].enemy_mask = UINT32_MAX;
+  CHECK(ai::target_score(w, rules, 0, record) == distance + force);
+  w.mission.towns[1].x = w.mission.towns[0].x; w.mission.towns[1].y = w.mission.towns[0].y;
+  CHECK(ai::target_score(w, rules, 0, record) == force); // No additive computer penalty.
+  record.town = -1; CHECK(ai::target_score(w, rules, 0, record) == 0x7fff00);
+  // Selection must reconsider a valid target every update, including through fog.
+  w = world();
+  TownDef third = w.mission.towns[1]; third.index = 2; third.x = 10; third.y = 8;
+  w.mission.towns.push_back(third); object(w, 11, 1, 2, 10, 8);
+  w.visibility.sides[0].v.assign(1600, 152);
+  ai::TownState s; s.elapsed = 1; s.target_town = 1; s.known_towns = {1, 2};
+  ai::Intelligence far; far.town = 1;
+  ai::Intelligence close; close.town = 2;
+  s.knowledge = {far, close};
+  CHECK(ai::step(w, rules, 0, s, {}).next.target_town == 2);
+  // Rescoring the town's next target must not redirect a plan already in flight.
+  object(w, 0, 0, 0, 9, 8);
+  s.phase = 2; s.plan_target_town = 1;
+  auto launch = ai::step(w, rules, 0, s, {});
+  CHECK(launch.next.target_town == 2 && issued(launch, Pct::AttackMove));
+  CHECK(issued(launch, Pct::AttackMove) && issued(launch, Pct::AttackMove)->a == 28 * kTilePx + kTilePx / 2);
+  s.phase = 0;
+  // A sufficiently large force can make the nearby town less attractive.
+  s.knowledge[1].counts[0] = 256;
+  w.mission.towns[1].x = 12; w.mission.towns[1].y = 8;
+  CHECK(ai::step(w, rules, 0, s, {}).next.target_town == 1);
+  w.relation[0][1] = kFriend;
+  CHECK(ai::step(w, rules, 0, s, {}).next.target_town == -1);
+}
+
+// Invented descriptors and build recipes isolate arithmetic from private game data.
+static RulesData plan_rules(const std::filesystem::path& dir, int level, bool blocked = false) {
+  std::ofstream types(dir / "types.csv");
+  types << "id,ugi,kind,param,unit_price,build_time,dev_level\n";
+  for (int type = 0; type < 90; ++type)
+    types << type << ",TEST,Marine," << type << ",100,100,"
+          << (type == 11 ? level : type == 0 || type == 1 || type == 33 ? 0 : 10) << '\n';
+  types.close();
+  std::ofstream(dir / "desc_marine.csv") <<
+      "param,d0,d1,d2,d3,d4,d5,d6,d7\n"
+      "0,0,30000,0,0,30000,8,0,1\n"
+      "1,0,15000,0,0,15000,8,0,1\n"
+      "2,0,30000,0,0,30000,8,0,1\n";
+  std::ofstream(dir / "weapons_ids.csv") << "weapon_id,class,param\n1,13,0\n";
+  std::ofstream(dir / "weapon_class_w2_13.csv") <<
+      "param,d0,d1,d2,d3,d4,d5,d6,d7,d8,d9\n"
+      "0,1,30000,0,0,100,256,256,256,256,256\n";
+  std::ofstream tree(dir / "buildtree.csv");
+  tree << "race,townhall_type,slot,item_ugi,flagB_construct,prereq_ugi(A=flag 0x8000000)\n";
+  for (int type : {0, 1, 33}) tree << "0,1," << type << ',' << type << ",0," << (blocked ? "14" : "") << '\n';
+  tree.close();
+  RulesData rules; CHECK(rules.load_dir(dir.string())); return rules;
+}
+
+static void composition() {
+  TempDir directory;
+  auto rules = plan_rules(directory.path(), 9);
+  auto w = world();
+  ai::Intelligence enemy; enemy.town = 1; enemy.counts[0] = 30;
+  // The synthetic weapon kills in one tick: M=254, with W[0]=256 and W[1]=128.
+  CHECK(ai::matchup(rules, 0, 0) == 254 && ai::matchup(rules, 1, 0) == 254);
+  uint32_t seed = 1;
+  auto draw = [&]() { seed = seed * 214013u + 2531011u; return int((seed >> 16) & 32767); };
+  // Type 0 always beats type 1 even after the full 0..63 perturbation.
+  // Two draws per pick, one for each eligible new candidate; type 33 consumes none.
+  int expected = 0;
+  while (expected < 30) {
+    draw(); draw(); const int batch = draw() % 10 + 1;
+    for (int i = 0; i < batch && (2 * 30 - expected > 0 || expected < 30); ++i) ++expected;
+  }
+  uint32_t random = 1;
+  auto plan = ai::make_plan(w, rules, 0, 1, false, random, {enemy});
+  CHECK(int(plan.size()) == expected && random == seed);
+  CHECK(std::all_of(plan.begin(), plan.end(), [](const auto& e) { return e.type == 0 && !e.object; }));
+  for (uint32_t initial = 1; initial <= 32; ++initial) {
+    random = initial;
+    const auto weighted = ai::make_plan(w, rules, 0, 1, false, random, {enemy});
+    CHECK(!weighted.empty() && weighted.front().type == 0);
+  }
+  enemy.counts[0] = 1; random = 1;
+  plan = ai::make_plan(w, rules, 0, 1, false, random, {enemy});
+  CHECK(plan.size() == 2); // Need is twice the enemy count; a five-entry batch stops at zero.
+  enemy.counts = {}; enemy.counts[2] = 2; enemy.counts[1] = 1; enemy.counts[0] = 100;
+  random = 1; plan = ai::make_plan(w, rules, 0, 1, false, random, {enemy});
+  // Four picks against type 2 already cover type 1's need; it consumes candidate
+  // draws but no batch draw. The remaining insertion sequence is deterministic.
+  CHECK(plan.size() == 105 && random == 0x7f965a34u);
+  enemy.counts = {}; enemy.counts[0] = 30;
+  // Side maximum development controls batches even when the source is undeveloped.
+  rules = plan_rules(directory.path(), 0);
+  w.mission.towns[1].side = w.objects[1].side = 0;
+  object(w, 14, 0, 1, 29, 28); // synthetic dev weight 10, clamped to 9
+  random = 1;
+  plan = ai::make_plan(w, rules, 0, 1, false, random, {enemy});
+  CHECK(int(plan.size()) == expected && random == seed);
+  w = world(); random = 1;
+  plan = ai::make_plan(w, rules, 0, 1, false, random, {enemy});
+  CHECK(plan.size() == 30); // Development zero makes every batch exactly one.
+  // Need subtracts every prior pick, even across distinct enemy types.
+  enemy.counts = {}; enemy.counts[1] = 1; enemy.counts[0] = 1;
+  random = 1; plan = ai::make_plan(w, rules, 0, 1, false, random, {enemy});
+  CHECK(plan.size() == 2);
+  enemy.counts = {}; enemy.counts[0] = 1000;
+  random = 1; plan = ai::make_plan(w, rules, 0, 1, false, random, {enemy});
+  CHECK(plan.size() == 256);
+  enemy.counts[33] = 1000; random = 1;
+  CHECK(ai::make_plan(w, rules, 0, 1, false, random, {enemy}).size() == 256);
+  enemy.counts[33] = 0;
+  // Reuse is capped at 32 per type, has no score noise and must be reconsidered
+  // when exhausted; an unbuildable reused type cannot turn into a new purchase.
+  rules = plan_rules(directory.path(), 0, true);
+  for (int n = 0; n < 40; ++n) object(w, 0, 0, 0, 9, 8);
+  int wanted = 90; random = 1;
+  plan = ai::make_plan(w, rules, 0, 1, true, random, {enemy}, &wanted);
+  CHECK(plan.size() == 32);
+  CHECK(std::all_of(plan.begin(), plan.end(), [](const auto& e) { return e.type == 0 && e.object; }));
+  for (int n = 0; n < 40; ++n) object(w, 1, 0, 0, 9, 8);
+  random = 1; plan = ai::make_plan(w, rules, 0, 1, true, random, {enemy});
+  CHECK(plan.size() == 64);
+  CHECK(std::count_if(plan.begin(), plan.end(), [](const auto& e) { return e.type == 1 && e.object; }) == 32);
+  random = 1;
+  CHECK(ai::make_plan(w, rules, 0, 1, false, random, {enemy}).empty()); // town troops require mode 1
+  for (auto& o : w.objects) if (o.type == 0 || o.type == 1) o.town = -1;
+  random = 1;
+  CHECK(ai::make_plan(w, rules, 0, 1, false, random, {enemy}).size() == 64); // detached autonomous tactics work in either mode
+  for (auto& o : w.objects) if (o.type == 0 || o.type == 1) o.tactic = -2;
+  random = 1; CHECK(ai::make_plan(w, rules, 0, 1, true, random, {enemy}).empty());
+  for (auto& o : w.objects) if (o.type == 0 || o.type == 1) {
+    o.tactic = -1; o.teleport(tile_center_fixed(34), tile_center_fixed(8));
+  }
+  random = 1; CHECK(ai::make_plan(w, rules, 0, 1, true, random, {enemy}).empty());
+  for (auto& o : w.objects) if (o.type == 0 || o.type == 1) o.teleport(tile_center_fixed(33), tile_center_fixed(8));
+  random = 1; CHECK(ai::make_plan(w, rules, 0, 1, true, random, {enemy}).size() == 64);
+  w.side_state[0].enemy_mask = UINT32_MAX; random = 1;
+  CHECK(ai::make_plan(w, rules, 0, 1, true, random, {enemy}).empty());
+  rules = plan_rules(directory.path(), 9, true);
+  w = world();
+  for (int n = 0; n < 40; ++n) object(w, 0, 0, 0, 9, 8);
+  for (uint32_t initial = 1; initial <= 8; ++initial) {
+    random = initial;
+    plan = ai::make_plan(w, rules, 0, 1, true, random, {enemy});
+    CHECK(plan.size() == 32); // A batch crossing the reuse boundary cannot buy the unbuildable counter.
+    CHECK(std::all_of(plan.begin(), plan.end(), [](const auto& e) { return e.object != 0; }));
+  }
+  rules = plan_rules(directory.path(), 0, true);
+  // The original wanted-score bug is observable: weaker type 1 overwrites type 0.
+  // Correcting its score bar would leave type 0 (254+noise versus 127+noise).
+  w = world(); random = 1; wanted = 90;
+  plan = ai::make_plan(w, rules, 0, 1, false, random, {enemy}, &wanted);
+  CHECK(plan.empty() && wanted == 1);
+  object(w, 33, 0, 0, 9, 8); ai::Intelligence building; building.town = 1; building.counts[11] = 10;
+  random = 1; CHECK(ai::make_plan(w, rules, 0, 1, true, random, {building}).empty()); // Type 33 is excluded even when reusable.
+  ai::TownState s; s.phase = 10; s.wanted_type = wanted;
+  CHECK(ai::step(w, rules, 0, s, {}).next.phase == 3);
+  s.wanted_type = 90;
+  CHECK(ai::step(w, rules, 0, s, {}).next.phase == 13);
+  // Airborne targets get the extra pass, still bounded by plan capacity.
+  rules = plan_rules(directory.path(), 0); enemy.counts = {}; enemy.counts[33] = 3; random = 1;
+  plan = ai::make_plan(w, rules, 0, 1, false, random, {enemy});
+  CHECK(plan.size() == 3); // M[33][best]=0 suppresses the main pass, not the extra airborne pass.
+  CHECK(std::none_of(plan.begin(), plan.end(), [](const auto& e) { return e.type == 33; }));
+  // Equal weights isolate random scoring and the strict new-candidate tie rule.
+  std::ofstream(directory.path() / "desc_marine.csv") <<
+      "param,d0,d1,d2,d3,d4,d5,d6,d7\n"
+      "0,0,30000,0,0,30000,8,0,1\n"
+      "1,0,30000,0,0,30000,8,0,1\n";
+  CHECK(rules.load_dir(directory.path().string()));
+  enemy.counts = {}; enemy.counts[0] = 1;
+  bool tie = false, first = false, second = false;
+  for (uint32_t initial = 1; initial <= 1024 && !(tie && first && second); ++initial) {
+    seed = initial; const int a = draw() & 0x3f, b = draw() & 0x3f; draw();
+    random = initial; plan = ai::make_plan(w, rules, 0, 1, false, random, {enemy});
+    CHECK(plan.size() == 1 && plan[0].type == (b > a ? 1 : 0) && random == seed);
+    tie |= a == b; first |= a > b; second |= b > a;
+  }
+  CHECK(tie && first && second);
+}
+
+static void threat_rules(const RulesData& rules) {
+  auto w = world(); w.mission.sides[1].only_comp = false;
+  object(w, 0, 1, 1, 16, 8); // Exactly eight tiles, with no attack or visibility requirement.
+  w.visibility.sides[0].v.assign(1600, 152);
+  object(w, 0, 0, 1, 25, 25);
+  object(w, 0, 0, 0, 9, 8, 7); // Explicit script tactic is preserved by the G recall adapter.
+  ai::TownState s; s.phase = 2; s.remaining = 3; s.plan = {{0}, {0}, {0}};
+  w.side_state[0].queue = {{0, 100, 100, 0, 0}, {0, 100, 100, 1, 0}, {1, 100, 100, 0, 0}};
+  auto d = ai::step(w, rules, 0, s, {});
+  CHECK(d.next.phase == 21 && d.next.plan.empty() && d.next.remaining == 0);
+  std::vector<int> cancelled;
+  for (const auto& c : d.commands) if (c.type == Pct::QueueKill) cancelled.push_back(c.a);
+  CHECK(cancelled == std::vector<int>({2, 0}));
+  CHECK(issued(d, Pct::Move) && issued(d, Pct::Move)->ids == std::vector<uint32_t>{4});
+  auto reject = [&]() { CHECK(ai::step(w, rules, 0, s, {}).next.phase == 2); };
+  w.objects[2].teleport(tile_center_fixed(16), tile_center_fixed(9)); reject(); // Outside the circle.
+  w.objects[2].teleport(tile_center_fixed(16), tile_center_fixed(8));
+  w.relation[0][1] = kFriend; reject(); w.relation[0][1] = kEnemy;
+  w.mission.sides[1].only_comp = true; reject(); w.mission.sides[1].only_comp = false;
+  w.objects[2].alive = false; reject(); w.objects[2].alive = true;
+  w.objects[2].removed = true; reject(); w.objects[2].removed = false;
+  w.mission.sides[0].only_comp = false; reject(); w.mission.sides[0].only_comp = true;
+  w.mission.towns[0].type = 0; reject();
+  w.objects[2].teleport(tile_center_fixed(12), tile_center_fixed(8));
+  CHECK(ai::step(w, rules, 0, s, {}).next.phase == 21); // Outpost boundary is four tiles.
+  w.objects[2].teleport(tile_center_fixed(12), tile_center_fixed(9)); reject();
+  // Phase 16 exit uses eight tiles even for an outpost, and includes allies/computers.
+  w.side_state[0].queue.clear(); s.phase = 16;
+  w.objects[2].teleport(tile_center_fixed(16), tile_center_fixed(8));
+  w.relation[0][1] = kFriend; w.mission.sides[1].only_comp = true;
+  CHECK(ai::step(w, rules, 0, s, {}).next.phase == 21);
+  w.objects[2].teleport(tile_center_fixed(17), tile_center_fixed(8));
+  d = ai::step(w, rules, 0, s, {});
+  CHECK(d.next.phase == 0 && d.next.plan.empty());
+}
+
+static void prices_and_caps(const RulesData& rules) {
+  struct Price { int hall, speed; bool computer, all; int price, time; };
+  for (const auto& c : std::vector<Price>{{0,1,false,false,100,150}, {0,2,false,false,100,150},
+       {0,1,true,false,80,120}, {0,2,true,true,100,150}, {1,1,false,false,100,100},
+       {1,2,false,false,200,67}, {1,1,true,false,80,80}, {1,2,true,false,160,53},
+       {1,1,true,true,67,200}, {1,2,true,true,67,200}}) {
+    CHECK(production_value(100, c.hall, c.speed, c.computer, c.all, false) == c.price);
+    CHECK(production_value(100, c.hall, c.speed, c.computer, c.all, true) == c.time);
+  }
+  auto w = world();
+  const int base = ai::development(w, rules, 0);
+  object(w, 0, 0, 0, 9, 8); object(w, 17, 0, 0, 9, 9); object(w, 12, 0, 0, 10, 8);
+  CHECK(ai::development(w, rules, 0) == base);
+  QueueItem q; q.type = 14; q.town = 0;
+  w.side_state[0].queue.push_back(q);
+  CHECK(ai::development(w, rules, 0) == base + rules.type(14).dev_level);
+  object(w, 14, 0, 0, 12, 8); w.objects.back().progress = 500;
+  w.side_state[0].queue.back().object = w.objects.back().id;
+  CHECK(ai::development(w, rules, 0) == base + rules.type(14).dev_level); // Count one queued construction once.
+  for (int n = 0; n < 15; ++n) w.side_state[0].queue.push_back(q);
+  CHECK(ai::development(w, rules, 0) == 9);
+  w = world(); ai::TownState threshold; threshold.phase = 13;
+  for (int n = 0; n < 4; ++n) object(w, 0, 0, 0, 9, 8);
+  CHECK(ai::step(w, rules, 0, threshold, {}).next.phase == 15); // Five members < 3*1+3.
+  object(w, 0, 0, 0, 9, 8);
+  CHECK(ai::step(w, rules, 0, threshold, {}).next.phase == 9);
+  threshold.phase = 21;
+  for (int n = 0; n < 7; ++n) object(w, 0, 0, 0, 9, 8);
+  CHECK(ai::step(w, rules, 0, threshold, {}).next.phase == 23); // Thirteen < 7*(1+1).
+  object(w, 0, 0, 0, 9, 8);
+  CHECK(ai::step(w, rules, 0, threshold, {}).next.phase == 20);
+  threshold.phase = 12;
+  CHECK(ai::step(w, rules, 0, threshold, {}).next.phase == 5);
+  object(w, 17, 0, 0, 9, 9);
+  CHECK(ai::step(w, rules, 0, threshold, {}).next.phase == 0);
+  // Science alone has a pre-purchase money gate; economics can queue while broke.
+  w = world(); w.side_state[0].money = 0;
+  ai::TownState s; s.phase = 3;
+  auto d = ai::step(w, rules, 0, s, {{14, 100, 12, 8, true}});
+  CHECK(!issued(d, Pct::Build) && d.next.phase == 13);
+  w.side_state[0].money = 100; w.town_speed[0] = 2;
+  d = ai::step(w, rules, 0, s, {{14, 100, 12, 8, true}});
+  CHECK(issued(d, Pct::Build) && issued(d, Pct::BuildMode) && issued(d, Pct::BuildMode)->a == 1);
+  w.side_state[0].money = 0; s.phase = 7;
+  CHECK(issued(ai::step(w, rules, 0, s, {{12, 100, 12, 8, true}}), Pct::Build));
+}
+
+static void money_and_cancellation(std::shared_ptr<const RulesData> rules) {
+  auto w = world();
+  w.mission.sides[0].only_comp = w.mission.sides[1].only_comp = false;
+  for (auto& o : w.objects) o.town_hall = true;
+  GameSim sim(rules, Modifications::faithful()); sim.init(w);
+  w.side_state[0].money = 0;
+  for (int type : {0, 0}) {
+    Command c; c.type = Pct::Build; c.side = 0; c.a = type; c.ids = {1}; sim.submit(c);
+  }
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.side_state[0].queue.size() == 2 && w.side_state[0].money == 0);
+  if (w.side_state[0].queue.size() != 2) return;
+  w.side_state[0].queue.front().type = 1; // Valid rifleman head with a completed prerequisite.
+  object(w, 14, 0, 0, 12, 8);
+  w.side_state[0].money = production_value(rules->type(0).price, 1, 1, false, false, false);
+  const int money = w.side_state[0].money;
+  w.begin_tick(); sim.tick(w);
+  CHECK(!w.side_state[0].queue[0].started && !w.side_state[0].queue[1].started);
+  CHECK(w.side_state[0].money == money);
+  w.side_state[0].money = production_value(rules->type(1).price, 1, 1, false, false, false);
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.side_state[0].queue[0].started && !w.side_state[0].queue[1].started);
+  CHECK(w.side_state[0].money == 0); // Equality passes and charges exactly once.
+  // A human proximity threat cancels paid and unpaid work through the existing refund path.
+  w.mission.sides[0].only_comp = true;
+  object(w, 0, 1, 1, 15, 8);
+  w.ai_towns[0].phase = 2; w.ai_towns[0].plan = {{0}}; w.ai_towns[0].remaining = 1;
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.side_state[0].queue.empty() && w.ai_towns[0].phase == 21 && w.ai_towns[0].plan.empty());
+  CHECK(w.side_state[0].money > 0);
+  const auto hash = sim.state_hash(w);
+  w.ai_towns[0].wanted_type = 1;
+  CHECK(sim.state_hash(w) != hash);
+}
+
 static void scripted(std::shared_ptr<const RulesData> rules) {
   auto a = world(); a.objects[0].scenario = 42;
   object(a, 0, 1, 1, 25, 26, 7); object(a, 0, 1, 1, 26, 26, 8);
@@ -657,5 +974,8 @@ static void smoke(std::shared_ptr<const RulesData> rules) {
 int main(int argc, char** argv) {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
   if (argc > 1 && std::string(argv[1]) == "--smoke") smoke(rules); else { unit(*rules); reinforcements(*rules); threatened_plan(*rules); army_scenarios(rules); initialization(rules); neutral_computer(rules); sparse_towns(rules); observation(rules); town_orders(rules); enemy_price_mask(rules); remembered_intelligence(*rules); plan_allocation(rules); scripted(rules); }
+  if (!(argc > 1 && std::string(argv[1]) == "--smoke")) {
+    scoring(*rules); composition(); threat_rules(*rules); prices_and_caps(*rules); money_and_cancellation(rules);
+  }
   return failures ? 1 : 0;
 }
