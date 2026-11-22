@@ -115,7 +115,9 @@ class GameSim : public Simulation {
   int training_capacity(const World& w, int town, int producer) const;
   void maintain_town_marks(World& w);
   void service_towns(World& w);
+  void change_town_owner(World& w, int town, int recipient, bool captured);
   void capture_towns(World& w);
+  void service_facilities(World& w);
   bool mark_eligible(const Object& o, const TownState& town) const;
   void run_orders(World& w);
   void finish_attack(Object& o);

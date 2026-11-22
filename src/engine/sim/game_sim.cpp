@@ -821,6 +821,46 @@ void GameSim::service_towns(World& w) {
   }
 }
 
+// Facility coverage is independent of the credit-funded repair/destroy queue.
+void GameSim::service_facilities(World& w) {
+  const auto count = std::count_if(w.objects.begin(), w.objects.end(), [](const auto& o) { return !o.removed; });
+  const bool spatial = count > 256;
+  for (size_t ti = 0; ti < w.mission.towns.size(); ++ti) {
+    const auto* hall = town_hall(w, int(ti));
+    if (!hall || hall->progress < 1000) continue;
+    bool workshop = false, stable = false, air = false;
+    for (const auto& o : w.objects) {
+      if (!o.alive || o.removed || o.side != hall->side ||
+          o.town != w.mission.towns[ti].index || o.progress < 1000) continue;
+      workshop |= o.type == 20 || o.type == 51 || o.type == 74;
+      stable |= o.type == 15 || o.type == 44 || o.type == 77;
+      air |= o.type == 25 || o.type == 52 || o.type == 79;
+    }
+    // V: an air facility alone does not open the service path.
+    if (!workshop && !stable) continue;
+    for (auto& o : w.objects) {
+      if (!o.alive || o.removed || o.type < 0 || o.side < 0 || o.side >= 8 ||
+          (o.side != hall->side && w.relation[hall->side][o.side] != kFriend)) continue;
+      const auto& r = rules_->type(o.type);
+      const bool machine = r.kind == 1 || r.kind == 2 || r.kind == 4 || r.kind == 6 ||
+                           r.kind == 7 || r.kind == 8 || r.kind == 9 || r.kind == 10;
+      if (!(workshop && machine) && !(stable && r.kind == 0 && r.category_f4) &&
+          !(spatial && air && r.flier)) continue;
+      const int64_t dx = px(o.cur_x) - px(hall->cur_x), dy = px(o.cur_y) - px(hall->cur_y);
+      if (spatial) {
+        if (std::abs(dx) > 384 || std::abs(dy) > 384) continue;
+      } else {
+        const int64_t tx = px(o.cur_x) / kTilePx - px(hall->cur_x) / kTilePx;
+        const int64_t ty = px(o.cur_y) / kTilePx - px(hall->cur_y) / kTilePx;
+        if (tx * tx + ty * ty >= 65) continue;
+      }
+      if (r.kind == 2 || r.kind == 7 || r.kind == 6) {
+        if (o.hp < o.hp_max) o.hp = int(std::min(int64_t(o.hp_max), int64_t(o.hp) + 10));
+      } else o.regen_service_ticks = 10;
+    }
+  }
+}
+
 // ---- economy -----------------------------------------------------------------------------------------------------
 
 // The first town-local structure prerequisite is the producer; side-wide
@@ -1006,7 +1046,8 @@ void GameSim::cancel_production(World& w, SideState& side, size_t index) {
   const auto q = side.queue[index];
   side.money += production_refund(w, q);
   if (Object* o = w.find_mut(q.object); o && o->alive && !o->removed) {
-    block_footprint(rules_->type(o->type), px(o->cur_x) / kTilePx, px(o->cur_y) / kTilePx, -1);
+    if (rules_->type(o->type).structure)
+      block_footprint(rules_->type(o->type), px(o->cur_x) / kTilePx, px(o->cur_y) / kTilePx, -1);
     if (q.previous_type >= 0) {
       o->type = q.previous_type;
       const auto& old = rules_->type(o->type);
@@ -1014,7 +1055,14 @@ void GameSim::cancel_production(World& w, SideState& side, size_t index) {
       o->progress = 1000; o->set_anim(kAnimIdle); o->body_tick = -1;
       initialize_gold(w, *o); initialize_repair(w, *o);
       block_footprint(old, px(o->cur_x) / kTilePx, px(o->cur_y) / kTilePx, +1);
-    } else { o->alive = false; o->removed = true; o->hp = 0; }
+    } else {
+      if (o->mover >= 0) {
+        mover_->stop(uint32_t(o->mover));
+        auto& agent = mover_->agents_mut()[size_t(o->mover)];
+        agent.enabled = false; agent.radius = 0;
+      }
+      o->alive = false; o->removed = true; o->hp = 0;
+    }
   }
   side.queue.erase(side.queue.begin() + index);
 }
@@ -1983,6 +2031,7 @@ void GameSim::tick(World& w) {
   maintain_town_marks(w);
   service_towns(w);
   capture_towns(w);
+  service_facilities(w);
   // Cooperation follows ownership changes from capture and scripted gifts.
   if (modifications_.unit_unstick) for (const auto& object : w.objects)
     if (object.mover >= 0) mover_->agents_mut()[size_t(object.mover)].team = object.side;
@@ -2065,6 +2114,8 @@ void GameSim::capture_towns(World& w) {
     if (owner < 0 || owner >= 8) continue;
     uint32_t candidate = 0;
     const int radius = w.mission.towns[i].type == 0 ? 4 : 8;
+    const auto count = std::count_if(w.objects.begin(), w.objects.end(), [](const auto& o) { return !o.removed; });
+    const bool spatial = count > 4 * radius * radius;
     bool defended = false;
     for (const auto& object : w.objects) {
       if (!object.alive || object.removed || object.type < 0 || object.side < 0 || object.side >= 8) continue;
@@ -2074,7 +2125,7 @@ void GameSim::capture_towns(World& w) {
       const auto distance = dx * dx + dy * dy;
       // Ordinary buildings (including the hall) answer false to +0xfc;
       // defence structures answer true, even the unarmed shipyard.
-      if ((object.side == owner || w.relation[owner][object.side] == kFriend) &&
+      if ((object.side == owner || (!spatial && w.relation[owner][object.side] == kFriend)) &&
           (type.kind != 2) && distance <= radius * radius)
         defended = true;
       if (object.side != owner && w.relation[owner][object.side] != kFriend &&
@@ -2090,7 +2141,7 @@ void GameSim::capture_towns(World& w) {
         if (object && object->alive && !object->removed && rules_->type(object->type).kind == 7)
           defended = true;
       }
-    if (candidate && !defended) transfer_town(w, int(i), w.find(candidate)->side);
+    if (candidate && !defended) change_town_owner(w, int(i), w.find(candidate)->side, true);
   }
 }
 
@@ -2106,23 +2157,80 @@ void GameSim::transfer_objects(World& w, const std::vector<uint32_t>& ids, int r
 }
 
 void GameSim::transfer_town(World& w, int town, int recipient) {
+  change_town_owner(w, town, recipient, false);
+}
+
+void GameSim::change_town_owner(World& w, int town, int recipient, bool captured) {
   if (town < 0 || town >= int(w.mission.towns.size()) || recipient < 0 ||
       recipient >= int(w.side_state.size())) return;
   auto& definition = w.mission.towns[size_t(town)];
   const int previous = definition.side;
-  if (previous == recipient) return;
-  // G: cancel/refund the donor's pending production before transferring the town.
+  if (previous == recipient || previous < 0 || previous >= int(w.side_state.size())) return;
+  auto computer = [&](int side) {
+    return std::any_of(w.mission.sides.begin(), w.mission.sides.end(),
+        [side](const auto& s) { return s.index == side && s.only_comp; });
+  };
+  const bool refund = !captured || (computer(previous) && !computer(recipient));
   if (previous >= 0 && previous < int(w.side_state.size())) {
     auto& state = w.side_state[size_t(previous)];
-    for (size_t i = state.queue.size(); i > 0; --i)
-      if (state.queue[i - 1].town == town) cancel_production(w, state, i - 1);
+    for (size_t i = 0; i < state.queue.size();) {
+      auto& item = state.queue[i];
+      if (item.town != town) { ++i; continue; }
+      if (captured && !refund && item.started && rules_->type(item.type).structure) {
+        // The current building survives with its paid work and frozen rate.
+        auto continuing = item;
+        continuing.plan_town = continuing.plan_entry = -1;
+        continuing.plan_generation = 0;
+        w.side_state[size_t(recipient)].queue.push_back(continuing);
+        state.queue.erase(state.queue.begin() + i);
+      } else {
+        // Waiting items are unpaid; a captured trainee is discarded without refund.
+        if (!refund) item.paid = 0;
+        cancel_production(w, state, i);
+      }
+    }
   }
-  std::vector<uint32_t> members;
-  for (const auto& object : w.objects)
-    if (object.alive && object.side == previous && object.town == definition.index)
-      members.push_back(object.id);
+  // G: allocate a deterministic side-local group in place of reference tactic pointers.
+  int receiving_group = 0;
+  if (captured) {
+    auto used = [&](int group) {
+      return std::any_of(w.objects.begin(), w.objects.end(), [&](const auto& o) {
+        return o.side == previous && o.tactic == group;
+      }) || std::any_of(w.mission.towns.begin(), w.mission.towns.end(), [&](const auto& t) {
+        return t.side == previous && t.scenario_id == group;
+      });
+    };
+    while (used(receiving_group)) ++receiving_group;
+  }
+  std::vector<uint32_t> members, retained;
+  for (auto& object : w.objects)
+    if (object.alive && object.side == previous && object.town == definition.index) {
+      if (!captured || rules_->type(object.type).structure) members.push_back(object.id);
+      else {
+        object.town = -1;
+        object.tactic = receiving_group;
+        if (object.source == ObjectSource::Town) object.source = ObjectSource::Team;
+        retained.push_back(object.id);
+      }
+    }
+  if (captured) script_stop(w, retained);
   transfer_objects(w, members, recipient);
   definition.side = recipient;
+  if (captured) {
+    if (size_t(town) < w.town_speed.size()) w.town_speed[size_t(town)] = 1;
+    auto changed = [&](uint32_t id) {
+      const auto* o = w.find(id);
+      return !o || !o->alive || std::find(members.begin(), members.end(), id) != members.end();
+    };
+    auto& old = w.side_state[size_t(previous)];
+    if (old.selected_tactic == definition.scenario_id) {
+      old.selected_tactic = -1;
+      old.selected_ids.clear();
+    }
+    old.selected_ids.erase(std::remove_if(old.selected_ids.begin(), old.selected_ids.end(), changed), old.selected_ids.end());
+    for (auto& group : old.groups) group.erase(std::remove_if(group.begin(), group.end(), changed), group.end());
+    w.selection.ids.erase(std::remove_if(w.selection.ids.begin(), w.selection.ids.end(), changed), w.selection.ids.end());
+  }
   if (size_t(town) < w.town_state.size()) {
     auto& state = w.town_state[size_t(town)];
     state.side = recipient;

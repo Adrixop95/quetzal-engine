@@ -168,6 +168,93 @@ static void capture() {
   auto replay = GameSim::replay(initial,data,sim.log(),sim.tick_count());
   CHECK(replay->state_hash(initial) == sim.state_hash(live));
 }
+static void capture_production() {
+  auto data = rules();
+  for (bool old_computer : {false, true}) for (bool new_computer : {false, true})
+    for (bool structure : {false, true}) {
+      World w = town(0);
+      SideDef old; old.index = 0; old.only_comp = old_computer;
+      SideDef next; next.index = 1; next.only_comp = new_computer;
+      w.mission.sides = {old, next};
+      add(w,0,0,28,28,0); w.objects.back().tactic = 7; w.objects.back().source = ObjectSource::Town;
+      add(w,72,0,27,28,0);
+      GameSim sim(data); sim.init(w);
+      w.side_state[0].money = 1000; w.side_state[1].money = 2000;
+      w.town_speed[0] = 2; w.town_state[0].repair_mode = RepairMode::Repair;
+      w.side_state[0].selected_tactic = 7; w.side_state[0].selected_ids = {1,3,4};
+      w.side_state[0].groups[0] = {1,3,4}; w.selection.ids = {1,4};
+      QueueItem active; active.type = structure ? 72 : 0; active.town = 0;
+      active.started = active.paused = true; active.paid = 100;
+      active.total = 200; active.remaining = 150; active.work_rate = 2;
+      if (structure) {
+        active.object = 4; w.objects[3].hp = 200; w.objects[3].progress = 400;
+      }
+      w.side_state[0].queue.push_back(active);
+      QueueItem waiting; waiting.type = 0; waiting.town = 0;
+      w.side_state[0].queue.push_back(waiting);
+      const bool refund = old_computer && !new_computer;
+      const int expected_refund = sim.production_refund(w, active);
+      ticks(sim,w);
+      CHECK(w.mission.towns[0].side == 1 && w.objects[0].side == 1);
+      CHECK(w.objects[2].side == 0 && w.objects[2].town == -1 && w.objects[2].tactic != 7);
+      CHECK(w.objects[2].source == ObjectSource::Team);
+      CHECK(w.side_state[0].queue.empty());
+      CHECK(w.side_state[0].money == 1000 + (refund ? expected_refund : 0));
+      CHECK(w.side_state[1].money == 2000);
+      CHECK(w.town_speed[0] == 1 && w.town_state[0].repair_mode == RepairMode::Off);
+      CHECK(w.side_state[0].selected_tactic == -1 && w.side_state[0].selected_ids.empty());
+      CHECK(w.selection.ids.empty() && w.side_state[0].groups[0] == std::vector<uint32_t>{3});
+      if (structure && !refund) {
+        CHECK(w.objects[3].side == 1 && w.objects[3].hp == 200 && w.objects[3].progress == 400);
+        CHECK(w.side_state[1].queue.size() == 1);
+        const auto& q = w.side_state[1].queue.front();
+        CHECK(q.remaining == 150 && q.total == 200 && q.work_rate == 2 && q.started);
+        CHECK(q.object == 4 && q.paid == 100 && q.paused);
+        // Continue the inherited work without charging the new owner.
+        w.mission.sides[1].only_comp = false;
+        w.side_state[1].queue[0].paused = false;
+        ticks(sim,w,150);
+        CHECK(w.objects[3].progress == 1000 && w.side_state[1].queue.empty());
+        CHECK(w.side_state[1].money == 2000);
+      } else {
+        CHECK(w.side_state[1].queue.empty());
+        CHECK(!structure || (!w.objects[3].alive && w.objects[3].removed));
+      }
+    }
+  // Reassignment must preserve special-vessel provenance used by script activation.
+  {
+    World w = town(0); add(w,84,0,28,28,0); w.objects.back().source = ObjectSource::Boat;
+    GameSim sim(data); sim.init(w); ticks(sim,w);
+    CHECK(w.objects[2].side == 0 && w.objects[2].town == -1 && w.objects[2].tactic != 7);
+    CHECK(w.objects[2].source == ObjectSource::Boat);
+  }
+  // A distant trainee object is destroyed, rather than joining the receiving group.
+  World w = town(0); add(w,0,0,28,28,0);
+  GameSim sim(data); sim.init(w);
+  QueueItem unit; unit.type = 0; unit.town = 0; unit.object = 3;
+  unit.started = unit.paused = true; unit.paid = 100; unit.remaining = unit.total = 100;
+  w.side_state[0].queue.push_back(unit);
+  ticks(sim,w); CHECK(!w.objects[2].alive && w.objects[2].removed);
+  CHECK(w.side_state[0].money == 0 && w.side_state[1].queue.empty());
+}
+static void capture_pool_branches() {
+  auto data = rules();
+  for (int count : {64,65}) {
+    World w = town(0); add(w,0,2,14,10);
+    w.relation[0][2] = kFriend;
+    while (int(w.objects.size()) < count) add(w,-1,0,31,31);
+    GameSim sim(data); sim.init(w); ticks(sim,w);
+    CHECK(w.mission.towns[0].side == (count == 64 ? 0 : 1));
+  }
+  for (int type : {33,7}) {
+    World w = town(0); w.objects[1].type = type;
+    GameSim sim(data); sim.init(w); ticks(sim,w);
+    CHECK(w.mission.towns[0].side == 0); // airborne objects cannot capture
+  }
+  World allied = town(0); allied.relation[0][1] = kFriend;
+  GameSim sim(data); sim.init(allied); ticks(sim,allied);
+  CHECK(allied.mission.towns[0].side == 0);
+}
 static void gifts() {
   auto data = rules(); World a = world(); add(a,0,0,10,10); World b = a;
   GameSim sa(data,Modifications::enhanced()), sb(data,Modifications::enhanced()); sa.init(a); sb.init(b);
@@ -236,6 +323,6 @@ static void johnka() {
   CHECK(replay->state_hash(initial) == moving.state_hash(w));
 }
 int main() {
-  school_and_prison(); ordinary_damage(); capture(); gifts(); cameras(); johnka();
+  school_and_prison(); ordinary_damage(); capture(); capture_production(); capture_pool_branches(); gifts(); cameras(); johnka();
   return 0;
 }
