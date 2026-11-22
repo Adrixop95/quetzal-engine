@@ -132,6 +132,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
     Cursor cursor;
     cursor.init(win.renderer(), scene.store());
     Panel panel;
+    panel.set_layout(o.interface_layout);
     const bool panel_available = panel.init(scene.store());
     bool show_panel = o.panel && panel_available;
 
@@ -153,6 +154,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       else sim = std::make_unique<NullSimulation>();
     }
     CommandsUi cmdui(game);
+    cmdui.set_layout(o.interface_layout);
     cmdui.open_sprites(find_file_ci(o.game_dir + "/Res", "Units.xbe"));
     std::vector<KeyBinding> bindings;
     const std::string keys_path = find_file_ci(o.game_dir, "Keys.ini");
@@ -177,6 +179,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
     std::string sb = find_file_ci(o.game_dir + "/Res", "strbase.bds");
     if (sb.empty() || !strings.load(sb)) std::fprintf(stderr, "note: strbase.bds not loaded, using UGI names\n");
     SelectionUi selui;
+    selui.set_layout(o.interface_layout);
     Daylight daylight;
     bool use_light = o.light && daylight.load_from_exe(find_file_ci(o.game_dir, "Aztec.exe"));
     if (o.light && !use_light) std::fprintf(stderr, "note: no daylight tables (Aztec.exe not found), neutral light\n");
@@ -235,7 +238,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
     FixedStepper stepper;
     HudInfo hud;
     hud.show_help = o.help;
-    bool edge = o.edge_scroll, paused = false, show_hud = o.hud;
+    bool edge = o.edge_scroll, paused = false, show_hud = o.hud && o.interface_layout == InterfaceLayout::Modern;
     bool drag_minimap = false;
     uint32_t seen_center = world.center_serial;
     bool end_shown = false;
@@ -325,12 +328,14 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       win.output_size(ow, oh);
       int ui = std::max(2, int(std::lround(oh / 360.0)));
       int cur_scale = std::max(1, int(std::lround(oh / 600.0)));
-      int pscale = std::max(1, std::min(ow / 800, oh / 493));
+      int pscale = std::max(1, std::min(ow / 800, oh / (o.interface_layout == InterfaceLayout::Original ? 600 : 493)));
       int view_w = ow;
       if (show_panel) {
         panel.layout(ow, oh, pscale);
         view_w = ow - panel.width();
-        minimap.layout_in(panel.minimap_rect(), pscale);
+        minimap.layout_in(panel.minimap_rect(), pscale, o.interface_layout);
+      } else if (o.interface_layout == InterfaceLayout::Original) {
+        minimap.hide();
       } else {
         minimap.layout(ow, oh, ui);
       }
@@ -535,7 +540,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       if (in.hit(SDL_SCANCODE_EQUALS)) ci.zoom_steps += 1;
       if (in.hit(SDL_SCANCODE_KP_PLUS)) ci.zoom_steps += 1;
       if (in.hit(SDL_SCANCODE_MINUS) || in.hit(SDL_SCANCODE_KP_MINUS)) ci.zoom_steps -= 1;
-      bool on_mm = minimap.contains(in.mx, in.my);
+      bool on_mm = (show_panel || o.interface_layout == InterfaceLayout::Modern) && minimap.contains(in.mx, in.my);
       bool on_panel = show_panel && panel.contains(in.mx, in.my);
       if (!on_mm && !on_panel && in.wheel != 0) { ci.zoom_steps += in.wheel > 0 ? 1 : -1; }
       ci.zoom_pivot_x = on_mm || ci.zoom_steps == 0 || in.wheel == 0 ? view_w / 2.f : float(in.mx);
@@ -556,18 +561,35 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       ci.drag_dx = float(fast_scroll ? -in.dx : in.dx);
       ci.drag_dy = float(fast_scroll ? -in.dy : in.dy);
 
-      if (in.pressed[SDL_BUTTON_LEFT] && on_mm && !cmdui.wants_left_click()) drag_minimap = true;
-      if (!in.buttons[SDL_BUTTON_LEFT]) drag_minimap = false;
-      // Selection (left button in the world view).
       const auto previous_selection = world.selection.ids;
       const size_t ui_command_start = game ? game->pending_commands().size() : 0;
+      const bool original_inv = o.interface_layout == InterfaceLayout::Original && cmdui.action_down(in, "Inv");
+      if (in.pressed[SDL_BUTTON_LEFT] && on_mm && original_inv && game) {
+        float wx, wy; minimap.to_world(in.mx, in.my, wx, wy);
+        const Object* nearest = nullptr; float distance = 240.f * 240.f;
+        for (const auto& object : world.objects) {
+          if (!object.alive || object.removed || object.side != world.local_side || object.tactic < 0) continue;
+          const auto p = object.interpolated(alpha);
+          const float d = (p.x - wx) * (p.x - wx) + (p.y - wy) * (p.y - wy);
+          if (d <= distance) { nearest = &object; distance = d; }
+        }
+        if (nearest) { Command c; c.type = Pct::SelectByNo; c.side = uint8_t(world.local_side); c.a = nearest->tactic; game->submit(c); }
+      }
+      if (in.pressed[SDL_BUTTON_LEFT] && on_mm && !original_inv && !cmdui.wants_left_click()) drag_minimap = true;
+      if (!in.buttons[SDL_BUTTON_LEFT]) drag_minimap = false;
+      // Selection (left button in the world view).
       {
         bool in_world = world.outcome == kRunning && !pause.open && !submodal && !on_mm && !on_panel && !drag_minimap && !pan;
-        bool consumed = cmdui.update(in, world, cam, alpha, minimap, in_world, show_panel ? panel.rect() : SDL_Rect{ow, 0, 0, oh});
+        const bool capture = o.interface_layout == InterfaceLayout::Original && selui.capturing() &&
+            world.outcome == kRunning && !pause.open && !submodal;
+        Input command_input = in;
+        if (capture) command_input.pressed[SDL_BUTTON_LEFT] = command_input.released[SDL_BUTTON_LEFT] = false;
+        bool consumed = cmdui.update(command_input, world, cam, alpha, minimap, in_world,
+                                    show_panel ? panel.rect() : SDL_Rect{ow, 0, 0, oh});
         Input selection_input = in;
         selection_input.shift = cmdui.action_down(in, "Add");
         selection_input.ctrl = cmdui.action_down(in, "Inv");
-        selui.update(selection_input, world, cam, alpha, in_world && !consumed && !cmdui.wants_left_click());
+        selui.update(selection_input, world, cam, alpha, (in_world || capture) && !consumed && !cmdui.wants_left_click() && cmdui.service_target_mode() == 0);
       }
       // G: scale the existing smooth camera; exact original scroll cadence is pending.
       cam.speed = 1100.f * o.scroll_speed / 48.f;
@@ -620,12 +642,12 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
           cmdui.draw_ghost(win.renderer(), world, cam, in.mx, in.my, &scene.store());
         }
       });
-      if (!show_panel) minimap.draw(win.renderer(), cam, alpha, &scene.fog());
+      if (!show_panel && o.interface_layout == InterfaceLayout::Modern) minimap.draw(win.renderer(), cam, alpha, &scene.fog());
       hud.mouse_x = in.mx; hud.mouse_y = in.my; hud.alpha = alpha;
       hud.sprites = scene.stats.sprites; hud.placeholders = scene.stats.placeholders; hud.geometry_calls = scene.stats.geometry_calls;
       {  // script messages (printString) and end-of-mission banner
         draw_messages(win.renderer(), scene.font(), world.messages,
-                      SDL_Rect{10 * pscale, 20 * pscale, view_w - 20 * pscale, oh / 2}, pscale, true);
+                      SDL_Rect{10 * pscale, 20 * pscale, view_w - 20 * pscale, oh / 2}, pscale, true, o.interface_layout == InterfaceLayout::Original ? 18 * pscale : 0);
         if (audio && !audio->subtitle().empty()) draw_messages(win.renderer(), scene.font(), {{audio->subtitle(), 1}},
             SDL_Rect{8 * pscale, oh - 150 * pscale, view_w - 16 * pscale, 60 * pscale}, pscale);
       }
@@ -649,7 +671,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         }
         const SideState* mss = world.local_side >= 0 && world.local_side < int(world.side_state.size()) ? &world.side_state[world.local_side] : nullptr;
         if (mss) gold = mss->money;
-        panel.draw(win.renderer(), scene.store(), scene.font(), gold);
+        panel.draw(win.renderer(), scene.store(), scene.font(), gold, {}, {}, CommandsUi::selected_town(world) >= 0);
         {
           int mx3, my3;
           GetMouse(&mx3, &my3);
@@ -657,7 +679,8 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
           if (!mt.empty()) tip = mt;
         }
         rendered_tooltip = tip;
-        if (!tip.empty()) panel.draw_tooltip(win.renderer(), scene.font(), tip);
+        if (!tip.empty()) panel.draw_tooltip(win.renderer(), scene.font(), tip,
+            original_tooltip_anchor(panel.rect(), pscale, CommandsUi::selected_town(world) >= 0, in.mx, in.my));
         minimap.draw(win.renderer(), cam, alpha, &scene.fog());
       }
       if (show_hud) draw_hud(win.renderer(), scene.font(), world, cam, hud, ui);
@@ -685,6 +708,15 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       else if (!on_mm && !(show_panel && panel.contains(cx, cy))) {
         const Object* h = pick_object(world, cam.to_world_x(float(cx)), cam.to_world_y(float(cy)), alpha, 24.f / cam.zoom + 8);
         if (h && h->side != world.local_side) ck = CursorKind::Attack;
+      }
+      if (o.interface_layout == InterfaceLayout::Original) {
+        const bool in_world = cx >= 0 && cy >= 0 && cx < ow && cy < oh && !(show_panel && panel.contains(cx, cy));
+        const auto* target = in_world ? pick_object(world, cam.to_world_x(float(cx)), cam.to_world_y(float(cy)), alpha, 32) : nullptr;
+        const bool friendly = target && (target->side == world.local_side ||
+            (target->side >= 0 && target->side < 8 && world.local_side >= 0 && world.local_side < 8 &&
+             world.relation[world.local_side][target->side] == kFriend));
+        ck = Cursor::original_kind(true, pause.open || submodal, cmdui.placing() >= 0, in_world,
+            edge_dx, edge_dy, selui.dragging(), !world.selection.ids.empty(), cmdui.service_target_mode(), target && !friendly);
       }
       const uint32_t cursor_ms = pt ? uint32_t(uint64_t(frame) * 1000 / 12) : SDL_GetTicks();
       const bool cursor_drawn = visible && (o.screenshot.empty() || forced);

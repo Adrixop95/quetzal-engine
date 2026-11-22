@@ -13,22 +13,24 @@ namespace aztec::engine {
 class Panel {
  public:
   bool init(SpriteStore& store);
+  void set_layout(InterfaceLayout mode) { mode_ = mode; }
   bool ok() const { return ok_; }
   // Lays out the panel on the right edge of an out_w x out_h window; `scale` is an integer pixel multiplier.
   void layout(int out_w, int out_h, int scale);
   int width() const { return rect_.w; }
   SDL_Rect rect() const { return rect_; }
   SDL_Rect minimap_rect() const { return mini_; }   // free area for the minimap inside the panel
-  SDL_Rect menu_rect() const { return in_game_panel_layout(rect_, scale_).menu; }
+  SDL_Rect menu_rect() const { return in_game_panel_layout(rect_, scale_, mode_).menu; }
   bool contains(int x, int y) const;
   // Menu activates on release inside its captured hit region.
   bool update_menu(const Input& in, bool enabled = true);
-  void draw_tooltip(SDL_Renderer* r, const Font& font, const std::string& text) const;
+  void draw_tooltip(SDL_Renderer* r, const Font& font, const std::string& text, SDL_Point anchor = {-1,-1}) const;
   // `info`: lines shown in the first slot area under the minimap (selection summary); `tooltip` drawn near the bottom.
   void draw(SDL_Renderer* r, SpriteStore& store, const Font& font, int gold, const std::vector<std::string>& info = {},
-            const std::string& tooltip = {}) const;
+            const std::string& tooltip = {}, bool town = false) const;
 
  private:
+  InterfaceLayout mode_ = InterfaceLayout::Modern;
   bool ok_ = false;
   bool menu_down_ = false, menu_pressed_ = false;
   int scale_ = 1;

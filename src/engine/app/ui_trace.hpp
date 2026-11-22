@@ -24,7 +24,8 @@ inline void trace_ui(std::ostream& out, int frame, const World& world, const Cam
                      const std::string& tooltip, const std::string& screenshot, bool placement_overlay_drawn,
                      const std::string& screen = "gameplay") {
   static const char* cursors[] = {"arrow", "attack", "move", "pan", "north", "northeast", "east",
-                                 "southeast", "south", "southwest", "west", "northwest"};
+                                 "southeast", "south", "southwest", "west", "northwest", "menu"};
+  static_assert(sizeof cursors / sizeof *cursors == int(CursorKind::Count));
   out << std::setprecision(9) << "{\"schema\":1,\"contract\":\"engine-ui-raw-v1\",\"frame\":" << frame
       << ",\"tick\":" << world.tick << ",\"outcome\":" << int(world.outcome)
       << ",\"phase\":\"after_input_before_present\",\"camera\":["
@@ -55,8 +56,8 @@ inline void trace_ui(std::ostream& out, int frame, const World& world, const Cam
   out << ",\"selection\":[";
   for (size_t i = 0; i < world.selection.ids.size(); ++i) out << (i ? "," : "") << world.selection.ids[i];
   out << "],\"buttons\":[";
-  auto layout = CommandsUi::layout(panel, scale);
-  for (size_t i = 0; panel_visible && i < layout.commands.size(); ++i) {
+  auto layout = CommandsUi::layout(panel, scale, ui.layout_mode(), CommandsUi::selected_town(world) >= 0);
+  for (size_t i = 0; panel_visible && i < layout.commands.size() && ui.layout_mode() == InterfaceLayout::Modern; ++i) {
     SDL_Point p{input.mx, input.my};
     bool hover = SDL_PointInRect(&p, &layout.commands[i]);
     const auto state = ui.button_state(PanelAction(i), world);

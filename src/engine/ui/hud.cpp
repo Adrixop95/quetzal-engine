@@ -36,8 +36,8 @@ void advance_messages(World& w, double seconds) {
   }
 }
 
-void draw_messages(SDL_Renderer* r, const Font& font, const std::vector<Message>& messages, const SDL_Rect& area, int scale, bool left_align) {
-  const int ts = font.ui_scale(scale), line_height = font.height(ts) + 3 * scale;
+void draw_messages(SDL_Renderer* r, const Font& font, const std::vector<Message>& messages, const SDL_Rect& area, int scale, bool left_align, int line_pitch) {
+  const int ts = font.ui_scale(scale), line_height = line_pitch > 0 ? line_pitch : font.height(ts) + 3 * scale;
   if (area.w <= 0 || area.h < line_height) return;
   std::vector<std::string> lines;
   for (const auto& message : messages) {

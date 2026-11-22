@@ -40,6 +40,19 @@ std::vector<size_t> production_queue(const World& w, int town) {
   for (size_t i = 0; i < queue.size(); ++i) if (queue[i].town == town) indices.push_back(i);
   return indices;
 }
+// G: stable world order stands in for the native list ordering/lifetime.
+std::array<std::vector<const Object*>, 2> original_lists(const World& w) {
+  std::array<std::vector<const Object*>, 2> lists;
+  for (const auto& o : w.objects) {
+    if (!o.alive || o.removed || o.side != w.local_side || is_ferry(o)) continue;
+    const auto* ti = type_info(o.type);
+    if (o.town_hall) lists[0].push_back(&o);
+    else if (ti && !ti->is_structure() && o.tactic >= 0 &&
+        std::none_of(lists[1].begin(), lists[1].end(), [&](const Object* p) { return p->tactic == o.tactic; }))
+      lists[1].push_back(&o);
+  }
+  return lists;
+}
 const char* const kLabels[] = {"Move", "Attack", "Stop", "Repair", "Garrison", "Destroy"};
 // Common command resources contain twelve rotation frames. Idle uses frame zero.
 constexpr int kButtons[] = {275, 257, 268, 301, 288, 269};
@@ -140,8 +153,9 @@ bool CommandsUi::fast_scrolling(const Input& in) const {
   return in.focused && in.mouse_inside && !in.alt && action_down(in, "FastScroll");
 }
 
-bool CommandsUi::center_selection(const Input& in, const World& w, Camera& cam, float alpha) const {
-  if (!action_hit(in, "Center") && !action_down(in, "Center")) return false;
+bool CommandsUi::center_selection(const Input& in, const World& w, Camera& cam, float alpha) {
+  const bool requested = center_requested_; center_requested_ = false;
+  if (!requested && !action_hit(in, "Center") && !action_down(in, "Center")) return false;
   float x = 0, y = 0;
   size_t count = 0;
   for (auto id : w.selection.ids) {
@@ -156,9 +170,29 @@ bool CommandsUi::center_selection(const Input& in, const World& w, Camera& cam, 
   return true;
 }
 
-CommandPanelLayout CommandsUi::layout(const SDL_Rect& p, int sc) {
+int CommandsUi::selected_town(const World& w) {
+  if (w.selection.ids.empty()) return -1;
+  const auto* o = w.find(w.selection.ids.front());
+  const auto* type = o ? type_info(o->type) : nullptr;
+  if (!o || !type || !type->is_structure() || o->side != w.local_side || !o->alive || o->removed) return -1;
+  for (size_t i = 0; i < w.mission.towns.size(); ++i)
+    if (w.mission.towns[i].side == w.local_side && w.mission.towns[i].index == o->town) return int(i);
+  return -1;
+}
+
+CommandPanelLayout CommandsUi::layout(const SDL_Rect& p, int sc, InterfaceLayout mode, bool town) {
   sc = std::max(1, sc);
   CommandPanelLayout l;
+  if (mode == InterfaceLayout::Original) {
+    const auto c = original_panel_controls(p, sc);
+    // Empty rectangles keep modern controls out of both drawing and hit testing.
+    if (town) {
+      l.production.assign(c.build.begin(), c.build.end());
+      std::copy(c.queue.begin(), c.queue.end(), l.queue.begin());
+      l.pause = c.town[4];
+    } else l.production.resize(9);
+    return l;
+  }
   const auto geometry = in_game_panel_layout(p, sc);
   const auto card = geometry.card;
   auto box = [&](int x, int y, int w, int h) { return SDL_Rect{card.x + x * sc, card.y + y * sc, w * sc, h * sc}; };
@@ -303,6 +337,7 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
     const Object* o = w.find(id); return !o || o->removed || !o->alive || is_ferry(*o);
   }), w.selection.ids.end());
   if (selection_ != w.selection.ids) {
+    service_target_ = 0;
     cancel_mode();
     selection_ = w.selection.ids;
     page_ = 0;
@@ -316,9 +351,17 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
   if (bound_hit(in, SDL_SCANCODE_H)) activate(PanelAction::Stop, w);
   if (bound_hit(in, SDL_SCANCODE_M)) activate(PanelAction::Move, w);
   if (bound_hit(in, SDL_SCANCODE_X)) activate(PanelAction::Attack, w);
-  if (!in.ctrl && !in.alt && action_hit(in, "Repair")) activate(PanelAction::Repair, w);
+  if (layout_mode_ == InterfaceLayout::Modern && !in.ctrl && !in.alt && action_hit(in, "Repair")) activate(PanelAction::Repair, w);
   if (!in.ctrl && !in.alt && action_hit(in, "Garrison")) activate(PanelAction::Garrison, w);
-  if (!in.ctrl && !in.alt && action_hit(in, "Destroy")) activate(PanelAction::Destroy, w);
+  if (layout_mode_ == InterfaceLayout::Modern && !in.ctrl && !in.alt && action_hit(in, "Destroy")) activate(PanelAction::Destroy, w);
+  if (layout_mode_ == InterfaceLayout::Original && selected_town(w) >= 0 && !in.ctrl && !in.alt) {
+    for (const auto& binding : std::array<std::pair<const char*, int>, 2>{{{"Repair", 1}, {"Destroy", 2}}}) {
+      if (!action_hit(in, binding.first)) continue;
+      Command c; c.type = Pct::RepairMode; c.side = uint8_t(w.local_side);
+      c.b = w.mission.towns[size_t(selected_town(w))].index; c.a = binding.second;
+      service_target_ = c.a; sim_->submit(c);
+    }
+  }
   if (!in.ctrl && !in.alt) {
     for (const auto& binding : std::array<std::pair<const char*, AttackMode>, 4>{{
              {"Aggressive", AttackMode::Aggressive}, {"Defencive", AttackMode::Defensive},
@@ -328,6 +371,7 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
       issue_to_selection(w, std::move(c));
     }
     if (action_hit(in, "AutoRepair")) {
+      service_target_ = 0;
       for (auto id : w.selection.ids) {
         const auto* o = w.find(id);
         if (!o || !o->alive || o->removed || o->side != w.local_side || !o->town_hall) continue;
@@ -340,7 +384,7 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
     SDL_Scancode sc = SDL_Scancode(k == 0 ? SDL_SCANCODE_0 : SDL_SCANCODE_1 + k - 1);
     if (!in.hit(sc) || in.alt) continue;
     cancel_mode();
-    if (in.ctrl) { Command c; c.type = in.shift ? Pct::AddToGroup : Pct::CreateGroup; c.a = k; issue_to_selection(w, c); }
+    if (layout_mode_ == InterfaceLayout::Original ? action_down(in, "Inv") : in.ctrl) { Command c; c.type = layout_mode_ == InterfaceLayout::Modern && in.shift ? Pct::AddToGroup : Pct::CreateGroup; c.a = k; issue_to_selection(w, c); }
     else if (w.local_side >= 0 && w.local_side < int(w.side_state.size())) {
       Command c; c.type = Pct::SelectGroup; c.side = uint8_t(w.local_side); c.a = k;
       sim_->submit(std::move(c));
@@ -348,11 +392,24 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
   }
   if (bound_hit(in, SDL_SCANCODE_P)) { Command c; c.type = sim_->paused() ? Pct::PauseOff : Pct::PauseOn; c.side = uint8_t(w.local_side); sim_->submit(c); }
 
+  if (layout_mode_ == InterfaceLayout::Original && service_target_ && in.pressed[SDL_BUTTON_RIGHT]) {
+    service_target_ = 0; right_down_ = right_moved_ = false; return true;
+  }
+  if (layout_mode_ == InterfaceLayout::Original && service_target_ && in_world && in.released[SDL_BUTTON_LEFT]) {
+    if (const auto* target = pick_object(w, cam.to_world_x(float(in.mx)), cam.to_world_y(float(in.my)), alpha, 32)) {
+      const int town = selected_town(w);
+      if (town >= 0) {
+        Command c; c.type = Pct::DestroyHere; c.side = uint8_t(w.local_side);
+        c.b = w.mission.towns[size_t(town)].index; c.ids = {target->id}; sim_->submit(c);
+      }
+    }
+    return true;
+  }
   if (in.pressed[SDL_BUTTON_RIGHT]) { right_down_ = true; right_moved_ = false; rx_ = in.mx; ry_ = in.my; }
   if (right_down_ && in.buttons[SDL_BUTTON_RIGHT] && (std::abs(in.mx - rx_) > 5 || std::abs(in.my - ry_) > 5)) right_moved_ = true;
   if (right_down_ && in.released[SDL_BUTTON_RIGHT]) {
     right_down_ = false;
-    if (!right_moved_) {
+    if (!right_moved_ || layout_mode_ == InterfaceLayout::Original) {
       if (wants_left_click()) cancel_mode();
       else if (in_world || mm.contains(in.mx, in.my)) {
         float wx, wy;
@@ -373,18 +430,28 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
     }
     right_moved_ = false;
   }
-  const int selected_town = production_town(w);
-  if (queue_town_ != selected_town) { queue_town_ = selected_town; queue_offset_ = 0; pressed_control_ = 0; }
-  auto visible_queue = production_queue(w, selected_town);
-  queue_offset_ = std::clamp(queue_offset_, 0, std::max(0, int(visible_queue.size()) - 8));
+  const int queue_town = production_town(w);
+  if (queue_town_ != queue_town) { queue_town_ = queue_town; queue_offset_ = 0; pressed_control_ = 0; }
+  const int queue_slots = layout_mode_ == InterfaceLayout::Original ? 3 : 8;
+  auto visible_queue = production_queue(w, queue_town);
+  queue_offset_ = std::clamp(queue_offset_, 0, std::max(0, int(visible_queue.size()) - queue_slots));
   if (in.wheel != 0 && panel.w > 0) {
-    auto boxes = layout(panel, std::max(1, panel.w / 204));
+    auto boxes = layout(panel, std::max(1, panel.w / 204), layout_mode_, selected_town(w) >= 0);
+    if (layout_mode_ == InterfaceLayout::Original && selected_town(w) >= 0) {
+      bool over_build = false;
+      for (const auto& box : boxes.production) over_build |= contains(box, in.mx, in.my);
+      if (over_build) {
+        const int pages = std::max(1, (int(sim_->menu(w, w.local_side, queue_town).size()) + 8) / 9);
+        page_ = std::clamp(page_ + (in.wheel < 0 ? 1 : -1), 0, pages - 1);
+        pressed_control_ = 0; return true;
+      }
+    }
     bool over_queue = contains(boxes.pause, in.mx, in.my);
     for (const auto& box : boxes.queue) over_queue |= contains(box, in.mx, in.my);
     if (over_queue) {
       pressed_control_ = 0;
-      queue_offset_ = std::clamp(queue_offset_ + (in.wheel < 0 ? 8 : -8), 0,
-                               std::max(0, int(visible_queue.size()) - 8));
+      queue_offset_ = std::clamp(queue_offset_ + (in.wheel < 0 ? queue_slots : -queue_slots), 0,
+                               std::max(0, int(visible_queue.size()) - queue_slots));
       return true;
     }
   }
@@ -417,11 +484,12 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
   }
   const int scale = std::max(1, panel.w / 204);
   if (panel.w <= 0 || (!contains(panel, in.mx, in.my) &&
-      !contains(in_game_panel_layout(panel, scale).card, in.mx, in.my))) {
+      !contains(in_game_panel_layout(panel, scale, layout_mode_).card, in.mx, in.my))) {
     pressed_control_ = 0;
     return false;
   }
-  auto l = layout(panel, scale);
+  if (layout_mode_ == InterfaceLayout::Original && original_control(in, w, panel, scale)) return true;
+  auto l = layout(panel, scale, layout_mode_, selected_town(w) >= 0);
   int town = production_town(w);
   auto queue = production_queue(w, town);
   const int waiting = int(std::count_if(queue.begin(), queue.end(), [&](size_t i) {
@@ -516,8 +584,121 @@ CommandButtonState CommandsUi::button_state(PanelAction action, const World& w) 
   return {enabled && selected ? int(ui_frame_ % 12) : 0, enabled, enabled && selected};
 }
 
+bool CommandsUi::original_control(const Input& in, World& w, const SDL_Rect& panel, int scale) {
+  const auto c = original_panel_controls(panel, scale);
+  const int town = selected_town(w);
+  const auto& buttons = town >= 0 ? c.town : c.squad;
+  int control = 0;
+  const auto lists = original_lists(w);
+  for (int list = 0; list < 2; ++list) for (int i = 0; i < 4 && i < int(lists[list].size()); ++i)
+    if (contains(list ? c.teams[i] : c.towns[i], in.mx, in.my)) control = 50 + list * 4 + i;
+  for (int i = 0; i < 5; ++i)
+    if (contains(buttons[i], in.mx, in.my) && !w.selection.ids.empty()) control = 30 + i;
+  if (!control) return false;
+  if (in.pressed[SDL_BUTTON_LEFT]) pressed_control_ = control;
+  if (!in.released[SDL_BUTTON_LEFT]) return true;
+  const bool clicked = pressed_control_ == control;
+  pressed_control_ = 0;
+  if (!clicked) return true;
+  if (control >= 50) {
+    const int list = (control - 50) / 4, row = (control - 50) % 4;
+    if (list) {
+      Command c; c.type = Pct::SelectByNo; c.side = uint8_t(w.local_side); c.a = lists[list][row]->tactic;
+      sim_->submit(c);
+    } else w.selection.ids = {lists[list][row]->id};
+    return true;
+  }
+  int button = control - 30;
+  if (!button) { center_requested_ = true; return true; }
+  Command command;
+  command.side = uint8_t(w.local_side);
+  if (town < 0) {
+    constexpr int modes[] = {2, 1, 3, 0};
+    command.type = Pct::AttackMode; command.a = modes[button - 1];
+    issue_to_selection(w, command);
+  } else {
+    const int number = w.mission.towns[size_t(town)].index;
+    if (button < 3) {
+      command.type = Pct::RepairMode; command.a = button; command.b = number;
+      for (const auto& state : w.town_state)
+        if (state.index == number && state.side == w.local_side && int(state.repair_mode) == button) command.a = 0;
+      service_target_ = command.a;
+    } else if (button == 3) {
+      command.type = Pct::BuildMode;
+      // G: toggle normal/fast; exact fast/economy transition needs an observation.
+      const auto& speeds = w.town_speed;
+      command.a = town < int(speeds.size()) && speeds[size_t(town)] == 2 ? 1 : 2;
+    } else {
+      auto queue = production_queue(w, town);
+      if (queue.empty()) return true;
+      const auto& item = w.side_state[size_t(w.local_side)].queue[queue.front()];
+      if (!item.started) return true;
+      command.type = Pct::PauseBuild; command.a = !item.paused; command.b = int(queue.front()) + 1;
+    }
+    if (auto id = production_member(w, town)) command.ids = {id};
+    sim_->submit(command);
+  }
+  return true;
+}
+
+std::string CommandsUi::draw_original(SDL_Renderer* r, SpriteStore& store, const Font& font, const StrBase& strings,
+                                     const World& w, const SDL_Rect& panel, int sc, int mx, int my) const {
+  const auto c = original_panel_controls(panel, sc);
+  const int town = selected_town(w), ts = font.ui_scale(sc);
+  std::string tip;
+  auto icon = [&](int type, const SDL_Rect& rect) {
+    SpriteKey key; key.index = icon_sprite(type, false); key.team = uint8_t(w.side_color(w.local_side));
+    if (key.index) blit(r, store, key, rect);
+  };
+  const auto lists = original_lists(w);
+  for (int list = 0; list < 2; ++list) for (int i = 0; i < 4 && i < int(lists[list].size()); ++i) {
+    const auto& rect = list ? c.teams[i] : c.towns[i];
+    icon(lists[list][i]->type, rect);
+    if (contains(rect, mx, my)) tip = type_display_name(strings, lists[list][i]->type);
+  }
+  if (!w.selection.ids.empty()) {
+    const auto& buttons = town < 0 ? c.squad : c.town;
+    const char* squad[] = {"Center", "Aggressive", "Defensive", "Balanced", "Direct Control"};
+    const char* city[] = {"Center", "Manual Repair", "Manual Destroy", "Build Speed", "Current Building"};
+    for (int i = 0; i < 5; ++i) {
+      const std::string label = town < 0 ? squad[i] : city[i];
+      // G: text fallback until per-button art and disabled states are verified.
+      auto lines = font.wrap(label, ts, buttons[i].w - 2 * sc);
+      int y = buttons[i].y;
+      for (const auto& line : lines) {
+        if (y + font.height(ts) > buttons[i].y + buttons[i].h) break;
+        font.draw(r, buttons[i].x + sc, y, line, ts, {240, 220, 170, 255}); y += font.height(ts);
+      }
+      if (contains(buttons[i], mx, my)) tip = label;
+    }
+  }
+  if (town < 0) {
+    for (size_t i = 0; i < w.selection.ids.size() && i < c.members.size(); ++i) {
+      const auto* o = w.find(w.selection.ids[i]);
+      if (o) { icon(o->type, c.members[i]); if (contains(c.members[i], mx, my)) tip = type_display_name(strings, o->type); }
+    }
+  } else if (sim_) {
+    auto items = sim_->menu(w, w.local_side, town);
+    const int pages = std::max(1, (int(items.size()) + 8) / 9), page = std::clamp(page_, 0, pages - 1);
+    for (int i = 0; i < 9 && page * 9 + i < int(items.size()); ++i) {
+      const auto& item = items[size_t(page * 9 + i)];
+      icon(item.type, c.build[i]);
+      if (contains(c.build[i], mx, my)) tip = type_display_name(strings, item.type) + "\nPrice: " +
+          std::to_string(item.price) + " Time: " + std::to_string(item.time);
+    }
+    const auto queue = production_queue(w, town);
+    const size_t offset = size_t(std::clamp(queue_offset_, 0, std::max(0, int(queue.size()) - 3)));
+    for (size_t i = 0; i + offset < queue.size() && i < c.queue.size(); ++i) {
+      icon(w.side_state[size_t(w.local_side)].queue[queue[i + offset]].type, c.queue[i]);
+      if (contains(c.queue[i], mx, my)) tip = "Building Queue";
+    }
+  }
+  return tip;
+}
+
 std::string CommandsUi::draw_menu(SDL_Renderer* r, SpriteStore& store, const Font& font, const StrBase& strings, const World& w,
                                   const SDL_Rect& panel, int sc, int mx, int my) const {
+  if (layout_mode_ == InterfaceLayout::Original) return draw_original(r, store, font, strings, w, panel, sc, mx, my);
   auto l = layout(panel, sc);
   const int ts = font.ui_scale(sc);
   std::string tip;

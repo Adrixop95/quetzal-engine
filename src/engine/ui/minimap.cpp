@@ -95,8 +95,12 @@ void Minimap::layout(int out_w, int out_h, int ui_scale) {
   rect_ = {margin, out_h - margin - h, w, h};
 }
 
-void Minimap::layout_in(const SDL_Rect& a, int ui_scale) {
+void Minimap::layout_in(const SDL_Rect& a, int ui_scale, InterfaceLayout mode) {
   if (!world_) return;
+  if (mode == InterfaceLayout::Original) {
+    rect_ = original_minimap_rect(a, world_->terrain.w, world_->terrain.h, ui_scale);
+    return;
+  }
   float aspect = float(world_->terrain.w) / world_->terrain.h;
   int w = std::min(a.w, world_->terrain.w * std::max(1, ui_scale)), h = int(w / aspect);
   if (h > a.h) { h = a.h; w = int(a.h * aspect); }
@@ -111,7 +115,7 @@ void Minimap::to_world(int sx, int sy, float& wx, float& wy) const {
 }
 
 void Minimap::draw(SDL_Renderer* r, const Camera& cam, float alpha, const Fog* fog) const {
-  if (!tex_ || !world_) return;
+  if (!tex_ || !world_ || rect_.w <= 0 || rect_.h <= 0) return;
   SDL_Rect b{rect_.x - 2, rect_.y - 2, rect_.w + 4, rect_.h + 4};
   SDL_SetRenderDrawColor(r, 0, 0, 0, 220);
   SDL_RenderFillRect(r, &b);

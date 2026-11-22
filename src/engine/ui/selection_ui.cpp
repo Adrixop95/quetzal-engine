@@ -15,9 +15,10 @@ bool SelectionUi::update(const Input& in, World& w, const Camera& cam, float alp
   }
   bool consumed = false;
   if (in.pressed[SDL_BUTTON_LEFT] && active) { down_ = true; dragging_ = false; x0_ = x1_ = in.mx; y0_ = y1_ = in.my; }
-  if (down_ && in.buttons[SDL_BUTTON_LEFT]) {
+  if (down_ && (in.buttons[SDL_BUTTON_LEFT] || in.released[SDL_BUTTON_LEFT])) {
     x1_ = in.mx; y1_ = in.my;
-    if (std::abs(x1_ - x0_) > 4 || std::abs(y1_ - y0_) > 4) dragging_ = true;
+    const int threshold = mode_ == InterfaceLayout::Original ? 16 : 4;
+    if (std::abs(x1_ - x0_) > threshold || std::abs(y1_ - y0_) > threshold) dragging_ = true;
     consumed = true;
   }
   if (down_ && in.released[SDL_BUTTON_LEFT]) {
@@ -32,13 +33,21 @@ bool SelectionUi::update(const Input& in, World& w, const Camera& cam, float alp
         const TypeInfo* ti = type_info(o.type);
         if (ti && ti->is_structure()) continue;  // box select picks units only
         Vec2f p = o.interpolated(alpha);
-        if (p.x >= ax && p.x <= bx && p.y >= ay && p.y <= by) hit.push_back(o.id);
+        if (mode_ == InterfaceLayout::Original) {
+          // G: a 48-pixel proxy when native object bounds are unavailable.
+          const auto bounds = object_bounds ? object_bounds(o, alpha) : SDL_FRect{p.x - 24, p.y - 24, 48, 48};
+          if (overlaps(bounds, {ax, ay, bx - ax, by - ay})) hit.push_back(o.id);
+        } else if (p.x >= ax && p.x <= bx && p.y >= ay && p.y <= by) hit.push_back(o.id);
       }
     } else if (const Object* o = pick_object(w, cam.to_world_x(float(in.mx)), cam.to_world_y(float(in.my)), alpha, 24.f / cam.zoom + 8)) {
       if (o->side == w.local_side && o->type >= 0 && !is_ferry(*o)) {
+        const auto* picked_type = type_info(o->type);
+        if (mode_ == InterfaceLayout::Original && (in.shift || in.ctrl) && picked_type && picked_type->is_structure()) {
+          dragging_ = false; return consumed;
+        }
         hit.push_back(o->id);
         const auto* ti = type_info(o->type);
-        if (!in.ctrl && o->tactic >= 0 && ti && !ti->is_structure()) {
+        if (!in.ctrl && !(mode_ == InterfaceLayout::Original && in.shift) && o->tactic >= 0 && ti && !ti->is_structure()) {
           for (const auto& member : w.objects) {
             const auto* mt = type_info(member.type);
             if (member.id != o->id && member.alive && !member.removed && member.side == w.local_side && !is_ferry(member) &&
@@ -47,7 +56,9 @@ bool SelectionUi::update(const Input& in, World& w, const Camera& cam, float alp
         }
       }
     }
-    if (!in.shift) w.selection.clear();
+    if (mode_ == InterfaceLayout::Original && !dragging_ && in.shift && in.ctrl) hit.clear();
+    // V: empty original boxes/clicks preserve the current tactic selection.
+    if (!in.shift && (mode_ == InterfaceLayout::Modern || !hit.empty())) w.selection.clear();
     for (uint32_t id : hit)
       if (!w.selection.contains(id)) w.selection.ids.push_back(id);
     dragging_ = false;

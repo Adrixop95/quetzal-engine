@@ -1042,6 +1042,10 @@ dependency is assumed present. These results do not establish native Windows,
 remote CI, live rendering/audio or campaign determinism.
 ## In-game UI layout (2026-10-28, partial task 14)
 
+The historical layout below describes modern mode. The newer verified geometry
+and corrections are integrated behind `--layout original`; see
+[interface_implementation.md](interface_implementation.md) and the update below.
+
 **Existing reference evidence (V):** [formats.md](formats.md#cursors-and-interface-selection-of-sprites-from-commonxbe)
 records the 800x600 mission 4 layout: Menu at x=598, a 120x90 minimap at
 (638,70), portraits near x=722, and a 254x208 command card at (546,392).
@@ -2457,3 +2461,37 @@ Release build, all 82 CTest entries (76 pass, six skip) and pre-commit pass.
 Tests use invented data only, including the actual mission-exit persistence path;
 no original executable/reference runtime was run. These checks establish neither
 real campaign reachability nor original UI, profile or save-continuation parity.
+## Original in-game layout mode (2026-11-22)
+
+V reference facts from interface_geometry.md, interface_ingame.md and
+worldview_mouse_cursors.md now drive an opt-in `--layout original`; modern
+remains the default. Shared draw/hit geometry covers the L-shaped panel,
+180x180 minimap box and integer map scale, squad stance row (2/1/3/0), town
+service/current-item row, 4x3 member cells, 3x3 build cells and three queue cells.
+Original mode uses the documented cursor precedence/indices, strict >16-pixel
+box threshold, rectangle overlap, one-unit Shift-click, Inv digit assignment
+without modern Ctrl+Shift append, and right-release orders after a drag.
+Money/message anchors and tooltip placement follow the documented geometry;
+engine debug HUD starts hidden in original mode.
+
+G: other resolutions use a documented integer-scaled/bottom-anchored adaptation.
+Native object rectangles and bucket picking, joined subteams, persistent Ctrl
+selection detachment, filter callers and raw-left-Shift digit routing remain
+missing. Box rectangles use an explicit 48x48 proxy unless supplied by a caller.
+List ordering/paging, button state art, fonts, money smoothing/coin/emblem,
+minimap colors/cadence, selection art and outcome/overlay integration remain
+partial. Existing simulation packet adapters do not establish native payload
+compatibility. No missing dependency is assumed integrated. The complete V/G
+comparison and outstanding values are in
+[interface_implementation.md](interface_implementation.md).
+
+Synthetic `interface_layout` checks geometry, half-open boundaries, gaps,
+minimap scaling, selection/modifier behavior, cursor precedence and submitted
+commands. Existing modern layout tests remain applicable. No original executable
+or reference runtime was launched; synthetic success is not visual parity.
+
+Validation: final Release build and 83 CTest entries completed with zero failures
+(77 passed, six skips); pre-commit passed for tracked and new files. The two
+private format/engine checks and a three-frame original-layout clone capture/trace
+also passed with dummy SDL under `unshare -rn` using a private installation copy.
+These are clone checks, not a reference comparison.
