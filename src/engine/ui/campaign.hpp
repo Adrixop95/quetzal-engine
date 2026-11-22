@@ -17,13 +17,18 @@ std::string mission_objectives(const GameData& data, const std::string& spec);
 
 // A separate engine profile; original .plr files are never modified.
 struct CampaignProgress {
-  uint16_t completed = 0;
+  // V: original profile progress is the next mission, capped at 16.
+  uint16_t highest_unlocked = 1;
   bool won(int mission) const;
   bool unlocked(int mission) const;
+  const char* status(int mission) const;
   void record(const std::string& spec, bool victory);
   bool load(const std::string& path);
   bool save(const std::string& path) const;
 };
+
+// V: campaign results have no movie except the final ending; custom results do.
+std::string mission_result_movie(int campaign_mission, bool victory, const CampaignProgress& progress);
 
 // Engine replay slots. Selection and confirmation never perform disk writes.
 class SaveLoadMenu {

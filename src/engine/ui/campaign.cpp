@@ -47,9 +47,6 @@ std::string mission_briefing(const GameData& data, const std::string& spec) {
   if (load_briefing(find_file_ci(data.maps_dir(), stem + ".mit"), sections)) {
     for (const auto& section : sections)
       text += cp1250_to_utf8(section.title) + "\n" + cp1250_to_utf8(section.text) + "\n";
-  } else {
-    MissionDef mission;
-    if (load_mission(mp, mission)) for (const auto& note : mission.notes) text += note + "\n";
   }
   return text.empty() ? "No briefing or objectives are available for this mission." : text;
 }
@@ -93,24 +90,29 @@ std::string mission_objectives(const GameData& data, const std::string& spec) {
   const auto mp = resolve_mission(data.maps_dir(), spec);
   const auto stem = std::filesystem::path(mp).stem().string();
   std::vector<BriefingSection> sections;
-  // G: use the final section as goals when a briefing has multiple sections.
-  // The private campaign documents follow this layout; native UI loading is unverified.
-  if (load_briefing(find_file_ci(data.maps_dir(), stem + ".mit"), sections) && sections.size() >= 2)
-    return cp1250_to_utf8(sections.back().title) + "\n" + cp1250_to_utf8(sections.back().text);
-  // G: custom maps without sectioned briefings may supply editor notes as goals.
-  MissionDef mission;
-  std::string text;
-  if (load_mission(mp, mission)) for (const auto& note : mission.notes) text += note + "\n";
-  return text.empty() ? "No mission objectives are available." : text;
+  // V: installed briefing data orders Diary, Order, Objectives. Editor Notes are unused.
+  if (load_briefing(find_file_ci(data.maps_dir(), stem + ".mit"), sections) && sections.size() >= 3)
+    return cp1250_to_utf8(sections[2].title) + "\n" + cp1250_to_utf8(sections[2].text);
+  return "No mission objectives are available.";
 }
 
-bool CampaignProgress::won(int n) const { return n >= 1 && n <= 15 && (completed & (1u << (n - 1))); }
+bool CampaignProgress::won(int n) const { return n >= 1 && n <= 15 && n < highest_unlocked; }
 bool CampaignProgress::unlocked(int n) const {
-  return n >= 1 && n <= 15 && (n == 1 || won(n) || won(n - 1));
+  // V: progress 0, 15 and 16 show the entire list in the original.
+  return n >= 1 && n <= 15 && (highest_unlocked == 0 || n <= highest_unlocked);
+}
+const char* CampaignProgress::status(int n) const {
+  if (!unlocked(n) || n == highest_unlocked) return "";
+  return n == 15 ? "Victory!" : "Complete";
 }
 void CampaignProgress::record(const std::string& spec, bool victory) {
   const int n = campaign_number(spec);
-  if (victory && n) completed |= uint16_t(1u << (n - 1));
+  if (victory && n) highest_unlocked = uint16_t(std::min(16, std::max(n + 1, int(highest_unlocked))));
+}
+std::string mission_result_movie(int n, bool victory, const CampaignProgress& progress) {
+  if (n == 0) return victory ? "win.avi" : "lose.avi";
+  if (n < 1 || n > 15 || !victory) return {};
+  return std::max(n + 1, int(progress.highest_unlocked)) >= 16 ? "final.avi" : "";
 }
 bool CampaignProgress::load(const std::string& path) {
   std::ifstream file(path, std::ios::binary);
@@ -118,23 +120,30 @@ bool CampaignProgress::load(const std::string& path) {
   file.read(bytes, sizeof bytes);
   if (file.bad()) return false;
   const std::string contents(bytes, size_t(file.gcount()));
-  const std::string prefix = "QUETZAL_CAMPAIGN_1\n";
+  const bool legacy = contents.rfind("QUETZAL_CAMPAIGN_1\n", 0) == 0;
+  const std::string prefix = legacy ? "QUETZAL_CAMPAIGN_1\n" : "QUETZAL_CAMPAIGN_2\n";
   if (contents.size() <= prefix.size() || contents.size() >= sizeof bytes || contents.rfind(prefix, 0) != 0 || contents.back() != '\n') return false;
   unsigned value = 0;
   auto result = std::from_chars(contents.data() + prefix.size(), contents.data() + contents.size() - 1, value);
-  if (result.ec != std::errc{} || result.ptr != contents.data() + contents.size() - 1 || value > 32767) return false;
-  completed = uint16_t(value);
+  if (result.ec != std::errc{} || result.ptr != contents.data() + contents.size() - 1 || value > (legacy ? 32767u : 16u)) return false;
+  uint16_t next = uint16_t(value);
+  if (legacy) {
+    // Engine format migration: the highest old completion implies all prior unlocks.
+    next = 1;
+    for (int n = 1; n <= 15; ++n) if (value & (1u << (n - 1))) next = uint16_t(n + 1);
+  }
+  highest_unlocked = next;
   return true;
 }
 bool CampaignProgress::save(const std::string& path) const {
-  if (completed > 32767) return false;
+  if (highest_unlocked > 16) return false;
   const auto staging = path + ".pending";
   std::error_code ec;
   // Exclusive directory creation refuses stale output and pre-existing symlinks.
   if (!std::filesystem::create_directory(staging, ec)) return false;
   const auto temporary = staging + "/profile";
   std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
-  file << "QUETZAL_CAMPAIGN_1\n" << completed << '\n';
+  file << "QUETZAL_CAMPAIGN_2\n" << highest_unlocked << '\n';
   file.close();
   bool ok = !file.fail();
 #ifdef _WIN32

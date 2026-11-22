@@ -141,7 +141,7 @@ int main(int argc, char** argv) {
   CHECK(next_campaign_mission(data, "mission_2").empty());
   CHECK(next_campaign_mission(data, "mission_15").empty());
   CHECK(next_campaign_mission(data, "custom").empty());
-  write(root / "Maps/mission_2.mit", "~Diary\r\nFirst section\r\n~~\r\n~Objectives\r\nReach the exit\r\n~~\r\n");
+  write(root / "Maps/mission_2.mit", "~Diary\r\nFirst section\r\n~~\r\n~Order\r\nSynthetic order\r\n~~\r\n~Objectives\r\nReach the exit\r\n~~\r\n");
   const auto briefing = mission_briefing(data, "mission_2");
   CHECK(briefing.find("Diary\nFirst section") != std::string::npos);
   CHECK(briefing.find("Objectives\nReach the exit") != std::string::npos);
@@ -150,36 +150,69 @@ int main(int argc, char** argv) {
   CHECK(mission_objectives(data, "mission_2").find("First section") == std::string::npos);
   CHECK(mission_objectives(data, "missing") == "No mission objectives are available.");
   write(root / "Maps/custom.mp", "[Globals]\nNotes=1\nNote0=Invented map goal\n");
-  CHECK(mission_objectives(data, "custom") == "Invented map goal\n");
+  CHECK(mission_objectives(data, "custom") == "No mission objectives are available.");
   write(root / "Maps/custom.mit", "~Diary\nStory without a goals section\n~~\n");
-  CHECK(mission_objectives(data, "custom") == "Invented map goal\n");
+  CHECK(mission_objectives(data, "custom") == "No mission objectives are available.");
   write(root / "Maps/custom.mit", "~Diary\nStory\n~~\n~Orders\nOrders text\n~~\n~Goals\nInvented final goal\n~~\n");
   CHECK(mission_objectives(data, "custom") == "Goals\nInvented final goal\n");
   CHECK(mission_briefing(data, "custom").find("Orders text") != std::string::npos);
+  write(root / "Maps/custom.mit", "~Diary\nStory\n~~\n~Order\nOrders text\n~~\n~Objectives\nActual goal\n~~\n~Extra\nExtra is not an objective\n~~\n");
+  CHECK(mission_objectives(data, "custom") == "Objectives\nActual goal\n");
   CampaignProgress progress;
   CHECK(progress.unlocked(1) && !progress.unlocked(2) && !progress.unlocked(0) && !progress.unlocked(16));
   progress.record("mission_1", false); CHECK(!progress.won(1));
   progress.record("mission_1", true); progress.record("MISSION_15.MP", true);
-  progress.record("custom", true); CHECK(progress.completed == 16385);
-  CHECK(progress.unlocked(2) && !progress.unlocked(3) && progress.unlocked(15));
+  progress.record("custom", true); CHECK(progress.highest_unlocked == 16);
+  CHECK(progress.unlocked(2) && progress.unlocked(3) && progress.unlocked(15));
   CHECK(!progress.won(0) && !progress.won(16));
   const auto path = (root / "engine_campaign.txt").string();
   CHECK(progress.save(path));
-  CampaignProgress loaded; CHECK(loaded.load(path) && loaded.completed == progress.completed);
+  CampaignProgress loaded; CHECK(loaded.load(path) && loaded.highest_unlocked == progress.highest_unlocked);
   progress.record("mission_2", true); CHECK(progress.save(path));
   CHECK(loaded.load(path) && loaded.won(2));
   std::filesystem::create_directory(path + ".pending");
   CHECK(!progress.save(path)); CHECK(loaded.load(path) && loaded.won(15));
   std::filesystem::remove(path + ".pending");
-  for (const std::string& bad : std::vector<std::string>{"", "QUETZAL_CAMPAIGN_1\n32768\n", "QUETZAL_CAMPAIGN_1\n1junk\n", "QUETZAL_CAMPAIGN_2\n1\n", "QUETZAL_CAMPAIGN_1\n1", std::string(100, 'A')}) {
-    write(path, bad); const auto before = loaded.completed;
-    CHECK(!loaded.load(path) && loaded.completed == before);
+  for (const std::string& bad : std::vector<std::string>{"", "QUETZAL_CAMPAIGN_1\n32768\n", "QUETZAL_CAMPAIGN_1\n1junk\n", "QUETZAL_CAMPAIGN_3\n1\n", "QUETZAL_CAMPAIGN_2\n17\n", "QUETZAL_CAMPAIGN_1\n1", std::string(100, 'A')}) {
+    write(path, bad); const auto before = loaded.highest_unlocked;
+    CHECK(!loaded.load(path) && loaded.highest_unlocked == before);
   }
   CHECK(!progress.save((root / "missing/profile").string()));
   for (int n = 1; n <= 15; ++n) progress.record("mission_" + std::to_string(n), true);
-  CHECK(progress.completed == 32767 && progress.save(path));
-  CHECK(loaded.load(path) && loaded.completed == 32767);
+  CHECK(progress.highest_unlocked == 16 && progress.save(path));
+  CHECK(loaded.load(path) && loaded.highest_unlocked == 16);
   CHECK(loaded.unlocked(15));
+
+  // V: a later win unlocks every earlier mission; replaying an earlier win never regresses.
+  CampaignProgress skipped;
+  skipped.record("mission_7", true);
+  CHECK(skipped.highest_unlocked == 8 && skipped.unlocked(3) && !skipped.unlocked(9));
+  CHECK(skipped.won(6) && !skipped.won(8));
+  CHECK(std::string(skipped.status(7)) == "Complete" && std::string(skipped.status(8)).empty());
+  skipped.record("mission_2", true); skipped.record("mission_15", false);
+  CHECK(skipped.highest_unlocked == 8);
+  CHECK(mission_result_movie(7, true, skipped).empty());
+  CHECK(mission_result_movie(7, false, skipped).empty());
+  CHECK(mission_result_movie(0, true, skipped) == "win.avi");
+  CHECK(mission_result_movie(0, false, skipped) == "lose.avi");
+  CHECK(mission_result_movie(15, true, skipped) == "final.avi");
+  CHECK(mission_result_movie(15, false, skipped).empty());
+  skipped.record("mission_15", true);
+  CHECK(mission_result_movie(1, true, skipped) == "final.avi");
+  for (int value : {0, 1, 7, 14, 15, 16}) {
+    write(path, "QUETZAL_CAMPAIGN_2\n" + std::to_string(value) + "\n");
+    CHECK(loaded.load(path) && loaded.highest_unlocked == value);
+    for (int n = 1; n <= 15; ++n) CHECK(loaded.unlocked(n) == (value == 0 || n <= value));
+    CHECK(std::string(loaded.status(15)) == (value == 0 || value == 16 ? "Victory!" : ""));
+  }
+  for (const auto& migration : std::vector<std::pair<unsigned, unsigned>>{{0, 1}, {1, 2}, {64, 8}, {16385, 16}, {32767, 16}}) {
+    write(path, "QUETZAL_CAMPAIGN_1\n" + std::to_string(migration.first) + "\n");
+    CHECK(loaded.load(path) && loaded.highest_unlocked == migration.second);
+    CHECK(loaded.save(path));
+    std::ifstream migrated(path);
+    const std::string contents(std::istreambuf_iterator<char>(migrated), {});
+    CHECK(contents == "QUETZAL_CAMPAIGN_2\n" + std::to_string(migration.second) + "\n");
+  }
 
   Options preferences;
   preferences.window.width = 1024; preferences.window.height = 768; preferences.gamma = 1.7;

@@ -140,15 +140,38 @@ int main() {
     CHECK(read(profile) == before);
 
     // Test the separate persistence contract; this is not an observed player victory.
-    progress.record(spec, false); CHECK(progress.completed == (1u << (n - 1)) - 1);
-    progress.record(spec, true); CHECK(progress.completed == (1u << n) - 1);
+    progress.record(spec, false); CHECK(progress.highest_unlocked == n);
+    progress.record(spec, true); CHECK(progress.highest_unlocked == n + 1);
     CHECK(progress.save(profile));
     CampaignProgress reopened; CHECK(reopened.load(profile));
-    CHECK(reopened.completed == progress.completed && reopened.won(n));
+    CHECK(reopened.highest_unlocked == progress.highest_unlocked && reopened.won(n));
     if (n < 15) CHECK(reopened.unlocked(n + 1));
     if (n < 14) CHECK(!reopened.unlocked(n + 2));
-    std::printf("S mission %d: victory, defeat/return, retry/victory, %s; profile mask %u\n",
-                n, n == 15 ? "final ending/menu" : "next briefing", unsigned(reopened.completed));
+    std::printf("S mission %d: victory, defeat/return, retry/victory, %s; profile progress %u\n",
+                n, n == 15 ? "final ending/menu" : "next briefing", unsigned(reopened.highest_unlocked));
   }
+  // Exercise the real mission-loop tail without the playtest progress-write guard.
+  // Pre-ticks are a synthetic diagnostic, not a claim of normal player completion.
+  options.script.clear(); options.menu_script.clear(); options.menu = false;
+  options.pre_ticks = 7; options.frames = 1;
+  options.mission = "mission_7";
+  CampaignProgress fresh; CHECK(fresh.save(profile));
+  write(root / "Maps/mission_7.scn", "trigger(0) conditions localTime == 6 actions side(local).victory end\n");
+  CHECK(run_engine(options) == 0);
+  CampaignProgress exited; CHECK(exited.load(profile) && exited.highest_unlocked == 8);
+  options.mission = "mission_2";
+  write(root / "Maps/mission_2.scn", "trigger(0) conditions localTime == 6 actions side(local).victory end\n");
+  CHECK(run_engine(options) == 0);
+  CHECK(exited.load(profile) && exited.highest_unlocked == 8);
+  options.mission = "mission_9";
+  write(root / "Maps/mission_9.scn", "trigger(0) conditions localTime == 6 actions side(local).defeat end\n");
+  const auto unchanged = read(profile);
+  CHECK(run_engine(options) == 0 && read(profile) == unchanged);
+  // A running mission and an invalid existing profile must never be overwritten.
+  write(root / "Maps/mission_9.scn", "trigger(0) conditions localTime == 99 actions side(local).victory end\n");
+  CHECK(run_engine(options) == 0 && read(profile) == unchanged);
+  write(profile, "Invalid profile\n");
+  options.mission = "mission_7";
+  CHECK(run_engine(options) == 0 && read(profile) == "Invalid profile\n");
   return failures ? 1 : 0;
 }
