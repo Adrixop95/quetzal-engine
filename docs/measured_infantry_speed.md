@@ -19,8 +19,9 @@ What this does not show:
   no formation walking.
 - Other unit classes (vehicles, cavalry, air units, boats beyond the ferry measurement in
   `docs/ferry_timeline.md`) were not measured here.
-- In a scenario that starts units on map row 12 nothing moved at all, including the Rifleman;
-  the cause (blocked start tile or unreachable target) is not established, so measurements use
-  row 4.
+- In scenarios that start units on map rows 12, 20 or 28 nothing moved at all, including the
+  Rifleman. The start tiles of those rows read as 0 in the scenario passability layer (with the
+  convention of the private scenario generator that 0 means blocked; not checked against the
+  engine), while the row 4 start tile is open. So measurements use row 4.
 - The observation is of the headless build; it is not a measurement of the retail executable on
   a desktop.
