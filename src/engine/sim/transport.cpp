@@ -1,5 +1,6 @@
-// Independently implemented shuttle policies; evidence: docs/ferry_shuttle.md.
+// Independent transport behavior; evidence: docs/ferry_implementation.md.
 #include "engine/sim/game_sim.hpp"
+#include "engine/sim/sight.hpp"
 #include "engine/data/animation_slots.hpp"
 #include <algorithm>
 #include <limits>
@@ -21,10 +22,28 @@ int anchor_distance(int x, int y) {
   const int scaled = minor + minor / 2;
   return major + scaled / 4 + scaled / 64 - major / 128 - major / 32;
 }
-void phase(Object& boat, int controller, data::BoatPhase animation, int wait) {
-  boat.ferry_phase = controller; boat.ferry_wait = wait;
+void boat_state(Object& boat, int state) {
+  boat.boat_state = state;
+  const auto animation = state == 2 ? data::BoatPhase::Opening :
+      state == 3 ? data::BoatPhase::Open : state == 4 ? data::BoatPhase::Closing :
+      state == 6 ? data::BoatPhase::Turning : data::BoatPhase::Closed;
   boat.transport_phase = int(animation); boat.anim_tick = 0;
-  boat.vessel_route = controller != 0;
+  boat.ferry_wait = state == 2 ? kFerryOpeningTicks : state == 4 ? kFerryClosingTicks :
+      state == 6 ? kFerryTravelPause : 0;
+}
+void boat_mode(Object& boat, int mode) {
+  if (mode == 3) boat_state(boat, 5);
+  else if (mode == 0 && boat.boat_state == 1) boat_state(boat, 2);
+  else if (mode == 1 && boat.boat_state == 3) boat_state(boat, 4);
+  else if (mode == 2 && boat.boat_state == 1) boat_state(boat, 6);
+}
+int fresh_group(const World& w) {
+  int64_t next = 0;
+  for (const auto& o : w.objects) {
+    next = std::max(next, int64_t(o.tactic) + 1);
+    next = std::max(next, int64_t(o.ferry_destination) + 1);
+  }
+  return next <= std::numeric_limits<int32_t>::max() ? int(next) : -1;
 }
 bool occupied(const World& w, const Object& passenger, Fixed x, Fixed y, const RulesData& rules) {
   for (const auto& other : w.objects) {
@@ -58,10 +77,8 @@ void GameSim::ferry_follow(World& w, const std::vector<uint32_t>& ids, int side,
   // A town controller accepts the follow fields but does not execute field-group movement.
   for (auto id : members) if (w.find(id)->town >= 0) return;
   if (!same_group || group < 0) {
-    int64_t next = 0;
-    for (const auto& o : w.objects) next = std::max(next, int64_t(o.tactic) + 1);
-    if (next > std::numeric_limits<int32_t>::max()) return;
-    group = int(next);
+    group = fresh_group(w);
+    if (group < 0) return;
     for (auto id : members) w.find_mut(id)->tactic = group;
   } else {
     // The order is issued to a tactic, including its unselected members.
@@ -78,17 +95,20 @@ void GameSim::ferry_follow(World& w, const std::vector<uint32_t>& ids, int side,
 }
 
 void GameSim::unload(World& w, Object& boat, int, int) {
-  // Fitted first rings reproduce the measured 48..60 px shore spacing. Further
-  // rings are bounded by the map; blocked passengers remain aboard for a retry.
-  const int limit = (w.terrain.w + w.terrain.h + 2) * kTilePx;
-  for (int radius = 48; radius <= limit && !boat.cargo.empty(); radius += radius == 48 ? 12 : 48) {
-    const int a = radius * 3 / 5, b = radius * 4 / 5;
-    const std::pair<int, int> offsets[] = {
-      {0,-radius}, {a,-b}, {b,-a}, {radius,0}, {b,a}, {a,b},
-      {0,radius}, {-a,b}, {-b,a}, {-radius,0}, {-b,-a}, {-a,-b}
-    };
-    for (auto [dx, dy] : offsets) {
-      const Fixed x = boat.cur_x + to_fixed(dx), y = boat.cur_y + to_fixed(dy);
+  if (boat.ferry_destination < 0) boat.ferry_destination = fresh_group(w);
+  if (boat.ferry_destination < 0) return;
+  // V: square tile rings, top row, bottom row, left column, right column.
+  // G: bound the search and retry instead of hanging on an entirely blocked map.
+  const int bx = tile(boat.cur_x), by = tile(boat.cur_y);
+  const int limit = std::max(w.terrain.w, w.terrain.h) + 8;
+  for (int radius = 1; radius <= limit && !boat.cargo.empty(); ++radius) {
+    std::vector<std::pair<int,int>> cells;
+    for (int x = bx-radius; x <= bx+radius; ++x) cells.emplace_back(x, by-radius);
+    for (int x = bx-radius; x <= bx+radius; ++x) cells.emplace_back(x, by+radius);
+    for (int y = by-radius; y <= by+radius; ++y) cells.emplace_back(bx-radius, y);
+    for (int y = by-radius; y <= by+radius; ++y) cells.emplace_back(bx+radius, y);
+    for (auto [tx, ty] : cells) {
+      const Fixed x = tile_center_fixed(tx), y = tile_center_fixed(ty);
       for (auto it = boat.cargo.begin(); it != boat.cargo.end();) {
         auto* passenger = w.find_mut(*it);
         if (!passenger || !passenger->alive) { it = boat.cargo.erase(it); continue; }
@@ -98,6 +118,9 @@ void GameSim::unload(World& w, Object& boat, int, int) {
             occupied(w, *passenger, x, y, *rules_)) { ++it; continue; }
         passenger->carrier = 0; passenger->removed = false; passenger->boarding = 0;
         passenger->tactic = boat.ferry_destination;
+        if (boat.ferry_group_side >= 0) passenger->side = boat.ferry_group_side;
+        passenger->attack_mode = AttackMode::Balanced;
+        passenger->town = -1; passenger->defence = false;
         passenger->teleport(x,y);
         passenger->order = uint8_t(Order::Idle); passenger->target = 0; passenger->resume = 0;
         passenger->follow_tactic = -1;
@@ -117,7 +140,12 @@ void GameSim::unload(World& w, Object& boat, int, int) {
 
 bool GameSim::activate_vessel(World& w, int scenario, ObjectSource source, bool enabled) {
   bool found = false;
+  uint32_t last = 0;
+  if (source != ObjectSource::Johnka)
+    for (const auto& o : w.objects)
+      if (o.alive && !o.removed && o.scenario == scenario && o.source == source) last = o.id;
   for (auto& o : w.objects) {
+    if (source != ObjectSource::Johnka && o.id != last) continue;
     if (!o.alive || (o.removed && source != ObjectSource::Johnka) ||
         o.scenario != scenario || o.source != source) continue;
     found = true; o.vessel_enabled = enabled;
@@ -131,13 +159,14 @@ bool GameSim::activate_vessel(World& w, int scenario, ObjectSource source, bool 
     }
     if (source == ObjectSource::Submarine) {
       if (!enabled || o.vessel_arrived) continue;
+      std::erase_if(w.effects, [&](const Effect& e) { return e.anim == 27 && e.source == o.id && e.loop; });
       decoration(w, 27, 1, o.cur_x, o.cur_y, 0, o.side, o.id);
       o.vessel_arrived = true; retire(w, o);
-    } else if (source == ObjectSource::Boat && enabled && o.ferry_phase == 0) {
-      o.ferry_request = -1;
-      o.ferry_destination = o.cargo.empty() ? -1 : w.find(o.cargo.front())->tactic;
-      o.ferry_group_side = o.side;
-      phase(o, 3, data::BoatPhase::Closed, kFerryTravelPause);
+    } else if (source == ObjectSource::Boat && enabled) {
+      // V: activation overrides every phase and travels in the current direction.
+      o.ferry_phase = 3; o.vessel_route = true;
+      if (o.ferry_group_side < 0) o.ferry_group_side = o.side;
+      boat_mode(o, 3);
     }
   }
   return found;
@@ -164,6 +193,52 @@ void GameSim::transport_tick(World& w) {
       vessel.transport_phase = 1;
     }
   }
+  for (auto& boat : w.objects) {
+    if (!is_ferry(boat)) continue;
+    if (!boat.alive || boat.removed || tile(boat.cur_x) < -7 || tile(boat.cur_y) < -7 ||
+        tile(boat.cur_x) >= w.terrain.w + 7 || tile(boat.cur_y) >= w.terrain.h + 7) {
+      // A missing leader kills hidden members too and cancels every follower.
+      const auto cargo = boat.cargo;
+      for (auto id : cargo) script_kill(w, id);
+      boat.cargo.clear();
+      script_kill(w, boat.id); boat.boat_state = 0; boat.vessel_route = false;
+      for (auto& follower : w.objects) if (follower.boarding == boat.id) script_stop(w, {follower.id});
+      continue;
+    }
+    // Object animation/movement is independent of the tactic phase.
+    if (boat.boat_state == 2 || boat.boat_state == 4 || boat.boat_state == 6) {
+      const auto* inputs = rules_->sight();
+      const int slot = data::boat_sequence(static_cast<data::BoatPhase>(boat.transport_phase), boat.orientation).slot;
+      const bool resource = inputs && inputs->effects.anim(23).frame_count(slot) > 0;
+      bool complete = false;
+      if (resource) complete = inputs->sprites.boat_phase_complete(boat.transport_phase, boat.orientation, boat.anim_tick);
+      else complete = boat.ferry_wait > 0 && --boat.ferry_wait == 0;
+      if (complete) {
+        if (boat.boat_state == 2) boat_state(boat, 3);
+        else if (boat.boat_state == 4) boat_state(boat, 1);
+        else {
+          boat.orientation ^= 1;
+          boat.ferry_direction = boat.orientation ? 1 : -1;
+          boat_state(boat, 5);
+        }
+      }
+    } else if (boat.boat_state == 5) {
+      const int sign = boat.orientation ? 1 : -1;
+      boat.ferry_direction = sign;
+      boat.cur_x += sign * to_fixed(5); boat.cur_y -= sign * to_fixed(5);
+      const int tx = tile(boat.cur_x), ty = tile(boat.cur_y);
+      if (std::abs(tile_center_fixed(tx) - boat.cur_x) < to_fixed(5) &&
+          !nav_.blocked(tx + sign, ty - sign, path::MoveClass::Small)) {
+        boat.cur_x = tile_center_fixed(tx); boat.cur_y = tile_center_fixed(ty);
+        boat_state(boat, 1);
+      }
+    }
+    if (tile(boat.cur_x) < -7 || tile(boat.cur_y) < -7 ||
+        tile(boat.cur_x) >= w.terrain.w + 7 || tile(boat.cur_y) >= w.terrain.h + 7) {
+      script_kill(w, boat.id);
+      for (auto& follower : w.objects) if (follower.boarding == boat.id) script_stop(w, {follower.id});
+    }
+  }
   // Follow is generic: approach the allied target anchor, then ask a ready ferry.
   // Group anchors are currently centroids, a documented engine approximation.
   for (auto& o : w.objects) {
@@ -185,9 +260,11 @@ void GameSim::transport_tick(World& w) {
                         tile(Fixed(sy/count)) - tile(boat->cur_y)) < ferry_reach(o.attack_mode)) {
       if (airborne) { script_stop(w, {o.id}); continue; }
       if (boat->ferry_phase == 0) {
-        boat->ferry_request = boat->ferry_destination = o.tactic;
+        boat->ferry_request = o.tactic;
+        boat->ferry_destination = fresh_group(w);
         boat->ferry_group_side = o.side;
-        phase(*boat, 1, data::BoatPhase::Opening, kFerryOpeningTicks);
+        boat->ferry_phase = 1; boat->vessel_route = true;
+        boat_mode(*boat, 0);
       }
     }
     // Resolve the anchor to a reachable land cell within the boarding block.
@@ -223,81 +300,71 @@ void GameSim::transport_tick(World& w) {
   }
   for (auto& boat : w.objects) {
     if (!is_ferry(boat) || !boat.alive || boat.removed) continue;
-    if (tile(boat.cur_x) < -7 || tile(boat.cur_y) < -7 ||
-        tile(boat.cur_x) >= w.terrain.w + 7 || tile(boat.cur_y) >= w.terrain.h + 7) {
-      script_kill(w, boat.id); continue;
+    if (boat.ferry_request >= 0) {
+      bool requester = false, followers = false;
+      for (const auto& member : w.objects) {
+        if (!member.alive || member.removed || member.boarding != boat.id) continue;
+        followers = true;
+        if (member.tactic == boat.ferry_request && member.side == boat.ferry_group_side) requester = true;
+      }
+      if (!requester) {
+        boat.ferry_request = -1;
+        if (boat.ferry_boarded == 0) {
+          boat.ferry_group_side = -1;
+          boat.ferry_phase = followers ? 0 : 5;
+        }
+      }
     }
-    if (boat.ferry_phase == 0) continue;
-    if (boat.ferry_wait > 0) { --boat.ferry_wait; continue; }
     switch (boat.ferry_phase) {
       case 1: {
-        boat.transport_phase = int(data::BoatPhase::Open);
-        // Occupancy grid semantics: x then y, at most one live ground object per
-        // tile. Stable ID breaks overlaps in the engine's continuous mover (G).
+        if (boat.boat_state != 3) break;
+        // V: departure is tested before this tick's loading scan.
+        if (boat.ferry_boarded == kTransportCapacity || (boat.ferry_boarded && boat.ferry_request < 0)) {
+          boat.ferry_request = -1;
+          boat.ferry_phase = 2; boat_mode(boat, 1);
+          break;
+        }
         const int bx = tile(boat.cur_x), by = tile(boat.cur_y);
-        for (int x = bx-1; x <= bx+1 && boat.cargo.size() < kTransportCapacity; ++x)
-          for (int y = by-1; y <= by+1 && boat.cargo.size() < kTransportCapacity; ++y) {
+        for (int x = bx-1; x <= bx+1 && boat.ferry_boarded < int(kTransportCapacity); ++x)
+          for (int y = by-1; y <= by+1 && boat.ferry_boarded < int(kTransportCapacity); ++y) {
             Object* occupant = nullptr;
             for (auto& candidate : w.objects) {
               if (!candidate.alive || candidate.removed || candidate.type < 0 || is_transport(candidate.type) ||
                   rules_->type(candidate.type).flier || tile(candidate.cur_x) != x || tile(candidate.cur_y) != y) continue;
               occupant = &candidate; break;
             }
-            if (!occupant || occupant->tactic != boat.ferry_request || occupant->side != boat.ferry_group_side) continue;
+            if (!occupant || boat.ferry_request < 0 || occupant->tactic != boat.ferry_request ||
+                occupant->side != boat.ferry_group_side) continue;
             script_stop(w, {occupant->id});
-            occupant->carrier = boat.id; occupant->removed = true;
-            boat.cargo.push_back(occupant->id);
+            occupant->carrier = boat.id; occupant->removed = true; occupant->tactic = -1;
+            boat.cargo.push_back(occupant->id); ++boat.ferry_boarded;
             if (occupant->mover >= 0) mover_->agents_mut()[size_t(occupant->mover)].enabled = false;
-            auto erase_id = [&](auto& ids) { ids.erase(std::remove(ids.begin(), ids.end(), occupant->id), ids.end()); };
+            auto erase_id = [&](auto& ids) { std::erase(ids, occupant->id); };
             erase_id(w.selection.ids);
             for (auto& side : w.side_state) erase_id(side.selected_ids);
           }
-        bool remaining = false;
-        for (const auto& member : w.objects)
-          if (member.alive && !member.removed && member.side == boat.ferry_group_side && member.tactic == boat.ferry_request &&
-              !rules_->type(member.type).flier && !is_transport(member.type)) remaining = true;
-        if (boat.cargo.size() == kTransportCapacity || (!boat.cargo.empty() && !remaining)) {
-          for (auto& member : w.objects) if (member.boarding == boat.id) script_stop(w, {member.id});
-          boat.ferry_request = -1;
-          phase(boat, 2, data::BoatPhase::Closing, kFerryClosingTicks);
-        }
         break;
       }
-      case 2: phase(boat, 3, data::BoatPhase::Closed, kFerryTravelPause); break;
+      case 2:
+        if (boat.boat_state == 1) { boat.ferry_phase = 3; boat_mode(boat, 2); }
+        break;
       case 3:
-      case 5: {
-        const int sign = boat.ferry_direction;
-        const Fixed nx = boat.cur_x + sign * to_fixed(5), ny = boat.cur_y - sign * to_fixed(5);
-        const bool returning = boat.ferry_phase == 5;
-        if (returning && boat.transport_phase == int(data::BoatPhase::Turning)) {
-          boat.transport_phase = int(data::BoatPhase::Closed); boat.anim_tick = 0;
-        }
-        if (returning && std::abs(boat.cur_x - boat.ferry_dock_x) <= to_fixed(5) &&
-                         std::abs(boat.cur_y - boat.ferry_dock_y) <= to_fixed(5)) {
-          boat.cur_x = boat.ferry_dock_x; boat.cur_y = boat.ferry_dock_y;
-          boat.orientation ^= 1; boat.ferry_direction = -boat.ferry_direction;
-          boat.ferry_destination = boat.ferry_group_side = -1;
-          phase(boat, 0, data::BoatPhase::Closed, 0);
-        } else if (!nav_.in_bounds(tile(nx), tile(ny)) && !returning) {
-          // Scenario entries may start outside the map. Preserve the diagonal
-          // until entry, but never leave the map on an outbound trip.
-          if (!nav_.in_bounds(tile(boat.cur_x), tile(boat.cur_y))) { boat.cur_x = nx; boat.cur_y = ny; }
-          else phase(boat, 4, data::BoatPhase::Opening, kFerryOpeningTicks);
-        } else if (!returning && nav_.blocked(tile(nx), tile(ny), path::MoveClass::Water)) {
+        if (boat.boat_state == 1) boat_mode(boat, 0);
+        else if (boat.boat_state == 3) {
           boat.vessel_arrived = true;
-          phase(boat, 4, data::BoatPhase::Opening, kFerryOpeningTicks);
-        } else if (returning && nav_.in_bounds(tile(nx), tile(ny)) &&
-                   nav_.blocked(tile(nx), tile(ny), path::MoveClass::Water)) {
-          // G: a newly obstructed return route waits and retries.
-        } else { boat.cur_x = nx; boat.cur_y = ny; }
-        break;
-      }
-      case 4:
-        unload(w, boat, tile(boat.cur_x), tile(boat.cur_y));
-        if (boat.cargo.empty()) {
-          boat.orientation ^= 1; boat.ferry_direction = -boat.ferry_direction;
-          phase(boat, 5, data::BoatPhase::Turning, kFerryTravelPause);
+          unload(w, boat, tile(boat.cur_x), tile(boat.cur_y));
+          if (boat.cargo.empty()) {
+            boat.ferry_group_side = -1; boat.ferry_boarded = 0;
+            boat.ferry_phase = 4; boat_mode(boat, 1);
+          }
         }
+        break;
+      case 4:
+        if (boat.boat_state == 1) { boat.ferry_phase = 5; boat_mode(boat, 2); }
+        break;
+      case 5:
+        if (boat.boat_state == 1) { boat.ferry_phase = 0; boat.vessel_route = false; }
+        else if (boat.boat_state == 3) boat_mode(boat, 1);
         break;
       default: break;
     }

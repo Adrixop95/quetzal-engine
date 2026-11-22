@@ -66,8 +66,8 @@ struct Object {
   bool vessel_enabled = true, vessel_route = false, vessel_arrived = false;
   int landing_x = 0, landing_y = 0;
   // Controller phase is separate from the resource animation phase above.
-  int ferry_phase = 0, ferry_wait = 0, ferry_direction = 1;
-  Fixed ferry_dock_x = 0, ferry_dock_y = 0;
+  int ferry_phase = 0, ferry_wait = 0, ferry_direction = -1;
+  int boat_state = 1, ferry_boarded = 0; // V: boat state 0..6; preloaded cargo is not counted
   int ferry_request = -1, ferry_destination = -1, ferry_group_side = -1;
   // Stable idle origins prevent autonomous pursuit from moving its own leash.
   int32_t idle_anchor_x = -1, idle_anchor_y = -1; // world pixels; initialized on attachment

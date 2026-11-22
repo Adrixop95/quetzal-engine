@@ -1,6 +1,7 @@
 // Synthetic SDL policy checks; the dummy driver cannot prove desktop confinement.
 #include <SDL.h>
 #include <cstdio>
+#include <cstdint>
 #include <string>
 
 #include "engine/app/options.hpp"
@@ -27,8 +28,16 @@ static void test_window(DisplayMode mode) {
   CHECK(pixel[2] == 255 && Window::gamma_channel(0, 2.0) == 0);
   for (int value = 0; value < 256; ++value) CHECK(Window::gamma_channel(uint8_t(value), 1.0) == value);
   CHECK(!window.apply_gamma(0));
-  window.set_size(1024, 768); int width, height; window.output_size(width, height);
-  CHECK(width == 1024 && height == 768);
+  CHECK(window.set_size(1024, 768));
+  SDL_PumpEvents();
+  SDL_RenderClear(window.renderer()); SDL_RenderPresent(window.renderer());
+  int logical_width = 0, logical_height = 0;
+  SDL_GetWindowSize(window.sdl(), &logical_width, &logical_height);
+  CHECK(logical_width == 1024 && logical_height == 768);
+  // Renderer output is measured in drawable pixels, which can be scaled on macOS.
+  int width = 0, height = 0; window.output_size(width, height);
+  CHECK(width >= logical_width && height >= logical_height);
+  CHECK(int64_t(width) * logical_height == int64_t(height) * logical_width);
   SDL_SetRenderDrawColor(window.renderer(), 64, 64, 64, 255); SDL_RenderClear(window.renderer());
   CHECK(window.apply_gamma(0.5));
   CHECK(SDL_RenderReadPixels(window.renderer(), &sample, SDL_PIXELFORMAT_RGBA32, pixel, 4) == 0);

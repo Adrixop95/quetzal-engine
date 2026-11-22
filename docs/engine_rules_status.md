@@ -167,10 +167,10 @@ and `engine` checks pass with the complete private map copy under dummy SDL in
 | Mission RNG and object phase order | V generator/construction / G consumption parity | Shared seed-zero MSVC stream for supported combat, decoration, planner and scene sound choices; logical unit pools walk newest first with LIFO reuse. Effects precede scripts; projectiles follow units; completed time advances last. Missing loading/wind/input/descriptor producers and grouped town/movement/sound phases prevent full sequence parity. Replay semantics 14 / AZC2 |
 | Descriptor primary/max and secondary HP | V fields / engine checks | All nine descriptor families loaded; mission/spawn maxima never depend on other instances. Positive mission HP is preserved. Original-save +0x3c is secondary HP; maximum comes from rules at simulation initialization. See V04 below |
 | Descriptor regeneration | V inspected thresholds/countdown/overshoot / P facility producer | Marine, Truck, Zeppelin, Bird, Headtruck, Spider and Cannon recover below natural thresholds, or full HP while the hashed service countdown is positive. Pre-add check permits overshoot; countdown expires after the update. Facility coverage/refresh and exact tick alignment remain open |
-| Scripted object health and placement identity | V zero maximum getters / engine identity checks | Boat, Johnka and Camera maximum getters return zero; Submarine records create invisible scenario controllers, not combat units; their scenario actions now use the adapters in [transport_rules.md](transport_rules.md). Town membership uses section numbers, including sparse IDs; team scenario/tactic, defence and vessel provenance remain distinct. Live reference identity still depends on V02 |
+| Scripted object health and placement identity | V zero maximum getters / engine identity checks | Boat, Johnka and Camera maximum getters return zero; Submarine records create stationary decoration controllers, not combat units; their scenario actions now use the adapters in [transport_rules.md](transport_rules.md). Town membership uses section numbers, including sparse IDs; team scenario/tactic, defence and vessel provenance remain distinct. Live reference identity still depends on V02 |
 | Descriptor movement speed | V getters / synthetic integration | Marine d5, Headtruck/Spider d7, Zeppelin/Truck/Bird d5 in px/tick, converted to 24.8; Bird d5 is its maximum cruise speed. Historical averages no longer override established descriptor speeds |
 | Measured speed fallback | M | `speed_measured.csv` (mean mid-run speed), used only without a verified speed getter; these averages include steering/sampling effects |
-| Bird speed and transport routes | G engine fallback / unresolved parity | Bird and unknown speeds default to 8 px/tick. Ferries and Johnka use separate water agents; ordered cargo, boarding/unloading and vessel script actions work by default. Scripted ferry entry and submarine animation dispatch are implemented; autonomous Johnka patrol and original timings remain open. See [transport_rules.md](transport_rules.md) |
+| Bird speed and transport motion | V documented ferry rules / G remaining policies | Bird and unknown speeds default to 8 px/tick. Ferries move on the fixed NE-SW diagonal at five pixels per axis, stop before the next Small-walkable tile, and use independent boat states/ferry phases. Fresh landing groups, requester survival, boat-loss cargo death, unrestricted phase activation and submarine decoration replacement have synthetic coverage. See [ferry_implementation.md](ferry_implementation.md) for V/G boundaries; live parity and Johnka scheduling remain open. |
 | Unit radius (collision disc) | P | 14 px, large 20 px |
 | Movement class small / large (`.dat` 1 = small only) | V code facts / synthetic integration | Marine d11 low byte selects small when nonzero; Spider/Truck/Headtruck use large. Bear is small; Knight/Bizon/Snowman/Elefant large. Missing Marine descriptors retain an explicitly provisional small fallback |
 | Air orders and ground collisions | engine / P reference integration | Aircraft use straight fixed-point movement without terrain/contact blocking, including engine attack-move orders. Ground agents retain continuous disc avoidance/pushing and flow fields. Reference tile reservations, vehicle turning, formation/path decisions and exact arrival timing remain unimplemented or unmeasured; see [V05 progress](rules_movement.md#8-v05-partial-integration-2026-10-28) |
@@ -2376,3 +2376,43 @@ passed. Separate `formats` and `engine` game-data checks passed with that privat
 copy under dummy SDL and `unshare -rn`. The bounded smoke reached its requested
 120-tick limit with no script errors; it did not complete the mission. No private
 assets, executable-derived code or probe artifacts are included in the changes.
+
+
+## Ferry motion and submarine decoration (2026-11-21)
+
+Task 159 supersedes the earlier ferry route/arrival policies in task 129.
+**V reference rules, implemented and checked synthetically:** independent boat
+states 0..6 and ferry phases 0..5; five pixels per axis on the NE-SW diagonal;
+no water route or stored home dock; stop/snap when the next diagonal tile is
+Small-walkable; turns toggle direction only at animation completion; boarding
+scans the 3 by 3 block and limits newly boarded passengers to five. Preloaded
+passengers are hidden regardless of editor metadata and do not increment that
+boarding count. Landing uses square tile rings and a fresh unselected mode-3
+group on the stored side. Requester death/cancellation preserves cargo; boat
+loss kills cargo and cancels followers. Script activation overrides any phase
+without turning. Submarines have a looping idle decoration replaced by one
+finite animation on go, then no visible object.
+
+**G / unresolved:** centroid group anchors, shore routing and continuous occupancy,
+per-unit clearance, bounded blocked-landing retries, fallback side after a repeated
+activation, native click behavior for enemy boats and the retained synthetic
+combat policy. Finite resource durations are used when loaded; absent-resource
+fallbacks remain eight ticks for ramps and 28 for turns/submarine replacement.
+The historical samples do not prove exact native within-tick scheduling. See
+[ferry_implementation.md](ferry_implementation.md) for the full mapping, regression
+coverage and evidence limits. No original executable was run or imported.
+
+Validation (2026-11-22): Release build, all 79 CTest entries (73 passes, six expected
+skips), and pre-commit passed. Separate private-data format/engine checks and all
+19 campaign transport dispatch sites passed inside `unshare -rn` with dummy SDL
+and a private installation copy. A clone-only mission-2 headless smoke reached
+720 ticks. Private logs remain ignored; these checks establish no live reference
+parity.
+
+PR 285 integration repair (2026-11-22): the separate integration tree combines
+ferry work with develop `41e0f56` (including tasks 161/162), preserving submarine
+pool retirement and all ferry tests. The merged Linux Release suite has 82 entries
+(76 passes, six expected skips). Fixture profile setup now uses the executable's
+C runtime on Windows; drawable-size checks support HiDPI. Fresh native CI remains
+unverified because connector approval policy blocks publishing. See the repair
+notes in [ferry_implementation.md](ferry_implementation.md).

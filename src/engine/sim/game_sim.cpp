@@ -193,6 +193,10 @@ void GameSim::init(World& w) {
   w.simulation_sounds = rules_->audio() != nullptr;
   if (script_.loaded() && !w.original_save) script_.init(w);
   for (Object& o : w.objects) {
+    if (o.source == ObjectSource::Submarine && !o.removed && !w.original_save) {
+      decoration(w, 27, 0, o.cur_x, o.cur_y, 0, o.side, o.id);
+      w.effects.back().loop = true;
+    }
     if (o.type < 0 || o.type >= kNumTypes) { o.type = -1; o.alive = true; continue; }   // unknown types become inert markers
     const TypeRules& r = rules_->type(o.type);
     o.initialize_health(r, bool(w.original_save));
@@ -215,7 +219,7 @@ void GameSim::init(World& w) {
     }
     if (o.removed || !o.alive) continue;
     if (is_ferry(o)) {
-      o.ferry_dock_x = o.cur_x; o.ferry_dock_y = o.cur_y;
+      if (o.ferry_group_side < 0) o.ferry_group_side = o.side;
       continue;
     }
     attach_agent(o);
@@ -408,6 +412,7 @@ void GameSim::kill(World& w, Object& o) {
     passenger->carrier = 0; kill(w, *passenger); retire(w, *passenger);
   }
   o.alive = false;
+  if (is_ferry(o)) { o.boat_state = 0; o.vessel_route = false; }
   o.hp = 0;
   o.order = uint8_t(Order::Idle);
   o.target = 0;
@@ -620,8 +625,9 @@ void GameSim::apply(World& w, const Command& c) {
         // Allocate independently of object iteration order and avoid existing script tactic ids.
         int32_t tactic = 0;
         for (const Object& o : w.objects) {
-          if (o.tactic == std::numeric_limits<int32_t>::max()) { tactic = -1; break; }
-          tactic = std::max(tactic, o.tactic + 1);
+          const int reserved = std::max(o.tactic, o.ferry_destination);
+          if (reserved == std::numeric_limits<int32_t>::max()) { tactic = -1; break; }
+          tactic = std::max(tactic, reserved + 1);
         }
         if (tactic < 0) break;
         std::vector<uint32_t> extracted;
@@ -1645,6 +1651,16 @@ void GameSim::decoration(World& w, int anim, int slot, Fixed x, Fixed y, int hei
   e.anim = anim; e.slot = slot; e.x = e.prev_x = x; e.y = e.prev_y = y;
   e.height = height; e.side = side; e.source = source;
   e.lifetime = data::effect_lifetime(anim, slot);
+  if (anim == 27) {
+    e.lifetime = 28; // G: synthetic fallback without the original sprite resource.
+    if (const auto* inputs = rules_->sight()) {
+      const auto animation = inputs->effects.anim(anim);
+      int duration = 0;
+      for (int frame = 0; frame < animation.frame_count(slot); ++frame)
+        duration += std::max(1, int(animation.frame(slot, frame).duration));
+      if (duration > 0) e.lifetime = duration;
+    }
+  }
   for (const auto& info : data::kEffectAnims) if (info.id == anim) e.kind = info.owner;
   if (e.lifetime > 0) w.effects.push_back(e);
 }
@@ -1909,7 +1925,11 @@ void GameSim::advance_effects(World& w, bool projectiles) {
       if (e.weapon_id >= 0) { // class 3's visual tail drifts without further hits
         e.x += e.velocity_x; e.y += e.velocity_y;
       }
-      if (e.source && e.loop) {
+      if (e.source && e.loop && e.anim == 27) {
+        const auto* o = w.find(e.source);
+        if (!o || !o->alive || o->removed) continue;
+      }
+      if (e.source && e.loop && e.anim != 27) {
         const auto* o = w.find(e.source);
         if (!o || !o->alive || o->removed || o->hp_max <= 0 || int64_t(o->hp) * 4 > int64_t(o->hp_max) * 3) continue;
         int stage = 3 - int((int64_t(4) * o->hp - 1) / o->hp_max);
@@ -2503,7 +2523,7 @@ uint64_t GameSim::state_hash(const World& w) const {
     if (vessel_state) {
       mix(o.carrier); mix(o.boarding); mix(o.vessel_enabled); mix(o.vessel_route); mix(o.vessel_arrived);
       mix(o.landing_x); mix(o.landing_y); mix(o.cargo.size());
-      mix(o.ferry_phase); mix(o.ferry_wait); mix(o.ferry_direction); mix(o.ferry_dock_x); mix(o.ferry_dock_y);
+      mix(o.boat_state); mix(o.ferry_boarded); mix(o.ferry_phase); mix(o.ferry_wait); mix(o.ferry_direction);
       mix(o.ferry_request); mix(o.ferry_destination); mix(o.ferry_group_side);
       mix(kFerryInvulnerableWhileSailing);
       for (auto id : o.cargo) mix(id);

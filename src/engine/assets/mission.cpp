@@ -65,8 +65,9 @@ bool parse_mission(const Ini& ini, const std::string& base_name, MissionDef& m) 
       o.type = src == ObjectSource::Boat ? 84 : src == ObjectSource::Johnka ? 88 : -1;
       o.landing_x = b.editor_x; o.landing_y = b.editor_y;
       o.vessel_enabled = src != ObjectSource::Johnka || b.enabled;
-      o.up = b.up; o.loaded = b.end_position != 0;
-      for (const auto& u : b.units) o.passengers.push_back({u.x, u.y, u.type});
+      o.up = b.up; o.loaded = src == ObjectSource::Boat || b.end_position != 0;
+      if (src != ObjectSource::Submarine)
+        for (const auto& u : b.units) o.passengers.push_back({u.x, u.y, u.type});
       m.objects.push_back(o);
     }
   };

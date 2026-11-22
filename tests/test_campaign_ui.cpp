@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include "temp_dir.hpp"
+#include "test_env.hpp"
 #include "core/endian.hpp"
 #include "core/userfiles.hpp"
 #include "engine/render/png.hpp"
@@ -24,7 +25,8 @@ int main(int argc, char** argv) {
   const std::filesystem::path output = argc > 1 ? argv[1] : temp.path() / "captures";
   std::filesystem::create_directories(output);
   const auto root = temp.path();
-  CHECK(SDL_setenv("AZTEC_USER_DIR", (root / "profile").string().c_str(), 1) == 0);
+  CHECK(set_test_env("AZTEC_USER_DIR", (root / "profile").string().c_str()) == 0);
+  CHECK(std::filesystem::path(user_file("probe.txt")) == root / "profile" / "probe.txt");
   std::filesystem::create_directory(root / "Maps");
   std::filesystem::create_directory(root / "Res");
   for (const char* name : {"Pal", "Units", "Tiles0", "Tiles1", "common", "fnts", "light"})

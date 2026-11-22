@@ -4,6 +4,7 @@
 #include <fstream>
 #include <memory>
 #include "temp_dir.hpp"
+#include "test_env.hpp"
 #include "core/endian.hpp"
 #include "engine/app/engine.hpp"
 #include "engine/app/headless.hpp"
@@ -227,7 +228,8 @@ static void frontend_and_play(GameData& data, const fs::path& root) {
 int main() {
   SDL_SetMainReady();
   TempDir temp; const auto root = temp.path(); fixture(root);
-  CHECK(SDL_setenv("AZTEC_USER_DIR", (root / "profile").string().c_str(), 1) == 0);
+  CHECK(set_test_env("AZTEC_USER_DIR", (root / "profile").string().c_str()) == 0);
+  CHECK(std::filesystem::path(user_file("probe.txt")) == root / "profile" / "probe.txt");
   GameData data; std::string error; CHECK(data.open(root.string(), error));
   setup_and_replay(data, root); command_line(root); frontend_and_play(data, root);
   return failures ? 1 : 0;
