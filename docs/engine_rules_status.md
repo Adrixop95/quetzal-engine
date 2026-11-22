@@ -341,34 +341,35 @@ push was run by the assistant.
 
 
 ## Mission scripts (`.scn`, `sim/script_runner.*`)
-`side(local)` means the mission's human side (`World::script_side`: the first side that is neither `OnlyComp` nor neutral), identical for every peer; the viewing side (`World::local_side`) never influences the simulation.
+
+`side(local)` means the mission human side (`World::script_side`), independent
+of viewing side. The current audit and evidence boundaries are in
+[script_implementation.md](script_implementation.md); it supersedes older
+immediate-execution and eager-timer policies in historical campaign notes.
+V below identifies a statically inspected rule or an engine construction check,
+not a live parity result; G explicitly identifies approximations.
 
 | Rule | Status | Notes |
-|---|---|---|
-| Every trigger is evaluated each tick; actions run when all conditions hold; `trigger(N).disable` turns one off | P | inferred from usage (`attacked != -1` plus self-disable) |
-| Triggers enabled by another trigger start disabled; initialised in `GameSim::init()` (not tied to tick 1) | P | initial state undocumented |
-| `localTime` / `globalTime` = ticks since mission start | P | |
-| Timers: start at 0 and count every tick; `set(V)` sets and starts, `stop`, `kill`; `timer(0)` exists from the start | engine synthetic / P reference | Timer 0 is initialized before tick 1; stop/start retains values, kill suppresses comparisons. Fixed-width 64-bit timer values; see [campaign audit](campaign_scripts.md) |
-| `side(S).units` = living non-buildings; `towns` = living town halls (outpost / village / town / fortress types); `enemies` = units and town halls of hostile sides | P | |
-| `tactic(N)` = living objects of the side with `[Team#] ScenarioID = N`; `valid` 0/1; `idle` = all idle; `attacked` = id of the last attacker or -1 | P | |
-| `attackTown(id)`, `moveTo(x,y)` = attack-move of the whole group (tiles -> pixels, clamped to the map) | P | |
-| `joinTactic`, `giftToSide`, `kill`, `lock/unlock`, `setPath/setCycledPath/...` (successive points of `[Paths]`) | P | |
-| `setFriendlyTo/NeutralTo/EnemyTo` changes the relation one-way (8x8 matrix) | P | |
-| `addMoney/takeMoney`, `printString`, `centerView`, `cameraActivate(i,v)` (jump to `Camera#`), `victory/defeat` | P | the mission ends for the script side |
-| `boat(N).activate`, `johnka(N).enable/disable`, `submarine(N).go`, `buildCommand`, `moveCommand`, `cameraDeactivate` | not done | Shared runner/headless/inventory classification; 19 unsupported campaign sites in missions 2, 7, 9 and 15. Build/move/deactivate and Johnka disable are absent from the audited campaign |
-| Defences from `[SideN] Defence#` appear as objects (towers); `defence(N).valid` = alive | engine identity checks / P reference | Explicit defence provenance excludes colliding team scenario IDs and accidental town membership. Dedicated reference tactic behavior remains unimplemented. Camera records are separate; see `rules_ai.md` |
+| --- | --- | --- |
+| Enabled trigger executes previous latch, then short-circuit AND; empty conditions false | V static rule / synthetic | Initial latch false, all enabled, one-tick latency, every-tick repetition; disable freezes latch; self-disable finishes evaluation |
+| Trigger IDs | V static rule / synthetic | First matching ID addressed; duplicates retain separate latches, enablement and traces; G file order substitutes for pool order |
+| Timer lifecycle | V static rule / synthetic | Lazy zero/running creation; set preserves pause, stop/start retain value, kill erases and a later condition recreates; signed 32-bit counter. G existing timers advance before trigger pass |
+| Operators and clocks | V operators/day-clock rule; G clock integration | Signed operator codes, StartTime-based localTime wrapping at 7200; globalTime uses active elapsed ticks, native clock ratios unmeasured |
+| Side counters and rectangles | V hostile-side count and normalized axes; G counter/spatial adapters | Enemies counts active sides, not objects. Rectangles admit living runtime categories 0/1/6/7 (units, structures and vessels, excluding cameras); construction-class numbers are a different namespace. Inclusive tile edges remain G. Empty native groups and town-list lifetimes remain incomplete |
+| Tactic lookup, lock/unlock and kill | V static lookup / synthetic; G hierarchy | Reserved plain groups before town fallback; unlocked plain group cannot be readdressed by ID. Kill uses member death without an attacker; recursive child groups, map Locked fields and AI reuse remain incomplete |
+| Group/town gift and join | V distinct gift group / synthetic; G hierarchy/production details | Gift allocates receiver group without merging colliding IDs; town gift uses shared ownership transfer. Join requires both lookups. Native nested membership and town queue cancellation/refund parity remain open |
+| Relations, money and outcomes | V static rules / synthetic | Directional relation changes; signed money adjustment floored at zero; first side outcome wins while playing, only human side ends mission |
+| printString and presentation | V ring/deadline rules / synthetic; G visual integration | 16 ring slots retain 15 prints; 4000 ms presentation deadlines, staggered retirement, alternate print discarded. Camera vision/deactivation implemented; exact layout and camera phase remain G |
+| Paths, attack/move and vessels | G existing adapters / synthetic | Path variants, whole-group orders and vessel activation exist; native hierarchy/controller parity unverified |
+| Side build/move commands; condition codes 0c/0d | Missing side-plan dependency | Build/move remain explicitly unsupported; native plan conditions have no identified grammar producer or independent side-plan equivalent |
 
-V12 progress (2026-10-28): the [campaign script audit](campaign_scripts.md)
-records every condition/action kind across 15 private campaign scripts (92
-triggers, 129 conditions, 363 action sites). All parse; 19 action sites remain
-unsupported. `script_unit` covers every condition kind, enablement/source order,
-timer lifecycle, path variants, alliances, gifts, defence identity, outcomes and
-replay continuation with synthetic data. Gifting now stops the movement agent
-and rejects invalid recipients; defence provenance and per-side outcomes are
-hashed. These are engine consistency fixes, not measured reference semantics.
-The isolated reference control failed during namespace network setup before
-launch. V02/V05/V10/V11 adapters and mission objective validation remain open;
-V12 is not complete. Camera activation still ignores its second argument.
+All 15 supplied campaign scripts parse with zero unsupported action sites in the
+current inventory; two missing-target warnings remain in mission 6. Synthetic
+regressions cover latches, duplicate IDs, timers, signed comparisons, ownership,
+lookup, messages and replay, with integration expectations updated for latency.
+The reference executable was not run. Campaign objective reachability and full
+V12 parity remain unverified; see the implementation document for remaining G
+rules and validation results.
 
 ## L8 validation attempt (2026-11-01, partial)
 

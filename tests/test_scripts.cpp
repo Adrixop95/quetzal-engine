@@ -91,7 +91,7 @@ static void attacked_notification() {
     CHECK(!w.objects[1].alive && w.objects[2].alive);
     w.objects[0].removed = true;
     CHECK(condition(r, w, "side(local).tactic(10).attacked == " + std::to_string(expected)));
-    r.tick(sim, w);
+    r.tick(sim, w); r.tick(sim, w);
     CHECK(w.side_state[2].money == (notified && source_side == 1 ? 7 : 0));
   }
 
@@ -120,45 +120,94 @@ static void order_and_enablement() {
       "trigger(7) conditions always actions side(local).addMoney(100) trigger(7).disable end "
       "trigger(3) conditions always actions side(local).addMoney(1000) end "
       "trigger(4) conditions always actions side(local).addMoney(10000) end");
-  r.tick(sim, w);
-  CHECK(w.side_state[2].money == 10111); // forward enable is immediate, backward enable waits
+  const auto fresh = r.state_hash();
+  r.tick(sim, w); CHECK(w.side_state[2].money == 0); // initial latch is false
+  r.tick(sim, w); CHECK(w.side_state[2].money == 10111);
   r.tick(sim, w); CHECK(w.side_state[2].money == 20112);
-  r.tick(sim, w); CHECK(w.side_state[2].money == 30112); // conditions are level-triggered
+  r.tick(sim, w); CHECK(w.side_state[2].money == 30112); // repeats while latched
   CHECK(w.side_state[0].money == 0 && r.unsupported() == 0);
-  r.init(w); const auto fresh = r.state_hash();
-  r.tick(sim, w); CHECK(r.state_hash() != fresh); r.init(w); CHECK(r.state_hash() == fresh);
-  // Repeated IDs use source order and shared ID enablement under the engine policy.
+  r.init(w); CHECK(r.state_hash() == fresh);
   auto duplicates = runner(w,
       "trigger(5) conditions always actions side(0).addMoney(1) trigger(5).disable end "
       "trigger(5) conditions always actions side(0).addMoney(100) end");
-  duplicates.tick(sim, w); CHECK(w.side_state[0].money == 1);
+  duplicates.tick(sim, w); CHECK(w.side_state[0].money == 0);
+  duplicates.tick(sim, w); CHECK(w.side_state[0].money == 101);
+  duplicates.tick(sim, w); CHECK(w.side_state[0].money == 201);
+  const auto rows = duplicates.action_observations(w);
+  CHECK(!rows.front().enabled && rows.back().enabled); // only first ID addressed
+
+  // A false current condition cannot cancel yesterday's latch. Disabled triggers
+  // retain it; enabling a later trigger can execute it in the same update pass.
+  w.side_state[2].money = 1;
+  auto stale = runner(w,
+      "trigger(1) conditions always actions trigger(2).enable end "
+      "trigger(2) conditions side(local).money > 0 actions side(0).addMoney(1) trigger(2).disable end");
+  stale.tick(sim, w);
+  w.side_state[2].money = 0;
+  stale.tick(sim, w); CHECK(w.side_state[0].money == 202);
+  stale.tick(sim, w); CHECK(w.side_state[0].money == 202);
+  auto empty = runner(w, "trigger(0) conditions actions side(0).addMoney(1000) end");
+  empty.tick(sim, w); empty.tick(sim, w); CHECK(w.side_state[0].money == 202);
+  auto and_list = runner(w,
+      "trigger(0) conditions always side(local).money > 0 actions side(0).addMoney(1000) end");
+  and_list.tick(sim, w); and_list.tick(sim, w); CHECK(w.side_state[0].money == 202);
+  w.side_state[2].money = 1;
+  auto frozen = runner(w,
+      "trigger(0) conditions always actions trigger(1).disable trigger(0).disable end "
+      "trigger(1) conditions side(local).money > 0 actions side(0).addMoney(3) trigger(1).disable end "
+      "trigger(2) conditions globalTime == 3 actions trigger(1).enable end");
+  frozen.tick(sim, w); frozen.tick(sim, w);
+  w.side_state[2].money = 0;
+  frozen.tick(sim, w); frozen.tick(sim, w); CHECK(w.side_state[0].money == 202);
+  frozen.tick(sim, w); CHECK(w.side_state[0].money == 205); // backward enable preserves stale true
+
 }
 
 static void timers() {
   World w = world(); GameSim sim(rules(), Modifications::faithful()); sim.init(w);
   auto r = runner(w,
-      "trigger(0) conditions localTime == 1 actions timer(1).set(5) timer(1).stop end "
-      "trigger(1) conditions globalTime == 2 actions timer(1).start timer(0).kill end "
-      "trigger(2) conditions localTime == 4 actions timer(1).kill end "
-      "trigger(3) conditions localTime == 5 actions timer(1).start end "
-      "trigger(4) conditions localTime == 6 actions timer(1).set(-2) end "
-      "trigger(5) conditions timer(1) == 5 actions side(local).addMoney(1) end");
-  CHECK(condition(r, w, "timer(0) == 0"));
-  r.tick(sim, w); CHECK(condition(r, w, "timer(0) == 1")); CHECK(condition(r, w, "timer(1) == 5"));
-  CHECK(w.side_state[2].money == 1); // later triggers see this tick's timer assignment
-  r.tick(sim, w); CHECK(condition(r, w, "timer(1) == 5")); CHECK(w.side_state[2].money == 2);
-  CHECK(!condition(r, w, "timer(0) != 100")); // killed timer never satisfies a comparison
-  r.tick(sim, w); CHECK(condition(r, w, "timer(1) == 6"));
-  r.tick(sim, w); CHECK(!condition(r, w, "timer(1) == 7"));
-  r.tick(sim, w); CHECK(condition(r, w, "timer(1) == 7")); // restart retains value
-  r.tick(sim, w); CHECK(condition(r, w, "timer(1) == -2"));
-  r.tick(sim, w); CHECK(condition(r, w, "timer(1) == -1"));
-  CHECK(condition(r, w, "localTime == 7") && condition(r, w, "globalTime == 7"));
-  CHECK(condition(r, w, "timer(99) == 0")); // absent timer policy remains explicit
-  auto stopped = runner(w,
-      "trigger(0) conditions localTime == 1 actions timer(2).set(9) timer(2).stop timer(2).set(20) trigger(0).disable end");
-  stopped.tick(sim, w); stopped.tick(sim, w);
-  CHECK(condition(stopped, w, "timer(2) == 20"));
+      "trigger(0) conditions timer(7) == 0 actions side(local).addMoney(1) trigger(0).disable end");
+  const auto before = r.state_hash();
+  r.action_observations(w); CHECK(r.state_hash() == before); // observation never creates timers
+  r.tick(sim, w); CHECK(condition(r, w, "timer(7) == 0"));
+  CHECK(w.side_state[2].money == 0);
+  r.tick(sim, w); CHECK(condition(r, w, "timer(7) == 1"));
+  CHECK(w.side_state[2].money == 1);
+
+  auto lifecycle = runner(w,
+      "trigger(0) conditions always actions timer(2).stop timer(2).set(20) trigger(0).disable end "
+      "trigger(1) conditions globalTime == 3 actions timer(2).start trigger(1).disable end "
+      "trigger(2) conditions globalTime == 5 actions timer(2).kill trigger(2).disable end "
+      "trigger(3) conditions timer(2) == 0 actions side(0).addMoney(1) end");
+  lifecycle.tick(sim, w); CHECK(condition(lifecycle, w, "timer(2) == 0"));
+  lifecycle.tick(sim, w); CHECK(condition(lifecycle, w, "timer(2) == 20"));
+  CHECK(w.side_state[0].money == 1); // acts on the old latch after set
+  lifecycle.tick(sim, w); CHECK(condition(lifecycle, w, "timer(2) == 20"));
+  lifecycle.tick(sim, w); CHECK(condition(lifecycle, w, "timer(2) == 20"));
+  lifecycle.tick(sim, w); CHECK(condition(lifecycle, w, "timer(2) == 21"));
+  lifecycle.tick(sim, w); CHECK(condition(lifecycle, w, "timer(2) == 0")); // kill + condition recreates
+  lifecycle.tick(sim, w); CHECK(condition(lifecycle, w, "timer(2) == 1"));
+  CHECK(w.side_state[0].money == 2);
+
+  auto skipped = runner(w,
+      "trigger(0) conditions side(local).money > 10 timer(9) == 0 actions side(0).addMoney(2) end");
+  skipped.tick(sim, w); skipped.tick(sim, w);
+  w.side_state[2].money = 11;
+  skipped.tick(sim, w); CHECK(condition(skipped, w, "timer(9) == 0"));
+  skipped.tick(sim, w); CHECK(condition(skipped, w, "timer(9) == 1"));
+  CHECK(w.side_state[0].money == 4); // skipped timer was not created on earlier ticks
+
+  auto overflow = runner(w,
+      "trigger(0) conditions always actions timer(3).set(2147483647) trigger(0).disable end");
+  overflow.tick(sim, w); overflow.tick(sim, w); overflow.tick(sim, w);
+  CHECK(condition(overflow, w, "timer(3) == -2147483648"));
+  CHECK(condition(overflow, w, "timer(3) < 0"));
+  w.mission.start_time = 7198;
+  auto clocks = runner(w, "");
+  CHECK(condition(clocks, w, "localTime == 7198"));
+  clocks.tick(sim, w); CHECK(condition(clocks, w, "localTime == 7199"));
+  clocks.tick(sim, w); CHECK(condition(clocks, w, "localTime == 0"));
+  CHECK(condition(clocks, w, "globalTime == 2"));
 }
 
 static void conditions_and_identity() {
@@ -170,11 +219,11 @@ static void conditions_and_identity() {
   GameSim sim(rules(), Modifications::faithful()); sim.init(w); auto r = runner(w, "");
   const std::string checks[] = {
     "always", "localTime == 0", "globalTime == 0", "timer(0) == 0",
-    "side(local).units == 2", "side(local).towns == 1", "side(local).enemies == 2",
+    "side(local).units == 2", "side(local).towns == 1", "side(local).enemies == 1",
     "side(local).tactics == 1", "side(local).money == 50", "side(local).unitsInRect(3,4,6,7) == 2",
     "side(local).unitsOfUGIInRect(UGI_FOOTMAN,3,4,3,4) == 1", "side(local).unitsOfId(UGI_FOOTMAN) == 1",
     "side(local).tactic(10).valid == 1", "side(local).tactic(10).idle == 1",
-    "side(local).tactic(10).locked == 0", "side(local).tactic(10).attacked == -1",
+    "side(local).tactic(10).locked == 1", "side(local).tactic(10).attacked == -1",
     "side(local).defence(42).valid == 1", "side(local).isEnemy(1) == 1",
     "side(local).isFriendly(local) == 1", "side(local).isNeutral(1) == 0"
   };
@@ -187,7 +236,8 @@ static void conditions_and_identity() {
   for (const auto& op : {"== 50", "!= 49", "< 51", "<= 50", "> 49", ">= 50"})
     CHECK(condition(r, w, std::string("side(local).money ") + op));
   CHECK(!condition(r, w, "side(8).isEnemy(1) == 1"));
-  CHECK(!condition(r, w, "side(local).unitsInRect(4,5,3,4) > 0"));
+  CHECK(condition(r, w, "side(local).unitsInRect(4,5,3,4) == 1"));
+  CHECK(condition(r, w, "side(local).unitsInRect(15,15,15,15) == 1")); // defence kind counts
   w.objects[0].last_hit_by = 5;
   const auto quiet_hash = sim.state_hash(w);
   CHECK(condition(r, w, "side(local).tactic(10).attacked == -1"));
@@ -215,6 +265,22 @@ static void conditions_and_identity() {
   w.objects[2].progress = 999; CHECK(condition(r, w, "side(local).towns == 0"));
 }
 
+static void rectangle_runtime_categories() {
+  World w = world();
+  // Each construction family has an independent runtime category; all these
+  // ordinary objects are included, including structures and both vessel types.
+  for (int type : {0, 30, 11, 7, 83, 33, 3, 17, 84, 87, 88, 89})
+    object(w, type, 2, -1, 5, 6);
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+  auto r = runner(w, "");
+  CHECK(condition(r, w, "side(local).unitsInRect(5,6,5,6) == 11"));
+  CHECK(condition(r, w, "side(local).unitsOfUGIInRect(UGI_BOAT,5,6,5,6) == 1"));
+  CHECK(condition(r, w, "side(local).unitsOfUGIInRect(UGI_JOHNKA,5,6,5,6) == 1"));
+  CHECK(condition(r, w, "side(local).unitsOfUGIInRect(UGI_CAMERA,5,6,5,6) == 0"));
+  w.objects[8].alive = false;
+  CHECK(condition(r, w, "side(local).unitsOfUGIInRect(UGI_BOAT,5,6,5,6) == 0"));
+}
+
 static void paths_and_gifts() {
   for (const auto& method : {"setPath", "setInvertedPath", "setCycledPath", "setCycledInvertedPath"}) {
     World w = world(); object(w, 0, 2, 5, 3, 4);
@@ -224,7 +290,7 @@ static void paths_and_gifts() {
     auto r = runner(w, "trigger(0) conditions always actions side(local).tactic(5)." + m + "(0) trigger(0).disable end");
     const bool inverted = m.find("Inverted") != std::string::npos;
     const bool cycled = m.find("Cycled") != std::string::npos;
-    r.tick(sim, w);
+    r.tick(sim, w); r.tick(sim, w);
     CHECK(w.objects[0].dest_x == (inverted ? 8 : 6) * kTilePx + kTilePx / 2);
     auto first_hash = r.state_hash();
     r.tick(sim, w); CHECK(r.state_hash() != first_hash); // clock advances while path waits for idle
@@ -240,13 +306,51 @@ static void paths_and_gifts() {
   auto r = runner(w,
       "trigger(0) conditions localTime == 1 actions side(local).tactic(5).moveTo(20,20) end "
       "trigger(1) conditions localTime == 2 actions side(local).tactic(5).giftToSide(1) end");
-  r.tick(sim, w); sim.tick(w); r.tick(sim, w);
+  r.tick(sim, w); sim.tick(w); r.tick(sim, w); r.tick(sim, w);
   CHECK(w.objects[0].side == 1 && w.objects[0].order == uint8_t(Order::Idle));
+  CHECK(w.objects[0].tactic != w.objects[1].tactic); // gift never merges a colliding group
+  CHECK(condition(r, w, "side(1).tactics == 2"));
   const auto x = w.objects[0].cur_x, y = w.objects[0].cur_y;
   for (int i = 0; i < 10; ++i) { w.begin_tick(); sim.tick(w); }
   CHECK(w.objects[0].cur_x == x && w.objects[0].cur_y == y); // movement agent stopped too
   auto invalid = runner(w, "trigger(0) conditions always actions side(1).tactic(5).giftToSide(99) end");
-  invalid.tick(sim, w); CHECK(w.objects[0].side == 1 && w.objects[1].side == 1);
+  invalid.tick(sim, w); invalid.tick(sim, w); CHECK(w.objects[0].side == 1 && w.objects[1].side == 1);
+}
+
+static void tactic_lookup_and_money() {
+  World w = world(); object(w, 0, 2, 5, 3, 4); object(w, 0, 2, 6, 7, 8);
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+  auto r = runner(w,
+      "trigger(0) conditions always actions side(local).tactic(5).joinTactic(99) trigger(0).disable end "
+      "trigger(1) conditions globalTime == 2 actions side(local).tactic(5).joinTactic(6) trigger(1).disable end "
+      "trigger(2) conditions globalTime == 3 actions side(local).tactic(6).kill trigger(2).disable end "
+      "trigger(3) conditions always actions side(local).addMoney(-10) trigger(3).disable end");
+  r.tick(sim, w); r.tick(sim, w); CHECK(w.objects[0].tactic == 5);
+  CHECK(w.side_state[2].money == 0);
+  r.tick(sim, w); CHECK(w.objects[0].tactic == 6 && w.objects[0].alive);
+  r.tick(sim, w); CHECK(!w.objects[0].alive && !w.objects[1].alive);
+  CHECK(w.tactic_attacked_by.empty()); // scripted kill has no attacker notification
+  CHECK(int(Cmp::Eq) == 0 && int(Cmp::Gt) == 1 && int(Cmp::Ge) == 2);
+  CHECK(int(Cmp::Ne) == 3 && int(Cmp::Lt) == -1 && int(Cmp::Le) == -2);
+}
+
+static void gift_detaches_home_and_outcome_precedence() {
+  World w = world();
+  w.mission.towns = {{0, 2, 15, 15, 1, 0, 52}};
+  object(w, 0, 2, 7, 3, 4); w.objects[0].town = 0;
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+  w.side_outcome[2] = kVictory;
+  auto r = runner(w,
+      "trigger(0) conditions always actions side(local).tactic(7).giftToSide(1) "
+      "side(local).defeat trigger(0).disable end");
+  r.tick(sim, w); r.tick(sim, w);
+  CHECK(w.objects[0].side == 1 && w.objects[0].town == -1);
+  CHECK(w.mission.towns[0].side == 2);
+  CHECK(w.side_outcome[2] == kVictory && w.outcome == kVictory);
+  auto money = runner(w,
+      "trigger(0) conditions always actions side(0).addMoney(2147483647) "
+      "side(0).addMoney(1) trigger(0).disable end");
+  money.tick(sim, w); money.tick(sim, w); CHECK(w.side_state[0].money == 0);
 }
 
 static void actions_and_outcomes() {
@@ -259,7 +363,7 @@ static void actions_and_outcomes() {
       "side(local).setFriendlyTo(1) side(local).addMoney(50) side(local).takeMoney(100) "
       "centerView(5,6) side(local).cameraActivate(0,500) printString(\"Synthetic message\") printStringR(\"Alternate\") "
       "side(1).victory side(local).defeat side(local).victory trigger(0).disable end");
-  r.tick(sim, w);
+  r.tick(sim, w); r.tick(sim, w);
   CHECK(condition(r, w, "side(local).tactic(5).locked == 1"));
   CHECK(w.objects[0].dest_x == 10 * kTilePx + kTilePx / 2);
   CHECK(w.relation[2][1] == kFriend && w.relation[1][2] == kEnemy);
@@ -273,13 +377,16 @@ static void actions_and_outcomes() {
   auto h = sim.state_hash(w); w.side_outcome[1] = kDefeat; CHECK(sim.state_hash(w) != h);
   h = sim.state_hash(w); w.objects[0].defence = true; CHECK(sim.state_hash(w) != h);
   auto next = runner(w,
-      "trigger(0) conditions always actions side(local).tactic(5).unlock side(local).tactic(5).joinTactic(6) "
+      "trigger(0) conditions always actions side(local).tactic(5).unlock "
+      "side(local).tactic(5).lock side(local).tactic(5).kill side(local).tactic(5).giftToSide(1) "
       "side(local).setNeutralTo(1) trigger(0).disable end "
-      "trigger(1) conditions localTime == 2 actions side(local).setEnemyTo(1) side(local).tactic(6).kill end");
-  next.tick(sim, w); CHECK(w.objects[0].tactic == 6 && w.relation[2][1] == kNeutral);
+      "trigger(1) conditions globalTime == 2 actions side(local).setEnemyTo(1) end");
+  next.tick(sim, w); next.tick(sim, w);
+  CHECK(w.objects[0].tactic == 5 && w.objects[0].alive && w.objects[0].side == 2);
+  CHECK(w.relation[2][1] == kNeutral);
+  CHECK(condition(next, w, "side(local).tactic(5).valid == 0"));
   CHECK(!condition(next, w, "side(local).tactic(5).locked == 0"));
-  CHECK(condition(next, w, "side(local).tactic(6).locked == 0"));
-  next.tick(sim, w); CHECK(!w.objects[0].alive && w.relation[2][1] == kEnemy);
+  next.tick(sim, w); CHECK(w.objects[0].alive && w.relation[2][1] == kEnemy);
   CHECK(r.unsupported() == 0 && next.unsupported() == 0);
   auto unsupported = runner(w,
       "trigger(0) conditions always actions boat(1).activate johnka(1).enable johnka(1).disable submarine(1).go "
@@ -289,7 +396,7 @@ static void actions_and_outcomes() {
       "side(local).buildCommand(UGI_FOOTMAN,1,2) side(local).moveCommand(1,2) side(local).cameraDeactivate(0) end");
   for (const auto& a : unsupported_script.triggers[0].actions)
     CHECK(ScriptRunner::supports(a.kind) == (a.kind == ActKind::BoatActivate || a.kind == ActKind::JohnkaEnable || a.kind == ActKind::JohnkaDisable || a.kind == ActKind::SubmarineGo || a.kind == ActKind::SideCameraDeactivate));
-  unsupported.tick(sim, w); CHECK(unsupported.unsupported() == 2);
+  unsupported.tick(sim, w); unsupported.tick(sim, w); CHECK(unsupported.unsupported() == 2);
   unsupported.init(w); CHECK(unsupported.unsupported() == 0);
   CHECK(!ScriptRunner::supports(static_cast<ActKind>(999)));
 }
@@ -338,13 +445,15 @@ static void action_observation_contracts() {
     r.tick(sim, w); observations = r.action_observations(w);
     CHECK(observations[2].enabled && observations[2].trace.executions == 0);
     CHECK(!observations[0].false_condition_lines.empty());
+    r.tick(sim, w);
+    CHECK(r.unsupported() == 0);
     r.tick(sim, w); observations = r.action_observations(w);
     CHECK(r.unsupported() == 1);
     const auto& a = observations[0];
     CHECK(a.trigger_index == 0 && a.action_index == 0 && a.trigger == 7 && a.line == 1);
     CHECK(!a.enabled && !ScriptRunner::supports(a.kind));
-    CHECK(a.trace.executions == 1 && a.trace.first_tick == 2 && a.trace.last_tick == 2);
-    CHECK(a.false_condition_lines.empty()); // disabled even though its condition is still true
+    CHECK(a.trace.executions == 1 && a.trace.first_tick == 3 && a.trace.last_tick == 3);
+    CHECK(a.false_condition_lines.size() == 1); // action uses the previous tick's true latch
     CHECK(observations[1].trace.executions == 1); // self-disable completes the action list
     r.tick(sim, w); observations = r.action_observations(w);
     CHECK(observations[0].false_condition_lines.size() == 1);
@@ -353,15 +462,15 @@ static void action_observation_contracts() {
     for (const auto& row : observations)
       CHECK(row.trace.executions == 0 && row.trace.first_tick == 0 && row.trace.last_tick == 0);
   }
-  // Repeated IDs share enablement, but never share execution provenance.
+  // Repeated IDs have independent latches and enablement; only the first is addressed.
   World w = world(); GameSim sim(rules(), Modifications::faithful()); sim.init(w);
   auto r = runner(w,
       "trigger(3) conditions always actions trigger(3).disable end "
       "trigger(3) conditions always actions boat(1).activate end");
-  r.tick(sim, w);
+  r.tick(sim, w); r.tick(sim, w);
   auto rows = r.action_observations(w);
-  CHECK(rows[0].trace.executions == 1 && rows[1].trace.executions == 0);
-  CHECK(rows[0].trigger_index != rows[1].trigger_index && !rows[1].enabled && r.unsupported() == 0);
+  CHECK(rows[0].trace.executions == 1 && rows[1].trace.executions == 1);
+  CHECK(rows[0].trigger_index != rows[1].trigger_index && rows[1].enabled && r.unsupported() == 0);
 }
 
 static void replay() {
@@ -426,7 +535,7 @@ static void presentation_contracts() {
       "trigger(0) conditions localTime == 1 actions side(local).cameraActivate(0,2) "
       "side(local).cameraActivate(1,0) side(local).cameraActivate(2,-1) "
       "printString(\"First invented notice\") printStringR(\"Discarded alternate\") trigger(0).disable end");
-  r.tick(sim, w); CHECK(w.script_cameras.size() == 3 && w.center_serial == 0);
+  r.tick(sim, w); r.tick(sim, w); CHECK(w.script_cameras.size() == 3 && w.center_serial == 0);
   CHECK(w.script_cameras[0].mask == 65 && w.script_cameras[0].ticks_left == 2);
   CHECK(w.script_cameras[1].mask == 64 && w.script_cameras[2].mask == 71);
   CHECK(w.messages.size() == 1 && w.messages[0].seconds_left == 4);
@@ -445,7 +554,7 @@ static void presentation_contracts() {
       "side(local).cameraActivate(0,1) side(7).cameraDeactivate(0) "
       "side(local).cameraActivate(99,1) side(99).cameraActivate(0,1) trigger(0).disable end "
       "trigger(1) conditions localTime == 2 actions side(local).cameraDeactivate(0) trigger(1).disable end");
-  repeat.tick(sim, w);
+  repeat.tick(sim, w); repeat.tick(sim, w);
   CHECK(w.script_cameras.size() == 5);
   repeat.tick(sim, w);
   CHECK(w.script_cameras[w.script_cameras.size() - 2].active);
@@ -479,12 +588,13 @@ static void campaign_gates() {
       "trigger(2) conditions timer(7) == 3 actions side(local).victory end "
       "trigger(3) conditions always actions trigger(2).disable trigger(3).disable end "
       "trigger(4) conditions localTime == 100 actions trigger(1).enable end");
-  r.tick(sim, w); CHECK(w.outcome == kRunning && r.trigger_enabled(1) && !r.trigger_enabled(2));
+  r.tick(sim, w); r.tick(sim, w); CHECK(w.outcome == kRunning && r.trigger_enabled(1) && !r.trigger_enabled(2));
   sim.script_kill(w, 1);
-  r.tick(sim, w); CHECK(r.trigger_enabled(2) && w.outcome == kRunning);
-  r.tick(sim, w); r.tick(sim, w); CHECK(w.outcome == kRunning);
+  r.tick(sim, w); r.tick(sim, w); CHECK(r.trigger_enabled(2) && w.outcome == kRunning);
+  r.tick(sim, w); r.tick(sim, w); r.tick(sim, w); CHECK(w.outcome == kRunning);
   r.tick(sim, w); CHECK(w.outcome == kVictory && r.outcome_origin()->trigger == 2);
   auto timer = runner(w, "trigger(0) conditions timer(8) == 3 actions side(0).addMoney(1) trigger(0).disable end");
+  timer.tick(sim, w); timer.tick(sim, w); CHECK(w.side_state[0].money == 0);
   timer.tick(sim, w); timer.tick(sim, w); CHECK(w.side_state[0].money == 0);
   timer.tick(sim, w); CHECK(w.side_state[0].money == 1);
 }
@@ -504,7 +614,7 @@ static void town_tactics_and_capture() {
       "trigger(0) conditions side(1).tactic(52).valid != 1 actions side(local).defeat end "
       "trigger(1) conditions localTime == 2 actions side(1).tactic(52).giftToSide(local) end");
   r.tick(sim, w); CHECK(w.outcome == kRunning);
-  r.tick(sim, w); CHECK(w.mission.towns[0].side == 2 && w.town_state[0].side == 2);
+  r.tick(sim, w); r.tick(sim, w); CHECK(w.mission.towns[0].side == 2 && w.town_state[0].side == 2);
   CHECK(w.objects[0].side == 2 && w.objects[1].side == 2);
   CHECK(w.side_state[1].queue.empty() && w.side_state[2].queue.empty());
   CHECK(condition(r, w, "side(local).towns == 1") && condition(r, w, "side(1).towns == 0"));
@@ -547,7 +657,7 @@ static void embarked_script_identity() {
   CHECK(condition(r, w, "side(local).unitsOfId(UGI_ABDULA) == 0"));
 }
 
-static void pending_path_is_not_idle() {
+static void pending_path_uses_previous_latch() {
   World w = world(); object(w, 0, 2, 7, 3, 4);
   w.mission.paths = {{{8, 9}}};
   GameSim sim(rules(), Modifications::faithful()); sim.init(w);
@@ -555,14 +665,12 @@ static void pending_path_is_not_idle() {
       "trigger(0) conditions always actions side(local).tactic(7).setPath(0) trigger(0).disable end "
       "trigger(1) conditions side(local).tactic(7).idle != 0 actions side(local).addMoney(1) trigger(1).disable end");
   r.tick(sim, w); CHECK(w.side_state[2].money == 0);
-  w.objects[0].order = uint8_t(Order::Idle);
-  r.tick(sim, w); CHECK(w.side_state[2].money == 0);
-  r.tick(sim, w); CHECK(w.side_state[2].money == 1);
+  r.tick(sim, w); CHECK(w.side_state[2].money == 1); // latched idle before path assignment
 }
 
 int main() {
-  presentation_contracts();
-  campaign_gates(); town_tactics_and_capture(); embarked_script_identity(); pending_path_is_not_idle();
+  rectangle_runtime_categories(); gift_detaches_home_and_outcome_precedence(); tactic_lookup_and_money(); presentation_contracts();
+  campaign_gates(); town_tactics_and_capture(); embarked_script_identity(); pending_path_uses_previous_latch();
   attacked_notification();
   source_locations(); order_and_enablement(); timers(); conditions_and_identity(); paths_and_gifts(); actions_and_outcomes(); defence_loading(); action_observation_contracts(); replay();
   std::puts("Synthetic script contracts passed.");

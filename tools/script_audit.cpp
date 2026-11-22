@@ -49,7 +49,7 @@ int main(int argc, char** argv) {
     std::set<int> ids;
     for (const auto& t : script.triggers) {
       if (!ids.insert(t.id).second)
-        std::cerr << name << ": repeated trigger ID " << t.id << " (shared enablement)\n";
+        std::cerr << name << ": repeated trigger ID " << t.id << " (only the first is addressable)\n";
       for (const auto& c : t.conditions) ++conditions[c.kind];
       for (const auto& a : t.actions) {
         ++actions[a.kind];

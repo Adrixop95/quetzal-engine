@@ -89,7 +89,7 @@ class PlaythroughTests(unittest.TestCase):
     def test_outcomes_and_determinism_without_sdl(self):
         a = self.run_engine()
         self.assertEqual(a['status'], 'victory')
-        self.assertEqual(a['ticks'], 10)
+        self.assertEqual(a['ticks'], 11)
         self.assertGreater(a['commands'], 0)
         self.assertEqual(a, self.run_engine())
         self.script.write_text('trigger(0) conditions localTime == 10 actions side(local).defeat end\n')
@@ -104,7 +104,7 @@ class PlaythroughTests(unittest.TestCase):
         save = Path(self.temp.name) / 'outcome.azs'
         first = self.run_engine('--save-at', '5', '--save', str(save))
         self.assertEqual(first['status'], 'defeat')
-        expected = dict(trigger=9, action_line=3, tick=10)
+        expected = dict(trigger=9, action_line=3, tick=11)
         self.assertEqual(first['outcome_origin'], expected)
         resumed = self.run_engine('--resume', str(save))
         self.assertEqual(resumed['outcome_origin'], expected)
@@ -129,7 +129,7 @@ class PlaythroughTests(unittest.TestCase):
         report = self.run_engine()
         self.assertTrue(report['script_errors'])
         self.assertEqual(len(report['unsupported_actions']), 1)
-        self.assertEqual(report['unsupported_executions'], 20)
+        self.assertEqual(report['unsupported_executions'], 19)
         self.script.unlink()
         self.assertTrue('missing mission script' in self.run_engine()['script_errors'])
 
@@ -145,10 +145,10 @@ class PlaythroughTests(unittest.TestCase):
         self.assertEqual([(r['trigger_index'], r['action_index']) for r in rows],
                          [(0, 0), (0, 1), (1, 0), (2, 0)])
         self.assertEqual([(r['executions'], r['first_tick'], r['last_tick']) for r in rows],
-                         [(1, 2, 2), (1, 2, 2), (1, 1, 1), (0, 0, 0)])
+                         [(1, 3, 3), (1, 3, 3), (19, 2, 20), (0, 0, 0)])
         self.assertEqual(rows[0]['false_condition_lines'], [1])
         self.assertFalse(rows[0]['enabled'])
-        self.assertFalse(rows[2]['enabled'])
+        self.assertTrue(rows[2]['enabled'])
         self.assertEqual(rows[2]['false_condition_lines'], [])
         self.assertTrue(rows[3]['enabled'])
         self.assertEqual(report['unsupported_executions'], 0)
@@ -253,7 +253,7 @@ class PlaythroughTests(unittest.TestCase):
         (unused / 'Res' / 'Light.xbe').write_bytes(b'unselected input')
         playtest = Path(self.temp.name) / 'resume.txt'
         playtest.write_text('key ctrl+L\nexpect tick == 6\nwait 8\n'
-                            'expect outcome == 1\nexpect tick == 10\nquit\n')
+                            'expect outcome == 1\nexpect tick == 11\nquit\n')
         result = subprocess.run([str(ENGINE), '--profile', 'faithful', '--game', str(self.game),
                                  '--rules-dir', str(ROOT / 'docs/data'), '--software',
                                  '--no-audio', '--script', str(playtest), '1'],
@@ -422,8 +422,8 @@ class PlaythroughTests(unittest.TestCase):
         for row in summary['missions']:
             # Invented oracle fixture; never export this as real reference evidence.
             timeline = dict(schema=1, contract='campaign-checkpoints-v1', mission=row['mission'],
-                            route_sha256=row['route_sha256'], status='victory', ticks=15,
-                            events=[dict(id='started', tick=3), dict(id='won', tick=15)])
+                            route_sha256=row['route_sha256'], status='victory', ticks=16,
+                            events=[dict(id='started', tick=4), dict(id='won', tick=16)])
             for repetition in (1, 2):
                 (references / f"{row['id']}-{repetition}.json").write_text(json.dumps(timeline))
         paired = Path(temp.name) / 'paired'
@@ -475,10 +475,10 @@ class PlaythroughTests(unittest.TestCase):
         checkpoints = [dict(id='finish', trigger_index=0, action_index=0, kind='SideVictory')]
         run = dict(returncode=0, engine=self.run_engine())
         row = dict(id='route', mission=1, route_sha256='a' * 64, max_ticks=20, runs=[run, run],
-                   checkpoints=checkpoints, checkpoint_checks=[dict(passed=True, events=[dict(id='finish', tick=10)])] * 2)
+                   checkpoints=checkpoints, checkpoint_checks=[dict(passed=True, events=[dict(id='finish', tick=11)])] * 2)
         directory = Path(self.temp.name)
         value = dict(schema=1, contract='campaign-checkpoints-v1', mission=1, route_sha256='a' * 64,
-                     status='victory', ticks=10, events=[dict(id='finish', tick=10)])
+                     status='victory', ticks=11, events=[dict(id='finish', tick=11)])
 
         def write_pair(first, second=None):
             for i, data in enumerate((first, first if second is None else second), 1):
@@ -495,7 +495,7 @@ class PlaythroughTests(unittest.TestCase):
         write_pair(value, dict(value, status='defeat'))
         self.assertEqual(harness.reference_comparison(row, directory)['status'], 'needs live run')
         for change in (dict(mission=2), dict(route_sha256='b' * 64), dict(ticks=True), dict(events='bad'),
-                       dict(events=[dict(id='finish', tick=11)]), dict(events=[dict(id='unknown', tick=3)])):
+                       dict(events=[dict(id='finish', tick=12)]), dict(events=[dict(id='unknown', tick=3)])):
             write_pair(dict(value, **change))
             self.assertIsNone(harness.reference_comparison(row, directory)['equal'])
         (directory / 'route-1.json').write_text('{')

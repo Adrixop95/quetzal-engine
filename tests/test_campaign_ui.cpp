@@ -401,7 +401,7 @@ int main(int argc, char** argv) {
       "key M\nwait 2\nexpect tick == 0\nkey Escape\n"
       "click 400 238\nexpect tick == 0\nclick 590 270\nwait 2\nexpect tick == 0\n"
       "key Escape\nclick 400 160\nexpect tick == 2\nwait 10\n"
-      "expect outcome == 1\nexpect tick == 6\nkey M\nwait 2\nexpect tick == 6\nquit\n");
+      "expect outcome == 1\nexpect tick == 7\nkey M\nwait 2\nexpect tick == 7\nquit\n");
   Options options; options.modifications_file = (root / "mission-modifications.ini").string(); options.game_dir = root.string(); options.mission = "1";
   options.rules_dir = AZTEC_TEST_RULES_DIR; options.menu_session = true;
   options.script = (root / "controls.txt").string(); options.audio = false; options.light = false;
@@ -425,7 +425,7 @@ int main(int argc, char** argv) {
   write(root / "settings-controls.txt",
       "key Escape\nclick 400 238\nclick 400 480\nexpect tick == 0\n"
       "click 720 171\nexpect tick == 0\nkey Escape\nclick 400 160\n"
-      "expect tick == 2\nuntil 6\nexpect outcome == 1\nquit\n");
+      "expect tick == 2\nuntil 7\nexpect outcome == 1\nquit\n");
   options.script = (root / "settings-controls.txt").string();
   options.ui_trace = (root / "settings-ui.jsonl").string();
   CHECK(run_engine(options) == 0);

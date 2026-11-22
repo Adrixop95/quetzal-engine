@@ -26,7 +26,7 @@ class TerminalAttempt : public Simulation {
   TerminalAttempt(int& ticks, int outcome) : ticks_(ticks), outcome_(outcome) {}
   void tick(World& world) override {
     ++world.tick; ++ticks_;
-    if (world.tick == 6) world.outcome = outcome_;
+    if (world.tick == 7) world.outcome = outcome_;
   }
  private:
   int& ticks_;
@@ -92,7 +92,7 @@ int main() {
     options.menu = false;
     write(options.menu_script, "0 keydown Return\n1 close\n");
     // Objective review is modal; the fixture reaches victory through the normal script runner.
-    write(options.script, "expect tick == 0\nexpect outcome == 0\nkey Escape\nclick 400 200\nwait 2\nexpect tick == 0\nkey Escape\nclick 400 160\nuntil 6\nexpect outcome == 1\nexpect tick == 6\nwait 2\nexpect tick == 6\nkey Return\n");
+    write(options.script, "expect tick == 0\nexpect outcome == 0\nkey Escape\nclick 400 200\nwait 2\nexpect tick == 0\nkey Escape\nclick 400 160\nuntil 7\nexpect outcome == 1\nexpect tick == 7\nwait 2\nexpect tick == 7\nkey Return\n");
     CHECK(run_engine(options) == 0);
     const auto victory = read(options.ui_trace);
     CHECK(victory.find("\"screen\":\"objectives\"") != std::string::npos);
@@ -105,7 +105,7 @@ int main() {
     // Defeat and return use the ordinary script dispatch, without changing progression.
     const auto scn = root / "Maps" / (spec + ".scn");
     write(scn, "trigger(0) conditions localTime == 6 actions side(local).defeat end\n");
-    write(options.script, "expect tick == 0\nuntil 6\nexpect outcome == 2\nwait 2\nexpect tick == 6\nkey Escape\n");
+    write(options.script, "expect tick == 0\nuntil 7\nexpect outcome == 2\nwait 2\nexpect tick == 7\nkey Escape\n");
     CHECK(run_engine(options) == 0);
     CHECK(read(options.ui_trace).find("\"screen\":\"mission-result-defeat\"") != std::string::npos);
     CHECK(read(options.menu_trace).find("\"rendered_screen\":\"main\"") != std::string::npos);
@@ -114,10 +114,10 @@ int main() {
     // Retry the injected defeat. The same input script starts at tick zero again,
     // then reaches the normal victory trigger and continues to the next briefing.
     write(scn, "trigger(0) conditions localTime == 6 actions side(local).victory end\n");
-    write(options.script, "expect tick == 0\nexpect outcome == 0\nuntil 6\nexpect tick == 6\nkey Return\n");
+    write(options.script, "expect tick == 0\nexpect outcome == 0\nuntil 7\nexpect tick == 7\nkey Return\n");
     int first_ticks = 0;
     CHECK(run_engine(options, {}, std::make_unique<TerminalAttempt>(first_ticks, kDefeat)) == 0);
-    CHECK(first_ticks == 6);
+    CHECK(first_ticks == 7);
     CHECK(read(options.ui_trace).find("\"outcome\":1") != std::string::npos);
     CHECK(read(options.menu_trace).find(n == 15 ? "\"rendered_screen\":\"main\"" : "\"rendered_screen\":\"briefing\"") != std::string::npos);
     CHECK(read(profile) == before);
@@ -125,10 +125,10 @@ int main() {
     // On victory, the second button restarts; on the following defeat it returns.
     // Different fixture outcomes make a mistaken return or endless restart fail.
     write(scn, "trigger(0) conditions localTime == 6 actions side(local).defeat end\n");
-    write(options.script, "expect tick == 0\nexpect outcome == 0\nuntil 6\nexpect tick == 6\nclick 400 355\n");
+    write(options.script, "expect tick == 0\nexpect outcome == 0\nuntil 7\nexpect tick == 7\nclick 400 355\n");
     first_ticks = 0;
     CHECK(run_engine(options, {}, std::make_unique<TerminalAttempt>(first_ticks, kVictory)) == 0);
-    CHECK(first_ticks == 6);
+    CHECK(first_ticks == 7);
     CHECK(read(options.ui_trace).find("\"outcome\":2") != std::string::npos);
     CHECK(read(options.menu_trace).find("\"rendered_screen\":\"main\"") != std::string::npos);
     CHECK(read(profile) == before);

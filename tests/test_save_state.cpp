@@ -95,14 +95,14 @@ int main(int argc, char** argv) {
           "invalid scenario arguments");
     TempDir fixture; auto r = rules(fixture.path());
     write(fixture.path(), "test.scn",
-        "trigger(0) conditions localTime == 1 actions timer(1).set(0) trigger(0).disable end\n"
+        "trigger(0) conditions globalTime == 1 actions timer(1).set(0) trigger(0).disable end\n"
         "trigger(1) conditions timer(1) == 7 actions timer(1).stop trigger(1).disable end\n"
-        "trigger(2) conditions localTime == 35 actions timer(1).start trigger(2).disable end\n"
+        "trigger(2) conditions globalTime == 35 actions timer(1).start trigger(2).disable end\n"
         "trigger(3) conditions always actions side(0).addMoney(1) end\n"
-        "trigger(4) conditions localTime == 90 actions side(0).setNeutralTo(1) trigger(4).disable end\n"
-        "trigger(5) conditions localTime == 110 actions side(0).setEnemyTo(1) trigger(5).disable end\n"
-        "trigger(6) conditions localTime == 3 actions centerView(12,12) printString(\"Synthetic objective\") trigger(6).disable end\n"
-        "trigger(7) conditions localTime == 350 actions side(local).victory trigger(7).disable end\n");
+        "trigger(4) conditions globalTime == 90 actions side(0).setNeutralTo(1) trigger(4).disable end\n"
+        "trigger(5) conditions globalTime == 110 actions side(0).setEnemyTo(1) trigger(5).disable end\n"
+        "trigger(6) conditions globalTime == 3 actions centerView(12,12) printString(\"Synthetic objective\") trigger(6).disable end\n"
+        "trigger(7) conditions globalTime == 350 actions side(local).victory trigger(7).disable end\n");
     const auto script = (fixture.path() / "test.scn").string();
     auto w = initial(mission); std::unique_ptr<GameSim> sim;
     const auto slot = root / ("save-" + std::to_string(checkpoint) + ".azs");

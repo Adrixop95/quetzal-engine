@@ -163,7 +163,7 @@ class FrameworkTests(unittest.TestCase):
         self.assertEqual(report['outcome'], 'lost')
         self.assertTrue(report['script_complete'])
         path.write_text('trigger(1) conditions localTime == 3 actions side(local).victory end\n')
-        self.args.max_ticks = 3
+        self.args.max_ticks = 4
         report, _ = self.run_route('await 20 outcome == 1\ncheckpoint money >= 9999999\nquit\n')
         self.assertEqual(report['engine_outcome'], 'won')
         self.assertEqual(report['outcome'], 'scenario-failed')

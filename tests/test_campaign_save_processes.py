@@ -73,7 +73,7 @@ class CampaignSaveTests(unittest.TestCase):
                     for field in ('state_hash', 'status', 'ticks', 'commands', 'action_observations', 'outcome_origin'):
                         self.assertEqual(baseline[field], resumed[field], field)
                     self.assertEqual(resumed['status'], 'victory')
-                    self.assertEqual(resumed['ticks'], finish)
+                    self.assertEqual(resumed['ticks'], finish + 1)
                     self.assertEqual(resumed['commands'], 2)
                     # Compare every saved-boundary and continued tick, not only the terminal hash.
                     tail = first.read_text().splitlines()[5:]
@@ -93,13 +93,13 @@ class CampaignSaveTests(unittest.TestCase):
                     selection = next(row['selection'] for row in rows if row['tick'] == 6)
                     ui_slot = profile / 'Saves/engine_slot1.azs'
                     saved = ui_slot.read_bytes()
-                    script.write_text(f'key ctrl+L\nexpect tick == 7\nuntil {finish}\n'
-                                      f'expect outcome == 1\nexpect tick == {finish}\nquit\n', encoding='ascii')
+                    script.write_text(f'key ctrl+L\nexpect tick == 7\nuntil {finish + 1}\n'
+                                      f'expect outcome == 1\nexpect tick == {finish + 1}\nquit\n', encoding='ascii')
                     self.assertTrue('loaded game (tick 6)' in run(graphical).stdout)
                     rows = [json.loads(line) for line in trace.read_text().splitlines()]
                     self.assertEqual(rows[0]['camera'], camera)
                     self.assertEqual(rows[0]['selection'], selection)
-                    self.assertTrue(any(row['outcome'] == 1 and row['tick'] == finish for row in rows))
+                    self.assertTrue(any(row['outcome'] == 1 and row['tick'] == finish + 1 for row in rows))
                     self.assertEqual(ui_slot.read_bytes(), saved)
                     # Exercise the actual pause-menu save and load confirmations.
                     script.write_text('key ctrl+L\nkey Escape\nclick 400 270\nclick 400 210\n'

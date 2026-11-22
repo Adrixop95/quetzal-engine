@@ -189,6 +189,7 @@ static void cameras() {
   World initial = world(); SideDef side; side.index = 1; side.cameras = {{10,10,-50}};
   initial.mission.sides.push_back(side); World w = initial;
   GameSim sim(data); CHECK(sim.attach_script(file.string())); sim.init(w);
+  ticks(sim,w); CHECK(w.script_cameras.empty());
   ticks(sim,w); CHECK(w.script_cameras.size() == 1 && w.script_cameras[0].active && w.center_serial == 0);
   const size_t cell = 10*33+10;
   CHECK(w.visibility.sides[1].v[cell] == 80 && w.visibility.sides[0].v[cell] == 0);
@@ -208,7 +209,7 @@ static void cameras() {
   w.mission.sides[0].cameras.push_back({12,12,100});
   w.script_cameras.clear();
   ScriptRunner runner; runner.set(std::move(script)); runner.init(w);
-  runner.tick(sim,w); runner.tick(sim,w); CHECK(w.script_cameras.size() == 2);
+  runner.tick(sim,w); runner.tick(sim,w); runner.tick(sim,w); CHECK(w.script_cameras.size() == 2);
   runner.tick(sim,w); CHECK(w.script_cameras.size() == 2 && w.script_cameras[0].active &&
       !w.script_cameras[0].latest && !w.script_cameras[1].active);
   runner.tick(sim,w); CHECK(w.script_cameras.size() == 3 && w.script_cameras.back().mask == 71);
