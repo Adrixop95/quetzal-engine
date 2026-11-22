@@ -99,7 +99,8 @@ static void attacked_notification() {
   World initial = world();
   object(initial, 0, 1, 20, 3, 3);
   object(initial, 0, 2, 10, 4, 3);
-  initial.objects[1].hp = 2000;
+  // Both units survive the newest-first attack exchange.
+  initial.objects[0].hp = initial.objects[1].hp = 2000;
   auto w = initial;
   auto definitions = rules();
   GameSim sim(definitions, Modifications::faithful()); sim.init(w);
@@ -346,7 +347,10 @@ static void gift_detaches_home_and_outcome_precedence() {
   r.tick(sim, w); r.tick(sim, w);
   CHECK(w.objects[0].side == 1 && w.objects[0].town == -1);
   CHECK(w.mission.towns[0].side == 2);
-  CHECK(w.side_outcome[2] == kVictory && w.outcome == kVictory);
+  CHECK(w.side_outcome[2] == kVictory && w.outcome == kRunning);
+  CHECK(!r.outcome_origin()); // The attempted defeat cannot replace an existing victory.
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.outcome == kVictory);
   auto money = runner(w,
       "trigger(0) conditions always actions side(0).addMoney(2147483647) "
       "side(0).addMoney(1) trigger(0).disable end");
@@ -370,7 +374,7 @@ static void actions_and_outcomes() {
   CHECK(w.side_state[2].money == 0 && w.center_serial == 1);
   CHECK(w.center_x == 5 * kTilePx && w.center_y == 6 * kTilePx);
   CHECK(w.messages.size() == 1 && w.messages[0].text == "Synthetic message");
-  CHECK(w.outcome == kDefeat && w.side_outcome[2] == kDefeat && w.side_outcome[1] == kVictory);
+  CHECK(w.outcome == kRunning && w.side_outcome[2] == kDefeat && w.side_outcome[1] == kVictory);
   CHECK(r.outcome_origin() && r.outcome_origin()->trigger == 0 && r.outcome_origin()->tick == w.tick);
   r.tick(sim, w); CHECK(r.outcome_origin()->tick == w.tick);
   r.init(w); CHECK(!r.outcome_origin());
@@ -592,7 +596,10 @@ static void campaign_gates() {
   sim.script_kill(w, 1);
   r.tick(sim, w); r.tick(sim, w); CHECK(r.trigger_enabled(2) && w.outcome == kRunning);
   r.tick(sim, w); r.tick(sim, w); r.tick(sim, w); CHECK(w.outcome == kRunning);
-  r.tick(sim, w); CHECK(w.outcome == kVictory && r.outcome_origin()->trigger == 2);
+  r.tick(sim, w);
+  CHECK(w.outcome == kRunning && w.side_outcome[w.script_side] == kVictory && r.outcome_origin()->trigger == 2);
+  w.begin_tick(); sim.tick(w); // Outcome is copied after all simulation phases.
+  CHECK(w.outcome == kVictory);
   auto timer = runner(w, "trigger(0) conditions timer(8) == 3 actions side(0).addMoney(1) trigger(0).disable end");
   timer.tick(sim, w); timer.tick(sim, w); CHECK(w.side_state[0].money == 0);
   timer.tick(sim, w); timer.tick(sim, w); CHECK(w.side_state[0].money == 0);

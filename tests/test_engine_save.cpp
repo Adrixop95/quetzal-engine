@@ -92,6 +92,13 @@ static void malformed() {
   }
   auto old_replay = bytes; write_le(old_replay.data() + 8, uint32_t(1)); repair_checksum(old_replay);
   CHECK(!deserialize_save(old_replay, decoded)); check_save(old_replay);
+  auto previous_replay = bytes;
+  write_le(previous_replay.data() + 8, kSaveReplayVersion - 1); repair_checksum(previous_replay);
+  CHECK(!deserialize_save(previous_replay, decoded));
+  auto legacy_log = serialize_log(s.log); legacy_log[3] = '1';
+  auto preserved_log = s.log;
+  CHECK(!deserialize_log(legacy_log, preserved_log));
+  CHECK(serialize_log(preserved_log) == serialize_log(s.log));
   std::string error;
   for (uint32_t version : {0u, 1u, 2u, 3u, kSaveFormatVersion + 1}) {
     auto incompatible = bytes; write_le(incompatible.data() + 4, version); repair_checksum(incompatible);

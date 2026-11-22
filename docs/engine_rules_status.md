@@ -125,7 +125,8 @@ and `engine` checks pass with the complete private map copy under dummy SDL in
 | Command types (PCT_FRAME_*) and their numbers | V | `docs/object_types.md`. Implemented: PAUSEON/OFF, CREATEGROUP, ADDTOGROUP, MOVE, ATTACK, BUILD, BUILDMODE, DESTROYHERE (list toggle), GARRISON, REPAIRMODE, QUEUEKILL, PAUSEBUILD. Partial engine conventions: SELECTGROUP, ATTACKMODE, SELECTBYNO, FOLLOWTEAM (see V10 update) |
 | Stop (0x50) and AttackMove (0x51) | P | engine extensions; the original has no such packets |
 | Command coordinates / tiles from packets | engine | clamped into the map before any fixed-point conversion; invalid tiles are ignored |
-| Command order inside a tick: ascending side, then submission order | P | original: per-side queues in `0x4577b0` (order not verified) |
+| Command order inside a tick: ascending sides 0..6, then submission order | V side range/order / G packet mapping | Native one-packet ring, active-side gate and latency remain open; engine batches remain supported. See [RNG/tick implementation](rng_and_tick_order_implementation.md) |
+| Mission RNG and object phase order | V generator/construction / G consumption parity | Shared seed-zero MSVC stream for supported combat, decoration, planner and scene sound choices; logical unit pools walk newest first with LIFO reuse. Effects precede scripts; projectiles follow units; completed time advances last. Missing loading/wind/input/descriptor producers and grouped town/movement/sound phases prevent full sequence parity. Replay semantics 14 / AZC2 |
 | Descriptor primary/max and secondary HP | V fields / engine checks | All nine descriptor families loaded; mission/spawn maxima never depend on other instances. Positive mission HP is preserved. Original-save +0x3c is secondary HP; maximum comes from rules at simulation initialization. See V04 below |
 | Descriptor regeneration | V inspected thresholds/countdown/overshoot / P facility producer | Marine, Truck, Zeppelin, Bird, Headtruck, Spider and Cannon recover below natural thresholds, or full HP while the hashed service countdown is positive. Pre-add check permits overshoot; countdown expires after the update. Facility coverage/refresh and exact tick alignment remain open |
 | Scripted object health and placement identity | V zero maximum getters / engine identity checks | Boat, Johnka and Camera maximum getters return zero; Submarine records create invisible scenario controllers, not combat units; their scenario actions now use the adapters in [transport_rules.md](transport_rules.md). Town membership uses section numbers, including sparse IDs; team scenario/tactic, defence and vessel provenance remain distinct. Live reference identity still depends on V02 |
@@ -528,7 +529,7 @@ Private reports/logs are in `work/ai-probe/engine-m{1,4}-{1,2}.*`.
 ## Audio (`src/engine/audio/`)
 | Rule | Status | Notes |
 |---|---|---|
-| Effects from `Snd.xbe`: sound set (`sound_set`) from field [2] of an animation frame, played on the first tick of the frame, random member of the set | V (format), P (random choice uses a local LCG, not the simulation RNG) | |
+| Effects from `Snd.xbe`: sound set (`sound_set`) from field [2] of an animation frame, played on the first tick of the frame, random member of the set | V format / engine construction; G native event timing | Supported scene choices and randomized pitch consume the shared simulation MSVC stream before view/device filtering. UI/standalone audio uses an isolated seed-one stream. Descriptor-only sounds, native helper interleaving and fixed/random caller flags remain open; see [implementation](rng_and_tick_order_implementation.md) |
 | Pan = (x - view centre x) clamped to +-4000 hundredths of dB; attenuation: none up to 500 px, linear to -4000 at 800 px, silent beyond | V (`docs/formats.md`), P (100 units = 1 dB) | Scene dispatcher uses the active view visibility predicate; exact reference fog semantics remain open |
 | Music: `Music=N` -> track N, otherwise `MusicMask`; next track when one ends | V (format and ascending cyclic order), V construction / synthetic checks | `music_allowed_mask` in `core/audio`; no simulation RNG or mission-name salt |
 | Animation state loops, building/projectile/effect sounds | V construction / synthetic checks; simulation timing remains P where unresolved | Header loops and frame entries use a read-only scene snapshot; visibility/distance/load/exit cleanup checked in `audio_events` |
@@ -2258,6 +2259,31 @@ process was run and no live placement or whole-game parity is claimed. Synthetic
 regressions use invented maps/descriptors and software-renderer pixels. Older task
 47/101 statements about radius 16, clearance masks, mineral terrain exceptions
 and waiting-site revalidation are superseded by this update.
+## RNG and tick order (task 158)
+
+**V reference facts / engine construction:** seed-zero MSVC sequence, independent
+simulation state, shared supported combat/decorative/planner/scene sound draws,
+newest-first logical unit pools with LIFO reuse, effects before scripts,
+projectiles after units and global time at completion. Scene sound metadata is
+loaded in both runners regardless of playback, and selected sound/pitch survives
+visibility and mixer filtering. Replay semantics are 14; standalone logs are
+AZC2. The [implementation and full random-use inventory](rng_and_tick_order_implementation.md)
+separate these properties from consumption parity.
+
+**G / incomplete:** wind/loading draws, descriptor-only sounds, game-thread input
+speech mapping, native constructor/scatter/AI consumption, source-order script
+creation mapping, interleaved town callbacks, sequential movement and per-object
+sound emission, original allocation addresses and original-save RNG state. No
+reference runtime or original executable was launched; no live parity claim is
+made. These missing producer/observer dependencies do not prevent the independent
+generator and deterministic replay changes.
+
+Validation: Release build and all 79 CTest entries complete with 73 passes and
+six expected skips; five focused ASan/UBSan checks pass. Pre-commit covers tracked
+and new files. Private-copy `formats`/`engine` checks pass with dummy SDL inside
+`unshare -rn`; repeated mission-1 clone hashes agree through tick 120, including
+all 61 checkpoints after save-at-60/reload. These are engine checks, not original
+measurements; private artifacts stay under ignored `work/rng_tick_validation/`.
 
 ## Capture and facility service (2026-11-21)
 

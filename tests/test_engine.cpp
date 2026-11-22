@@ -1017,13 +1017,13 @@ static void test_siege_ranged() {
       CHECK(w.objects[1].hp < 30000);
     }
     // These weapon classes have no positive minimum range. A nearby target
-    // must not cause a retreat, a melee substitution or an immediate hit.
+    // must not cause a retreat or a melee substitution. Class-3 contact can hit in the launch tick.
     World close = scene(type, 80);
     GameSim close_sim(rules, Modifications::faithful()); close_sim.init(close);
     Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
     close_sim.submit(attack); close.begin_tick(); close_sim.tick(close);
     CHECK(close.objects[0].has_fired && !close.effects.empty());
-    CHECK(close.objects[0].cur_x == to_fixed(400) && close.objects[1].hp == 30000);
+    CHECK(close.objects[0].cur_x == to_fixed(400) && close.objects[1].hp == (type == 3 ? 29314 : 30000));
     CHECK(close.effects.size() == (type == 83 ? 1u : 2u));
     if (close.effects.size() == 2) CHECK(close.effects[0].y != close.effects[1].y);
 
@@ -1112,6 +1112,8 @@ static void test_siege_ranged() {
     vessel.teleport(to_fixed(200), to_fixed(200)); blast.objects.push_back(vessel);
   }
   GameSim blast_sim(rules, Modifications::faithful()); blast_sim.init(blast);
+  // Freeze synthetic overlaps so unit collision resolution cannot change the blast formula inputs.
+  for (auto& object : blast.objects) object.mover = -1;
   Effect impact; impact.kind = data::EffectClass::BallExpl; impact.flight = true;
   impact.source = 5; impact.payload_id = 3;
   impact.x = impact.end_x = to_fixed(200); impact.y = impact.end_y = to_fixed(200);
@@ -3659,8 +3661,8 @@ static void test_faithful_profile_hashes() {
   World w = production_world(); production_object(w, 0, 0, 5, 5);
   GameSim sim(rules, Modifications::faithful()); sim.init(w);
   const uint64_t expected_hashes[] = {
-    14577138446141305146ull, 6540996212098358827ull, 10179004845673989250ull,
-    3474460873928716005ull, 18286011323202810108ull, 17072386695150712644ull};
+    10864587900854258484ull, 16743486661095447233ull, 1142895351005694060ull,
+    10665249060338723019ull, 11651758350123258734ull, 13826000158972783630ull};
   CHECK(sim.state_hash(w) == expected_hashes[0]);
   Command move; move.type = Pct::Move; move.ids = {1}; move.a = 12 * 48; move.b = 12 * 48;
   sim.submit(move);
@@ -4433,13 +4435,13 @@ static void test_fire_air_siege() {
   World w = initial;
   GameSim sim(rules, Modifications::faithful()); sim.init(w); sim.submit(attack);
   w.begin_tick(); sim.tick(w);
-  CHECK(w.objects[1].hp == 100000 && w.objects[0].cooldown == 40);
+  CHECK(w.objects[1].hp == 98000 && w.objects[0].cooldown == 40);
   CHECK(w.effects.size() == 1 && w.effects[0].flame && !w.effects[0].flight);
   for (int tick = 1; tick <= 10; ++tick) {
     w.begin_tick(); sim.tick(w);
-    CHECK(w.objects[1].hp == 100000 - 2000 * tick);
-    CHECK(w.objects[2].hp == 100000 - 500 * tick);
-    CHECK(w.objects[3].hp == 100000 - 2000 * tick); // neutral is not allied
+    CHECK(w.objects[1].hp == 100000 - 2000 * std::min(tick + 1, 10));
+    CHECK(w.objects[2].hp == 100000 - 500 * std::min(tick + 1, 10));
+    CHECK(w.objects[3].hp == 100000 - 2000 * std::min(tick + 1, 10)); // neutral is not allied
     CHECK(w.objects[4].hp == 100000 && w.objects[5].hp == 100000);
     World replay_world = initial;
     auto replay = GameSim::replay(replay_world, rules, sim.log(), tick + 1);
@@ -4453,11 +4455,11 @@ static void test_fire_air_siege() {
   w = scene(59, 0, 80); sim.init(w); sim.submit(attack); w.begin_tick(); sim.tick(w);
   sim.teleport(w, 1, 800, 400);
   stop.ids = {1}; sim.submit(stop); w.begin_tick(); sim.tick(w);
-  CHECK(w.objects[1].hp == 100000 && !w.effects.empty());
+  CHECK(w.objects[1].hp == 98000 && !w.effects.empty());
   if (!w.effects.empty()) CHECK(w.effects[0].x > to_fixed(800));
   sim.teleport(w, 1, 400, 400); sim.script_kill(w, 1);
   w.begin_tick(); sim.tick(w);
-  CHECK(w.objects[1].hp == 98000);
+  CHECK(w.objects[1].hp == 96000);
   w = scene(35, 14, 80);
   GameSim spider(rules, Modifications::faithful()); spider.init(w);
   for (int tick = 0; tick < 11; ++tick) { w.begin_tick(); spider.tick(w); }
@@ -4478,14 +4480,17 @@ static void test_fire_air_siege() {
   for (auto [type, target] : {std::pair{9,0}, {58,0}, {81,33}, {88,0}}) {
     initial = scene(type, target, 180); w = initial;
     GameSim volley(rules, Modifications::faithful()); volley.init(w); volley.submit(attack);
-    int impacts = 0;
+    int impacts = 0, launches = 0;
     volley.set_combat_observer([&](uint64_t, const char* event, const Effect&, uint32_t, int, int) {
       impacts += std::string(event) == "impact";
+      launches += std::string(event) == "launch";
     });
     w.begin_tick(); volley.tick(w);
-    CHECK(w.effects.size() == 16 && impacts == 0 && w.objects[1].hp == 100000);
+    CHECK(launches == 16 && impacts == (type == 81 ? 2 : 1));
+    const int hp_after_launch = w.objects[1].hp;
     for (const auto& e : w.effects) {
-      CHECK(e.delay_ticks >= 0 && e.delay_ticks < 10 && e.payload_id == (type == 81 ? 18 : type == 88 ? 53 : 17));
+      if (e.payload_id < 0) continue; // launch-tick impacts also create decorations
+      CHECK(e.delay_ticks >= -1 && e.delay_ticks < 9 && e.payload_id == (type == 81 ? 18 : type == 88 ? 53 : 17));
       CHECK(path::length({e.x - initial.objects[1].cur_x, e.y - initial.objects[1].cur_y}) <= to_fixed(96));
     }
     if (w.effects.empty()) continue; // retain an assertion failure without indexing an absent launch
@@ -4500,7 +4505,7 @@ static void test_fire_air_siege() {
     if (type == 58) volley.script_kill(w, 1);
     for (int tick = 1; tick <= 10; ++tick) { w.begin_tick(); volley.tick(w); }
     CHECK(impacts == 16);
-    CHECK(type == 9 ? w.objects[1].hp == 100000 : w.objects[1].hp < 100000);
+    CHECK(type == 9 ? w.objects[1].hp == hp_after_launch : w.objects[1].hp < 100000);
     for (const auto& e : w.effects) CHECK(e.delay_ticks < 0);
   }
   // Pause freezes flame lifetime and pending volley buckets as well as aircraft ascent.
@@ -4535,7 +4540,7 @@ static void test_fire_air_siege() {
     CHECK(w.effects.size() == 1 && w.effects[0].height == 24);
     for (int update = 1; update <= 7; ++update) {
       w.begin_tick(); carrier.tick(w);
-      CHECK(w.objects[1].hp == (update < 7 ? 100000 : 97000));
+      CHECK(w.objects[1].hp == (update < 6 ? 100000 : 97000));
     }
   }
   w = scene(85, 14, 20); w.objects[0].attack_mode = AttackMode::Direct;
@@ -4548,7 +4553,7 @@ static void test_fire_air_siege() {
   }
   for (int update = 1; update <= 7; ++update) {
     w.begin_tick(); bombs.tick(w);
-    CHECK(w.objects[1].hp == (update < 7 ? 100000 : 94000));
+    CHECK(w.objects[1].hp == (update < 6 ? 100000 : 94000));
   }
   // Heading changes are limited; Bird flight accelerates from its individual minimum.
   w = scene(33, 14, 800); w.objects[0].order = uint8_t(Order::Move);

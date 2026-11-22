@@ -132,7 +132,7 @@ bool GameSim::activate_vessel(World& w, int scenario, ObjectSource source, bool 
     if (source == ObjectSource::Submarine) {
       if (!enabled || o.vessel_arrived) continue;
       decoration(w, 27, 1, o.cur_x, o.cur_y, 0, o.side, o.id);
-      o.vessel_arrived = true; o.removed = true;
+      o.vessel_arrived = true; retire(w, o);
     } else if (source == ObjectSource::Boat && enabled && o.ferry_phase == 0) {
       o.ferry_request = -1;
       o.ferry_destination = o.cargo.empty() ? -1 : w.find(o.cargo.front())->tactic;

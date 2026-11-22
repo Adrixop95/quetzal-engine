@@ -38,11 +38,12 @@ Positional positional_gain(float dx, float dist) {
   return p;
 }
 
-uint64_t Mixer::play(std::shared_ptr<const Pcm> pcm, float l, float r, bool loop, bool speech, bool protected_speech) {
-  if (!pcm || pcm->size() < 2) return 0;
+uint64_t Mixer::play(std::shared_ptr<const Pcm> pcm, float l, float r, bool loop, bool speech, bool protected_speech, uint32_t rate_q16) {
+  if (!pcm || pcm->size() < 2 || rate_q16 == 0 || rate_q16 > 4 * 65536) return 0;
   const int slot = allocate_slot();
   if (slot < 0) return 0;
   voices_[slot] = {std::move(pcm), 0, l, r, loop, ++next_voice_, speech, speech && protected_speech};
+  voices_[slot].step = rate_q16;
   return next_voice_;
 }
 
@@ -101,6 +102,25 @@ void Mixer::mix(int16_t* out, int frames) {
     if (!v.pcm) continue;
     size_t total = v.pcm->size() / 2;
     int offset = 0;
+    if (v.step != 65536) {
+      // G: linear interpolation approximates native DirectSound frequency conversion.
+      const uint64_t end = uint64_t(total) << 16;
+      while (offset < frames && v.pcm) {
+        const size_t index = size_t(v.phase >> 16);
+        const size_t next = index + 1 < total ? index + 1 : v.loop ? 0 : index;
+        const int fraction = int(v.phase & 65535);
+        const float volume = v.speech ? speech_volume : sfx_volume;
+        for (int channel = 0; channel < 2; ++channel) {
+          const int64_t a = (*v.pcm)[index * 2 + channel], b = (*v.pcm)[next * 2 + channel];
+          const int sample = int((a * (65536 - fraction) + b * fraction) / 65536);
+          acc[size_t(offset) * 2 + channel] += int32_t(sample * volume * (channel ? v.r : v.l));
+        }
+        ++offset;
+        v.phase += v.step;
+        if (v.phase >= end) { if (v.loop) v.phase %= end; else v = Voice{}; }
+      }
+      continue;
+    }
     while (offset < frames && v.pcm) {
       int n = int(std::min<size_t>(size_t(frames - offset), total - v.pos));
       const int16_t* samples = v.pcm->data() + v.pos * 2;

@@ -224,6 +224,8 @@ struct World {
   std::vector<Effect> effects;
   std::map<TacticKey, UnitTactic> unit_tactics;
   uint64_t next_unit_tactic = 1;
+  bool simulation_sounds = false; // presentation must use resolved simulation choices
+  std::vector<SoundChoice> sound_choices; // current tick output; no device or view state
   std::vector<TownState> town_state;
   std::vector<SideState> side_state;   // indexed by side number
   // V: attacked is the notifying nonfriendly side, retained by the side-local tactic.

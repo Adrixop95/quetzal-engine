@@ -9,6 +9,7 @@
 #include "engine/world/type_info.hpp"
 #include "engine/world/object_state.hpp"
 #include "engine/sim/sight.hpp"
+#include "engine/sim/sound.hpp"
 #include "engine/world/visibility.hpp"
 
 namespace aztec::engine {
@@ -124,6 +125,9 @@ void GameSim::init(World& w) {
   pending_.clear();
   log_.clear();
   next_trace_id_ = 0;
+  object_order_ = {};
+  for (size_t i = 0; i < w.objects.size(); ++i)
+    if (!w.objects[i].removed || w.objects[i].alive) object_order_.insert(uint32_t(i + 1));
   if (!w.original_save) w.day_clock = (w.mission.start_time % kDayTicks + kDayTicks) % kDayTicks;
   w.ai_towns.assign(w.mission.towns.size(), {});
   w.town_speed.assign(w.mission.towns.size(), 1);
@@ -183,8 +187,10 @@ void GameSim::init(World& w) {
   paused_ = false;
   spawn_counter_ = 0;
   std::fill(std::begin(income_total_), std::end(income_total_), 0);
-  visual_rng_ = 12345;
-  combat_rng_ = 0;
+  random_ = 0;
+  sound_loops_.clear();
+  w.sound_choices.clear();
+  w.simulation_sounds = rules_->audio() != nullptr;
   if (script_.loaded() && !w.original_save) script_.init(w);
   for (Object& o : w.objects) {
     if (o.type < 0 || o.type >= kNumTypes) { o.type = -1; o.alive = true; continue; }   // unknown types become inert markers
@@ -194,7 +200,7 @@ void GameSim::init(World& w) {
       if (r.kind == 5 && r.cruise_height > 0 && o.render_height == 0) o.render_height = 30;
       if (r.flier) o.air_speed_px = o.air_min_speed_px = 0;
       if (r.kind == 5 && r.cruise_height > 0) {
-        o.air_min_speed_px = 6 + int((next_combat_rand() % 32768) * 6 / 32767);
+        o.air_min_speed_px = 6 + int((next_rand() % 32768) * 6 / 32767);
         o.air_speed_px = o.air_min_speed_px;
       }
       o.progress = 1000;
@@ -369,10 +375,10 @@ uint32_t GameSim::spawn(World& w, int type, int side, int pxx, int pyy, int hp, 
   o.initialize_health(r);
   if (r.kind == 5 && r.cruise_height > 0) o.render_height = 30;
   if (r.kind == 5 && r.cruise_height > 0) {
-    o.air_min_speed_px = 6 + int((next_combat_rand() % 32768) * 6 / 32767);
+    o.air_min_speed_px = 6 + int((next_rand() % 32768) * 6 / 32767);
     o.air_speed_px = o.air_min_speed_px;
   }
-  o.anim_variant = next_visual_rand();
+  o.anim_variant = o.id * 2654435761u >> 8; // Stable presentation fallback, as for mission placements.
   o.teleport(to_fixed(pxx), to_fixed(pyy));
   if (constructing) {
     o.progress = 0; o.build_elapsed = 0; o.build_total = std::max(1, r.time);
@@ -385,6 +391,7 @@ uint32_t GameSim::spawn(World& w, int type, int side, int pxx, int pyy, int hp, 
     if (!constructing) initialize_gold(w, o);
   }
   w.objects.push_back(o);
+  object_order_.insert(o.id);
   Object& ref = w.objects.back();
   attach_agent(ref);
   if (r.structure) {
@@ -398,7 +405,7 @@ void GameSim::kill(World& w, Object& o) {
   const auto passengers = o.cargo;
   o.cargo.clear();
   for (auto id : passengers) if (auto* passenger = w.find_mut(id)) {
-    passenger->carrier = 0; kill(w, *passenger); passenger->removed = true;
+    passenger->carrier = 0; kill(w, *passenger); retire(w, *passenger);
   }
   o.alive = false;
   o.hp = 0;
@@ -409,19 +416,19 @@ void GameSim::kill(World& w, Object& o) {
   o.corpse_ticks = 0;
   const TypeRules& r = rules_->type(o.type);
   if (r.kind == 1 || r.kind == 3 || r.kind == 4 || r.kind == 5 || r.kind == 6 || r.kind == 9) {
-    decoration(w, data::kVehicleExplosionAnim, int(next_visual_rand() % 3), o.cur_x, o.cur_y, o.render_height, o.side);
-    if (!r.flier) decoration(w, data::kVehicleDebrisAnim, int(next_visual_rand() % 20), o.cur_x, o.cur_y, -1, o.side);
-    o.removed = true;
+    decoration(w, data::kVehicleExplosionAnim, int(next_rand() % 3), o.cur_x, o.cur_y, o.render_height, o.side);
+    if (!r.flier) decoration(w, data::kVehicleDebrisAnim, int(next_rand() % 20), o.cur_x, o.cur_y, -1, o.side);
+    retire(w, o);
   }
   if (r.structure) {
     // Known-radius rubble is drawn by the object provider; retain the provisional
     // small-rubble effect only when its radius is unavailable.
     if (o.destruction_radius < 0 && o.progress >= 1000)
-      decoration(w, 116, int(next_visual_rand() % 20), o.cur_x, o.cur_y, -1, o.side);
+      decoration(w, 116, int(next_rand() % 20), o.cur_x, o.cur_y, -1, o.side);
     block_footprint(r, px(o.cur_x) / kTilePx, px(o.cur_y) / kTilePx, -1);
     // Keep known rubble visible for its resource lifetime; unknown radii and
     // construction cancellations remain explicit missing visual inputs.
-    if (o.destruction_radius < 0 || o.progress < 1000) { o.removed = true; return; }
+    if (o.destruction_radius < 0 || o.progress < 1000) { retire(w, o); return; }
   }
   o.anim_state = kAnimDie;
   o.anim_tick = 0;
@@ -765,7 +772,8 @@ bool GameSim::mark_eligible(const Object& o, const TownState& town) const {
 }
 
 void GameSim::maintain_town_marks(World& w) {
-  for (TownState& town : w.town_state) {
+  for (auto it = w.town_state.rbegin(); it != w.town_state.rend(); ++it) {
+    TownState& town = *it;
     const Object* hall = w.find(town.hall);
     if (!hall || !hall->alive || hall->removed || hall->side != town.side) { town.marked.clear(); continue; }
     town.marked.erase(std::remove_if(town.marked.begin(), town.marked.end(), [&](uint32_t id) {
@@ -782,7 +790,7 @@ void GameSim::maintain_town_marks(World& w) {
 // Credits are a per-tick work budget, independent of side cash. Groups are
 // snapshotted before service so healing never changes priority within this tick.
 void GameSim::service_towns(World& w) {
-  for (size_t ti = 0; ti < w.town_state.size(); ++ti) {
+  for (size_t ti = w.town_state.size(); ti-- > 0;) {
     TownState& town = w.town_state[ti];
     int64_t budget = w.repair_credits[ti];
     w.repair_credits[ti] = 0;
@@ -1066,7 +1074,7 @@ void GameSim::cancel_production(World& w, SideState& side, size_t index) {
         auto& agent = mover_->agents_mut()[size_t(o->mover)];
         agent.enabled = false; agent.radius = 0;
       }
-      o->alive = false; o->removed = true; o->hp = 0;
+      o->alive = false; retire(w, *o); o->hp = 0;
     }
   }
   side.queue.erase(side.queue.begin() + index);
@@ -1240,7 +1248,8 @@ void GameSim::economy(World& w) {
   }
   std::fill(w.repair_credits.begin(), w.repair_credits.end(), 0);
   // Gold starts at completion; repair keeps its creation clock but accrues only while active.
-  for (Object& o : w.objects) {
+  for (uint32_t handle : object_order_.newest_first()) {
+    Object& o = w.objects[handle - 1];
     if (o.removed || !o.alive || o.type < 0) continue;
     const TypeRules& r = rules_->type(o.type);
     if (!r.structure || std::find(completed.begin(), completed.end(), o.id) != completed.end()) continue;
@@ -1443,14 +1452,24 @@ void GameSim::run_tower(World& w, Object& o) {
 }
 
 void GameSim::run_orders(World& w) {
-  think_tactics(w);
-  follow_tactics(w);
-  for (size_t i = 0; i < w.objects.size(); i++) {
-    Object& o = w.objects[i];
+  // Ground navigation remains a batch with stable member reservation priority.
+  // Combat and object callbacks below follow the newest-first logical pool.
+  for (auto& o : w.objects) {
+    if (o.removed || !o.alive || o.type < 0 || o.progress < 1000 || o.release_target || o.carrier) continue;
+    const auto& r = rules_->type(o.type);
+    if (r.kind == 7 || r.flier) continue;
+    const bool walking = o.order == uint8_t(Order::Move) || o.order == uint8_t(Order::AttackMove) ||
+        o.order == uint8_t(Order::Follow) || (o.order == uint8_t(Order::Idle) && o.return_to_tactic);
+    if (!walking) continue;
+    const auto& tactic = w.unit_tactics.at(tactic_key(o));
+    member_step(w, o, tactic.x, tactic.y, false);
+  }
+  for (uint32_t handle : object_order_.newest_first()) {
+    Object& o = w.objects[handle - 1];
     if (o.removed || o.type < 0) continue;
     if (!o.alive) {
       if (o.regen_service_ticks > 0) --o.regen_service_ticks;
-      if (++o.corpse_ticks > (rules_->type(o.type).structure ? 249 : kCorpseTicks)) { o.removed = true; }
+      if (++o.corpse_ticks > (rules_->type(o.type).structure ? 249 : kCorpseTicks)) { retire(w, o); }
       continue;
     }
     const TypeRules& r = rules_->type(o.type);
@@ -1484,7 +1503,6 @@ void GameSim::run_orders(World& w) {
         advance_aircraft(o, {to_fixed(o.dest_x), to_fixed(o.dest_y)}, false);
         flight_advanced = true;
       } else {
-        member_step(w, o, tactic.x, tactic.y, false);
         moving = ag && ag->state == path::AgentState::Moving;
         if (!tactic.walking && !tactic.lost && !moving && o.order != uint8_t(Order::Follow)) o.order = uint8_t(Order::Idle);
       }
@@ -1670,7 +1688,7 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
     hit.kind = data::EffectClass::SplashDamage; hit.payload_id = weapon.payload_id;
     hit.x = target.cur_x; hit.y = target.cur_y + to_fixed(2);
     trace_combat("launch", hit); trace_combat("impact", hit);
-    if (weapon.impact_anim) decoration(w, weapon.impact_anim, int(next_visual_rand() % 3), hit.x, hit.y, 0, hit.side);
+    if (weapon.impact_anim) decoration(w, weapon.impact_anim, int(next_rand() % 3), hit.x, hit.y, 0, hit.side);
     apply_blast(w, hit);
     return;
   }
@@ -1679,9 +1697,9 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
     for (int i = 0; i < 16; ++i) {
       Effect e;
       e.trace_id = ++next_trace_id_; e.source = source.id; e.target = target.id; e.side = source.side;
-      e.delay_ticks = int(next_combat_rand() % 10);
-      const int radius = weapon.spread_px > 0 ? int(next_combat_rand() % weapon.spread_px) : 0;
-      const auto scatter = path::from_angle(int(next_combat_rand() & 255), to_fixed(radius));
+      e.delay_ticks = int(next_rand() % 10);
+      const int radius = weapon.spread_px > 0 ? int(next_rand() % weapon.spread_px) : 0;
+      const auto scatter = path::from_angle(int(next_rand() & 255), to_fixed(radius));
       e.x = e.prev_x = e.end_x = target.cur_x + scatter.x;
       e.y = e.prev_y = e.end_y = target.cur_y + scatter.y;
       e.payload_id = weapon.payload_id; e.impact_anim = weapon.impact_anim;
@@ -1824,11 +1842,16 @@ void GameSim::apply_blast(World& w, const Effect& e) {
   }
 }
 
-void GameSim::advance_effects(World& w) {
+void GameSim::advance_effects(World& w, bool projectiles) {
   // Move the old list aside: impacts/deaths may append new decorations without invalidating iteration.
   auto effects = std::move(w.effects);
   w.effects.clear();
-  for (auto e : effects) {
+  std::vector<Effect> survivors;
+  for (size_t i = effects.size(); i-- > 0;) {
+    auto e = effects[i];
+    const bool projectile = e.projectile_pool || e.flight || e.flame || e.weapon_id >= 0 || e.payload_id >= 0;
+    if (projectile != projectiles) { survivors.push_back(e); continue; }
+    e.projectile_pool = projectile;
     e.prev_x = e.x; e.prev_y = e.y;
     if (e.flame) {
       const auto* source = w.find(e.source);
@@ -1872,11 +1895,11 @@ void GameSim::advance_effects(World& w) {
         if (!hit) continue;
         damage_object(w, victim, amount, e);
       }
-      if (++e.age < e.lifetime) w.effects.push_back(e);
+      if (++e.age < e.lifetime) survivors.push_back(e);
       continue;
     }
     if (e.delay_ticks >= 0) {
-      if (e.delay_ticks-- > 0) { w.effects.push_back(e); continue; }
+      if (e.delay_ticks-- > 0) { survivors.push_back(e); continue; }
     }
     if (!e.flight) {
       if (e.weapon_id >= 0) { // class 3's visual tail drifts without further hits
@@ -1891,7 +1914,7 @@ void GameSim::advance_effects(World& w) {
       }
       ++e.age;
       if (e.loop) e.age %= std::max(1, e.lifetime);
-      if (e.age < e.lifetime || e.loop) w.effects.push_back(e);
+      if (e.age < e.lifetime || e.loop) survivors.push_back(e);
       continue;
     }
     const bool ball = e.kind == data::EffectClass::BallExpl;
@@ -1909,24 +1932,24 @@ void GameSim::advance_effects(World& w) {
       }
       delta = {e.end_x - e.x, e.end_y - e.y};
       if (path::len2(delta) >= int64_t(e.speed) * e.speed) {
-        w.effects.push_back(e); continue;
+        survivors.push_back(e); continue;
       }
       // Secondary impact occurs at the clamped aim point; contact ticks have
       // their own damage and must not deliver the kill-time estimate as a hit.
       Effect hit = e; hit.x = e.end_x; hit.y = e.end_y;
       trace_combat("impact", hit);
       if (e.payload_id > 0) impact_weapon(w, e.payload_id, hit);
-      if (e.impact_anim) decoration(w, e.impact_anim, int(next_visual_rand() % 3), hit.x, hit.y, 0, e.side);
+      if (e.impact_anim) decoration(w, e.impact_anim, int(next_rand() % 3), hit.x, hit.y, 0, e.side);
       e.flight = false; e.loop = false; e.slot = 32; e.age = 0;
       e.lifetime = data::effect_lifetime(e.anim, e.slot);
-      if (e.lifetime > 0) w.effects.push_back(e);
+      if (e.lifetime > 0) survivors.push_back(e);
       continue;
     } else if (ball) {
       e.x += e.velocity_x; e.y += e.velocity_y;
       e.altitude -= e.vertical_speed; e.vertical_speed += e.gravity;
       e.height = std::max(0, e.altitude / 256); ++e.age;
       trace_combat("position", e);
-      if (e.altitude > 0) { w.effects.push_back(e); continue; }
+      if (e.altitude > 0) { survivors.push_back(e); continue; }
     } else if (path::len2(delta) > int64_t(e.speed) * e.speed) {
       // G: linear height interpolation preserves the muzzle and snapshotted aim
       // while projectile subpixel trajectories await reference measurement.
@@ -1935,12 +1958,12 @@ void GameSim::advance_effects(World& w) {
       auto step = path::with_length(delta, e.speed);
       e.x += step.x; e.y += step.y; e.age++;
       trace_combat("position", e);
-      w.effects.push_back(e);
+      survivors.push_back(e);
       continue;
     }
     if (!ball) { e.x = e.end_x; e.y = e.end_y; e.height = e.end_height; }
     trace_combat("impact", e);
-    if (e.impact_anim) decoration(w, e.impact_anim, int(next_visual_rand() % 3), e.x, e.y, 0, e.side);
+    if (e.impact_anim) decoration(w, e.impact_anim, int(next_rand() % 3), e.x, e.y, 0, e.side);
     if (e.shockwave == data::kShockwaveAnim) decoration(w, e.shockwave, 0, e.x, e.y, 0, e.side);
     if (e.payload_id > 0) {
       impact_weapon(w, e.payload_id, e);
@@ -1965,15 +1988,20 @@ void GameSim::advance_effects(World& w) {
       damage_object(w, o, e.damage, e);
     }
   }
-  for (const auto& o : w.objects) {
-    if (!o.alive || o.removed || o.progress < 1000 || !rules_->type(o.type).structure || o.hp_max <= 0 ||
-        int64_t(o.hp) * 4 > int64_t(o.hp_max) * 3) continue;
-    bool exists = false;
-    for (const auto& e : w.effects) if (e.loop && e.source == o.id) { exists = true; break; }
-    if (!exists) {
-      int stage = 3 - int((int64_t(4) * o.hp - 1) / o.hp_max);
-      decoration(w, 153 + stage, 0, o.cur_x, o.cur_y + 256, 0, o.side, o.id);
-      w.effects.back().loop = true;
+  std::reverse(survivors.begin(), survivors.end());
+  survivors.insert(survivors.end(), w.effects.begin(), w.effects.end());
+  w.effects = std::move(survivors);
+  if (projectiles) {
+    for (const auto& o : w.objects) {
+      if (!o.alive || o.removed || o.progress < 1000 || !rules_->type(o.type).structure || o.hp_max <= 0 ||
+          int64_t(o.hp) * 4 > int64_t(o.hp_max) * 3) continue;
+      bool exists = false;
+      for (const auto& e : w.effects) if (e.loop && e.source == o.id) { exists = true; break; }
+      if (!exists) {
+        int stage = 3 - int((int64_t(4) * o.hp - 1) / o.hp_max);
+        decoration(w, 153 + stage, 0, o.cur_x, o.cur_y + 256, 0, o.side, o.id);
+        w.effects.back().loop = true;
+      }
     }
   }
 }
@@ -2096,33 +2124,80 @@ void GameSim::update_fog(World& w) {
   if (changed) w.fog_version++;
 }
 
+void GameSim::choose_scene_sounds(World& w) {
+  w.sound_choices.clear();
+  const auto* inputs = rules_->audio();
+  if (!inputs) return;
+  std::map<uint64_t, SoundChoice> loops;
+  auto choose = [&](uint64_t source, uint32_t set, bool loop) {
+    const auto members = inputs->bank.sound_set(set);
+    if (members.empty()) return;
+    auto old = sound_loops_.find(source);
+    SoundChoice choice;
+    if (loop && old != sound_loops_.end() && old->second.set == set) choice = old->second;
+    else {
+      choice.source = source; choice.set = set; choice.loop = loop;
+      choice.sound = members[next_rand() % members.size()];
+      choice.pitch = next_rand();
+    }
+    if (loop) loops[source] = choice;
+    w.sound_choices.push_back(choice);
+  };
+  auto frame = [&](const data::SpriteRef& ref, uint64_t source) {
+    if (!ref.valid()) return;
+    if (ref.sound_entry && ref.sound > 0) choose(source, uint32_t(ref.sound), false);
+    if (ref.loop_sound > 0) choose(source, uint32_t(ref.loop_sound), true);
+  };
+  // G: reuse supported animation producers; native per-object emission timing remains open.
+  // Random choices precede all presentation visibility, distance and device filtering.
+  for (uint32_t handle : object_order_.newest_first()) {
+    const auto& object = w.objects[handle - 1];
+    if (object.removed) continue;
+    const bool fire = object.alive && std::any_of(w.effects.begin(), w.effects.end(),
+        [&](const auto& effect) { return effect.loop && effect.source == object.id; });
+    const auto frames = inputs->sprites.sound_frames(object_sprite_state(object, w.side_color(object.side)), !fire);
+    for (size_t i = 0; i < frames.size(); ++i) frame(frames[i], uint64_t(object.id) << 16 | i);
+  }
+  for (size_t i = w.effects.size(); i-- > 0;) {
+    const auto& effect = w.effects[i];
+    data::AnimSet animation(inputs->units.get(0x515, uint32_t(effect.anim)));
+    frame(animation.at_tick(effect.slot, effect.age, effect.loop), (uint64_t(1) << 63) |
+        (uint64_t(effect.source) << 32) | (uint64_t(uint16_t(effect.anim)) << 16) | uint16_t(effect.slot));
+  }
+  sound_loops_ = std::move(loops);
+}
+
 void GameSim::tick(World& w) {
-  w.tick++;
   tick_++;
   std::stable_sort(pending_.begin(), pending_.end(), [](const Command& a, const Command& b) { return a.side < b.side; });
   for (Command& c : pending_) {
     log_.push_back({tick_, c});
-    apply(w, c);
+    if (c.side < 7) apply(w, c);
   }
   pending_.clear();
   if (paused_) {
+    w.sound_choices.clear();
+    for (const auto& [source, choice] : sound_loops_) w.sound_choices.push_back(choice);
     for (const auto& e : w.effects) if (e.flight) trace_combat("position", e);
+    ++w.tick;
     return;
   }
+  if (w.mission.tileset == 0) w.day_clock = (w.day_clock + 1) % kDayTicks;
   for (auto& o : w.objects) {
     if (o.removed) continue;
     ++o.anim_tick;
     if (o.attack_tick >= 0 || (o.release_target && rules_->type(o.type).kind == 7)) ++o.attack_tick;
   }
+  advance_effects(w, false);
   if (script_.loaded() && !w.original_save) script_.tick(*this, w);
-  w.day_clock = (w.day_clock + 1) % kDayTicks;
   economy(w);
   run_ai(w);
-  advance_effects(w);
-  run_orders(w);
   maintain_town_marks(w);
   service_towns(w);
   capture_towns(w);
+  think_tactics(w);
+  follow_tactics(w);
+  run_orders(w);
   service_facilities(w);
   // Cooperation follows ownership changes from capture and scripted gifts.
   if (modifications_.unit_unstick) for (const auto& object : w.objects)
@@ -2143,6 +2218,7 @@ void GameSim::tick(World& w) {
     }
   }
   sync_movement(w);
+  advance_effects(w, true);
   transport_tick(w);
   for (auto& o : w.objects) {
     if (o.removed || !o.alive) continue;
@@ -2151,8 +2227,12 @@ void GameSim::tick(World& w) {
     o.body_moving = moving;
   }
   update_animation_state(w);
+  choose_scene_sounds(w);
+  if (w.outcome == kRunning && w.script_side >= 0 && w.script_side < 8)
+    w.outcome = w.side_outcome[w.script_side];
   update_fog(w);
   update_building_memory(w);
+  ++w.tick;
 }
 
 void GameSim::script_order(World& w, const std::vector<uint32_t>& ids, int pxx, int pyy, bool attack_move) {
@@ -2199,7 +2279,7 @@ void GameSim::script_stop(World& w, const std::vector<uint32_t>& ids) {
 void GameSim::capture_towns(World& w) {
   // V: squared tile distances, <5 for capture, 4/8 tiles for defence.
   // G: stable object order substitutes for the reference spatial-list scan.
-  for (size_t i = 0; i < w.mission.towns.size(); ++i) {
+  for (size_t i = w.mission.towns.size(); i-- > 0;) {
     const auto* hall = town_hall(w, int(i));
     if (!hall || hall->progress < 1000) continue;
     const int owner = hall->side;
@@ -2400,8 +2480,14 @@ uint64_t GameSim::state_hash(const World& w) const {
   }
   mix(w.town_speed.size()); for (int speed : w.town_speed) mix(speed);
   mix(w.repair_credits.size()); for (int credits : w.repair_credits) mix(credits);
-  mix(tick_); mix(visual_rng_); mix(paused_); mix(spawn_counter_); mix(w.objects.size());
-  if (combat_rng_) { mix(0x53434154); mix(combat_rng_); }
+  if (!sound_loops_.empty()) {
+    mix(0x534f554e44); mix(sound_loops_.size());
+    for (const auto& [source, choice] : sound_loops_) {
+      mix(source); mix(choice.set); mix(choice.sound); mix(choice.pitch);
+    }
+  }
+  mix(object_order_.state_hash());
+  mix(tick_); mix(random_); mix(paused_); mix(spawn_counter_); mix(w.objects.size());
   for (const Object& o : w.objects) {
     mix(uint8_t(o.source)); mix(uint32_t(o.prev_x)); mix(uint32_t(o.prev_y));
     mix(uint32_t(o.town)); mix(o.harvest_ready);
@@ -2439,7 +2525,7 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(uint32_t(e.end_x)); mix(uint32_t(e.end_y)); mix(uint32_t(e.height));
     mix(uint32_t(e.prev_x)); mix(uint32_t(e.prev_y));
     mix(e.age); mix(e.lifetime); mix(e.speed); mix(e.damage); mix(e.splash_px);
-    mix(e.impact_anim); mix(e.shockwave); mix(e.payload_id); mix(e.weapon_id); mix(e.flight); mix(e.loop);
+    mix(e.impact_anim); mix(e.shockwave); mix(e.payload_id); mix(e.weapon_id); mix(e.flight); mix(e.loop); mix(e.projectile_pool);
     mix(e.velocity_x); mix(e.velocity_y); mix(e.altitude); mix(e.vertical_speed); mix(e.gravity);
     if (e.end_height) { mix(0x48454947); mix(e.end_height); }
     if (e.flame || e.delay_ticks >= 0) { mix(0x46495245); mix(e.flame); mix(e.delay_ticks); }

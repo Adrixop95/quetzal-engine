@@ -5,7 +5,7 @@
 
 namespace aztec::engine {
 void GameSim::run_ai(World& w) {
-  for (size_t ti = 0; ti < w.mission.towns.size(); ++ti) {
+  for (size_t ti = w.mission.towns.size(); ti-- > 0;) {
     const auto town = w.mission.towns[ti];
     const auto side = std::find_if(w.mission.sides.begin(), w.mission.sides.end(),
                                    [&](const auto& sd) { return sd.index == town.side; });
@@ -69,7 +69,9 @@ void GameSim::run_ai(World& w) {
       }
       offers.push_back(offer);
     }
+    state.random = random_;
     auto decision = ai::step(w, *rules_, int(ti), state, offers);
+    random_ = decision.next.random;
     // V: progressing a plan can feed any idle side town in phases 0/2/14/22.
     // Requests are reserved without testing cash; payment belongs to production start.
     if (!production_busy && (state.phase == 2 || state.phase == 14 || state.phase == 22) && !decision.next.plan.empty()) {

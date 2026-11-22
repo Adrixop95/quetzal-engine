@@ -10,6 +10,10 @@
 namespace aztec::engine {
 
 constexpr int kMixRate = 44100;
+// V: native random pitch is rand()/65534 - 0.25; playback rate is 1 + pitch.
+constexpr uint32_t random_pitch_rate(uint32_t draw) {
+  return 49152u + uint32_t(uint64_t(draw & 32767u) * 65536u / 65534u);
+}
 using Pcm = std::vector<int16_t>;   // interleaved stereo frames
 
 // Converts WAV data (8/16 bit, mono/stereo, any rate) to stereo 44100 Hz; empty result on failure.
@@ -25,7 +29,7 @@ class Mixer {
   // V: eight shared buffers, including music and speech (see docs/audio-parity.md).
   static constexpr int kMaxVoices = 8;
   uint64_t play(std::shared_ptr<const Pcm> pcm, float left, float right, bool loop = false,
-                bool speech = false, bool protected_speech = true);
+                bool speech = false, bool protected_speech = true, uint32_t rate_q16 = 65536);
   bool gain(uint64_t voice, float left, float right);
   bool playing(uint64_t voice) const;
   void stop(uint64_t voice);
@@ -43,7 +47,7 @@ class Mixer {
 
  private:
   int allocate_slot();
-  struct Voice { std::shared_ptr<const Pcm> pcm; size_t pos = 0; float l = 1, r = 1; bool loop = false; uint64_t id = 0; bool speech = false, protected_voice = false; };
+  struct Voice { std::shared_ptr<const Pcm> pcm; size_t pos = 0; float l = 1, r = 1; bool loop = false; uint64_t id = 0; bool speech = false, protected_voice = false; uint64_t phase = 0; uint32_t step = 65536; };
   uint64_t next_voice_ = 0;
   int last_slot_ = 0, music_slot_ = -1;
   Voice voices_[kMaxVoices];

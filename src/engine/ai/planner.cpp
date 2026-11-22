@@ -1,4 +1,5 @@
 #include "engine/ai/planner.hpp"
+#include "engine/sim/random.hpp"
 #include <algorithm>
 #include <cstdlib>
 #include <limits>
@@ -112,8 +113,7 @@ std::vector<PlanEntry> make_plan(const World& w, const RulesData& rules, int tow
   }
   auto draw = [&]() {
     // G: reproducible isolated CRT sequence; shared game RNG call order remains unresolved.
-    random = random * 214013u + 2531011u;
-    return int((random >> 16) & 32767);
+    return int(msvc_rand(random));
   };
   // V: ordinary new counters test the source town; the airborne pass uses side availability.
   auto buildable = [&](int type, bool side_wide = false, int* missing = nullptr) {

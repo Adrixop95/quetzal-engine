@@ -402,7 +402,7 @@ static void town_orders(std::shared_ptr<const RulesData> rules) {
   CHECK(w.side_state[0].queue[0].paid == 0 && w.side_state[0].queue[1].paid == 0);
   w.begin_tick(); sim.tick(w); // charge when production starts, using each town's selected speed
   for (int ti = 0; ti < 2; ++ti) {
-    const auto& q = w.side_state[0].queue[size_t(ti)];
+    const auto& q = w.side_state[0].queue[size_t(1 - ti)];
     CHECK(q.town == ti && q.type == 12);
     CHECK(q.paid == production_value(rules->type(12).price, 1, ti + 1, true, false, false));
     CHECK(w.ai_towns[ti].phase == 8);
@@ -466,6 +466,7 @@ static void plan_allocation(std::shared_ptr<const RulesData> rules) {
   GameSim sim(rules, Modifications::faithful()); sim.init(w);
   w.ai_towns[0].phase = 14; w.ai_towns[0].remaining = 2;
   w.ai_towns[0].plan = {{0}, {0}};
+  w.ai_towns[1].phase = 16; // The newer unthreatened outpost reaches idle before the older planner runs.
   w.begin_tick(); sim.tick(w);
   CHECK(w.side_state[0].queue.size() == 2);
   if (w.side_state[0].queue.size() != 2) return;
@@ -490,7 +491,7 @@ static void plan_allocation(std::shared_ptr<const RulesData> rules) {
   CHECK(w.ai_towns[0].plan[0].object == 0);
   CHECK(w.side_state[0].queue.size() == 1 && w.ai_towns[0].plan[0].producer == -1);
   // A cancelled request is made available again without a second live reservation.
-  w.ai_towns[1].phase = 0; w.ai_towns[0].spent = 0;
+  w.ai_towns[1].phase = 16; w.ai_towns[0].spent = 0; // reaches idle before the older planner
   Command cancel; cancel.type = Pct::QueueKill; cancel.side = 0; cancel.a = 0;
   sim.submit(cancel); w.begin_tick(); sim.tick(w);
   CHECK(w.side_state[0].queue.size() == 2);

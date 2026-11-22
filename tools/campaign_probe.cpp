@@ -135,7 +135,12 @@ int main(int argc, char** argv) {
     while (world.tick < limit && world.outcome == kRunning) {
       while (next < events.size() && events[next].tick == world.tick + 1) force(events[next++], sim, world);
       world.begin_tick();
-      if (mode == "scripts") { ++world.tick; isolated.tick(sim, world); }
+      if (mode == "scripts") {
+        ++world.tick;
+        isolated.tick(sim, world);
+        if (world.outcome == kRunning && world.script_side >= 0 && world.script_side < 8)
+          world.outcome = world.side_outcome[world.script_side];
+      }
       else sim.tick(world);
       trace = (trace ^ sim.state_hash(world) ^ runner.state_hash()) * 1099511628211ull;
     }

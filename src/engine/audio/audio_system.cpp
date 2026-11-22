@@ -1,4 +1,5 @@
 #include "engine/audio/audio_system.hpp"
+#include "engine/sim/random.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -176,30 +177,29 @@ uint32_t AudioSystem::play_sound(uint32_t id, float l, float r) {
 uint32_t AudioSystem::choose(uint32_t set_id) {
   const auto set = bank_.sound_set(set_id);
   if (set.empty()) return 0;
-  rand_ = rand_ * 1664525u + 1013904223u;
-  return set[(rand_ >> 8) % set.size()];
+  return set[msvc_rand(rand_) % set.size()];
 }
-uint32_t AudioSystem::play_set_at(uint32_t set_id, float x, float y, float cx, float cy) {
+uint32_t AudioSystem::play_set_at(uint32_t set_id, float x, float y, float cx, float cy, uint32_t chosen_sound, uint32_t rate_q16) {
   if (!bank_ok_ || set_id == 0) return 0;
   const float dx = x - cx, dy = y - cy;
   const auto p = positional_gain(dx, std::sqrt(dx * dx + dy * dy));
   if (!p.audible) return 0;
-  const auto id = choose(set_id);
+  const auto id = chosen_sound ? chosen_sound : choose(set_id);
   auto pcm = sound_pcm(id);
   if (!pcm || pcm->empty()) return 0;
-  { std::lock_guard<std::mutex> lock(mu_); if (!mixer_.play(pcm, p.left, p.right)) return 0; }
+  { std::lock_guard<std::mutex> lock(mu_); if (!mixer_.play(pcm, p.left, p.right, false, false, true, rate_q16)) return 0; }
   emit({AudioEvent::Kind::Sound, 0, set_id, id});
   return id;
 }
 void AudioSystem::begin_scene_tick() {
   for (auto& [source, loop] : loops_) loop.seen = false;
 }
-void AudioSystem::loop_at(uint64_t source, uint32_t set, float x, float y, float cx, float cy) {
+void AudioSystem::loop_at(uint64_t source, uint32_t set, float x, float y, float cx, float cy, uint32_t chosen_sound, uint32_t rate_q16) {
   const float dx = x - cx, dy = y - cy;
   const auto p = positional_gain(dx, std::sqrt(dx * dx + dy * dy));
   if (!set || !bank_ok_ || !p.audible) return;
   auto it = loops_.find(source);
-  if (it != loops_.end() && it->second.set == set) {
+  if (it != loops_.end() && it->second.set == set && (!chosen_sound || it->second.sound == chosen_sound)) {
     std::lock_guard<std::mutex> lock(mu_);
     if (mixer_.gain(it->second.voice, p.left, p.right)) { it->second.seen = true; return; }
   }
@@ -208,11 +208,11 @@ void AudioSystem::loop_at(uint64_t source, uint32_t set, float x, float y, float
     emit({AudioEvent::Kind::LoopStop, source, it->second.set, it->second.sound, 0, it->second.trigger});
     loops_.erase(it);
   }
-  const uint32_t id = choose(set);
+  const uint32_t id = chosen_sound ? chosen_sound : choose(set);
   auto pcm = sound_pcm(id);
   if (!pcm || pcm->empty()) return;
   uint64_t voice;
-  { std::lock_guard<std::mutex> lock(mu_); voice = mixer_.play(pcm, p.left, p.right, true); }
+  { std::lock_guard<std::mutex> lock(mu_); voice = mixer_.play(pcm, p.left, p.right, true, false, true, rate_q16); }
   if (!voice) return;
   loops_[source] = {set, id, voice, true, event_trigger};
   emit({AudioEvent::Kind::LoopStart, source, set, id});

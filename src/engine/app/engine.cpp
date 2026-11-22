@@ -63,7 +63,7 @@ static bool current_save_content(const GameData& data, const World& world, const
     std::sort(csv.begin(), csv.end());
     files.insert(files.end(), csv.begin(), csv.end());
   }
-  for (const char* name : {"Res/Light.xbe", "Res/Units.xbe", "Aztec.exe"})
+  for (const char* name : {"Res/Light.xbe", "Res/Units.xbe", "Res/Snd.xbe", "Aztec.exe"})
     files.emplace_back(name, find_file_ci(data.root(), name));
   return save_content_hash(files, hash);
 }
@@ -141,6 +141,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       if (!rp.empty() && (rules_ok = rules->load_dir(rp))) { loaded_rules_dir = rp; break; }
     if (!rules_ok) { rules->init_defaults(); std::fprintf(stderr, "note: docs/data not found, using placeholder rules\n"); }
     rules->load_sight(data.root());
+    rules->load_audio(data.root());
     rules->load_combat_animations(find_file_ci(data.root() + "/Res", "Units.xbe"));
     for (Object& object : world.objects)
       if (object.type >= 0) object.initialize_health(rules->type(object.type), bool(world.original_save));

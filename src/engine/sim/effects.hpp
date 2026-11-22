@@ -4,6 +4,12 @@
 #include "engine/data/effects.hpp"
 
 namespace aztec::engine {
+struct SoundChoice {
+  uint64_t source = 0; // scene source key, independent of audio voice handles
+  uint32_t set = 0, sound = 0, pitch = 0; // pitch is the raw 15-bit CRT draw
+  bool loop = false;
+};
+
 struct Effect {
   uint64_t trace_id = 0; // diagnostic identity only; never read by combat rules
   data::EffectClass kind = data::EffectClass::Decoration;
@@ -20,5 +26,6 @@ struct Effect {
   bool flame = false; // class 11: follows its source and scans a segment each active tick
   int32_t velocity_x = 0, velocity_y = 0, altitude = 0, vertical_speed = 0, gravity = 0;
   bool flight = false, loop = false;
+  bool projectile_pool = false; // lifetime ownership survives flight-to-impact animation transitions
 };
 }  // namespace aztec::engine

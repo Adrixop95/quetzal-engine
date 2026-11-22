@@ -13,6 +13,7 @@ namespace aztec::data { class SpriteDb; }
 namespace aztec::engine {
 
 struct SightData;
+struct SoundData;
 
 enum class Src : uint8_t { Verified, Measured, Placeholder };
 
@@ -127,6 +128,8 @@ class RulesData {
   bool load_sight(const std::string& game_dir);
   // Independent of daylight/executable availability; reads only the user's animation archive.
   bool load_combat_animations(const std::string& units_xbe);
+  bool load_audio(const std::string& game_dir);
+  const SoundData* audio() const { return audio_.get(); }
   // Marine dir8 slots and Defence base/turret slots, with per-tick marker flags.
   AttackFrame attack_frame(int type, int facing, int64_t elapsed, int angle = -1) const;
   void set_sight(std::shared_ptr<const SightData> data) { sight_ = std::move(data); }
@@ -149,6 +152,7 @@ class RulesData {
 
  private:
   std::shared_ptr<const SightData> sight_;
+  std::shared_ptr<const SoundData> audio_;
   std::shared_ptr<const data::SpriteDb> combat_animations_;
   struct WeaponRecord { int kind = -1; std::vector<int> data; };
   WeaponResult weapon_impl(int id, const TypeRules& target, bool allied, int depth) const;

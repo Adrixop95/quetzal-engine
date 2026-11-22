@@ -39,11 +39,72 @@ static std::shared_ptr<RulesData> rules() {
   require(r->load_dir(AZTEC_TEST_RULES_DIR), "rules unavailable");
   return r;
 }
+static void phase_controls(const std::shared_ptr<RulesData>& r) {
+  auto w = initial();
+  for (auto& object : w.objects) object.cooldown = 1000;
+  GameSim sim(r); sim.init(w);
+  Effect decoration; decoration.lifetime = 10; decoration.kind = aztec::data::EffectClass::Rubble;
+  w.effects.push_back(decoration);
+  for (uint32_t source : {1u, 2u}) {
+    Effect projectile; projectile.source = source; projectile.flight = true;
+    projectile.kind = aztec::data::EffectClass::Arrow;
+    projectile.speed = to_fixed(1); projectile.end_x = to_fixed(100);
+    w.effects.push_back(projectile);
+  }
+  std::vector<uint32_t> visited;
+  sim.set_combat_observer([&](uint64_t, const char* event, const Effect& e, uint32_t, int, int) {
+    if (std::string(event) != "position") return;
+    require(w.objects[1].cooldown == 999, "projectile phase ran before units");
+    require(w.tick == 0, "global time advanced before projectile phase");
+    visited.push_back(e.source);
+  });
+  w.begin_tick(); sim.tick(w);
+  require(visited == std::vector<uint32_t>({2, 1}), "projectiles must walk newest first");
+  require(w.effects[0].age == 1 && w.effects[1].age == 1 && w.effects[2].age == 1,
+          "effects must update once per tick");
+  require(!w.effects[0].projectile_pool && w.effects[1].projectile_pool && w.effects[2].projectile_pool,
+          "visual class must not select the lifetime pool");
+  visited.clear(); w.begin_tick();
+  sim.set_combat_observer([&](uint64_t, const char* event, const Effect& e, uint32_t, int, int) {
+    if (std::string(event) == "position") visited.push_back(e.source);
+  });
+  sim.tick(w);
+  require(visited == std::vector<uint32_t>({2, 1}), "projectile storage reversed between ticks");
+  auto cold = initial(); cold.mission.tileset = 1; cold.mission.start_time = 7199;
+  GameSim clock(r); clock.init(cold); cold.begin_tick(); clock.tick(cold);
+  require(cold.day_clock == 7199, "nonzero tileset advanced day clock");
+  cold.mission.tileset = 0; cold.begin_tick(); clock.tick(cold);
+  require(cold.day_clock == 0, "day clock failed to wrap");
+  auto birds = initial(); birds.objects.resize(3);
+  for (auto& bird : birds.objects) bird.type = 33;
+  GameSim loaded(r); loaded.init(birds);
+  require(birds.objects[0].air_min_speed_px == 6 && birds.objects[1].air_min_speed_px == 7 &&
+          birds.objects[2].air_min_speed_px == 9 && loaded.random_state() == 3539360597u,
+          "mission loading did not consume shared CRT draws in creation order");
+  loaded.init(birds);
+  require(loaded.random_state() == 3539360597u, "mission reinitialization did not reseed zero");
+  auto seeded = initial(); GameSim other(r); other.init(seeded);
+  require(sim.random_state() == 0 && other.random_state() == 0, "independent simulations share RNG state");
+}
 static void unit() {
   require(production_value(8388608, 1, 0, false, false, false) == 5592406, "binary32 half rounding");
   require(production_value(16777217, 1, 1, true, false, false) == 13421774, "computer binary32 rounding");
   require(production_value(INT32_MAX, 1, 2, true, false, false) == INT32_MAX, "production overflow clamp");
-  auto r = rules(); auto w = initial(); GameSim sim(r, Modifications::faithful()); sim.init(w);
+  uint32_t zero = 0;
+  for (uint32_t expected : {38u, 7719u, 21238u}) require(msvc_rand(zero) == expected, "MSVC seed-zero sequence");
+  uint32_t one = 1, other = 0;
+  require(msvc_rand(one) == 41 && msvc_rand(other) == 38, "independent CRT-default and mission streams");
+  uint32_t wrap = UINT32_MAX;
+  require(msvc_rand(wrap) == 35 && wrap == 2316998u, "MSVC unsigned wraparound");
+  PoolOrder pool;
+  const auto first_slot = pool.insert(1), second_slot = pool.insert(2), third_slot = pool.insert(3);
+  require(pool.newest_first() == std::vector<uint32_t>({3, 2, 1}), "pool must walk newest first");
+  const auto snapshot = pool.newest_first();
+  pool.erase(2); pool.erase(3);
+  require(pool.insert(4) == third_slot && pool.insert(5) == second_slot, "pool must reuse slots LIFO");
+  require(pool.insert(1) == first_slot, "existing pool identity reinserted");
+  require(snapshot == std::vector<uint32_t>({3, 2, 1}) && pool.newest_first() == std::vector<uint32_t>({5, 4, 1}), "pool cursor changed after mutation");
+  auto r = rules(); phase_controls(r); auto w = initial(); GameSim sim(r, Modifications::faithful()); sim.init(w);
   auto changes_hash = [&](auto change) {
     auto altered = w; change(altered);
     require(sim.state_hash(w) != sim.state_hash(altered), "missing future-affecting field");
@@ -72,6 +133,9 @@ static void unit() {
   require(sim.paused() && sim.log()[0].cmd.side == 0, "commands must sort by side");
   on.side = 0; sim.submit(on); sim.submit(off); w.begin_tick(); sim.tick(w);
   require(!sim.paused(), "same-side submission order must be stable");
+  on.side = 7; sim.submit(on); w.begin_tick(); sim.tick(w);
+  require(!sim.paused() && sim.log().back().cmd.side == 7, "reserved side-seven slot applied a command");
+  on.side = 0;
   auto clean = initial(); sim.init(clean);
   require(sim.log().empty() && sim.tick_count() == 0, "reinit retains command history");
   std::vector<LoggedCommand> log{{1, on}, {1, off}};
@@ -93,15 +157,16 @@ static void unit() {
   second = first; ++second.triggers[0].actions[0].a;
   a.set(first); b.set(second);
   require(a.state_hash() != b.state_hash(), "script program omitted from hash");
-  // Known seed sequence is independent of view/audio; four queued births consume four draws.
+  // Generic birth variants are presentation fallbacks and consume no mission random draws.
   auto births = initial(); births.objects.resize(3); births.mission.sides.resize(1); births.mission.towns.resize(1);
   GameSim birth_sim(r, Modifications::faithful()); birth_sim.init(births);
   Command build; build.type = Pct::Build; build.a = 0;
   for (int i = 0; i < 4; ++i) birth_sim.submit(build);
   for (int tick = 0; tick < 1000 && births.objects.size() < 7; ++tick) { births.begin_tick(); birth_sim.tick(births); }
   require(births.objects.size() == 7, "RNG fixture did not spawn");
-  const uint32_t variants[] = {342300, 277626, 9112642, 10651922};
-  for (size_t i = 0; i < 4; ++i) require(births.objects[i + 3].anim_variant == variants[i], "spawn RNG stream changed");
+  for (size_t i = 3; i < 7; ++i)
+    require(births.objects[i].anim_variant == (births.objects[i].id * 2654435761u >> 8), "birth variant differs from placement policy");
+  require(birth_sim.random_state() == 0, "generic births consumed simulation draws");
   aztec::path::NavGrid g1(8, 8), g2(8, 8);
   g1.add_block(2, 2, 1, 1, 1); g2.add_block(2, 2, 1, 1, 2);
   require(g1.state_hash() != g2.state_hash(), "blocker counts omitted");

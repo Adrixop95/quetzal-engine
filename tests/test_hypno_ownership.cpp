@@ -129,10 +129,14 @@ static void ordinary_damage() {
   GameSim sim(data); sim.init(w);
   Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2; sim.submit(attack);
   ticks(sim,w);
-  CHECK(w.effects.size() == 16 && w.objects[1].hp == 500); // scheduled, no immediate direct shot
+  // Seed zero schedules exactly one of the sixteen payloads in the launch tick.
+  int pending = 0;
+  for (const auto& effect : w.effects) if (effect.payload_id == 53) ++pending;
+  CHECK(pending == 15 && w.objects[1].hp < 500);
   for (const auto& effect : w.effects) {
+    if (effect.payload_id != 53) continue; // an impact can also create a decoration
     CHECK(effect.payload_id == 53 && effect.impact_anim == 1);
-    CHECK(effect.delay_ticks >= 0 && effect.delay_ticks < 10);
+    CHECK(effect.delay_ticks >= 0 && effect.delay_ticks < 9);
   }
 }
 static World town(int level, int attacker_x = 12, int attacker_y = 10) {
