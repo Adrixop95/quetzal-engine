@@ -104,7 +104,7 @@ static void ordinary_damage() {
   for (int attacker : {54,55,69,82}) {
     World w = world(); add(w,attacker,0,10,10); add(w,0,1,11,10);
     GameSim sim(data); sim.init(w);
-    w.objects[0].hp = 300;
+    w.objects[0].hp = 300; w.objects[1].cooldown = 100; // isolate damage from automatic retaliation
     Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
     if (attacker == 69) { w.objects[0].order = uint8_t(Order::Attack); w.objects[0].target = 2; }
     else sim.submit(attack);
@@ -137,7 +137,7 @@ static void ordinary_damage() {
 static World town(int level, int attacker_x = 12, int attacker_y = 10) {
   World w = world(); w.mission.towns = {{0,0,10,10,level,2,7}};
   add(w,64,0,10,10,0); w.objects.back().town_hall = true;
-  add(w,0,1,attacker_x,attacker_y); return w;
+  add(w,0,1,attacker_x,attacker_y); w.objects.back().cooldown = 100; return w;
 }
 static void capture() {
   auto data = rules();

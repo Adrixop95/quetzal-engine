@@ -273,13 +273,13 @@ static void test_sight() {
   // A lit target beyond the old six-tile radius is eligible; exactly 32 is not.
   std::fill(mask.begin() + 4, mask.end(), 0);
   Object enemy; enemy.id = 2; enemy.type = 10; enemy.side = 1; enemy.hp = 30000;
-  enemy.teleport(to_fixed(20 * 48 + 400), to_fixed(20 * 48));
+  enemy.teleport(to_fixed(20 * 48 + 7 * 48), to_fixed(20 * 48));
   initial.objects.push_back(enemy);
   initial.relation[0][1] = kEnemy;
   // Automatic acquisition must use a building's corners, not its dark center.
   for (int brightness : {32, 33}) {
     World corner = initial;
-    corner.objects[0].id = 3; corner.objects[0].attack_mode = AttackMode::Aggressive;
+    corner.objects[0].attack_mode = AttackMode::Aggressive;
     corner.objects[1].teleport(to_fixed(24 * 48), to_fixed(20 * 48));
     corner.objects[1].attack_mode = AttackMode::Direct;
     corner.visibility_brightness = true;
@@ -297,7 +297,6 @@ static void test_sight() {
   // result must not depend on the object mask stamped at the end of that tick.
   for (int darkness : {47, 48}) {
     World startup = initial;
-    startup.objects[0].id = 3; // this object's four-tick scan falls on ticks 1, 5
     startup.objects[0].attack_mode = AttackMode::Aggressive;
     startup.objects[1].attack_mode = AttackMode::Direct;
     startup.visibility.sides.resize(8);
@@ -310,10 +309,9 @@ static void test_sight() {
     startup.begin_tick(); start.tick(startup);
     CHECK(startup.objects[0].target == (darkness == 47 ? 2u : 0u));
     CHECK(object_visible(startup, 0, startup.objects[1]));
-    for (int t = 0; t < 4; ++t) { startup.begin_tick(); start.tick(startup); }
+    for (int t = 0; t < 22; ++t) { startup.begin_tick(); start.tick(startup); }
     CHECK(startup.objects[0].target == 2u);
     World replayed = initial;
-    replayed.objects[0].id = 3;
     replayed.objects[0].attack_mode = AttackMode::Aggressive;
     replayed.objects[1].attack_mode = AttackMode::Direct;
     replayed.visibility.sides.resize(8);
@@ -326,13 +324,14 @@ static void test_sight() {
     World duel = initial;
     duel.objects[0].attack_mode = AttackMode::Aggressive;  // visibility gate test: mode 2 has an eight-tile group reach
     GameSim combat(rules, Modifications::faithful()); combat.init(duel);
-    for (int t = 0; t < 3; ++t) { duel.begin_tick(); combat.tick(duel); }
+    for (int t = 0; t < 23; ++t) { duel.begin_tick(); combat.tick(duel); }
     CHECK(duel.objects[0].target == (ambient == 33 ? 2u : 0u));
     CHECK(object_visible(duel, 0, duel.objects[1]) == (ambient == 33));
     // Balanced units hold their ground: the same lit enemy 400 px away is not chased (regression for the
     // mission 1 march: idle units used to attack any enemy the side could see, starting the scripted counterattack).
     {
       World hold = initial;
+      hold.objects[1].teleport(to_fixed(20 * 48 + 400), to_fixed(20 * 48));
       hold.objects[0].attack_mode = AttackMode::Balanced;
       hold.objects[1].attack_mode = AttackMode::Direct;
       const auto start_x = hold.objects[0].cur_x, start_y = hold.objects[0].cur_y;
@@ -387,7 +386,7 @@ static void test_sight() {
     duel.objects[0].attack_mode = AttackMode::Aggressive;  // eight-tile leash plus firing reach
     duel.objects[1].teleport(to_fixed(20 * 48 + distance), to_fixed(20 * 48));
     GameSim combat(rules, Modifications::faithful()); combat.init(duel);
-    for (int t = 0; t < 3; ++t) { duel.begin_tick(); combat.tick(duel); }
+    for (int t = 0; t < 23; ++t) { duel.begin_tick(); combat.tick(duel); }
     CHECK(duel.objects[0].target == (distance == 200 ? 2u : 0u));
     CHECK(duel.visibility.sides.empty());
   }
@@ -1727,7 +1726,7 @@ static void production_steps(GameSim& sim, World& w, int ticks) {
   for (int t = 0; t < ticks; ++t) { w.begin_tick(); sim.tick(w); }
 }
 
-// Synthetic behavior checks; reference norm/formation boundaries need live runs.
+// Synthetic behavior checks; live reference parity remains unverified.
 static void test_group_reach() {
   auto rules = std::make_shared<RulesData>();
   CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
@@ -1740,17 +1739,16 @@ static void test_group_reach() {
   const int origin_x = initial.objects[0].cur_x >> 8;
   const int origin_y = initial.objects[0].cur_y >> 8;
 
-  // A six-tile melee target is pursued in modes 1/2/3, never in direct control.
-  // This also distinguishes the rule from weapon range plus two tiles.
+  // An unforced six-tile melee sighting is pursued in modes 2/3 only.
+  // Mode 1 needs a forced report before an enemy tactic is listed.
   for (int mode = 0; mode < 4; ++mode) {
     World w = initial;
     w.objects[0].attack_mode = AttackMode(mode);
     GameSim sim(rules, Modifications::faithful()); sim.init(w);
     production_steps(sim, w, 4);
-    CHECK((w.objects[0].target == 2) == (mode != 0));
+    CHECK((w.objects[0].target == 2) == (mode >= 2));
   }
-  // Descriptor combat radii can extend melee reach beyond one tile. Place the
-  // target outside the Balanced envelope but inside modes 1 and 2.
+  // The scan box, rather than weapon or mode reach, limits initial discovery.
   const auto shot = rules->attack(0, 0, false);
   const int firing_reach = shot.range_px + (shot.edge_range ? 2 * rules->type(0).combat_radius() : 0);
   const int beyond_balanced = 6 * kTilePx + firing_reach + 24;
@@ -1760,22 +1758,24 @@ static void test_group_reach() {
     w.objects[1].teleport(to_fixed(origin_x + beyond_balanced), to_fixed(origin_y));
     GameSim sim(rules, Modifications::faithful()); sim.init(w);
     production_steps(sim, w, 4);
-    CHECK((w.objects[0].target == 2) == (mode != 3));
+    CHECK(w.objects[0].target == 0); // outside the tactic scan box in every mode
   }
-  // A ground unit may approach a target just outside the anchor radius if it
-  // can shoot from inside. It must not follow that target farther afterwards.
-  for (int mode : {1, 2, 3}) {
+  // A ground unit can retain a listed target outside the anchor reach. A wider
+  // member box permits discovery; an empty replan clears it and returns members.
+  for (int mode : {2, 3}) {
     const int radius = (mode == 3 ? 6 : 8) * kTilePx;
     World w = initial;
     w.objects[0].attack_mode = AttackMode(mode);
+    w.objects[0].tactic = 10;
+    production_object(w, 0, -1, 12, 10); w.objects.back().tactic = 10;
     w.objects[1].teleport(to_fixed(origin_x + radius + 30), to_fixed(origin_y));
     GameSim sim(rules, Modifications::faithful()); sim.init(w);
     production_steps(sim, w, 20);
     CHECK(w.objects[0].target == 2 && w.objects[0].idle_attack);
     CHECK(w.objects[0].cur_x > to_fixed(origin_x));
     CHECK(w.objects[0].idle_anchor_x == origin_x);
-    sim.teleport(w, 2, origin_x + radius + 100, origin_y);
-    production_steps(sim, w, 1);
+    sim.teleport(w, 2, origin_x + 20 * kTilePx, origin_y);
+    production_steps(sim, w, 22);
     CHECK(w.objects[0].target == 0 && w.objects[0].order == uint8_t(Order::Idle));
     production_steps(sim, w, 160);
     CHECK(w.objects[0].target == 0);
@@ -1801,7 +1801,13 @@ static void test_group_reach() {
   group.objects[1].teleport(to_fixed(origin_x + 2 * kTilePx + beyond_balanced), to_fixed(origin_y));
   GameSim grouped(rules, Modifications::faithful()); grouped.init(group);
   production_steps(grouped, group, 4);
-  CHECK(group.objects[0].target == 0 && group.objects[2].target == 0);
+  CHECK(group.unit_tactics.at({0, 7}).x == 10);
+  for (int tick = 0; tick < 160; ++tick) {
+    production_steps(grouped, group, 1);
+    for (int member : {0, 2})
+      CHECK(tactic_norm((group.objects[member].cur_x >> 8) / kTilePx - 10,
+                       (group.objects[member].cur_y >> 8) / kTilePx - 10) <= 6);
+  }
 
   // A new movement destination establishes a new idle origin, including replay.
   World moved = initial;
@@ -2387,7 +2393,7 @@ static void test_population_difficulty_modes() {
     CHECK(w.objects[2].attack_mode == AttackMode::Balanced);
     CHECK(w.objects[3].attack_mode == AttackMode::Balanced);
     CHECK(w.objects[4].attack_mode == AttackMode::Balanced);
-    CHECK((w.objects[0].order == uint8_t(Order::Attack)) == (mode != 0));
+    CHECK((w.objects[0].order == uint8_t(Order::Attack)) == (mode >= 2));
     const auto hash = sim.state_hash(w);
     w.objects[0].attack_mode = AttackMode((mode + 1) % 4);
     CHECK(sim.state_hash(w) != hash);
@@ -3533,14 +3539,14 @@ static void test_parallel_training() {
   }
 }
 
-// Pin replay hashes including idle origins, cached harvest rates and script cameras.
+// Pin replay hashes including tactic timers, paths and one-tile member reservations.
 static void test_faithful_profile_hashes() {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
   World w = production_world(); production_object(w, 0, 0, 5, 5);
   GameSim sim(rules, Modifications::faithful()); sim.init(w);
   const uint64_t expected_hashes[] = {
-    5365837229744924559ull, 17846443464013651846ull, 7334857790600743194ull,
-    7251567528696558682ull, 1591863276331069751ull, 15948428330348253207ull};
+    14577138446141305146ull, 6540996212098358827ull, 10179004845673989250ull,
+    3474460873928716005ull, 18286011323202810108ull, 17072386695150712644ull};
   CHECK(sim.state_hash(w) == expected_hashes[0]);
   Command move; move.type = Pct::Move; move.ids = {1}; move.a = 12 * 48; move.b = 12 * 48;
   sim.submit(move);

@@ -194,7 +194,8 @@ class PlaythroughTests(unittest.TestCase):
         self.assertEqual(set(after), set(rows[0]['fields']))
         self.assertEqual(before['order'], 0)
         self.assertEqual((after['dest_x'], after['dest_y']), (3 * 48 + 24, 2 * 48 + 24))
-        self.assertEqual((after['target'], after['tactic'], after['scenario']), (0, -1, -1))
+        # The first tactic think lists the nearby enemy after the movement command.
+        self.assertEqual((after['target'], after['tactic'], after['scenario']), (2, -1, -1))
 
     def test_orders_validation_and_execution(self):
         orders = Path(self.temp.name) / 'orders'
