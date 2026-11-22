@@ -30,3 +30,12 @@ What this does not show:
 - Other Marine types (Footman 10, Demolisher 31, Archer) were not measured.
 - Consequence for the clone: a Rifleman shot period of 21 ticks is probably too fast. Before
   changing the clone, confirm the animation length per tick from the animation tables.
+
+## Follow-up (task 162)
+
+The animation hypothesis above is not supported by the clone data. `docs/shot_period_implementation.md`
+derives an attack animation length of 10 logic ticks for the Rifleman, so the explicit maximum
+rule still gives 21 ticks and does not explain the measured 26 to 27. The difference of about 5
+to 6 ticks stays unexplained. Candidates that nothing has checked yet: a target acquisition or
+re-aim delay between shots, a re-entry step through the idle state, or a different reload
+value in the original than in the clone tables. The clone keeps 21 ticks until this is resolved.
