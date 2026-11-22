@@ -49,6 +49,23 @@ AttackFrame RulesData::attack_frame(int type_id, int facing, int64_t elapsed, in
   return {true, frame.valid(), frame.fire != 0, frame.dx, frame.dy};
 }
 
+int RulesData::marine_attack_ticks(int type_id, int facing) const {
+  if (!combat_animations_ || type_id < 0 || type_id >= 90 || type(type_id).kind != 0) return -1;
+  const auto animation = combat_animations_->anim(combat_animations_->anim_id(type_id));
+  const int slot = 9 + (facing & 7);
+  const int count = animation.frame_count(slot);
+  if (!count) return -1;
+  int64_t ticks = 0;
+  for (int frame = 0; frame < count; ++frame) {
+    const int duration = animation.frame(slot, frame).duration;
+    if (duration <= 0) return -1;
+    ticks += duration;
+    // Leave room for the re-entry tick in the cooldown.
+    if (ticks >= std::numeric_limits<int>::max()) return -1;
+  }
+  return int(ticks);
+}
+
 bool SightData::load(const std::string& game_dir) {
   masks.clear();
   Archive lights;

@@ -1578,6 +1578,10 @@ void GameSim::run_orders(World& w) {
         const bool siege = r.flier || r.weapon.klass == 8 || r.weapon.klass == 11 ||
             ((r.kind == 4 || r.kind == 6 || r.kind == 9) && (r.weapon.klass == 0 || r.weapon.klass == 3));
         o.cooldown = std::max(1, shot.reload + (siege ? 0 : 1));
+        if (r.kind == 0) {
+          const int animation_ticks = rules_->marine_attack_ticks(o.type, o.facing);
+          o.cooldown = std::max({1, shot.reload + 1, animation_ticks + 1});
+        }
         o.has_fired = true;
         o.anim_state = kAnimAttack; o.anim_tick = 0; o.attack_tick = 0;
         if (rules_->attack_frame(o.type, o.facing, 0).known) {
