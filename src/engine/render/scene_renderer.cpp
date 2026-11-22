@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "engine/data/animation_slots.hpp"
+#include "engine/render/world_rules.hpp"
 #include "engine/render/colors.hpp"
 #include "engine/world/type_info.hpp"
 #include "engine/world/visibility.hpp"
@@ -83,13 +84,53 @@ uint8_t SceneRenderer::shade_at(float x, float y) const {
   return uint8_t(mask_lighting_ ? data::palette_shade(int(lighting_.sample(x, y))) : opts.terrain_shade);
 }
 
+static float snap(float v) { return std::floor(v + 0.5f); }
+
+int SceneRenderer::light_vertex(int x, int y) const {
+  if (world_.visibility_brightness && fog_.requested()) {
+    const auto* layer = visibility_layer(world_, world_.local_side);
+    if (!layer || layer->w <= 0 || layer->h <= 0 || layer->v.size() != size_t(layer->w) * layer->h) return 0;
+    return layer->v[size_t(std::clamp(y, 0, int(layer->h) - 1)) * layer->w + std::clamp(x, 0, int(layer->w) - 1)];
+  }
+  return mask_lighting_ ? int(lighting_.sample(float(x * 48), float(y * 48))) : opts.terrain_shade * 8;
+}
+
+// Select palette rows at source-pixel resolution, coalescing equal horizontal
+// runs. Object bodies reuse the ground row even when their artwork is elevated.
+void SceneRenderer::blit_lit(const Camera& cam, SpriteKey key, int frame, float wx, float wy,
+                             float ground_y, bool row, int& page) {
+  const auto base = store_.get(key);
+  if (!base.ok()) return;
+  float left = wx - base.ox, top = wy - base.oy;
+  auto shade = [&](int x, int y) {
+    int px = int(std::floor(left + x)), py = int(std::floor(row ? ground_y : top + y));
+    int tx = int(std::floor(px / 48.0)), ty = int(std::floor(py / 48.0));
+    return light_surface_shade(light_vertex(tx, ty), light_vertex(tx + 1, ty),
+        light_vertex(tx, ty + 1), light_vertex(tx + 1, ty + 1), px, py);
+  };
+  for (int y = 0; y < base.ch; y += row ? base.ch : 1) {
+    for (int x = 0; x < base.cw;) {
+      int level = shade(x, y), end = x + 1;
+      while (end < base.cw && shade(end, y) == level) ++end;
+      key.shade = uint8_t(level);
+      const auto& image = store_.get(key);
+      if (image.ok()) {
+        if (image.region.page != page) { flush(page); page = image.region.page; }
+        auto src = image.frame_rect(frame); src.x += x; src.y += y;
+        src.w = end - x; src.h = row ? base.ch : 1;
+        queue(page, snap(cam.to_screen_x(left + x)), snap(cam.to_screen_y(top + y)),
+            snap(cam.to_screen_x(left + end)), snap(cam.to_screen_y(top + y + src.h)), src, key, frame);
+      }
+      x = end;
+    }
+  }
+}
+
 void SceneRenderer::flush(int page) {
   if (page < 0 || page >= int(batches_.size()) || batches_[page].empty()) return;
   stats.geometry_calls++;
   batches_[page].flush(win_.renderer(), store_.atlas().page(page));
 }
-
-static float snap(float v) { return std::floor(v + 0.5f); }
 
 void SceneRenderer::draw_terrain(const Camera& cam) {
   SDL_Renderer* r = win_.renderer();
@@ -103,11 +144,21 @@ void SceneRenderer::draw_terrain(const Camera& cam) {
   int by1 = std::min(t.h, int(std::ceil((cam.y + cam.visible_h()) / kTilePx)));
   for (int y = by0; y < by1; y++)
     for (int x = bx0; x < bx1; x++) {
-      const SpriteKey key{arch, 0x44c, t.base(x, y), pal, shade_at(float(x * kTilePx + 24), float(y * kTilePx + 24))};
+      SpriteKey key{arch, 0x44c, t.base(x, y), pal, shade_at(float(x * kTilePx + 24), float(y * kTilePx + 24))};
+      const int a = light_vertex(x, y), b = light_vertex(x + 1, y);
+      const int c = light_vertex(x, y + 1), d = light_vertex(x + 1, y + 1);
+      if (opts.original_look) key.shade = uint8_t(terrain_flat_shade(a));
       const StoredSprite& s = store_.get(key);
       if (!s.ok()) continue;
       int frame = s.frames > 1 ? int(opts.view_counter % unsigned(s.frames)) : 0;  // water/shore animation
       stats.tiles++;
+      if (opts.original_look && !(a == b && a == c && a == d)) {
+        for (int p = 0; p < int(batches_.size()); ++p) flush(p);
+        int page = -1;
+        blit_lit(cam, key, frame, float(x * 48 + s.ox), float(y * 48 + s.oy), 0, false, page);
+        flush(page);
+        continue;
+      }
       float sx0 = snap(cam.to_screen_x(float(x * kTilePx))), sy0 = snap(cam.to_screen_y(float(y * kTilePx)));
       float sx1 = snap(cam.to_screen_x(float((x + 1) * kTilePx))), sy1 = snap(cam.to_screen_y(float((y + 1) * kTilePx)));
       queue(s.region.page, sx0, sy0, sx1, sy1, {s.region.x, s.region.y + frame * kTilePx, kTilePx, kTilePx}, key, frame);
@@ -152,7 +203,7 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
   SDL_Renderer* r = win_.renderer();
   ArchiveId arch = world_.mission.tileset == 1 ? ArchiveId::Tiles1 : ArchiveId::Tiles0;
   uint8_t pal = uint8_t(default_palette());
-  struct Item { float wx, wy; const Object* o; int height; uint16_t tree; std::vector<SpriteDraw> parts; bool primary = true; const Effect* effect = nullptr; };  // tree != 0: terrain overlay sprite
+  struct Item { float wx, wy; const Object* o; int height; uint16_t tree; std::vector<SpriteDraw> parts; bool primary = true; const Effect* effect = nullptr; int display_size = -1; bool flash = false; int marker = 0; };  // tree != 0: terrain overlay sprite
   std::vector<Item> items;
   items.reserve(world_.objects.size() + 256);
   float pad = 96;
@@ -164,6 +215,7 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
   if (proxies) for (const auto& [id, picture] : world_.building_memory[world_.local_side]) {
     (void)id; displayed.push_back(&picture);
   }
+  int collection_page = -1;
   for (const Object* picture : displayed) {
     const Object& o = *picture;
     if (o.removed || o.source == ObjectSource::Submarine) continue;
@@ -179,11 +231,21 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
       bool primary = true;
       for (auto item : provider_->items(object_state(o))) {
         if (!primary && simulated_fire && o.alive) continue;
-        items.push_back({p.x + item.dx, p.y + item.dy, &o, item.height, 0, std::move(item.parts), primary});
+        for (auto& part : item.parts) if (part.underlay) {
+          part.key.shade = shade_at(p.x, p.y);
+          const auto image = store_.get(part.key);
+          if (!image.ok()) continue;
+          if (opts.original_look) blit_lit(cam, part.key, part.key.frame, p.x + item.dx + part.dx, p.y + item.dy + part.dy, p.y + item.dy, false, collection_page);
+          else blit(cam, image, part.key, part.key.frame, p.x + item.dx + part.dx, p.y + item.dy + part.dy, collection_page);
+        }
+        std::erase_if(item.parts, [](const auto& part) { return part.underlay; });
+        items.push_back({p.x + item.dx, p.y + item.dy, &o, item.height, 0, std::move(item.parts), primary,
+            nullptr, item.display_size, item.flash, item.marker});
         primary = false;
       }
     } else items.push_back({p.x, p.y, &o, 0, 0, {}});
   }
+  flush(collection_page);
   for (const auto& e : world_.effects) {
     float x = (e.prev_x + (e.x - e.prev_x) * alpha) / 256.f;
     float y = (e.prev_y + (e.y - e.prev_y) * alpha) / 256.f;
@@ -212,16 +274,53 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
     const TypeInfo* ti = type_info(it.o->type);
     SpriteKey k;
     k.archive = ArchiveId::Common; k.group = 0x44c; k.shade = 0;
-    k.index = ti && ti->is_structure() ? 314 : 309;
+    const int size = it.display_size >= 0 ? it.display_size : ti && ti->is_structure() ? 77 : 24;
+    k.index = status_art[status_art_index(size)].ellipse;
+    k.palette = 3;
     const StoredSprite& s = store_.get(k);
     if (!s.ok()) return;
     mod_ = {255, 255, 255, 255};
     int f = int(opts.view_counter % unsigned(std::max(1, s.frames)));
     if (s.region.page != cur_page) { flush(cur_page); cur_page = s.region.page; }
-    float x0 = it.wx - s.cw / 2.f, y0 = it.wy - s.ch / 2.f;
+    float x0 = it.wx - s.cw / 2.f, y0 = it.wy - it.height - s.ch / 2.f;
     queue(s.region.page, snap(cam.to_screen_x(x0)), snap(cam.to_screen_y(y0)), snap(cam.to_screen_x(x0 + s.cw)),
           snap(cam.to_screen_y(y0 + s.ch)), s.frame_rect(f), k, f);
     mod_ = body_mod;
+  };
+  auto draw_health = [&](const Item& it) {
+    if (it.effect || it.tree || !it.primary || is_ferry(*it.o) || (!opts.all_status && !world_.selection.contains(it.o->id)) || it.o->type < 0) return;
+    const TypeInfo* ti = type_info(it.o->type);
+    bool structure = ti && ti->is_structure();
+    int hpmax = it.o->hp_max;
+    if (hpmax <= 0 || it.o->hp <= 0) return;
+    int ratio = int(std::clamp(int64_t(it.o->hp) * 256 / hpmax, int64_t(0), int64_t(256)));
+    if (!ratio) return;
+    int size = it.display_size >= 0 ? it.display_size : structure ? 77 : 24;
+    int art = status_art_index(size);
+    SpriteKey key{ArchiveId::Common, 0x44c, uint32_t(status_art[std::max(0, art - 1)].health), 3, 0};
+    const auto image = store_.get(key);
+    if (image.ok()) {
+      flush(cur_page); cur_page = -1;
+      auto src = image.frame_rect(health_frame(ratio));
+      src.w = health_width(src.w, ratio);
+      float x = cam.to_screen_x(it.wx - image.cw / 2.f);
+      // G: the producer does not yet supply the original bar rectangle top.
+      float y = cam.to_screen_y(it.wy - std::max(0, it.height) - (structure ? 110.f : 46.f));
+      mod_ = {255, 255, 255, 255};
+      if (src.w) queue(image.region.page, x, y, x + src.w * cam.zoom, y + src.h * cam.zoom, src, key, health_frame(ratio));
+      flush(image.region.page); mod_ = body_mod;
+      return;
+    }
+    // G: diagnostic fallback when the user's health artwork is unavailable.
+    flush(cur_page); cur_page = -1;
+    float frac = hpmax > 0 ? std::clamp(float(it.o->hp) / hpmax, 0.f, 1.f) : 1.f;
+    float w = (structure ? 70.f : 26.f) * cam.zoom, h = std::max(3.f, 4.f * cam.zoom);
+    float x = cam.to_screen_x(it.wx) - w / 2, y = cam.to_screen_y(it.wy - (structure ? 110.f : 46.f));
+    SDL_FRect bg{x - 1, y - 1, w + 2, h + 2}, fg{x, y, w * frac, h};
+    SDL_SetRenderDrawColor(r, 0, 0, 0, 200);
+    SDL_RenderFillRectF(r, &bg);
+    SDL_SetRenderDrawColor(r, frac > 0.6f ? 60 : 230, frac > 0.3f ? 210 : 50, frac > 0.6f ? 60 : 40, 255);
+    SDL_RenderFillRectF(r, &fg);
   };
   // Shared ordered list: finish every item before starting the next one.
   int scale = std::max(1, int(std::lround(cam.zoom)));
@@ -237,7 +336,8 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
       mod_ = shadow ? SDL_Color{255, 255, 255, 255} : body_mod;
       const auto& sprite = store_.get(key);
       if (!sprite.ok()) return;
-      blit(cam, sprite, key, 0, it.wx, it.wy - (shadow ? 0 : height), cur_page);
+      if (opts.original_look && !shadow) blit_lit(cam, key, 0, it.wx, it.wy - height, it.wy, true, cur_page);
+      else blit(cam, sprite, key, 0, it.wx, it.wy - (shadow ? 0 : height), cur_page);
       stats.sprites++;
     };
     if (it.effect) {
@@ -255,7 +355,12 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
             it.tree, pal, shadow ? uint8_t(data::kShadowShade) : shade_at(it.wx, it.wy), 0, 0, shadow};
         const StoredSprite& s = store_.get(key);
         mod_ = shadow ? SDL_Color{255, 255, 255, 255} : body_mod;
-        if (s.ok()) { stats.overlays++; blit(cam, s, key, data::overlay_frame(opts.wind, opts.wind_counter), it.wx, it.wy, cur_page); }
+        if (s.ok()) {
+          stats.overlays++;
+          int frame = data::overlay_frame(opts.wind, opts.wind_counter);
+          if (opts.original_look && !shadow) blit_lit(cam, key, frame, it.wx, it.wy, it.wy, true, cur_page);
+          else blit(cam, s, key, frame, it.wx, it.wy, cur_page);
+        }
       }
       continue;
     }
@@ -263,13 +368,24 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
     bool drawn = false;
     const auto st = object_state(o);
     for (auto sd : it.parts) {
-      if (!sd.key.shadow) sd.key.shade = shade_at(it.wx, it.wy);
+      if (!sd.key.shadow) sd.key.shade = flash_tick(it.flash, opts.view_counter) ? 19 : shade_at(it.wx, it.wy);
+      else sd.key.shade = data::kShadowShade;
       mod_ = sd.key.shadow ? SDL_Color{255, 255, 255, 255} : body_mod;
       const StoredSprite& s = store_.get(sd.key);
       if (s.ok()) {
         drawn = true; stats.sprites++;
-        blit(cam, s, sd.key, sd.key.frame, it.wx + sd.dx, it.wy + sd.dy, cur_page);
+        if (opts.original_look && !sd.key.shadow && !flash_tick(it.flash, opts.view_counter))
+          blit_lit(cam, sd.key, sd.key.frame, it.wx + sd.dx, it.wy + sd.dy, it.wy, it.height != -1, cur_page);
+        else blit(cam, s, sd.key, sd.key.frame, it.wx + sd.dx, it.wy + sd.dy, cur_page);
       }
+    }
+    draw_health(it);
+    if (it.marker) {
+      SpriteKey key{ArchiveId::Common, 0x44c, uint32_t(it.marker == 1 ? 5 : 2), 0, 0};
+      const auto image = store_.get(key);
+      mod_ = {255, 255, 255, 255};
+      if (image.ok()) blit(cam, image, key, int(opts.view_counter), it.wx, it.wy, cur_page);
+      mod_ = body_mod;
     }
     if (drawn || !it.primary || (provider_ && provider_->hides_missing(st))) continue;
     if (!opts.markers) continue;
@@ -301,21 +417,6 @@ void SceneRenderer::draw_objects(const Camera& cam, float alpha) {
   }
   flush(cur_page);
   mod_ = body_mod;
-  // Items have already passed the visibility filter; ViewAll never reveals fog.
-  for (const Item& it : items) {
-    if (it.effect || it.tree || !it.primary || is_ferry(*it.o) || (!opts.all_status && !world_.selection.contains(it.o->id)) || it.o->type < 0) continue;
-    const TypeInfo* ti = type_info(it.o->type);
-    bool structure = ti && ti->is_structure();
-    int hpmax = it.o->hp_max;
-    float frac = hpmax > 0 ? std::clamp(float(it.o->hp) / hpmax, 0.f, 1.f) : 1.f;
-    float w = (structure ? 70.f : 26.f) * cam.zoom, h = std::max(3.f, 4.f * cam.zoom);
-    float x = cam.to_screen_x(it.wx) - w / 2, y = cam.to_screen_y(it.wy - (structure ? 110.f : 46.f));
-    SDL_FRect bg{x - 1, y - 1, w + 2, h + 2}, fg{x, y, w * frac, h};
-    SDL_SetRenderDrawColor(r, 0, 0, 0, 200);
-    SDL_RenderFillRectF(r, &bg);
-    SDL_SetRenderDrawColor(r, frac > 0.6f ? 60 : 230, frac > 0.3f ? 210 : 50, frac > 0.6f ? 60 : 40, 255);
-    SDL_RenderFillRectF(r, &fg);
-  }
 }
 
 ObjectState SceneRenderer::object_state(const Object& o) const {
@@ -336,6 +437,7 @@ data::SpriteRef SceneRenderer::effect_frame(const Effect& e) const {
 
 void SceneRenderer::draw(const Camera& cam, float alpha, const std::function<void()>& ground_overlay) {
   stats = {};
+  if (opts.original_look) alpha = 1;
   SDL_Renderer* r = win_.renderer();
   SDL_SetRenderDrawColor(r, 8, 10, 14, 255);
   SDL_RenderClear(r);
@@ -354,9 +456,9 @@ void SceneRenderer::draw(const Camera& cam, float alpha, const std::function<voi
       SDL_RenderDrawLineF(r, cx, cy - rr, cx, cy + rr);
     }
   }
-  if (ground_overlay) ground_overlay();
   draw_objects(cam, alpha);
   if (!mask_lighting_) fog_.draw(r, cam, world_);
+  if (ground_overlay) ground_overlay();
 }
 
 }  // namespace aztec::engine

@@ -193,6 +193,7 @@ const char* usage_text() {
          "  --no-vsync         disable vsync;  --software  force software renderer;  --fps N  frame cap\n"
          "  --zoom Z           initial zoom (0.5 .. 4); default automatic\n"
          "  --cam X,Y          initial camera centre in tiles\n"
+         "  --original-look    tick positions and original palette lighting for captures\n"
          "  --wander           demo simulation: units walk randomly (shows 12 Hz tick interpolation)\n"
          "  --no-sprites       draw placeholder markers instead of sprites\n"
          "  --no-fog           disable fog of war from .vis (F8 toggles)\n"
@@ -294,6 +295,7 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
       if (std::sscanf(v, "%f,%f", &o.cam_tx, &o.cam_ty) != 2) { err = "bad --cam"; return false; }
       o.has_cam = true;
     }
+    else if (a == "--original-look") o.original_look = true;
     else if (a == "--wander") o.wander = true;
     else if (a == "--no-edge-scroll") o.edge_scroll = false;
     else if (a == "--no-mouse-grab") o.mouse_grab = false;
