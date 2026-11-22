@@ -132,6 +132,8 @@ class RulesData {
   const SoundData* audio() const { return audio_.get(); }
   // Marine dir8 slots and Defence base/turret slots, with per-tick marker flags.
   AttackFrame attack_frame(int type, int facing, int64_t elapsed, int angle = -1) const;
+  // Finite Marine attack duration in logic ticks; -1 for missing, holding or invalid data.
+  int marine_attack_ticks(int type, int facing) const;
   void set_sight(std::shared_ptr<const SightData> data) { sight_ = std::move(data); }
   const SightData* sight() const { return sight_.get(); }
   // Built-in defaults only (tests, missing data).

@@ -26,7 +26,7 @@ static void csv(const TempDir& dir, const char* name, const std::vector<std::vec
   }
 }
 
-static std::shared_ptr<RulesData> rules(const TempDir& dir) {
+static std::shared_ptr<RulesData> rules(const TempDir& dir, int reload = 2) {
   csv(dir, "types.csv", {{0,0,0,0,0,0,0}, {1,0,0,1,0,0,0}, {27,0,0,2,0,0,0},
                           {14,0,0,0,0,0,0}, {17,0,0,0,0,0,0}});
   auto marine = [](int parameter, int hp, int weapon) {
@@ -42,7 +42,7 @@ static std::shared_ptr<RulesData> rules(const TempDir& dir) {
   csv(dir, "desc_defence.csv", {defence});
   csv(dir, "weapons_ids.csv", {{101,2,0}, {102,1,0}, {103,10,0}, {104,7,0}, {105,13,1}});
   // reload, base, armour, reserved, range, air/nonorganic/f4/e8/structure, visuals, centre flag
-  csv(dir, "weapon_class_w2_13.csv", {{0,2,7,0,0,100,256,256,256,256,256,0,0,0,0},
+  csv(dir, "weapon_class_w2_13.csv", {{0,reload,7,0,0,100,256,256,256,256,256,0,0,0,0},
                                     {1,3,2,0,0,100,256,192,256,256,192,0,0,0,1}});
   // animation, speed, reload, range, base, armour, reserved, category factors, child, visual
   csv(dir, "weapon_class_arrow1.csv", {{0,111,24,3,240,2,0,0,256,192,256,256,192,0,0}});
@@ -239,6 +239,46 @@ static void projectile_escape(const std::shared_ptr<RulesData>& r) {
   CHECK(w.objects[1].hp == 20 && w.objects[1].last_hit_by == 0);
 }
 
+static void marine_periods() {
+  // Both type mappings use invented banks and reloads, never extracted fixtures.
+  for (int type : {0, 1}) for (int reload : {2, 4, 6}) for (bool resources : {false, true}) {
+    TempDir dir;
+    auto r = rules(dir, reload);
+    if (resources) CHECK(r->load_combat_animations(animations(dir)));
+    const int period = resources ? std::max(reload + 1, 5) : reload + 1;
+    for (int facing = 0; facing < 8; ++facing) {
+      CHECK(r->marine_attack_ticks(type, facing) == (resources ? 4 : -1));
+      constexpr int dx[] = {1,1,0,-1,-1,-1,0,1}, dy[] = {0,-1,-1,-1,0,1,1,1};
+      auto w = fight(); w.objects[0].type = type; w.objects[1].type = 14;
+      w.objects[1].teleport(to_fixed(350 + dx[facing] * 60), to_fixed(350 + dy[facing] * 60));
+      GameSim sim(r); sim.init(w); w.objects[1].hp = 10000;
+      attack(sim, 0, {1}, 2);
+      std::vector<int> starts, hits;
+      for (int tick = 1; tick <= 1 + 3 * period; ++tick) {
+        const int hp = w.objects[1].hp;
+        step(w, sim);
+        if (w.objects[0].attack_tick == 0) {
+          starts.push_back(tick);
+          CHECK(w.objects[0].cooldown == period);
+          CHECK(w.objects[0].facing == facing);
+        }
+        if (w.objects[1].hp < hp) hits.push_back(tick);
+      }
+      CHECK(starts == (std::vector<int>{1, 1 + period, 1 + 2 * period, 1 + 3 * period}));
+      CHECK(hits.size() >= 3);
+      for (size_t i = 1; i < hits.size(); ++i) CHECK(hits[i] - hits[i - 1] == period);
+    }
+    CHECK(r->marine_attack_ticks(-1, 0) == -1);
+    CHECK(r->marine_attack_ticks(90, 0) == -1);
+    CHECK(r->marine_attack_ticks(14, 0) == -1);
+    CHECK(r->marine_attack_ticks(2, 0) == -1); // missing sequence
+    CHECK(r->load_combat_animations(animations(dir, 1, true)));
+    CHECK(r->marine_attack_ticks(type, 0) == -1); // holding recovery frame
+    CHECK(r->load_combat_animations(animations(dir, -1)));
+    CHECK(r->marine_attack_ticks(type, 0) == -1); // invalid duration
+  }
+}
+
 int main() {
   TempDir dir;
   auto r = rules(dir); arithmetic(*r);
@@ -246,5 +286,6 @@ int main() {
   ranges_and_pursuit(r); duels(r); release_controls(dir, r); projectile_escape(r);
   CHECK(!r->load_combat_animations((dir.path() / "missing.xbe").string()));
   CHECK(!r->attack_frame(0, 0, 0).known);
+  marine_periods();
   return failures ? 1 : 0;
 }

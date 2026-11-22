@@ -1,5 +1,20 @@
 # Engine: status of the simulation rules (verified / measured / placeholder)
 
+## Marine shot period (2026-11-22)
+
+**V resource facts / clone construction / synthetic checks:** Marine cooldown
+now explicitly uses `max(reload + 1, attack animation ticks + 1)` for finite
+resource sequences. The existing retained-target gate already enforced the
+animation limit. Footman remains 10 ticks, Rifleman 21 and Demolisher 31;
+Hypno and Chief remain animation-bound at 31 and 12. Invented Footman/Rifleman
+tests cover all facings, both limits, equality and missing-resource fallback.
+
+**G unresolved original timing:** The measured Rifleman 26..27-tick hit gaps
+are not explained by the clone's 10-tick attack sequence. No additional tick
+factor is inferred and no original executable was run. See
+[shot_period_implementation.md](shot_period_implementation.md) for the complete
+Marine duration/period table and evidence limits. This supersedes older
+statements below that describe Marine scheduling solely as reload+1.
 ## World rendering rules (2026-11-22)
 
 **V rules / synthetic implementation checks:** shared underlay/y-ascending/
