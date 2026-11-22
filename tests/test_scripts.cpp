@@ -582,6 +582,30 @@ static void presentation_contracts() {
   sim.init(w); CHECK(w.script_cameras.empty() && w.messages.empty() && w.message_retirement == 0);
 }
 
+static void campaign_outcome_requires_script() {
+  // Empty forces alone must not impose a universal campaign victory or defeat.
+  World w = world();
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+  for (int i = 0; i < 12; ++i) { w.begin_tick(); sim.tick(w); }
+  CHECK(w.outcome == kRunning);
+  // An AI outcome cannot finish the human mission; either human outcome latches once.
+  for (bool victory : {false, true}) {
+    World local = world();
+    GameSim attempt(rules(), Modifications::faithful()); attempt.init(local);
+    auto script = runner(local,
+        "trigger(0) conditions always actions side(1).victory end");
+    script.tick(attempt, local); script.tick(attempt, local);
+    local.begin_tick(); attempt.tick(local);
+    CHECK(local.side_outcome[1] == kVictory && local.outcome == kRunning);
+    auto finish = runner(local, std::string("trigger(0) conditions side(local).units == 0 actions side(local).") +
+        (victory ? "victory side(local).defeat" : "defeat side(local).victory") + " end");
+    finish.tick(attempt, local); finish.tick(attempt, local);
+    local.begin_tick(); attempt.tick(local);
+    CHECK(local.outcome == (victory ? kVictory : kDefeat));
+    CHECK(finish.outcome_origin() && finish.outcome_origin()->trigger == 0);
+  }
+}
+
 static void campaign_gates() {
   World w = world(); object(w, 0, 1, -1, 25, 25);
   GameSim sim(rules(), Modifications::faithful()); sim.init(w);
@@ -677,7 +701,7 @@ static void pending_path_uses_previous_latch() {
 
 int main() {
   rectangle_runtime_categories(); gift_detaches_home_and_outcome_precedence(); tactic_lookup_and_money(); presentation_contracts();
-  campaign_gates(); town_tactics_and_capture(); embarked_script_identity(); pending_path_uses_previous_latch();
+  campaign_outcome_requires_script(); campaign_gates(); town_tactics_and_capture(); embarked_script_identity(); pending_path_uses_previous_latch();
   attacked_notification();
   source_locations(); order_and_enablement(); timers(); conditions_and_identity(); paths_and_gifts(); actions_and_outcomes(); defence_loading(); action_observation_contracts(); replay();
   std::puts("Synthetic script contracts passed.");

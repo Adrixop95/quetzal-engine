@@ -184,9 +184,10 @@ void Screen::load_lists() {
   for (int n = 1; n <= 15; n++) {
     std::string spec = "mission_" + std::to_string(n);
     std::string mp = find_file_ci(data_.maps_dir(), spec + ".mp");
-    if (mp.empty()) continue;
-    MissionDef m;
-    std::string title = load_mission(mp, m) && !m.title.empty() ? m.title : label(34, "Mission") + " " + std::to_string(n);
+    if (mp.empty() || !progress_.unlocked(n)) continue;
+    std::string title = label(119, "Mission ") + std::to_string(n);
+    const std::string status = progress_.status(n);
+    if (!status.empty()) title += "  " + status;
     campaign_.push_back({spec, title});
   }
   custom_ = custom_maps(data_.maps_dir());

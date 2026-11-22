@@ -1168,8 +1168,8 @@ freezes presentation-driven simulation and blocks command input. This is an
 engine flow, not the original ending video or full campaign acceptance.
 
 Campaign wins from ordinary menu sessions persist in a separate default engine
-profile, `Saves/engine_campaign.txt`, with a version and fifteen completion bits.
-The campaign list marks completed missions without imposing unverified locks.
+profile, `Saves/engine_campaign.txt`. The 2026-11-22 correction below replaces
+the old fifteen-bit record with the documented scalar progress/unlock rule.
 The file is bounded/validated before replacement; writes stage in an exclusively
 created directory and rename over the active record. Invalid existing profiles
 are preserved and a failed write is reported. A stale `.pending` directory
@@ -2416,3 +2416,34 @@ pool retirement and all ferry tests. The merged Linux Release suite has 82 entri
 C runtime on Windows; drawable-size checks support HiDPI. Fresh native CI remains
 unverified because connector approval policy blocks publishing. See the repair
 notes in [ferry_implementation.md](ferry_implementation.md).
+
+
+## Campaign flow rules update (2026-11-22)
+
+V static reference rules / synthetic engine construction: campaign entries stay
+in numeric order, show Mission/status labels and omit missions above the current
+progress. Progress starts at 1 and advances on victory to
+min(16,max(mission+1,progress)); defeat and earlier replays cannot reduce it.
+The engine record uses version 2 scalar storage and migrates old completion
+masks without writing original profiles. Malformed records and failed writes
+preserve existing data. Updates now occur at mission exit, once per attempt.
+
+Campaign wins below the final threshold and campaign losses no longer play
+custom win/lose movies. Final-threshold wins select final.avi; explicit custom
+worlds select win.avi or lose.avi. Fresh campaign launches alone play the mission
+AVI. Objectives use the third .mit section; editor Notes are not substituted.
+Existing script outcome latching and local-side propagation are retained, with
+new no-script/empty-world and conflicting-outcome regressions.
+
+G: original result UI, automatic termination and the visible return chain remain
+unresolved. The current frozen result overlay, Retry and next-briefing shortcut
+are engine policies. V known / G missing implementation: named original-style
+profiles, separate campaign/custom roots and launcher identity, and imported-save
+campaign progression still depend on task 77 and task 94/V16 work absent here.
+See [campaign flow implementation](campaign_flow_implementation.md) for the full
+V/G comparison, persistence migration, return paths and dependency boundaries.
+
+Release build, all 82 CTest entries (76 pass, six skip) and pre-commit pass.
+Tests use invented data only, including the actual mission-exit persistence path;
+no original executable/reference runtime was run. These checks establish neither
+real campaign reachability nor original UI, profile or save-continuation parity.

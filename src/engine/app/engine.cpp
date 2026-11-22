@@ -520,25 +520,6 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       if (world.outcome != kRunning && !end_shown) {
         end_shown = true; paused = true; pause.open = false; cmdui.cancel_mode();
         consume_input();
-        // V: f_00458e40 selects the installed result movies; final follows the last victory.
-        if (!pt && o.menu_session) {
-          const auto movie = find_file_ci(data.root(), world.outcome == kVictory ? "Video/win.avi" : "Video/lose.avi");
-          if (!movie.empty()) play_video(win, movie);
-          if (world.outcome == kVictory && !world.skirmish && campaign_number(world.mission.file_name) == 15) {
-            const auto final_movie = find_file_ci(data.root(), "Video/final.avi");
-            if (!final_movie.empty()) play_video(win, final_movie);
-          }
-        }
-        if (world.outcome == kVictory && o.menu_session && !pt && !world.original_save && !world.skirmish && campaign_number(world.mission.file_name)) {
-          const std::string path = user_file("Saves/engine_campaign.txt");
-          CampaignProgress progress;
-          std::error_code ec;
-          const bool exists = fs::exists(path, ec);
-          const bool readable = !ec && (!exists || progress.load(path));
-          progress.record(world.mission.file_name, true);
-          fs::create_directories(user_file("Saves"), ec);
-          if (!readable || ec || !progress.save(path)) notify("Campaign progress could not be saved");
-        }
       }
       win.set_gameplay_active(!pt && o.screenshot.empty() && !in.quit && !leave &&
           !pause.open && !submodal && !briefing.open && !settings_options.open &&
@@ -769,6 +750,25 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
         if (spent < want) SDL_Delay(Uint32((want - spent) * 1000));
       }
     }
+    // V: progression and result movies belong to the mission-loop tail.
+    if (!pt && o.menu_session && !world.original_save && world.outcome != kRunning) {
+      const int mission = world.skirmish ? 0 : campaign_number(world.mission.file_name);
+      const std::string path = user_file("Saves/engine_campaign.txt");
+      CampaignProgress progress;
+      std::error_code ec;
+      const bool exists = fs::exists(path, ec);
+      const bool readable = !ec && (!exists || progress.load(path));
+      const auto movie = mission_result_movie(mission, world.outcome == kVictory, progress);
+      if (mission && world.outcome == kVictory) {
+        progress.record(world.mission.file_name, true);
+        fs::create_directories(user_file("Saves"), ec);
+        if (!readable || ec || !progress.save(path)) o.frontend_notice = "Campaign progress could not be saved";
+      }
+      if (!movie.empty()) {
+        const auto installed = find_file_ci(data.root(), "Video/" + movie);
+        if (!installed.empty()) play_video(win, installed);
+      }
+    }
     if (pt) playtest.finish(world);
     if (pt && playtest.failures() > 0) playtest_failed = true;
     win.set_gameplay_active(false);
@@ -822,7 +822,7 @@ int run_engine(const Options& o, std::shared_ptr<const SpriteProvider> provider,
         if (!selected || !opts.menu_script.empty()) break;
         opts.menu_session = true;
         spec = fr.mission;
-        if (opts.script.empty() && fr.resume_save.empty()) {
+        if (opts.script.empty() && fr.resume_save.empty() && !fr.skirmish && campaign_number(spec)) {
           MissionDef mission;
           if (load_mission(resolve_mission(data.maps_dir(), spec), mission) && !mission.avi.empty()) {
             const auto movie = find_file_ci(data.root(), "Video/" + mission.avi);
