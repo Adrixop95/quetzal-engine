@@ -208,6 +208,7 @@ const char* usage_text() {
          "  --no-menu          start the default mission directly instead of the front-end menu\n"
          "  --skirmish         play the named custom mission against computer sides\n"
          "  --menu-session     enable pause and objectives menus when starting a mission directly\n"
+         "  --audio-event-fallbacks  enable approximate mixed-selection and generic order cues\n"
          "  --audio-log FILE  write playback events as text\n"
          "  --no-audio         silent;  --volume V  all audio volumes 0..1\n"
          "  --sfx-volume V --music-volume V --speech-volume V   independent volumes 0..1\n"
@@ -304,6 +305,7 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
     else if (a == "--rules-dir") { if (!next(v)) return false; o.rules_dir = v; }
     else if (a == "--no-sim") o.sim = false;
     else if (a == "--audio-log") { if (!next(v)) return false; o.audio_log = v; }
+    else if (a == "--audio-event-fallbacks") o.audio_event_fallbacks = true;
     else if (a == "--no-audio") o.audio = false;
     else if (a == "--volume" || a == "--sfx-volume" || a == "--music-volume" || a == "--speech-volume") {
       if (!next(v)) return false;

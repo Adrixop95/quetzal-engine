@@ -12,24 +12,69 @@ uint32_t selection_speech_set(int type, int style) {
       type <= 52 || type == 87 ? 2 : 3;
   const int voice = style ? style : native;
   // V: selection groups in f_00453d50; their members remain runtime data.
-  return voice == 1 ? 101 : voice == 2 ? 401 : 301;
+  return speech_list_id(101, voice, 0);
 }
 
-void emit_selection_audio(const World& world, AudioSystem& audio, int style, float cx) {
-  if (!audio.acknowledgement) return;
-  for (const auto id : world.selection.ids) {
+namespace {
+const Object* speaker_for(const World& world, const std::vector<uint32_t>& ids, int style, bool fallback) {
+  const Object* speaker = nullptr;
+  for (const auto id : ids) {
     const auto* object = world.find(id);
     if (!object || object->removed || !object->alive || object->side != world.local_side) continue;
     const auto* type = type_info(object->type);
     if (!type || type->is_structure()) continue;
-    const auto pan = positional_gain(object->cur_x / 256.f - cx, 0);
-    const auto previous = audio.event_trigger;
-    audio.event_tick = world.tick;
-    audio.event_trigger = AudioEvent::Trigger::Selection;
-    audio.queue_speech_set(selection_speech_set(object->type, style), true, pan.left, pan.right);
-    audio.event_trigger = previous;
-    return;
+    if (!speaker) speaker = object;
+    // V: ranking cannot affect the list when every eligible member has the same voice class.
+    // G: the previous first-member approximation is available only by explicit opt-in.
+    if (!fallback && selection_speech_set(speaker->type, style) != selection_speech_set(object->type, style)) return nullptr;
   }
+  return speaker;
+}
+void acknowledge(const World& world, const Object& speaker, uint32_t set,
+                 AudioSystem& audio, float cx, AudioEvent::Trigger trigger) {
+  const auto pan = positional_gain(speaker.cur_x / 256.f - cx, 0);
+  const auto previous = audio.event_trigger;
+  audio.event_tick = world.tick;
+  audio.event_trigger = trigger;
+  audio.queue_speech_set(set, true, pan.left, pan.right);
+  audio.event_trigger = previous;
+}
+}
+
+void emit_selection_audio(const World& world, AudioSystem& audio, int style, float cx) {
+  if (!audio.acknowledgement) return;
+  if (const auto* speaker = speaker_for(world, world.selection.ids, style, audio.event_fallbacks))
+    acknowledge(world, *speaker, selection_speech_set(speaker->type, style), audio, cx, AudioEvent::Trigger::Selection);
+}
+
+void emit_order_audio(const World& world, const Command& command, AudioSystem& audio, int style, float cx) {
+  if (command.side != world.local_side || !audio.acknowledgement) return;
+  const auto* speaker = speaker_for(world, command.ids, style, audio.event_fallbacks);
+  if (!speaker) return;
+  const uint32_t base = selection_speech_set(speaker->type, style);
+  if (!base) return;
+  int offset = -1;
+  if (command.type == Pct::Attack) {
+    const auto* target = world.find(uint32_t(command.a));
+    if (target && target->alive && !target->removed && world.hostile(command.side, target->side)) offset = 2;
+  } else if (command.type == Pct::FollowTeam && command.b == 0) offset = 3;
+  else if (command.type == Pct::Stop && speaker->follow_tactic >= 0) offset = 6;
+  if (offset < 0 && audio.event_fallbacks &&
+      (command.type == Pct::Move || command.type == Pct::Attack ||
+       command.type == Pct::AttackMove || command.type == Pct::Stop)) offset = 3;
+  if (offset >= 0) acknowledge(world, *speaker, base + offset,
+                               audio, cx, AudioEvent::Trigger::Orders);
+}
+
+bool audio_fog_visible(const World& world, float x, float y) {
+  if (world.local_side < 0 || size_t(world.local_side) >= world.visibility.sides.size()) return false;
+  const auto& layer = world.visibility.sides[size_t(world.local_side)];
+  const int tx = int(x / 48), ty = int(y / 48);
+  if (x < 0 || y < 0 || tx >= layer.w || ty >= layer.h) return false;
+  const size_t index = size_t(ty) * layer.w + tx;
+  if (index >= layer.v.size()) return false;
+  const int brightness = world.visibility_brightness ? layer.v[index] : 152 - std::min(152, int(layer.v[index]));
+  return brightness >= 33;
 }
 
 void emit_scene_audio(const World& world, const AnimSpriteProvider& provider,
@@ -38,7 +83,7 @@ void emit_scene_audio(const World& world, const AnimSpriteProvider& provider,
   audio.event_tick = world.tick;
   const auto previous_trigger = audio.event_trigger;
   audio.begin_scene_tick();
-  auto play = [&](const data::SpriteRef& frame, uint64_t key, float x, float y) {
+  auto play = [&](const data::SpriteRef& frame, uint64_t key, float x, float y, bool audible) {
     if (!frame.valid()) return;
     auto dispatch = [&](uint32_t set, bool loop) {
       uint32_t chosen = 0, rate = 65536;
@@ -49,16 +94,17 @@ void emit_scene_audio(const World& world, const AnimSpriteProvider& provider,
         chosen = choice->sound;
         rate = random_pitch_rate(choice->pitch);
       }
-      if (loop) audio.loop_at(key, set, x, y, cx, cy, chosen, rate);
+      if (loop) audio.loop_at(key, set, x, y, cx, cy, chosen, rate, audible);
       else audio.play_set_at(set, x, y, cx, cy, chosen, rate);
     };
-    if (frame.sound_entry && frame.sound > 0) dispatch(uint32_t(frame.sound), false);
+    if (audible && frame.sound_entry && frame.sound > 0) dispatch(uint32_t(frame.sound), false);
     if (frame.loop_sound > 0) dispatch(uint32_t(frame.loop_sound), true);
   };
   for (const auto& o : world.objects) {
     if (o.removed) continue;
     const float x = o.cur_x / 256.f, y = o.cur_y / 256.f;
-    if (!visible(x, y, o.side)) continue;
+    const bool audible = visible(x, y, o.side);
+    if (!audible && audio.event_fallbacks) continue;
     const auto st = object_sprite_state(o, world.side_color(o.side));
     const auto* type = type_info(o.type);
     const auto trigger = type && type->is_structure() ? AudioEvent::Trigger::Building :
@@ -71,17 +117,18 @@ void emit_scene_audio(const World& world, const AnimSpriteProvider& provider,
     for (size_t i = 0; i < frames.size(); ++i) {
       audio.event_trigger = i > 0 && st.attack_tick >= 0 && trigger == AudioEvent::Trigger::Ambient
           ? AudioEvent::Trigger::Combat : trigger;
-      play(frames[i], uint64_t(o.id) << 16 | i, x, y);
+      play(frames[i], uint64_t(o.id) << 16 | i, x, y, audible);
     }
   }
   for (const auto& e : world.effects) {
     audio.event_trigger = AudioEvent::Trigger::Unknown; // Effect ownership alone does not establish its cause.
     const float x = e.x / 256.f, y = e.y / 256.f;
-    if (!visible(x, y, e.side)) continue;
+    const bool audible = visible(x, y, e.side);
+    if (!audible && audio.event_fallbacks) continue;
     data::AnimSet animation(units.get(0x515, uint32_t(e.anim)));
     const auto frame = animation.at_tick(e.slot, e.age, e.loop);
     play(frame, (uint64_t(1) << 63) | (uint64_t(e.source) << 32) |
-        (uint64_t(uint16_t(e.anim)) << 16) | uint16_t(e.slot), x, y);
+        (uint64_t(uint16_t(e.anim)) << 16) | uint16_t(e.slot), x, y, audible);
   }
   audio.end_scene_tick();
   audio.event_trigger = previous_trigger;

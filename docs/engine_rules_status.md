@@ -565,13 +565,22 @@ winning routes, full twenty-minute campaign runs or reference comparisons.
 Private reports/logs are in `work/ai-probe/engine-m{1,4}-{1,2}.*`.
 
 ## Audio (`src/engine/audio/`)
+
+Current rule-by-rule audit: [audio implementation](audio_implementation.md). V rules
+now include request flag rejection/protection, per-slot generation handles, corrected
+voice families, attack/follow/stop-following offsets, local fog threshold 33,
+start-only loop fog gating, and retained/deferred music selection. Synthetic checks
+cover these contracts and original attenuation conversion. G event fallbacks require
+`--audio-event-fallbacks`; descriptor/town/warning publishers, representative ranks,
+fades and menu lifecycle parity remain incomplete. No original executable was run.
+
 | Rule | Status | Notes |
 |---|---|---|
 | Effects from `Snd.xbe`: sound set (`sound_set`) from field [2] of an animation frame, played on the first tick of the frame, random member of the set | V format / engine construction; G native event timing | Supported scene choices and randomized pitch consume the shared simulation MSVC stream before view/device filtering. UI/standalone audio uses an isolated seed-one stream. Descriptor-only sounds, native helper interleaving and fixed/random caller flags remain open; see [implementation](rng_and_tick_order_implementation.md) |
 | Pan = (x - view centre x) clamped to +-4000 hundredths of dB; attenuation: none up to 500 px, linear to -4000 at 800 px, silent beyond | V (`docs/formats.md`), P (100 units = 1 dB) | Scene dispatcher uses the active view visibility predicate; exact reference fog semantics remain open |
 | Music: `Music=N` -> track N, otherwise `MusicMask`; next track when one ends | V (format and ascending cyclic order), V construction / synthetic checks | `music_allowed_mask` in `core/audio`; no simulation RNG or mission-name salt |
 | Animation state loops, building/projectile/effect sounds | V construction / synthetic checks; simulation timing remains P where unresolved | Header loops and frame entries use a read-only scene snapshot; visibility/distance/load/exit cleanup checked in `audio_events` |
-| Independent effects/music/speech gain, acknowledgement suppression and speech WAV/caption API | V construction / synthetic checks, P replacement/duration policy | Separate speech gain, UTF-8 captions, missing-WAV/muted/no-device fallback; six presentation seconds, outside World/hash/replay. Selection/order/announcement producers still need evidenced IDs; see [audio evidence](audio.md) |
+| Independent effects/music/speech gain, acknowledgement suppression and speech WAV/caption API | V construction / synthetic checks, P replacement/duration policy | Separate speech gain, UTF-8 captions, missing-WAV/muted/no-device fallback; six presentation seconds, outside World/hash/replay. Selection and supported order producers use the documented families; town/warning producers remain missing; see [audio implementation](audio_implementation.md) |
 | L6 audio request traces and ordered comparison | V construction / O reference identity and parity | JSONL clone events with dispatch triggers; reference buffer requests require audited private sound/trigger mapping. Global order and one-tick tolerance; absent classes stay unobserved. [L6 evidence and blockers](parity.md#l6-audio-event-comparison-2026-10-29) |
 
 ## Saves

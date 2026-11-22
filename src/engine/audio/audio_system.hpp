@@ -27,6 +27,9 @@ struct AudioEvent {
 const char* audio_trigger_name(AudioEvent::Trigger trigger);
 void write_audio_event(FILE* file, const AudioEvent& event, uint64_t sequence);
 
+// V: unit style 1/2/3 and town race 0/1/2 select Ross/Aztec/Cathayan lists.
+uint32_t speech_list_id(uint32_t ross_set, int native_style, int style);
+
 class AudioSystem {
  public:
   ~AudioSystem();
@@ -37,25 +40,33 @@ class AudioSystem {
   uint64_t event_tick = 0;
   AudioEvent::Trigger event_trigger = AudioEvent::Trigger::Unknown;
   void begin_scene_tick();
-  void loop_at(uint64_t source, uint32_t set, float x, float y, float cx, float cy, uint32_t chosen_sound = 0, uint32_t rate_q16 = 65536);
+  void loop_at(uint64_t source, uint32_t set, float x, float y, float cx, float cy, uint32_t chosen_sound = 0, uint32_t rate_q16 = 65536, bool start_allowed = true);
   void end_scene_tick();
   void stop_effects();
   // V: explicit style overrides the speaker's race; set membership comes from Snd.xbe.
   uint32_t play_speech_set(uint32_t ross_set, int race, int style, bool is_acknowledgement);
   bool device_ok() const { return dev_ != 0; }
   bool bank_ok() const { return bank_ok_; }
+  // Normalized amplitude controls used by the engine UI/CLI.
   void set_volumes(float sfx, float music, float speech = 0.8f);
+  // V: original masters use hundredths of a decibel; <= -4000 is silent.
+  void set_attenuations(int sfx, int music, int speech);
   // Output sampling only; the simulation and internal PCM clock remain unchanged.
   bool set_sampling_rate(int rate);
   int sampling_rate() const { return sampling_rate_; }
   void render_samples(int16_t* out, int frames); // recording backend; also used by SDL
   bool acknowledgement = true, subtitles = true;
+  // G: opt-in compatibility with the previous approximate event dispatch.
+  bool event_fallbacks = false;
   // Explicit speech WAV IDs only. Event/type/race mappings must be evidenced by callers.
   uint32_t play_speech(uint32_t sound_id, bool is_acknowledgement = false);
   // V: replace an unprotected pending tail, retain protected announcements.
   // Playback starts in update(); active speech is never interrupted by this API.
   uint32_t queue_speech_set(uint32_t set, bool is_acknowledgement, float left = 1, float right = 1,
-                            bool protected_pending = true);
+                            bool protected_pending = true, bool replace_pending = true);
+  // V: speech categories 4 (ack), 5 (positional), 6 (offscreen warning).
+  uint32_t queue_speech_at(uint32_t set, int category, int owner, int local_player,
+      float x, float y, float view_x, float view_y, float view_w, float view_h, bool enabled = true);
   const std::string& subtitle() const { return subtitle_; }
 
   // Plays sound set `set_id` (a random member) at world position (x, y) heard from the view centre (cx, cy), all in px.
@@ -63,7 +74,7 @@ class AudioSystem {
   uint32_t play_set_at(uint32_t set_id, float x, float y, float cx, float cy, uint32_t chosen_sound = 0, uint32_t rate_q16 = 65536);
   uint32_t play_sound(uint32_t sound_id, float left = 1, float right = 1);   // direct WAV id (UI)
 
-  // Mission music: `music` = [Globals] Music (exact track when != 0), `mask` = MusicMask; `salt` is retained for source compatibility; tracks play in ascending order.
+  // Mission music: `music` = [Globals] Music (exact track when != 0), `mask` = MusicMask; `salt` is retained for source compatibility; tracks play in ascending order; mask changes wait for the active track.
   void start_music(int music, uint32_t mask, int salt);
   void stop_music();
   void update(double seconds = 0);   // presentation time; starts the next track when one ends
@@ -99,7 +110,7 @@ class AudioSystem {
   std::vector<std::pair<int, std::pair<int, MusicTrack>>> tracks_;   // track number -> (file index, track)
   std::vector<int> allowed_;
   int track_ = 0;
-  size_t pick_ = 0;
+  int music_cursor_ = 0;
   // UI-only and standalone presentation calls retain a separate CRT-default stream.
   uint32_t rand_ = 1;
   uint64_t speech_voice_ = 0;

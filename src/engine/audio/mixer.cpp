@@ -38,19 +38,20 @@ Positional positional_gain(float dx, float dist) {
   return p;
 }
 
-uint64_t Mixer::play(std::shared_ptr<const Pcm> pcm, float l, float r, bool loop, bool speech, bool protected_speech, uint32_t rate_q16) {
+uint64_t Mixer::play(std::shared_ptr<const Pcm> pcm, float l, float r, bool loop, bool speech, bool protected_speech, uint32_t rate_q16, uint8_t flags) {
   if (!pcm || pcm->size() < 2 || rate_q16 == 0 || rate_q16 > 4 * 65536) return 0;
-  const int slot = allocate_slot();
+  const int slot = allocate_slot(flags & 1);
   if (slot < 0) return 0;
-  voices_[slot] = {std::move(pcm), 0, l, r, loop, ++next_voice_, speech, speech && protected_speech};
+  const uint64_t id = (generations_[slot] += 8) + uint64_t(slot);
+  voices_[slot] = {std::move(pcm), 0, l, r, loop, id, speech, (speech && protected_speech) || bool(flags & 2)};
   voices_[slot].step = rate_q16;
-  return next_voice_;
+  return id;
 }
 
-int Mixer::allocate_slot() {
+int Mixer::allocate_slot(bool steal) {
   // V: search cyclically for a free buffer, then an unprotected victim.
   // Music and flagged speech are protected; effects and casual speech are not.
-  for (int pass = 0; pass < 2; ++pass) {
+  for (int pass = 0; pass < (steal ? 2 : 1); ++pass) {
     for (int offset = 1; offset <= kMaxVoices; ++offset) {
       const int slot = (last_slot_ + offset) % kMaxVoices;
       if (slot == music_slot_) continue;
@@ -80,7 +81,7 @@ void Mixer::stop(uint64_t id) {
 bool Mixer::play_music(std::shared_ptr<const void> holder, const int16_t* pcm, size_t frames) {
   stop_music();
   if (!pcm || !frames) return false;
-  music_slot_ = allocate_slot();
+  music_slot_ = allocate_slot(true);
   if (music_slot_ < 0) return false;
   music_holder_ = std::move(holder);
   music_pcm_ = pcm;
