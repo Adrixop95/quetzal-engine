@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include "engine/ui/panel_layout.hpp"
 #include "engine/platform/window.hpp"
 #include "engine/sim/modifications.hpp"
 
@@ -32,6 +33,7 @@ struct Options {
   float zoom = 0;                  // 0 = automatic
   bool has_cam = false;
   float cam_tx = 0, cam_ty = 0;    // initial camera centre in tiles
+  InterfaceLayout interface_layout = InterfaceLayout::Modern;
   bool original_look = false;      // tick-aligned screenshot presentation
   bool wander = false;             // demo simulation: units random-walk (tests interpolation)
   bool edge_scroll = true;

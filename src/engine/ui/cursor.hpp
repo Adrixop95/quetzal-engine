@@ -12,9 +12,9 @@ namespace aztec::engine {
 
 enum class CursorKind {
   Arrow,      // feather (common 1)
-  Attack,     // sword (common 0, cell 0)
-  Move,       // bomb (common 2); command semantics remain provisional
-  Pan,        // hammers (common 5), used while dragging the map
+  Attack,     // common 0; hostile hover in original mode
+  Move,       // common 2; original town service mode 2
+  Pan,        // common 5; original town service mode 1
   ScrollN, ScrollNE, ScrollE, ScrollSE, ScrollS, ScrollSW, ScrollW, ScrollNW,  // ordinary edge-scroll arrows (common 14..21)
   Menu,       // mace (common 4), outside a mission
   Count
@@ -26,6 +26,10 @@ class Cursor {
   bool init(SDL_Renderer* r, SpriteStore& store);
   // (x, y) in output pixels; scale = integer pixel multiplier; time_ms drives animation.
   void draw(SDL_Renderer* r, SpriteStore& store, int x, int y, CursorKind k, int scale, uint32_t time_ms) const;
+  // V precedence and indices from docs/worldview_mouse_cursors.md.
+  static CursorKind original_kind(bool ready, bool modal, bool placing, bool in_world,
+                                  int edge_x, int edge_y, bool box, bool selected,
+                                  int service_mode, bool hostile);
   static CursorKind scroll_kind(int dx, int dy);  // dx,dy in -1..1, not both 0
 
  private:

@@ -328,6 +328,12 @@ if(Python3_Interpreter_FOUND)
   set_tests_properties(audio_parity PROPERTIES LABELS "unit;audio" TIMEOUT 20)
 endif()
 
+add_executable(test_interface_layout tests/test_interface_layout.cpp)
+target_link_libraries(test_interface_layout PRIVATE aztec_engine_lib)
+aztec_warnings(test_interface_layout)
+add_test(NAME interface_layout COMMAND test_interface_layout)
+set_tests_properties(interface_layout PROPERTIES LABELS "unit" TIMEOUT 30)
+
 add_executable(test_campaign_ui tests/test_campaign_ui.cpp)
 target_link_libraries(test_campaign_ui PRIVATE aztec_engine_lib)
 aztec_warnings(test_campaign_ui)

@@ -193,6 +193,7 @@ const char* usage_text() {
          "  --no-vsync         disable vsync;  --software  force software renderer;  --fps N  frame cap\n"
          "  --zoom Z           initial zoom (0.5 .. 4); default automatic\n"
          "  --cam X,Y          initial camera centre in tiles\n"
+         "  --layout modern|original  in-game interface (default modern)\n"
          "  --original-look    tick positions and original palette lighting for captures\n"
          "  --wander           demo simulation: units walk randomly (shows 12 Hz tick interpolation)\n"
          "  --no-sprites       draw placeholder markers instead of sprites\n"
@@ -295,6 +296,12 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err, bool& us
       if (!next(v)) return false;
       if (std::sscanf(v, "%f,%f", &o.cam_tx, &o.cam_ty) != 2) { err = "bad --cam"; return false; }
       o.has_cam = true;
+    }
+    else if (a == "--layout") {
+      if (!next(v)) return false;
+      if (std::string(v) == "original") o.interface_layout = InterfaceLayout::Original;
+      else if (std::string(v) == "modern") o.interface_layout = InterfaceLayout::Modern;
+      else { err = "bad --layout: expected modern or original"; return false; }
     }
     else if (a == "--original-look") o.original_look = true;
     else if (a == "--wander") o.wander = true;

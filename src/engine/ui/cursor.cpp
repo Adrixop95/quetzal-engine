@@ -23,6 +23,18 @@ CursorKind Cursor::scroll_kind(int dx, int dy) {
   return t[(dy < 0 ? 0 : dy > 0 ? 2 : 1)][(dx < 0 ? 0 : dx > 0 ? 2 : 1)];
 }
 
+CursorKind Cursor::original_kind(bool ready, bool modal, bool placing, bool in_world,
+                                 int edge_x, int edge_y, bool box, bool selected,
+                                 int service_mode, bool hostile) {
+  if (!ready) return CursorKind::Arrow;
+  if (modal || placing || !in_world) return CursorKind::Menu;
+  if (edge_x || edge_y) return scroll_kind(edge_x, edge_y);
+  if (box || !selected) return CursorKind::Menu;
+  if (service_mode == 2) return CursorKind::Move;
+  if (service_mode != 0) return CursorKind::Pan;
+  return hostile ? CursorKind::Attack : CursorKind::Menu;
+}
+
 bool Cursor::init(SDL_Renderer* r, SpriteStore& store) {
   // V: ordinary scrolling uses 14..21; 6..13 are the blocked variants.
   static const uint32_t ids[] = {1, 0, 2, 5, 14, 21, 20, 19, 18, 17, 16, 15, 4};
