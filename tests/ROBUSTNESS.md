@@ -74,7 +74,7 @@ the existing APIs. WAV data payloads retain the documented clamping behavior
 for partial track reads.
 
 Engine replay-save checks are separate from the original-save container tests.
-`engine_save` and `engine_save_processes` cover AZS3 and AZC1 malformed inputs,
+`engine_save` and `engine_save_processes` cover AZS3 and AZC2 malformed inputs (including rejection of old replay semantics and AZC1),
 repaired-checksum mutations, fixed-seed fuzzing, bounded ticks/counts/files,
 transactional outputs, content identity, replay mismatch refusal, atomic slot
 replacement and fresh-process continuation. The process check injects a real

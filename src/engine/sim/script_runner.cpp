@@ -346,7 +346,6 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
     case ActKind::SideVictory: case ActKind::SideDefeat: {
       uint8_t r = a.kind == ActKind::SideVictory ? kVictory : kDefeat;
       if (side >= 0 && side < 8 && w.side_outcome[side] == kRunning) w.side_outcome[side] = r;
-      if (side == w.script_side && w.outcome == kRunning) w.outcome = w.side_outcome[side];
       break;
     }
     case ActKind::SideAddMoney:
@@ -524,10 +523,12 @@ void ScriptRunner::tick(GameSim& sim, World& w) {
       ++trace.executions;
       trace.last_tick = elapsed_ticks_;
       for (const Action& a : t.actions) {
-        const auto before = w.outcome;
+        const int outcome_side = w.script_side;
+        const bool valid_side = outcome_side >= 0 && outcome_side < 8;
+        const auto before = valid_side ? w.side_outcome[outcome_side] : uint8_t(kRunning);
         run(sim, w, a);
-        if (before == kRunning && w.outcome != kRunning)
-          outcome_origin_ = ScriptOutcomeOrigin{t.id, a.line, w.tick};
+        if (valid_side && before == kRunning && w.side_outcome[outcome_side] != kRunning)
+          outcome_origin_ = ScriptOutcomeOrigin{t.id, a.line, std::max(sim.tick_count(), w.tick)};
       }
     }
     // Even a self-disabling action completes this update and re-latches.

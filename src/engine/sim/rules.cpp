@@ -11,6 +11,7 @@
 
 #include "engine/world/type_info.hpp"
 #include "engine/sim/sight.hpp"
+#include "engine/sim/sound.hpp"
 #include "engine/assets/daylight.hpp"
 #include "core/loader_limits.hpp"
 #include "core/mapfiles.hpp"
@@ -22,6 +23,16 @@ bool RulesData::load_combat_animations(const std::string& units_xbe) {
   combat_animations_.reset();
   if (!sprites->open(units_xbe)) return false;
   combat_animations_ = std::move(sprites);
+  return true;
+}
+
+bool RulesData::load_audio(const std::string& game_dir) {
+  auto inputs = std::make_shared<SoundData>();
+  const auto units = find_file_ci(game_dir + "/Res", "Units.xbe");
+  audio_.reset();
+  if (!inputs->sprites.open(units) || !inputs->units.open(units) ||
+      !inputs->bank.open(find_file_ci(game_dir + "/Res", "Snd.xbe"))) return false;
+  audio_ = std::move(inputs);
   return true;
 }
 

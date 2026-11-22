@@ -179,6 +179,8 @@ static void test_point_payload(const std::shared_ptr<RulesData>& rules) {
   for (int i = 0; i <= kWeaponQueryLimit; ++i)
     dense.objects.push_back(object(i + 1, 0, 0, 500, 400));
   GameSim group(rules); group.init(dense);
+  // Freeze synthetic overlaps: this control isolates the query limit after the unit phase.
+  for (auto& target : dense.objects) target.mover = -1;
   Effect hit; hit.kind = aztec::data::EffectClass::BallExpl; hit.flight = true;
   hit.payload_id = 45; hit.source = 999;
   hit.x = hit.end_x = to_fixed(500); hit.y = hit.end_y = to_fixed(400);

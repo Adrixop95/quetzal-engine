@@ -60,6 +60,19 @@ static Bytes animation() {
   return b;
 }
 int main(int argc, char** argv) {
+  CHECK(random_pitch_rate(0) == 49152 && random_pitch_rate(32767) == 81920);
+  {
+    Mixer pitched; pitched.sfx_volume = 1;
+    auto ramp = std::make_shared<Pcm>(Pcm{0,0, 4000,4000, 8000,8000, 12000,12000});
+    CHECK(pitched.play(ramp, 1, 1, false, false, true, random_pitch_rate(32767)) != 0);
+    int16_t output[8]; pitched.mix(output, 4);
+    CHECK(output[0] == 0 && output[2] == 5000 && output[4] == 10000 && output[6] == 12000);
+    CHECK(pitched.active_voices() == 0);
+    CHECK(pitched.play(ramp, 1, 1, true, false, true, random_pitch_rate(0)) != 0);
+    pitched.mix(output, 4);
+    CHECK(output[0] == 0 && output[2] == 3000 && output[4] == 6000 && output[6] == 9000);
+    CHECK(pitched.active_voices() == 1);
+  }
   TempDir directory;
   const auto& root = directory.path();
   std::filesystem::create_directory(root / "Res");
@@ -414,6 +427,37 @@ int main(int argc, char** argv) {
   // Identical commands and seed must yield identical complete state hashes at every tick.
   // Exercise real movement and commands with dispatch disabled, muted and audible, changing views and mix cadence.
   auto rules = std::make_shared<RulesData>(); rules->init_defaults();
+  const auto sound_root = root / "simulation-audio";
+  std::filesystem::create_directories(sound_root / "Res");
+  sets[0].resize(8); put(sets[0], 0, 1); put(sets[0], 4, 3);
+  write(sound_root / "Res/Snd.xbe", archive({{0x460, {wav(), Bytes{}, wav(8)}}, {0x3e8, sets}}));
+  std::filesystem::copy_file(root / "Res/Units.xbe", sound_root / "Res/Units.xbe");
+  CHECK(rules->load_audio(sound_root.string()));
+  {
+    World scene; scene.terrain.w = scene.terrain.h = 4; scene.terrain.cells.resize(16);
+    GameSim choices(rules); choices.init(scene);
+    Effect cue; cue.anim = 200; cue.slot = 1; cue.lifetime = 10; cue.age = -1;
+    scene.effects.push_back(cue);
+    scene.begin_tick(); choices.tick(scene);
+    CHECK(scene.sound_choices.size() == 2);
+    if (scene.sound_choices.size() == 2) {
+      CHECK(scene.sound_choices[0].set == 1 && scene.sound_choices[0].sound == 1 &&
+            scene.sound_choices[0].pitch == 7719 && !scene.sound_choices[0].loop);
+      CHECK(scene.sound_choices[1].set == 2 && scene.sound_choices[1].pitch == 2437 && scene.sound_choices[1].loop);
+    }
+    CHECK(choices.random_state() == 159719620u);
+    AudioSystem backend; CHECK(backend.init(sound_root.string(), false));
+    std::vector<AudioEvent> resolved;
+    backend.event_sink = [&](const auto& e) { resolved.push_back(e); };
+    emit_scene_audio(scene, provider, units, backend, 0, 0, [](float, float, int) { return true; });
+    CHECK(resolved.size() == 2 && resolved[0].sound == 1); // local seed one would choose the other member
+    CHECK(choices.random_state() == 159719620u);
+    scene.begin_tick(); choices.tick(scene);
+    CHECK(choices.random_state() == 159719620u && scene.sound_choices.size() == 1);
+    Command pause; pause.type = Pct::PauseOn; choices.submit(pause);
+    scene.begin_tick(); choices.tick(scene);
+    CHECK(choices.random_state() == 159719620u && scene.sound_choices.size() == 1 && scene.sound_choices[0].loop);
+  }
   World initial; initial.terrain.w = initial.terrain.h = 24; initial.terrain.cells.resize(24 * 24);
   initial.mission.sides.resize(1); initial.mission.sides[0].index = 0;
   initial.selection.ids = {1};
@@ -435,6 +479,8 @@ int main(int argc, char** argv) {
       silent_sim.submit(command); presented_sim.submit(command);
     }
     silent.begin_tick(); presented.begin_tick(); silent_sim.tick(silent); presented_sim.tick(presented);
+    CHECK(silent.simulation_sounds && presented.simulation_sounds);
+    for (const auto& choice : silent.sound_choices) CHECK(choice.pitch <= 32767 && choice.sound != 0);
     audio.set_volumes(t % 2 ? 0 : 1, t % 3 ? 0 : 1, t % 5 ? 0 : 1);
     audio.acknowledgement = t % 7; audio.subtitles = t % 11;
     emit_scene_audio(presented, provider, units, audio, float(t % 1000), 0,
@@ -522,5 +568,6 @@ int main(int argc, char** argv) {
       CHECK(device.current_track() == track);
     }
   }
+  CHECK(silent_sim.random_state() != 0);
   return failures ? 1 : 0;
 }

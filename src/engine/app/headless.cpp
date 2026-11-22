@@ -270,6 +270,7 @@ int run_headless(int argc, char** argv) {
     auto rules = std::make_shared<RulesData>();
     if (!rules->load_dir(rules_dir)) throw std::runtime_error("cannot load rules from " + rules_dir);
     rules->load_sight(data.root());
+    rules->load_audio(data.root());
     rules->load_combat_animations(find_file_ci(data.root() + "/Res", "Units.xbe"));
     auto session = std::make_unique<GameSim>(rules, modifications);
     Script script;
@@ -297,7 +298,7 @@ int run_headless(int argc, char** argv) {
         tables.emplace_back(entry.path().filename().string(), entry.path().string());
     std::sort(tables.begin(), tables.end());
     inputs.insert(inputs.end(), tables.begin(), tables.end());
-    for (const char* name : {"Res/Light.xbe", "Res/Units.xbe", "Aztec.exe"})
+    for (const char* name : {"Res/Light.xbe", "Res/Units.xbe", "Res/Snd.xbe", "Aztec.exe"})
       inputs.emplace_back(name, find_file_ci(data.root(), name));
     uint64_t content = 0;
     if (!save_content_hash(inputs, content)) throw std::runtime_error("cannot fingerprint simulation inputs");

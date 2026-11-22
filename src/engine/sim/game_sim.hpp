@@ -2,6 +2,7 @@
 // See docs/engine_rules_status.md for which rules are verified against the original and which are placeholders.
 #pragma once
 #include <memory>
+#include <map>
 #include <functional>
 #include <string>
 #include <vector>
@@ -10,6 +11,8 @@
 #include "engine/sim/modifications.hpp"
 #include "engine/sim/path/mover.hpp"
 #include "engine/sim/rules.hpp"
+#include "engine/sim/random.hpp"
+#include "engine/sim/pool_order.hpp"
 #include "engine/sim/script_runner.hpp"
 #include "engine/sim/simulation.hpp"
 
@@ -49,9 +52,10 @@ class GameSim : public Simulation {
   const std::vector<Command>& pending_commands() const { return pending_; }
   bool has_pending_commands() const { return !pending_.empty(); }
   uint64_t tick_count() const { return tick_; }
+  uint32_t random_state() const { return random_; }
   const std::vector<LoggedCommand>& log() const { return log_; }
   // Hash contract 2: future-affecting mutable state, given identical rules/sight inputs.
-  // Excludes local selection, camera, audio and diagnostics. Includes queued commands.
+  // Excludes local selection, camera, playback and diagnostics. Includes simulation sound choices and queued commands.
   uint64_t state_hash(const World& w) const;
 
   // Synchronous, read-only diagnostics. Events occur inside the tick, before death handling.
@@ -131,7 +135,7 @@ class GameSim : public Simulation {
   void path_tactic(UnitTactic& t, const Object& leader, int x, int y);
   bool advance_aircraft(Object& object, path::Vec2 goal, bool attacking, int range = 0);
   void run_tower(World& world, Object& tower);
-  void advance_effects(World& w);
+  void advance_effects(World& w, bool projectiles);
   void advance_attack(World& w, Object& source);
   void fire(World& w, const Object& source, Object& target, int damage);
   void fire_weapon(World& w, const WeaponRules& weapon, const Object& source, Object& target, int damage);
@@ -140,8 +144,11 @@ class GameSim : public Simulation {
   void sync_movement(World& w);
   void update_animation_state(World& w);
   void update_fog(World& w);
+  void choose_scene_sounds(World& w);
+  std::map<uint64_t, SoundChoice> sound_loops_;
   void run_ai(World& w);   // sim/ai.cpp
   void kill(World& w, Object& o);
+  void retire(World& w, Object& o) { o.removed = true; object_order_.erase(uint32_t(&o - w.objects.data()) + 1); }
   uint32_t spawn(World& w, int type, int side, int px, int py, int hp, bool constructing);
   void attach_agent(Object& o);
   bool menu_ok(const World& w, int side, const BuildItem& it, int town, const char** why, const QueueItem* reservation = nullptr, bool admission = false) const;
@@ -156,14 +163,7 @@ class GameSim : public Simulation {
   void initialize_gold(const World& w, Object& object);
   void initialize_repair(const World& w, Object& object, int clock = -1);
   bool automatic_site(const World& w, int side, int type, int tx, int ty, int town) const;
-  // Combat scatter is isolated from decoration choices. Reference RNG parity is pending.
-  uint32_t next_combat_rand() {
-    combat_rng_ = (combat_rng_ ? combat_rng_ : 12345u) * 1664525u + 1013904223u;
-    return combat_rng_ >> 8;
-  }
-  uint32_t combat_rng_ = 0;
-  // Only spawn variants and effect slots consume this stream; audio has its own stream.
-  uint32_t next_visual_rand() { visual_rng_ = visual_rng_ * 1664525u + 1013904223u; return visual_rng_ >> 8; }
+  uint32_t next_rand() { return msvc_rand(random_); }
 
   std::shared_ptr<const RulesData> rules_;
   path::NavGrid nav_;
@@ -173,7 +173,8 @@ class GameSim : public Simulation {
   std::vector<Command> pending_;
   std::vector<LoggedCommand> log_;
   bool paused_ = false;
-  uint32_t visual_rng_ = 12345;
+  PoolOrder object_order_;
+  uint32_t random_ = 0; // SP/campaign mission-load seed; never reseed a zero state during draws
   uint32_t spawn_counter_ = 0;
   uint64_t tick_ = 0;
   int64_t income_total_[8] = {};

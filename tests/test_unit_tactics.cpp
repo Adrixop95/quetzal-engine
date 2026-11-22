@@ -168,6 +168,9 @@ static void retaliation(std::shared_ptr<RulesData> rules) {
     w.effects.push_back(hit); step(sim, w);
     const auto& t = w.unit_tactics.at({0, 5});
     CHECK(std::find(t.enemies.begin(), t.enemies.end(), TacticKey{1, 8}) != t.enemies.end());
+    // Projectile hits notify tactics after unit updates; retaliation starts next tick.
+    CHECK(w.objects[0].target == 0);
+    step(sim, w);
     if (mode == 0 || (mode == 1 && moving)) CHECK(w.objects[0].target == 0);
     else CHECK(w.objects[0].target == 2);
   }

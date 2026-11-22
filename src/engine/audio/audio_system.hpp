@@ -37,7 +37,7 @@ class AudioSystem {
   uint64_t event_tick = 0;
   AudioEvent::Trigger event_trigger = AudioEvent::Trigger::Unknown;
   void begin_scene_tick();
-  void loop_at(uint64_t source, uint32_t set, float x, float y, float cx, float cy);
+  void loop_at(uint64_t source, uint32_t set, float x, float y, float cx, float cy, uint32_t chosen_sound = 0, uint32_t rate_q16 = 65536);
   void end_scene_tick();
   void stop_effects();
   // V: explicit style overrides the speaker's race; set membership comes from Snd.xbe.
@@ -60,7 +60,7 @@ class AudioSystem {
 
   // Plays sound set `set_id` (a random member) at world position (x, y) heard from the view centre (cx, cy), all in px.
   // Returns the WAV sound id chosen, 0 if none / not audible.
-  uint32_t play_set_at(uint32_t set_id, float x, float y, float cx, float cy);
+  uint32_t play_set_at(uint32_t set_id, float x, float y, float cx, float cy, uint32_t chosen_sound = 0, uint32_t rate_q16 = 65536);
   uint32_t play_sound(uint32_t sound_id, float left = 1, float right = 1);   // direct WAV id (UI)
 
   // Mission music: `music` = [Globals] Music (exact track when != 0), `mask` = MusicMask; `salt` is retained for source compatibility; tracks play in ascending order.
@@ -100,7 +100,8 @@ class AudioSystem {
   std::vector<int> allowed_;
   int track_ = 0;
   size_t pick_ = 0;
-  uint32_t rand_ = 7;
+  // UI-only and standalone presentation calls retain a separate CRT-default stream.
+  uint32_t rand_ = 1;
   uint64_t speech_voice_ = 0;
   struct SpeechRequest { uint32_t id, set; bool acknowledgement; float left, right; AudioEvent::Trigger trigger; bool protected_pending; };
   std::deque<SpeechRequest> speech_queue_;

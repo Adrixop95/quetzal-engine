@@ -29,7 +29,7 @@ std::vector<uint8_t> serialize_log(const std::vector<LoggedCommand>& log) {
     bytes += 28 + 4 * l.cmd.ids.size();
     if (bytes > kMaxLogBytes) return {};
   }
-  std::vector<uint8_t> v{'A', 'Z', 'C', '1'};
+  std::vector<uint8_t> v{'A', 'Z', 'C', '2'};
   v.reserve(bytes);
   put32(v, uint32_t(log.size()));
   for (const LoggedCommand& l : log) {
@@ -44,7 +44,7 @@ std::vector<uint8_t> serialize_log(const std::vector<LoggedCommand>& log) {
 
 bool deserialize_log(const std::vector<uint8_t>& v, std::vector<LoggedCommand>& out) {
   std::vector<LoggedCommand> parsed;
-  if (v.size() > kMaxLogBytes || v.size() < 8 || std::memcmp(v.data(), "AZC1", 4) != 0) return false;
+  if (v.size() > kMaxLogBytes || v.size() < 8 || std::memcmp(v.data(), "AZC2", 4) != 0) return false;
   size_t o = 4;
   uint32_t n;
   if (!get32(v, o, n) || n > kMaxLogCommands || n > (v.size() - o) / 28) return false;

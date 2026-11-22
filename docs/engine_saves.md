@@ -11,9 +11,10 @@ load it. Imported original-save worlds cannot use this replay format.
 
 ## Compatibility and encoding
 
-New writes use AZS3. AZS2, older AZS3 layouts and unknown format or replay versions are refused with
-an explicit unsupported-version message;
-there is no automatic migration. `kSaveFormatVersion` describes the byte layout.
+New writes use AZS3 layout 5. Layout 4 remains readable with current replay
+semantics and upgrades to layout 5 when written. AZS2, other layouts and
+incompatible replay versions are refused with an explicit unsupported-version
+message; old simulation behavior is not migrated. `kSaveFormatVersion` describes the byte layout.
 `kSaveReplayVersion` must change whenever engine simulation semantics or hashing
 change incompatibly, even if the byte layout remains the same. This is an
 explicit compatibility policy. The current field audit and its limits are in
@@ -25,17 +26,17 @@ IEEE-754 binary32. The layout, in order, is:
 | Field | Encoding |
 | --- | --- |
 | Magic | Four bytes `AZS3` |
-| Format version, replay version | Two u32 values, currently 5 and 7 |
+| Format version, replay version | Two u32 values, currently 5 and 14 |
 | Mission length, mission | u32 byte count, then ASCII basename bytes without a terminator |
 | Tick, state hash, script hash, content hash | Four u64 values |
 | Camera x, y, zoom | Three binary32 values |
-| Command-log length, log | u32 byte count, then an AZC1 log |
+| Command-log length, log | u32 byte count, then an AZC2 log |
 | Viewing side | u32, 0 through 7 |
 | Local UI selection | u32 count, then that many u32 object IDs in selection order |
 | Initial modifications | Validated u32 modification bitset; unknown combinations refused |
 | Integrity checksum | u64 over every preceding byte |
 
-AZC1 contains its four-byte magic, a u32 command count, then records containing
+AZC1 logs are refused after the RNG/tick-order semantics change. AZC2 contains its four-byte magic, a u32 command count, then records containing
 u64 tick, u32 packed type/side, three signed 32-bit command arguments, u32 ID
 count and that many u32 IDs. The packed type occupies bits 0-7, side bits 8-15;
 upper bits must be zero. Signed arguments retain their two's-complement bits.
@@ -49,7 +50,7 @@ parser independently of this integrity gate.
 Both mission runners fingerprint the resolved mission definition, selected terrain map,
 optional passability/resource/visibility/script files, all CSV files in the
 selected rules directory, and optional sight inputs from the selected game
-installation (`Light.xbe`, `Units.xbe`, `Aztec.exe`). Explicit `--game` selection
+installation (`Light.xbe`, `Units.xbe`, `Snd.xbe`, `Aztec.exe`). Explicit `--game` selection
 applies to simulation sight and fingerprints as well as mission loading; an
 unselected `AZTEC_GAME` directory cannot alter either. File tags, absence markers
 and file digests participate; absolute installation paths do not. CSV entries

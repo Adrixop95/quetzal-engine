@@ -169,9 +169,9 @@ static void duels(const std::shared_ptr<RulesData>& r) {
       CHECK(replay->state_hash(replay_world) == sim.state_hash(w));
     }
     // V: 7 damage per release, 4 animation ticks, reload+1=3; starts at 1,6,11,...
-    // A 20-HP opponent needs three hits. Stable object order resolves the lethal tick first.
+    // A 20-HP opponent needs three hits. The newer opponent releases its final shot first.
     CHECK(!w.objects.back().alive);
-    CHECK(w.objects[0].hp == (group ? 12 : 26));
+    CHECK(w.objects[0].hp == (group ? 0 : 19));
     if (group) CHECK(w.objects[1].hp == 40 && !w.objects[2].alive);
   }
 }

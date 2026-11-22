@@ -40,8 +40,20 @@ void emit_scene_audio(const World& world, const AnimSpriteProvider& provider,
   audio.begin_scene_tick();
   auto play = [&](const data::SpriteRef& frame, uint64_t key, float x, float y) {
     if (!frame.valid()) return;
-    if (frame.sound_entry && frame.sound > 0) audio.play_set_at(uint32_t(frame.sound), x, y, cx, cy);
-    if (frame.loop_sound > 0) audio.loop_at(key, uint32_t(frame.loop_sound), x, y, cx, cy);
+    auto dispatch = [&](uint32_t set, bool loop) {
+      uint32_t chosen = 0, rate = 65536;
+      if (world.simulation_sounds) {
+        const auto choice = std::find_if(world.sound_choices.begin(), world.sound_choices.end(),
+            [&](const auto& c) { return c.source == key && c.set == set && c.loop == loop; });
+        if (choice == world.sound_choices.end() || choice->sound == 0) return;
+        chosen = choice->sound;
+        rate = random_pitch_rate(choice->pitch);
+      }
+      if (loop) audio.loop_at(key, set, x, y, cx, cy, chosen, rate);
+      else audio.play_set_at(set, x, y, cx, cy, chosen, rate);
+    };
+    if (frame.sound_entry && frame.sound > 0) dispatch(uint32_t(frame.sound), false);
+    if (frame.loop_sound > 0) dispatch(uint32_t(frame.loop_sound), true);
   };
   for (const auto& o : world.objects) {
     if (o.removed) continue;

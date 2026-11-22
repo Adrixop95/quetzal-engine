@@ -25,7 +25,7 @@ struct TownState {
   std::vector<int> known_towns;
   std::vector<Intelligence> knowledge;
   std::vector<PlanEntry> plan;
-  uint32_t random = 1; // G: isolated planner seed until the original shared RNG is modeled
+  uint32_t random = 0; // Pure planner input/output; GameSim supplies its shared mission stream
   uint64_t plan_generation = 0;
 };
 struct Offer {
