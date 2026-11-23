@@ -31,6 +31,7 @@ static std::shared_ptr<RulesData> rules(const TempDir& dir, int reload = 2) {
                           {14,0,0,0,0,0,0}, {17,0,0,0,0,0,0}});
   auto marine = [](int parameter, int hp, int weapon) {
     std::vector<int> row(18);
+    row[1] = data::kTypeAnims[parameter == 0 ? 0 : parameter == 1 ? 1 : 27].anim;
     row[0] = parameter; row[2] = hp; row[5] = hp;
     row[6] = 2; row[7] = 64; row[8] = weapon; row[12] = 1;
     return row;
@@ -53,7 +54,7 @@ static std::shared_ptr<RulesData> rules(const TempDir& dir, int reload = 2) {
   return result;
 }
 
-static std::string animations(const TempDir& dir, int fire_duration = 1, bool hold = false, int dx = 0) {
+static std::string animations(const TempDir& dir, int fire_duration = 1, bool hold = false, int dx = 0, int extra_id = -1) {
   using Bytes = std::vector<uint8_t>;
   auto put = [](Bytes& bytes, size_t offset, uint32_t value) { write_le(bytes.data() + offset, value); };
   constexpr int count = 100;
@@ -61,7 +62,7 @@ static std::string animations(const TempDir& dir, int fire_duration = 1, bool ho
   put(archive, 0, 1); put(archive, 4, 0x515); put(archive, 8, 20); put(archive, 16, count);
   for (int id = 0; id < count; ++id) {
     put(archive, 20 + id * 4, uint32_t(archive.size()));
-    if (id != data::kTypeAnims[0].anim && id != data::kTypeAnims[1].anim && id != data::kTypeAnims[27].anim) continue;
+    if (id != extra_id && id != data::kTypeAnims[0].anim && id != data::kTypeAnims[1].anim && id != data::kTypeAnims[27].anim) continue;
     Bytes animation(0x208 + 33 * 32);
     std::memcpy(animation.data(), "Anim", 4); put(animation, 4, 3);
     for (int facing = 0; facing < 8; ++facing) {
@@ -287,5 +288,40 @@ int main() {
   CHECK(!r->load_combat_animations((dir.path() / "missing.xbe").string()));
   CHECK(!r->attack_frame(0, 0, 0).known);
   marine_periods();
+  // A supplied descriptor selects its own resource, including explicit zero.
+  auto descriptor = std::vector<int>(20);
+  descriptor[1] = 90; descriptor[2] = 40; descriptor[8] = -1;
+  csv(dir, "desc_marine.csv", {descriptor});
+  CHECK(r->load_dir(dir.path().string()));
+  CHECK(r->load_combat_animations(animations(dir)));
+  CHECK(!r->attack_frame(0, 0, 2).known);
+  CHECK(r->marine_attack_ticks(0, 0) == -1);
+  CHECK(r->load_combat_animations(animations(dir, 1, false, 7, 90)));
+  CHECK(r->attack_frame(0, 0, 2).fire && r->attack_frame(0, 0, 2).dx == 7);
+  CHECK(r->marine_attack_ticks(0, 0) == 4);
+  descriptor[1] = 0;
+  csv(dir, "desc_marine.csv", {descriptor});
+  CHECK(r->load_dir(dir.path().string()));
+  CHECK(r->load_combat_animations(animations(dir)));
+  CHECK(!r->attack_frame(0, 0, 2).known);
+  // Defence selects the descriptor turret, including missing-resource and
+  // explicit-zero cases, rather than the static type's base/turret choice.
+  std::vector<int> defence(69);
+  defence[1] = 90; defence[3] = 90; defence[4] = 40; defence[60] = -1;
+  csv(dir, "desc_defence.csv", {defence});
+  CHECK(r->load_dir(dir.path().string()));
+  CHECK(r->load_combat_animations(animations(dir, 1, false, 7, 90)));
+  CHECK(r->attack_frame(17, 0, 2, 56).fire);
+  defence[3] = 98;
+  csv(dir, "desc_defence.csv", {defence});
+  CHECK(r->load_dir(dir.path().string()));
+  CHECK(r->load_combat_animations(animations(dir, 1, false, 7, 90)));
+  CHECK(!r->attack_frame(17, 0, 2, 56).known);
+  defence[3] = 0;
+  csv(dir, "desc_defence.csv", {defence});
+  CHECK(r->load_dir(dir.path().string()));
+  CHECK(r->load_combat_animations(animations(dir, 1, false, 7, 90)));
+  CHECK(r->attack_frame(17, 0, 2, 56).known);
+  CHECK(!r->attack_frame(17, 0, 2, 56).active); // base slot 8 is absent
   return failures ? 1 : 0;
 }

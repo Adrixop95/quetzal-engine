@@ -68,6 +68,19 @@ class DescriptorFieldsTest(unittest.TestCase):
     def test_all_nonzero_words_have_names_and_statuses(self):
         validate_coverage(self.rules)
 
+    def test_engine_use_matrix_covers_every_word(self):
+        matrix = (ROOT / "docs" / "descriptor_use_matrix.md").read_text()
+        for family, layout in self.rules["descriptor_layouts"].items():
+            section = matrix.split(f"## {family.capitalize()}\n", 1)[1].split("\n## ", 1)[0]
+            rows = re.findall(r"^\| d(\d+) \| `([^`]+)`.*? \| (V|G|unused) \| (Yes|No) \|", section, re.M)
+            expected = [(str(w["index"]), w["name"],
+                         {"verified": "V", "guess": "G", "unused": "unused"}[w["status"]])
+                        for w in layout["words"]]
+            self.assertEqual([row[:3] for row in rows], expected)
+            for index, name, status, used in rows:
+                if status != "V" or name == "name_string_pointer":
+                    self.assertEqual(used, "No", f"{family} d{index}")
+
     def test_missing_word_name_status_or_evidence_fails(self):
         for key in ("name", "status", "evidence"):
             with self.subTest(key=key):

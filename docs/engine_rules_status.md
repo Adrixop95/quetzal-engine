@@ -1,5 +1,43 @@
 # Engine: status of the simulation rules (verified / measured / placeholder)
 
+## Descriptor use audit (2026-11-23)
+
+**V fields / synthetic loader and simulation checks:** the
+[descriptor use matrix](descriptor_use_matrix.md) inventories all 520 layout
+words, including the 201 data-bearing columns, with V/G status and explicit
+consumer locations. Existing rules already connect primary/secondary HP,
+regeneration, fire and physical armour, movement speed, weapon range/reload,
+Building income schedules, footprints and Defence aiming to simulation.
+Price/time and build prerequisites come from separate type/build tables;
+no descriptor word is reinterpreted as a cost, range or transport capacity.
+
+The loader additionally retains auxiliary armour, animation IDs, turret variant
+indices, sound-list IDs, Bird presentation flags and Headtruck/Spider/Cannon turn
+steps. Marine/Defence combat animation lookup now uses loaded resource IDs.
+Types absent from `types.csv` retain defaults rather than inheriting descriptor
+record zero. Guest name-pointer words remain ignored; localized UI names use
+stable ordinals independently.
+
+**G / integration limits:** auxiliary armour has a verified accessor but no known
+damage consumer, so it never becomes resistance. Sound lists, turret variant
+indices, Bird presentation flags and the newly loaded ground turn steps are
+loader metadata; event timing, general renderer integration and complete ground
+turn/firing behavior remain open. Defence d63 is G in the latest shared layout:
+its former height interpretation is removed and Defence projectile height uses
+the explicit zero fallback. This supersedes the older d63 height claim below.
+No unknown or unread field is assigned new behavior. Replay semantics advance
+to 15 because the projectile height and descriptor-selected animation resources
+can change simulation state; older replay saves are rejected explicitly.
+
+Invented descriptors cover all nine families, primary/secondary HP separation,
+regeneration, armour, speed/range/reload, type costs, Defence metadata, footprint
+value 2, schedules and simulation initialization. Additional invented animation
+banks check descriptor-selected resources, explicit zero and missing resources.
+Changes to auxiliary armour, G d63 and guest pointer noise cannot alter tested
+damage or install a projectile height. Matrix checks require every layout word
+and its source evidence status. No original executable or reference runtime was
+run; these checks do not establish game parity or native Windows/macOS execution.
+
 ## Marine shot period (2026-11-22)
 
 **V resource facts / clone construction / synthetic checks:** Marine cooldown
@@ -164,7 +202,7 @@ and `engine` checks pass with the complete private map copy under dummy SDL in
 | Stop (0x50) and AttackMove (0x51) | P | engine extensions; the original has no such packets |
 | Command coordinates / tiles from packets | engine | clamped into the map before any fixed-point conversion; invalid tiles are ignored |
 | Command order inside a tick: ascending sides 0..6, then submission order | V side range/order / G packet mapping | Native one-packet ring, active-side gate and latency remain open; engine batches remain supported. See [RNG/tick implementation](rng_and_tick_order_implementation.md) |
-| Mission RNG and object phase order | V generator/construction / G consumption parity | Shared seed-zero MSVC stream for supported combat, decoration, planner and scene sound choices; logical unit pools walk newest first with LIFO reuse. Effects precede scripts; projectiles follow units; completed time advances last. Missing loading/wind/input/descriptor producers and grouped town/movement/sound phases prevent full sequence parity. Replay semantics 14 / AZC2 |
+| Mission RNG and object phase order | V generator/construction / G consumption parity | Shared seed-zero MSVC stream for supported combat, decoration, planner and scene sound choices; logical unit pools walk newest first with LIFO reuse. Effects precede scripts; projectiles follow units; completed time advances last. Missing loading/wind/input/descriptor producers and grouped town/movement/sound phases prevent full sequence parity. Replay semantics 15 / AZC2 |
 | Descriptor primary/max and secondary HP | V fields / engine checks | All nine descriptor families loaded; mission/spawn maxima never depend on other instances. Positive mission HP is preserved. Original-save +0x3c is secondary HP; maximum comes from rules at simulation initialization. See V04 below |
 | Descriptor regeneration | V inspected thresholds/countdown/overshoot / P facility producer | Marine, Truck, Zeppelin, Bird, Headtruck, Spider and Cannon recover below natural thresholds, or full HP while the hashed service countdown is positive. Pre-add check permits overshoot; countdown expires after the update. Facility coverage/refresh and exact tick alignment remain open |
 | Scripted object health and placement identity | V zero maximum getters / engine identity checks | Boat, Johnka and Camera maximum getters return zero; Submarine records create stationary decoration controllers, not combat units; their scenario actions now use the adapters in [transport_rules.md](transport_rules.md). Town membership uses section numbers, including sparse IDs; team scenario/tactic, defence and vessel provenance remain distinct. Live reference identity still depends on V02 |
