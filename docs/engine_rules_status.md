@@ -76,12 +76,29 @@ animation limit. Footman remains 10 ticks, Rifleman 21 and Demolisher 31;
 Hypno and Chief remain animation-bound at 31 and 12. Invented Footman/Rifleman
 tests cover all facings, both limits, equality and missing-resource fallback.
 
-**G unresolved original timing:** The measured Rifleman 26..27-tick hit gaps
-are not explained by the clone's 10-tick attack sequence. No additional tick
-factor is inferred and no original executable was run. See
-[shot_period_implementation.md](shot_period_implementation.md) for the complete
-Marine duration/period table and evidence limits. This supersedes older
-statements below that describe Marine scheduling solely as reload+1.
+**V static attack path / archived trace audit (2026-11-23):** Marine Think
+`0x433db0` returns attack state 3 to stand state 1; state 5 is an interruptible
+idle fidget, not shot recovery. Reload decrements during movement; ready target
+assignment is synchronous and has no fixed countdown. Animation frame time is
+not an additional attack timer. The archived Rifleman trace shows walking between
+all four attacks and a moving Bear, contradicting the stationary-target premise.
+Attack-start gaps equal the hit gaps, with a constant five-frame release offset.
+The clone already requires completion of an ongoing tile step before firing.
+Synthetic Footman/Rifleman period coverage now also includes reloads 9 and 20,
+requiring stationary periods 10 and 21 across all facings. A further regression
+checks that reload can expire during a tile step, firing waits for arrival, and
+stationary cadence resumes afterward for both Marine types.
+
+**G accounting / parity limit:** with reload 20, the Rifleman is still in state 2
+at each projected reload expiry, for the remaining 6, 5 and 6 ticks before its
+next attack. This accounts for the archived 27, 26 and 27 gaps without a new
+cooldown constant. Reload itself was not logged; controlled stationary launch
+measurements and matching tactic/movement behavior remain unverified. No original
+executable or reference runtime was run. See
+[shot_period_implementation.md](shot_period_implementation.md) for addresses,
+offsets, frame accounting and evidence boundaries. This supersedes the unresolved
+extra-delay hypothesis and older reload-only descriptions below.
+
 ## World rendering rules (2026-11-22)
 
 **V rules / synthetic implementation checks:** shared underlay/y-ascending/

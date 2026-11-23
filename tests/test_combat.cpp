@@ -242,7 +242,7 @@ static void projectile_escape(const std::shared_ptr<RulesData>& r) {
 
 static void marine_periods() {
   // Both type mappings use invented banks and reloads, never extracted fixtures.
-  for (int type : {0, 1}) for (int reload : {2, 4, 6}) for (bool resources : {false, true}) {
+  for (int type : {0, 1}) for (int reload : {2, 4, 6, 9, 20}) for (bool resources : {false, true}) {
     TempDir dir;
     auto r = rules(dir, reload);
     if (resources) CHECK(r->load_combat_animations(animations(dir)));
@@ -280,6 +280,48 @@ static void marine_periods() {
   }
 }
 
+static void marine_reload_during_step() {
+  for (int type : {0, 1}) {
+    TempDir dir;
+    const int period = type == 0 ? 10 : 21;
+    auto r = rules(dir, period - 1);
+    CHECK(r->load_combat_animations(animations(dir)));
+    auto w = fight(); w.objects[0].type = type; w.objects[1].type = 14;
+    w.objects[0].teleport(tile_center_fixed(7), tile_center_fixed(7));
+    w.objects[1].teleport(tile_center_fixed(7), tile_center_fixed(8));
+    GameSim sim(r); sim.init(w); w.objects[1].hp = 10000;
+    attack(sim, 0, {1}, 2); step(w, sim);
+    CHECK(w.objects[0].attack_tick == 0);
+    for (int tick = 0; tick < 10 && w.objects[0].release_target; ++tick) step(w, sim);
+    CHECK(!w.objects[0].release_target && w.objects[0].cooldown > 0);
+    Command move; move.type = Pct::Move; move.side = 0; move.ids = {1};
+    move.a = tile_center_fixed(8) / 256; move.b = tile_center_fixed(7) / 256;
+    sim.submit(move); step(w, sim);
+    CHECK(w.objects[0].cur_x > tile_center_fixed(7));
+    // Preserve the running tile when replacing the walking order with attack.
+    w.objects[0].attack_mode = AttackMode::Balanced;
+    attack(sim, 0, {1}, 2);
+    bool ready_while_walking = false, fired = false;
+    for (int tick = 0; tick < 40; ++tick) {
+      const int before_x = w.objects[0].cur_x;
+      step(w, sim);
+      if (w.objects[0].attack_tick == 0) {
+        CHECK(before_x == tile_center_fixed(8));
+        CHECK(w.objects[0].cooldown == period);
+        fired = true;
+        break;
+      }
+      if (w.objects[0].cooldown == 0 && w.objects[0].cur_x < tile_center_fixed(8))
+        ready_while_walking = true;
+    }
+    CHECK(ready_while_walking && fired);
+    for (int tick = 1; tick <= period; ++tick) {
+      step(w, sim);
+      CHECK((w.objects[0].attack_tick == 0) == (tick == period));
+    }
+  }
+}
+
 int main() {
   TempDir dir;
   auto r = rules(dir); arithmetic(*r);
@@ -287,7 +329,7 @@ int main() {
   ranges_and_pursuit(r); duels(r); release_controls(dir, r); projectile_escape(r);
   CHECK(!r->load_combat_animations((dir.path() / "missing.xbe").string()));
   CHECK(!r->attack_frame(0, 0, 0).known);
-  marine_periods();
+  marine_periods(); marine_reload_during_step();
   // A supplied descriptor selects its own resource, including explicit zero.
   auto descriptor = std::vector<int>(20);
   descriptor[1] = 90; descriptor[2] = 40; descriptor[8] = -1;
