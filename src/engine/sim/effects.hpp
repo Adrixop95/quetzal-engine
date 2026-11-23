@@ -10,6 +10,15 @@ struct SoundChoice {
   bool loop = false;
 };
 
+// One-tick descriptor cues are resolved by the simulation, before view filtering.
+struct CombatSound {
+  uint64_t source = 0;
+  uint32_t set = 0, sound = 0;
+  int32_t x = 0, y = 0;
+  int side = 0, volume_offset = 0; // DirectSound hundredths of a decibel
+  bool loop = false;
+};
+
 struct Effect {
   uint64_t trace_id = 0; // diagnostic identity only; never read by combat rules
   data::EffectClass kind = data::EffectClass::Decoration;

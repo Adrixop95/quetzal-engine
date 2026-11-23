@@ -316,6 +316,7 @@ endif()
 # Synthetic audio banks; no SDL device or game installation required.
 add_executable(test_audio tests/test_audio.cpp)
 target_link_libraries(test_audio aztec_engine_lib)
+target_compile_definitions(test_audio PRIVATE AZTEC_TEST_RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs/data")
 add_test(NAME audio_events COMMAND test_audio)
 set_tests_properties(audio_events PROPERTIES LABELS "unit;audio")
 add_executable(test_audio_trace tests/test_audio_trace.c)

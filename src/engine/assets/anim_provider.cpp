@@ -106,8 +106,14 @@ std::vector<data::SpriteRef> AnimSpriteProvider::sound_frames(const ObjectState&
         (state_of(st) == data::AnimState::Idle || state_of(st) == data::AnimState::Move));
     auto seq = data::turret_sequence(firing ? data::AnimState::Attack : state_of(st),
         st.secondary_angle < 0 ? angle_of(st) : st.secondary_angle, st.initial_turret);
-    frames.push_back(data::SpriteDb::sprite_for_sequence(db_.anim(second), seq,
-        firing && st.attack_tick >= 0 ? st.attack_tick : st.anim_tick));
+    const bool reloading = !firing && kind == 7 && st.turret_reload_tick >= 0;
+    if (reloading) seq = {1, -1, false};
+    auto frame = data::SpriteDb::sprite_for_sequence(db_.anim(second), seq,
+        reloading ? st.turret_reload_tick : firing && st.attack_tick >= 0 ? st.attack_tick : st.anim_tick);
+    if (!frame.valid() && reloading)
+      frame = data::SpriteDb::sprite_for_sequence(db_.anim(second),
+          data::turret_sequence(data::AnimState::Idle, st.secondary_angle), 0);
+    frames.push_back(frame);
   }
   if (include_decorations)
     for (const auto& decoration : decorations(st)) frames.push_back(decoration.frame);
@@ -162,10 +168,12 @@ std::vector<SpriteDraw> AnimSpriteProvider::parts(const ObjectState& st) const {
     const int angle = st.secondary_angle < 0 ? angle_of(st) : st.secondary_angle;
     const bool firing = state == data::AnimState::Attack || (st.attack_tick >= 0 &&
         (state == data::AnimState::Idle || state == data::AnimState::Move));
-    const auto seq = data::turret_sequence(firing ? data::AnimState::Attack : state, angle, st.initial_turret);
-    const int64_t tick = st.attack_tick >= 0 ? st.attack_tick : st.anim_tick;
+    auto seq = data::turret_sequence(firing ? data::AnimState::Attack : state, angle, st.initial_turret);
+    const bool reloading = !firing && kind == 7 && st.turret_reload_tick >= 0;
+    if (reloading) seq = {1, -1, false};
+    const int64_t tick = reloading ? st.turret_reload_tick : st.attack_tick >= 0 ? st.attack_tick : st.anim_tick;
     auto r = data::SpriteDb::sprite_for_sequence(db_.anim(second), seq, tick);
-    if (!r.valid() && firing)
+    if (!r.valid() && (firing || reloading))
       r = data::SpriteDb::sprite_for_sequence(db_.anim(second), data::turret_sequence(data::AnimState::Idle, angle), 0);
     add(r, height(st));
   }

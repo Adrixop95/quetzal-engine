@@ -71,7 +71,8 @@ class AudioSystem {
 
   // Plays sound set `set_id` (a random member) at world position (x, y) heard from the view centre (cx, cy), all in px.
   // Returns the WAV sound id chosen, 0 if none / not audible.
-  uint32_t play_set_at(uint32_t set_id, float x, float y, float cx, float cy, uint32_t chosen_sound = 0, uint32_t rate_q16 = 65536);
+  uint32_t play_set_at(uint32_t set_id, float x, float y, float cx, float cy, uint32_t chosen_sound = 0,
+                       uint32_t rate_q16 = 65536, int volume_offset = 0);
   uint32_t play_sound(uint32_t sound_id, float left = 1, float right = 1);   // direct WAV id (UI)
 
   // Mission music: `music` = [Globals] Music (exact track when != 0), `mask` = MusicMask; `salt` is retained for source compatibility; tracks play in ascending order; mask changes wait for the active track.
