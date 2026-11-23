@@ -2686,3 +2686,35 @@ Validation: final Release build and 83 CTest entries completed with zero failure
 private format/engine checks and a three-frame original-layout clone capture/trace
 also passed with dummy SDL under `unshare -rn` using a private installation copy.
 These are clone checks, not a reference comparison.
+
+## Campaign mission smoke tooling (2026-11-23)
+
+V construction property: `tools/mission_smoke.py` runs all fifteen campaign
+missions with the clone's existing headless simulation, no player orders,
+configurable tick/wall budgets and separate private installation/profile copies.
+Dummy SDL, `unshare -rn` and a hard kill timeout are mandatory. Game selection
+uses the engine configuration resolver; absent data skips clearly. Reports are
+restricted to ignored worktree output and include load/runtime/process errors,
+sanitizer log findings, monotonic tick timing, dormant action/condition inventory
+mapped to native codes through the runtime gap list, and unresolved descriptor
+fallback objects. Normal deterministic headless reports remain unchanged unless
+smoke diagnostics are requested.
+
+The local Release sweep loaded and ran 15/15 missions for the 720-tick budget,
+with zero load failures, crashes or unresolved descriptor objects. Aggregate
+inventory: 255 approximate sites, one intentional parser no-op, zero unsupported
+execution sites; two missing-trigger target diagnostics remain visible. These are
+clone-only bounded checks, not campaign wins, reference measurements or parity.
+The separate ASan/UBSan sweep also passed 15/15 missions at the same budget with
+zero sanitizer log findings. Leak detection was disabled after LeakSanitizer
+failed during configuration under sandbox tracing; leaks remain unverified.
+No mission-specific simulation fix was needed. Existing side-plan execution and
+nested-controller dependencies remain absent or approximate; the diagnostic
+runner does not assume they are integrated.
+
+See [mission_smoke.md](mission_smoke.md) for the method, sanitizer evidence and
+limitations. Synthetic controls cover configuration, dormant gaps, descriptor
+fallback, process/sanitizer failures, private output and continued collection
+after a load failure. Release build and all 85 CTest entries completed with
+79 passes and six skips; separate isolated private format/engine checks passed.
+Native Windows/macOS execution was not verified locally.
