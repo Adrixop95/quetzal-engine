@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -121,6 +122,13 @@ void drive(GameSim& sim, const World& w) {
 }
 
 struct Report {
+  struct Site { int trigger, line; std::string section, kind; };
+  struct Unresolved { int type; uint64_t tick; std::string reason; };
+  bool smoke_diagnostics = false;
+  bool loaded = false;
+  double tick_seconds = 0, max_tick_seconds = 0;
+  std::vector<Site> inventory;
+  std::map<uint32_t, Unresolved> unresolved;
   std::string mission, status = "error", error;
   uint64_t ticks = 0, hash = 0, trace = 1469598103934665603ull;
   size_t unsupported_executions = 0, commands = 0;
@@ -167,13 +175,51 @@ struct Report {
     out << ']';
     out << ",\"stalled_order_ids\":[";
     for (size_t i = 0; i < stalled.size(); ++i) { if (i) out << ','; out << stalled[i]; }
-    out << "]}\n";
+    out << ']';
+    if (smoke_diagnostics) {
+      out << ",\"smoke\":{\"loaded\":" << (loaded ? "true" : "false")
+          << ",\"tick_seconds\":" << tick_seconds << ",\"max_tick_seconds\":" << max_tick_seconds
+          << ",\"script_inventory\":[";
+      for (size_t i = 0; i < inventory.size(); ++i) {
+        if (i) out << ',';
+        const auto& s = inventory[i];
+        out << "{\"trigger\":" << s.trigger << ",\"line\":" << s.line
+            << ",\"section\":" << quoted(s.section) << ",\"kind\":" << quoted(s.kind) << '}';
+      }
+      out << "],\"unresolved_descriptors\":[";
+      bool first = true;
+      for (const auto& [id, u] : unresolved) {
+        if (!first) out << ',';
+        first = false;
+        out << "{\"object\":" << id << ",\"type\":" << u.type << ",\"first_tick\":" << u.tick
+            << ",\"reason\":" << quoted(u.reason) << '}';
+      }
+      out << "]}";
+    }
+    out << "}\n";
+  }
+  void scan_descriptors(const World& world, const RulesData& rules, uint64_t tick) {
+    if (!smoke_diagnostics) return;
+    for (const auto& o : world.objects) {
+      // Untyped submarine decoration controllers deliberately have no unit descriptor.
+      if (o.source == ObjectSource::Submarine) continue;
+      const auto& r = rules.type(o.type);
+      const char* reason = r.kind < 0 ? "unknown type" :
+          r.hp_src == Src::Placeholder ? "missing primary HP descriptor" : nullptr;
+      if (reason) unresolved.try_emplace(o.id, Unresolved{o.type, tick, reason});
+    }
   }
 };
 
 void audit(const Script& script, const World& w, Report& report) {
   bool victory = false;
   for (const auto& t : script.triggers) {
+    if (report.smoke_diagnostics) {
+      for (const auto& c : t.conditions)
+        report.inventory.push_back({t.id, c.line, "condition", condition_name(c.kind)});
+      for (const auto& a : t.actions)
+        report.inventory.push_back({t.id, a.line, "action", action_name(a.kind)});
+    }
     bool objective = false;
     for (const auto& a : t.actions) {
       if (a.kind == ActKind::SideVictory && (a.side == kLocal || a.side == w.script_side)) objective = victory = true;
@@ -214,7 +260,7 @@ int run_headless(int argc, char** argv) {
     if (!configured_game_dir(argc, argv, game, settings_error)) throw std::runtime_error(settings_error);
     std::string cli_profile = "faithful";
     std::vector<std::string> cli_modifications;
-    bool mission_given = false, skirmish = false;
+    bool mission_given = false, skirmish = false, print_game_dir = false;
     for (int i = 1; i < argc; ++i) {
       std::string a = argv[i];
       auto value = [&]() -> std::string {
@@ -222,6 +268,8 @@ int run_headless(int argc, char** argv) {
         return argv[i];
       };
       if (a == "--game") game = value();
+      else if (a == "--print-game-dir") print_game_dir = true;
+      else if (a == "--smoke-diagnostics") report.smoke_diagnostics = true;
       else if (a == "--settings") { value(); }
       else if (a == "--profile") {
         cli_profile = value();
@@ -252,10 +300,15 @@ int run_headless(int argc, char** argv) {
       else if (a == "--no-auto-orders") auto_orders = false;
       else if (a == "--skirmish") skirmish = true;
       else if (a == "--help") {
+        std::puts("Smoke tooling: --print-game-dir resolves configuration without loading data; --smoke-diagnostics adds inventory, unresolved descriptors and simulation tick timing to the report.");
         std::puts("usage: aztec_engine --headless [--settings FILE] --game DIR --rules-dir DIR [--profile faithful|enhanced] [--mod NAME=on|off (parallel_training also 1..8|per-building)] [--max-ticks N] [--order-interval N] [--orders FILE] [--no-auto-orders] [--skirmish] [--report FILE] [--observations FILE [--order-observations]] [--combat-trace FILE] [--ai-trace FILE] [--tactic-trace FILE] [--tick-hashes FILE] [--l0-schedule FILE --l0-output FILE --l0-frames DIR] [--save-at N --save FILE] [--resume FILE] MISSION");
         return 0;
       } else if (a.empty() || a[0] == '-' || mission_given) throw std::runtime_error("unexpected argument: " + a);
       else { report.mission = a; mission_given = true; }
+    }
+    if (print_game_dir) {
+      std::cout << "{\"game\":" << quoted(game) << "}\n";
+      return 0;
     }
     modifications.set_profile(cli_profile);
     for (const auto& option : cli_modifications) modifications.set(option);
@@ -269,6 +322,7 @@ int run_headless(int argc, char** argv) {
     if (skirmish && !setup_skirmish(world, error)) throw std::runtime_error(error);
     auto rules = std::make_shared<RulesData>();
     if (!rules->load_dir(rules_dir)) throw std::runtime_error("cannot load rules from " + rules_dir);
+    report.scan_descriptors(world, *rules, 0);
     rules->load_sight(data.root());
     rules->load_audio(data.root());
     rules->load_combat_animations(find_file_ci(data.root() + "/Res", "Units.xbe"));
@@ -312,6 +366,7 @@ int run_headless(int argc, char** argv) {
       if (!session) throw std::runtime_error(error);
     }
     GameSim& sim = *session;
+    report.loaded = true;
     std::ofstream tactic_trace;
     if (!tactic_path.empty()) {
       if (!resume_path.empty()) throw std::runtime_error("tactic traces require a fresh run");
@@ -423,8 +478,19 @@ int run_headless(int argc, char** argv) {
         sim.submit(std::move(command));
         ++next;
       }
-      world.begin_tick();
-      sim.tick(world);
+      if (report.smoke_diagnostics) {
+        const auto start = std::chrono::steady_clock::now();
+        world.begin_tick();
+        sim.tick(world);
+        const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+        report.tick_seconds += elapsed;
+        report.max_tick_seconds = std::max(report.max_tick_seconds, elapsed);
+        report.ticks = sim.tick_count();
+        report.scan_descriptors(world, *rules, report.ticks);
+      } else {
+        world.begin_tick();
+        sim.tick(world);
+      }
       if (ai_trace.is_open()) {
         ai_trace << "{\"event\":\"tick\",\"tick\":" << tick << "}\n";
         if (!ai_trace) throw std::runtime_error("cannot write AI tick");
