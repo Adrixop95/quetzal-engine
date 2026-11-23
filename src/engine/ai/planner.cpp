@@ -195,7 +195,7 @@ std::vector<PlanEntry> make_plan(const World& w, const RulesData& rules, int tow
   for (int target_type = 0; target_type < 90; ++target_type) {
     if (!rules.type(target_type).flier || !demand[size_t(target_type)]) continue;
     int best = -1, best_score = 0;
-    for (int type : candidates) if (type != 33 && buildable(type, true)) {
+    for (int type : candidates) if (buildable(type, true)) {
       const int strength = matchup(rules, type, target_type);
       if (strength > best_score) { best = type; best_score = strength + draw() % 32; }
     }
@@ -384,25 +384,50 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
     return buy(find(primary)) || buy(find(mines[race]));
   };
   // V: defence candidates follow the reversed type list, then one CRT draw.
-  auto choose = [&](int category) -> const Offer* {
-    if (category == 1) {
-      std::vector<const Offer*> candidates;
-      for (int type = 0; type < 90; ++type)
-        for (const auto& o : offers) if (o.type == type && rules.type(type).kind == 7) candidates.push_back(&o);
-      if (candidates.empty()) return nullptr;
-      return candidates[msvc_rand(s.random) % candidates.size()];
-    }
-    // G: outpost specialization needs the native preference/ranking fields.
-    const Offer* best = nullptr;
-    for (const auto& o : offers) {
-      const auto& r = rules.type(o.type);
-      bool match = category == 1 ? r.kind == 7 : r.kind == 2 && r.dev_level > 0;
-      if (o.placeable && match && (!best || o.price < best->price || (o.price == best->price && o.type < best->type))) best = &o;
-    }
-    return best;
+  auto choose_defence = [&]() -> const Offer* {
+    std::vector<const Offer*> candidates;
+    for (int type = 0; type < 90; ++type)
+      for (const auto& o : offers) if (o.type == type && rules.type(type).kind == 7) candidates.push_back(&o);
+    if (candidates.empty()) return nullptr;
+    return candidates[msvc_rand(s.random) % candidates.size()];
   };
   auto science_offer = [&]() -> const Offer* {
-    if (t.type == 0) return choose(2); // G: specialization preferences are not represented yet.
+    if (t.type == 0) {
+      for (size_t other = 0; other < w.mission.towns.size(); ++other) {
+        const auto& td = w.mission.towns[other];
+        if (other == size_t(town) || td.side != t.side || td.type != 0 || other >= w.ai_towns.size()) continue;
+        const auto& peer = w.ai_towns[other];
+        if (peer.phase == 4 || (s.expansion && peer.expansion &&
+            peer.expansion->priority > s.expansion->priority)) return nullptr;
+      }
+      if (s.expansion) {
+        int selected = 0;
+        for (int preference : s.expansion->preferences) {
+          if (preference == -1) break;
+          if (preference < 1 || preference > 3) continue;
+          const bool occupied = std::any_of(w.mission.towns.begin(), w.mission.towns.end(), [&](const auto& td) {
+            return td.side == t.side && td.race == t.race && td.type == preference;
+          });
+          if (!occupied) { selected = preference; break; }
+        }
+        if (!selected) return nullptr; // V: no free preference has no default.
+        for (int specialization = selected; specialization <= 3; ++specialization) {
+          if (specialization == 3 && t.race == 1) {
+            if (const auto* offer = find(rules.town_building(2, t.race))) return offer;
+            return find(rules.town_building(1, t.race));
+          }
+          if (const auto* offer = find(rules.town_building(specialization, t.race))) return offer;
+        }
+        return nullptr;
+      }
+      // G: until native inputs are available, retain cheapest-offer selection,
+      // restricted to actual hall upgrades rather than arbitrary development.
+      const Offer* best = nullptr;
+      for (int specialization = 1; specialization <= 3; ++specialization)
+        if (const auto* offer = find(rules.town_building(specialization, t.race)); offer &&
+            (!best || offer->price < best->price || (offer->price == best->price && offer->type < best->type))) best = offer;
+      return best;
+    }
     const auto& tree = rules.build_list(t.race, t.type);
     auto present = [&](const Prerequisite& p) {
       return std::any_of(w.objects.begin(), w.objects.end(), [&](const auto& o) {
@@ -449,7 +474,6 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
       int unlocks = 0;
       for (const auto& item : tree) for (const auto& p : item.prereq)
         if (p.type == type && !present(p)) ++unlocks;
-      if (!unlocks) continue;
       // V: recursive costs start at zero and only sum child costs (0x45b940).
       const int score = 10 - unlocks;
       if (score < best_score || (score == best_score && (msvc_rand(s.random) & 127) < 64)) {
@@ -502,7 +526,7 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
     }
     case 4: s.phase = 13; break;
     case 5: case 18: {
-      const auto* defence = choose(1);
+      const auto* defence = choose_defence();
       if (defence && defence->placeable && buy(defence)) s.phase = s.phase == 5 ? 6 : 19;
       else {
         if (defence) s.defence_enabled = false;

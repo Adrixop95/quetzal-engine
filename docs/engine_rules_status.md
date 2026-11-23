@@ -566,13 +566,14 @@ commands are regenerated during replay rather than added to the player command l
 | Town states 0..23, science timer, production suspension, ordinary-building development sum clamped to 9, normal/fast spending comparison | V control flow / synthetic checks | Active construction or a town's queued production suspends transitions; science and speed continue. Queued map construction counts once toward development, even when it already has an object. State 0 has no loaded side-plan arbitration yet. Science now resolves recursive prerequisites and ranks general unlocks with seeded ties; timer admission/completion/cancellation follows the documented lifecycle. Autonomous outpost specialization still needs native preference/priority fields; see [AI completion matrix](ai_completion_matrix.md) |
 | Income and spending estimates | V comparison / G producer adapter | Cash per side town divided by elapsed time, plus an instantaneous resource-weighted producer estimate, is compared with twice cumulative spending divided by elapsed time. Actual harvested/spent totals are retained per town. Native producer getter fidelity remains open |
 | Economic requests | V preference / P placement | After three farms and no warehouse the primary request is the warehouse, otherwise the farm; primary failure falls back to mine. Failed phase-7 requests clear the economy flag; hall completion enables it. Uses existing resource-map harvests; no passive AI grant or worker-gather command is invented |
-| Plan composition | V arithmetic / G adapters | Per-enemy M*W scoring with 0..63 noise, asymmetric need minus all prior picks, side-maximum-development batches, 256 entries, 32 reusable units per type and type 33 exclusion. Reuse exhaustion reselects a candidate. The observable last-wanted-candidate bug is retained. Candidate rows are scanned from high type to low; shared RNG ordering and tactic eligibility remain G. The completion matrix supersedes older ascending-order/direct-prerequisite notes in [ai_implementation.md](ai_implementation.md) |
+| Plan composition | V arithmetic / G adapters | Per-enemy M*W scoring with 0..63 noise, asymmetric need minus all prior picks, side-maximum-development batches, 256 entries, 32 reusable units per type and main-pass type 33 exclusion. The airborne pass has no such exclusion. Reuse exhaustion reselects a candidate. The observable last-wanted-candidate bug is retained. Candidate rows are scanned from high type to low; shared RNG ordering and tactic eligibility remain G. The completion matrix supersedes older ascending-order/direct-prerequisite notes in [ai_implementation.md](ai_implementation.md) |
 | Target score | V formula / G record representation | Minimum normalized octagonal distance plus half mean relative unit HP and half capped unit count/256, recomputed each tick. Computer targets that are not all-enemies multiply only distance by three. Town centres stand in for record-object positions; the documented native count-index oddity is not emulated |
 | AI money gate | V / synthetic checks | Units and economic requests queue without a reserve test; production start alone tests and deducts cash. An unaffordable head blocks its town and suspends strategy. Science alone pre-checks money at forced normal speed. Existing price/time factors are retained and covered across outpost, developed, computer and all-enemies branches |
 | Intelligence | V discovery/cadence / P visibility | Records visible live towns, own ordinary buildings and visible foreign membership including nearby towns within eight tiles on both axes. Town discovery refreshes on first use and every `(side+1)*1000` updates. Previously discovered living enemy towns remain valid destinations through fog. Computer layers initialize at 24; uses engine visibility values <=24; exact MapExplorer weighting and visibility parity remain open |
 | Attack waves | P (G fallback) | States 1/2 prepare purchases and release only completed plan members toward the captured plan destination; unrelated idle town troops are excluded. Local and threatened force targets use documented `3*(development+1)` and `7*(development+1)` counts. Purchase composition follows the documented plan arithmetic; target updates freeze during threat phases and phase 23 uses own-record mode 1. Native tactic readiness and movement remain G adapters |
 | Threat entry and defence | V trigger / G recall and combat dispatch | One active non-allied object of a non-computer side within a squared four-tile outpost or eight-tile developed-town radius enters phase 16 from phases below 16, drops the local plan and cancels paid/unpaid town work. No hit or visibility test. Phase 16 continues for any foreign-side object within eight tiles, allies included. Recall covers autonomous side members; native tactic eligibility is unresolved. Existing last-hit combat dispatch and idle reinforcements remain G policies; computer attackers cannot enter the proximity threat branch |
 | Defence selection | V rule / synthetic checks | Seeded random selection over available defence types, with selected placement failure disabling requests and defence completion enabling them. No cheapest-price or affordability precheck |
+| Outpost specialization | V rules with explicit inputs / G native initialization | Optional combined priority and preference inputs support same-side undeveloped-town arbitration, race-local occupancy, first free preference, no default on failure, 1 -> 2 -> 3 fallthrough and the race-1 final fallback. Another undeveloped town in phase 4 blocks expansion. Native preference/priority initialization remains absent; autonomous missing-input selection retains a cheapest-hall-only G fallback. Arbitrary science buildings are no longer selected as hall upgrades |
 | Placement | P (G fallback) | Stable radius/row/column search within eight tiles, weighted resource bytes for terrain harvesters. Failed placement produces no purchase, payment or reservation. Map construction uses placement offers; flag-0 farms/mines/defences use queued automatic placement, while hall upgrades replace the existing hall |
 | Population and tactic limits | open | Removed the invented 80-unit cap. No difficulty bonuses or universal population limit. Task 153 adds the tactic scan; reference kill-time assignment and full side-response arbitration remain open |
 | `Tendency`, `BuildSpeed`, `Difficulty` from `.mp` | no effect in rewrite | Runtime speed is selected by the strategist; mission loader keys do not override it |
@@ -600,6 +601,44 @@ Native Windows/macOS execution and reference parity remain unverified. Task 154'
 side plans and native tactic/assignment adapters remain explicit dependencies.
 Changed AI decisions/RNG calls can invalidate old saves' stored replay hashes;
 the save container format is unchanged.
+
+**Computer player second pass (2026-11-23):** science roots with zero unlocks
+remain eligible at score ten; the prior skip had no verified basis. Specialization
+rules now accept explicit optional inputs, with tests for priority equality,
+higher-priority peers, phase-4 serialization, preference termination, occupied
+specializations, placement fallthrough and all three races. These inputs are
+hashed, including preference order. Their native initialization is still G;
+no default priority, preference list or inferred economic ranking is supplied.
+
+The growth skirmish now runs **7,200 ticks with two computer sides**. Invented
+durable halls and script-owned guards prevent capture from ending the fixture.
+Both sides must complete construction, recruit, launch accepted waves and earn
+income in every 1,800-tick interval. Pending production cannot stay unchanged
+for 1,800 ticks. An idle lane after successful troop reuse is permitted.
+The fixture records 5/4 building starts, 87/73 recruit starts and 130/240 accepted
+waves for sides 0/1. Every tick matches across viewing sides and a fresh replay
+that includes external production pause/resume commands. These are internal
+determinism and liveness checks, not reference measurements or campaign balance.
+The existing 14,400-tick sustained-opposition test remains required.
+
+Blocked-prerequisite checks hold a FIFO head and its tail with sufficient cash,
+then restore the prerequisite and verify that the independent money gate still
+waits for the exact price. No cash is charged while blocked. Existing radius-8/4
+threat, wave score/membership and computer/all-enemies price/time branch tests
+remain green. Global difficulty scaling remains G: editor `Difficulty` metadata
+does not establish a bonus formula. Task 154, native build-filter markers/refresh,
+loaded side plans, tactic readiness, placement and combat assignment remain open
+as listed in [ai_completion_matrix.md](ai_completion_matrix.md). No original
+executable or reference runtime was run for this pass.
+
+Second-pass validation: baseline and final Release builds, **78 passed / six
+skipped CTest entries**, and all-file pre-commit pass on Linux. The skips are
+five private-data entries and restricted network process creation. A clone-only
+mission-2 run under `unshare -rn`, dummy SDL and a private symlink/copy installation
+reaches 1,800 ticks with no script errors or unsupported executions. Report status
+`timeout` denotes the requested tick horizon, not mission completion. Private
+outputs remain in ignored `work/ai_second_pass/`. Native Windows/macOS execution
+and original-game parity remain unverified.
 
 `ai_unit` checks synthetic economic preferences, development, speed changes,
 construction/queue suspension, fog, wave release above 80 units, defence alerts,
