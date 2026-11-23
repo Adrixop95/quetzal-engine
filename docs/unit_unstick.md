@@ -1,17 +1,23 @@
 # Unit unstick helper (task 102)
 
-Implementation and synthetic validation: complete. Original-game observation:
+Evidence labels (audit 2026-11-23): V = inspected source fact, with reference
+or clone scope stated; M = measurement rechecked from retained captures or an
+offline clone probe; G = inference, proposed procedure or uncorroborated
+historical report. A clone V does not establish native parity. A marker covers
+one paragraph/list item or the entire immediately following table. Unresolved
+meanings remain G even inside a table whose codec structure is V.
+See [label_audit.md](label_audit.md) for counts and evidence limits.
+
+**G** (historical benchmark or pending native observation). Implementation and synthetic validation: complete. Original-game observation:
 **needs live run**. No reference process was launched for this task.
 
-Task 48's modification mechanism is present. Task 104's faithful/enhanced
-profiles are absent, so `unit_unstick` defaults **off**. When profiles are
-introduced, faithful must keep it off and enhanced should enable it. Task 64's
+**V** (clone profile contract; observer acceptance remains unresolved). Task 48's modification mechanism and faithful/enhanced profiles are present. Faithful leaves `unit_unstick` **off**; enhanced enables it. Explicit overrides can change the selected profile's setting. Task 64's
 shared custom-map input/observer adapter is also absent; the work here does not
 claim paired movement parity or implement that adapter.
 
 ## Switch and persistence
 
-Use `--mod unit_unstick=on` or `--mod unit_unstick=off` with the graphical engine,
+**G** (proposed verification procedure). Use `--mod unit_unstick=on` or `--mod unit_unstick=off` with the graphical engine,
 headless engine or `path_bench`. The graphical Game modifications menu also has
 a Unit unstick toggle, available before and during a mission. It persists in the
 existing per-user `modifications.ini`, overridable with `--modifications-file`:
@@ -21,7 +27,7 @@ parallel_construction=off
 unit_unstick=on
 ```
 
-Graphical CLI settings override the persisted file. As with parallel construction,
+**V** (clone helper; no native-equivalence claim). Graphical CLI settings override the persisted file. As with parallel construction,
 headless runs use explicit CLI settings and default off; they do not load the
 menu's persisted file. Modification mask `0x40` records this option in initial save
 settings and subsequent `SetModifications` commands; `0x2` remains assigned to
@@ -31,14 +37,14 @@ older binaries correctly reject saves containing the newly assigned bit.
 
 ## Recovery policy
 
-The enabled mover tracks best distance to the assigned destination slot. Motion
+**V** (clone helper; no native-equivalence claim). The enabled mover tracks best distance to the assigned destination slot. Motion
 must improve that distance by more than one pixel to reset its watchdog; jitter
 and repeated loops cannot continually postpone recovery. Every 12 ticks without
 such progress it records a stall event and attempts friendly cooperation and a
 local repath. Existing ghosting, squeezing and early crowd settlement heuristics
 remain exclusive to the disabled behavior.
 
-The local occupancy-aware search examines at most 81 cells in a 9 by 9 square.
+**V** (clone helper; no native-equivalence claim). The local occupancy-aware search examines at most 81 cells in a 9 by 9 square.
 It uses full disc clearance, dynamic footprints, occupied positions and swept
 segments, and rejoins the shared field at a lower integration cost. Steering
 also tries this search when its preferred segment is occupied. A free direct
@@ -50,12 +56,12 @@ not a new global occupancy field.
 An idle or arrived friendly blocker first looks for a nearby side bay outside
 the moving unit's forward lane. Without a bay, both units can exchange positions
 atomically if both discs fit and neither destination intersects another unit.
-Explicit hold units, enemy units and corpses are never cooperative blockers.
+Explicit hold units, enemy units and corpses are never cooperative blockers. Opposing moving tile-step agents can also cooperate; members already settled in the same order are skipped.
 Current simulation side IDs determine friendship, including ownership changes.
 The blocked mover retains its order; the yielding unit retains its idle/arrived
 state at its new location.
 
-After 120 ticks without progress, recovery relocates the mover to the nearest
+**V** (clone helper; no native-equivalence claim). After 120 ticks without progress (60 for a tile-step order), recovery first tries a legal arrival site when within three tiles of the goal, constrained to within two tiles of the assigned slot. Otherwise it relocates the mover to the nearest
 free tile centre offering lower shared-field cost, or the nearest reachable
 free tile if no such progress tile exists. Its present tile is excluded. Distance
 ties use row/column order. Terrain, movement class, full disc radius, building
@@ -87,7 +93,7 @@ build/path_bench --json --n 10 --ticks 1200 --unstick-scenarios --mod unit_unsti
 build/path_bench --json --n 10 --ticks 1200 --unstick-scenarios --mod unit_unstick=on
 ```
 
-The four explicitly requested `unstick_*` courses are separate from the legacy
+**G** (historical benchmark or pending native observation). The four explicitly requested `unstick_*` courses are separate from the legacy
 16-course default catalogue. Maps remain 90 by 60 tiles. Columns start in single
 file on both sides of the same three-tile-long, one-tile-wide gap; five units
 move each way simultaneously. The boxed scenario has one mover and eight idle
@@ -96,17 +102,19 @@ neighbours. The forest corridor is small-unit-only terrain byte 1 through a
 and one idle blocker. All agents are radius 18, speed 9, Small and friendly.
 `--n 10` controls the column count; the other scenarios have fixed populations.
 
-Arrival is first distance at most **2 pixels from the assigned slot**, measured
+**G** (historical benchmark or pending native observation). Arrival is first distance at most **2 pixels from the assigned slot**, measured
 in completed simulation ticks after the order. The JSON `arrival_ticks` array
 preserves mover creation order and uses -1 for a censored arrival. Idle blockers
 receive no arrival metric. The budget is 1200 ticks, ending early after all first
 arrivals. Legacy courses retain their six-tile goal disk and old tick convention.
 
-A comparable stall count (`stall_windows`) counts each complete 12-tick interval
+**G** (historical benchmark or pending native observation). A comparable stall count (`stall_windows`) counts each complete 12-tick interval
 of displacement below 0.5 pixels per tick before first arrival. `stall_events`
 separately counts algorithm detections: disabled windows are 24 ticks and enabled
 windows are 12 ticks, with different progress criteria, so those event totals
 must not be interpreted as the same measurement.
+
+**G** (historical benchmark or pending native observation).
 
 | Scenario | Arrival ticks off | Arrival ticks on | Stall windows off / on | Recovery events off / on |
 | --- | --- | --- | --- | --- |
@@ -115,7 +123,7 @@ must not be interpreted as the same measurement.
 | Forest corridor | 338 | 182 | 8 / 0 | 6 / 2 |
 | Stationary gap blocker | 174 | 181 | 0 / 0 | 1 / 4 |
 
-Every ordered unit arrives in both modes. Enabled cooperation performs four
+**G** (historical benchmark or pending native observation). Every ordered unit arrives in both modes. Enabled cooperation performs four
 side steps and two emergency relocations in the column, two side steps in the
 box, two swaps in the forest and one swap in the stationary gap. The column's
 last arrival is 28 ticks later, but its maximum idle interval drops from 46 to
@@ -123,7 +131,7 @@ last arrival is 28 ticks later, but its maximum idle interval drops from 46 to
 also regresses by seven ticks. These tradeoffs are retained in the report;
 this option promises recovery, not a universally faster route.
 
-The 48 existing course/count cases (1/10/30 units, 1490 ticks per order) were
+**G** (historical benchmark or pending native observation). The 48 existing course/count cases (1/10/30 units, 1490 ticks per order) were
 captured before and after implementation: every existing hash and non-timing
 metric is unchanged with the helper off, including golden hash
 `74aad6e9f83f2c2e`. Synthetic tests repeat enabled and disabled scenarios, verify
@@ -155,7 +163,7 @@ for course in unstick_column unstick_box unstick_forest unstick_stationary; do
  done
 ```
 
-The generator now places the same adversarial terrain and units as the synthetic
+**G** (historical benchmark or pending native observation). The generator now places the same adversarial terrain and units as the synthetic
 courses. Stationary units have group -1, are excluded from selection rectangles
 and orders, and must still be identified in the reference log. The analyzer
 rejects missing stationary blockers. Selection rectangles for these courses are
@@ -163,7 +171,7 @@ tight around the moving column/unit to leave adjacent blockers idle. Inspect
 initial reference positions and actual selection membership before accepting a
 run; the original may adjust initial formations.
 
-The legacy reference analyzer still reports its six-tile **goal-centre** disk.
+**G** (historical benchmark or pending native observation). The legacy reference analyzer still reports its six-tile **goal-centre** disk.
 Its results cannot be compared numerically with this task's two-pixel assigned
 **slot** arrivals. Retain native logs and independently audit identities, order
 boundaries, stationary blockers, arrival regions and repeated state before any
@@ -174,10 +182,23 @@ checks and disabled hash preservation do not require that live dependency.
 
 ## Verification in this worktree
 
-Baseline and final Release builds pass. The final CTest run passes all 57
+**G** (historical benchmark or pending native observation). Baseline and final Release builds pass. The final CTest run passes all 57
 runnable entries; five private-data entries and the restricted UDP process
 entry skip. All pre-commit hooks pass for tracked files and this new document,
 and `git diff --check` is clean. The 34 zpath tooling tests include repeatable
 helper metrics, cross-language course geometry and missing-blocker rejection.
 All changes remain uncommitted because git metadata is read-only. No game assets,
 reference captures, executable-derived code or merge-hotspot documents changed.
+
+## Label audit corrections (2026-11-23)
+
+Evidence checked: Reference: 0x433820 and 0x455b10 show native tile/member movement; they do not establish emergency relocation. Clone: `MoveSystem::recover`, `cooperate`, `local_repath`, `src/engine/sim/modifications.hpp`, `tools/path_bench.cpp` and synthetic recovery tests. Watchdog constants are V clone construction, while original equivalence and old benchmark totals remain G.
+
+1. Corrected the absent-profile claim against Modifications::faithful/enhanced.
+2. Added the current tile-step threshold and near-goal arrival branch; 120 is not universal.
+3. Added the opposing-step and settled-member cooperation exceptions.
+
+No original executable or reference runtime was run for this audit. Historical
+validation totals retain their original dates; they are not this
+audit's test results. Private captures, derived source and probe output remain
+outside the tracked documentation.

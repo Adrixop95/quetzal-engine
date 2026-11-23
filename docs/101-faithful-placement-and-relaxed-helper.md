@@ -1,19 +1,27 @@
 # Placement policy and optional relaxed placement (task 101)
 
-**Historical implementation report:** task 150 supersedes the predicate, helper
+Evidence labels (audit 2026-11-23): V = inspected source fact, with reference
+or clone scope stated; M = measurement rechecked from retained captures or an
+offline clone probe; G = inference, proposed procedure or uncorroborated
+historical report. A clone V does not establish native parity. A marker covers
+one paragraph/list item or the entire immediately following table. Unresolved
+meanings remain G even inside a table whose codec structure is V.
+See [label_audit.md](label_audit.md) for counts and evidence limits.
+
+**G** (superseded implementation/reference policy). **Historical implementation report:** task 150 supersedes the predicate, helper
 semantics and waiting-site revalidation described below. See
 [placement rules](placement_rules.md) for the current implementation and V/G
 evidence boundaries. The old 16-tile radius, value-1 clearance, overlay/mineral
 rejections and mine terrain exceptions no longer apply.
 
-The default now rejects map overlays and mineral tiles for ordinary buildings,
+**G** (superseded implementation/reference policy). At the task-101 snapshot, the default rejected map overlays and mineral tiles for ordinary buildings,
 checks descriptor clearance as well as body cells, and protects other buildings'
 clearance from new bodies. `relaxed_placement=on` retains the previous placement
 policy. These are conservative engine rules pending original-game measurements;
 **exact original placement parity needs live run**. Synthetic implementation,
 option persistence, UI preview and replay checks can be completed independently.
 
-No reference process was launched for this task, as required by the sandbox task
+**G** (superseded implementation/reference policy). No reference process was launched for this task, as required by the sandbox task
 instructions. The read-only `/home/adrox/aztec-re/work/parity` cache contains
 mission L0 measurements but no placement/ztest_all/mine captures by filename.
 No placement evidence was found in this worktree's initially absent `work/`.
@@ -25,7 +33,7 @@ so both helpers remain off by default. A future enhanced profile should enable
 
 ## Switch and integration
 
-Use **Game modifications → Relaxed placement** from the main-menu options or
+**G** (proposed verification procedure). Use **Game modifications → Relaxed placement** from the main-menu options or
 pause menu, or pass the switch explicitly:
 
 ```sh
@@ -33,7 +41,7 @@ build/aztec_engine --mod relaxed_placement=on --game /path/to/private/game ztest
 build/aztec_engine --mod relaxed_placement=off --game /path/to/private/game ztest_all
 ```
 
-Graphical mode persists `relaxed_placement=on|off` alongside
+**G** (superseded implementation/reference policy). Graphical mode persists `relaxed_placement=on|off` alongside
 `parallel_construction` in the existing user `modifications.ini` file.
 `--modifications-file FILE` selects a different file, and `--mod` overrides loaded
 settings. Old files containing only `parallel_construction` leave placement off.
@@ -41,14 +49,14 @@ Headless mode follows the existing task 48 interface: it accepts `--mod`, starts
 with helpers off and does not load graphical preferences. Game-data launches must
 use the isolation commands below; the examples above describe CLI syntax only.
 
-The new option occupies modification bit 1 (value 2); parallel construction keeps
+**G** (superseded implementation/reference policy). The new option occupies modification bit 1 (value 2); parallel construction keeps
 bit 0. Initial options and subsequent `SetModifications` commands participate in
-hashes, saves and replay. Replay version is now 6 because placement semantics
+hashes, saves and replay. Replay version at that snapshot was 6 because placement semantics
 changed; older simulation saves are refused rather than silently reinterpreted.
 Turning the helper off does not remove existing construction. Waiting orders are
 revalidated before starting under the active policy, as before.
 
-Manual clicks, UI traces, per-cell red/green ghost colours, queued-placement
+**G** (superseded implementation/reference policy). Manual clicks, UI traces, per-cell red/green ghost colours, queued-placement
 revalidation, automatic placement and AI offers use `can_place`/`placement_cells`.
 The automatic planner retains its separate gap policy. The renderer already
 consumes the shared per-cell diagnostics, so no second validity implementation
@@ -57,11 +65,13 @@ exact original colours and artwork remain task 66 work.
 
 ## Rules and evidence boundaries
 
-Existing public descriptor/format facts are in [rules_summary.md](rules_summary.md)
+**G** (superseded implementation/reference policy). Existing public descriptor/format facts are in [rules_summary.md](rules_summary.md)
 and [formats.md](formats.md): mask value 2 occupies a cell; `.dat` class 0 blocks
 both ground movement classes, class 1 blocks the large class, and class 2 permits
 both. Tree overlays have historically coincided with class 1. These movement and
 format facts do not establish the complete original construction predicate.
+
+**G** (superseded implementation/reference policy).
 
 | Case | Default policy | Relaxed policy | Original evidence still required |
 | --- | --- | --- | --- |
@@ -83,7 +93,7 @@ format facts do not establish the complete original construction predicate.
 | Town radius | Existing maximum-axis distance of 16 tiles from owning completed hall | Same | Actual metric, radius and origin |
 | Map edge | Every required cell must be in bounds | Every body cell must be in bounds | Original border margin |
 
-Overlay rejection and value-1 clearance are deliberately conservative policies,
+**G** (superseded implementation/reference policy). Overlay rejection and value-1 clearance are deliberately conservative policies,
 not measured original rules. In particular, a mineral rock represented by an
 overlay is currently rejected even by a mine in default mode. Measure such cases
 before claiming faithful mining or adding overlay-ID exceptions. There is no
@@ -92,7 +102,7 @@ queued; resource thresholds and exact harvesting rules are independent open work
 
 ## Synthetic verification
 
-`test_placement_modes` generates a 40×40 map and independently sweeps all 49
+**G** (superseded implementation/reference policy). `test_placement_modes` generates a 40×40 map and independently sweeps all 49
 barracks mask positions with invented overlays, class-0 rocks, class-1 trees and
 mineral bytes in both modes. It also covers farms, all three mine types, building
 and ground-unit collisions, clearance occupants, reservations, town overlap,
@@ -104,7 +114,7 @@ legacy settings and unknown bits/values. Economy fixtures now use mineral bytes
 for mines and agricultural bytes for farms/defences instead of placing every
 structure on a map filled with mineral deposits.
 
-Validation on 2026-11-07: bootstrap with `--no-hooks`, Release configure/build,
+**G** (superseded implementation/reference policy). Validation on 2026-11-07: bootstrap with `--no-hooks`, Release configure/build,
 and the full CTest suite passed before and after changes. The final suite ran
 57 tests successfully; six checks skipped (formats, engine, lockstep processes,
 private save import, campaign script inventory and private parity rules).
@@ -124,7 +134,7 @@ pre-commit run --all-files
 
 ## Live run sheet (needs live run)
 
-Run on a namespace-capable host from this worktree root. Never bypass failed
+**G** (proposed verification procedure). Run on a namespace-capable host from this worktree root. Never bypass failed
 isolation. All generated maps, scripts, profiles, logs and captures stay under
 ignored `work/`. Use fresh directories per repetition and variant; never modify
 the read-only installation. First expand task 66's existing candidate catalogue:
@@ -156,7 +166,7 @@ for label in reference faithful relaxed; do
 done
 ```
 
-Before custom-map navigation, remove the copied mission_14 and generated maps
+**G** (proposed verification procedure). Before custom-map navigation, remove the copied mission_14 and generated maps
 other than ztest_all from each private Maps directory. Retain its layout manifest
 for actual shifted coordinates. Audit separate input scripts at
 `reference/input.txt`, `faithful/input.txt` and `relaxed/input.txt` under the live
@@ -201,7 +211,7 @@ for label in faithful relaxed; do
 done
 ```
 
-These are diagnostic launches. Task 64 must supply audited normalization before
+**G** (superseded implementation/reference policy). These are diagnostic launches. Task 64 must supply audited normalization before
 raw traces become aligned `placement-v1` observations. Then compare each clone
 bundle, keeping the expected relaxed differences separate from default parity:
 
@@ -214,7 +224,7 @@ for label in faithful relaxed; do
 done
 ```
 
-For each building class/race, repeat clear and blocked controls twice. Move one
+**G** (proposed verification procedure). For each building class/race, repeat clear and blocked controls twice. Move one
 obstacle through every mask position (0/1/2) and just outside the mask. Separately
 vary `.dat` 0/1/2, actual tree/rock/decorative overlays on class 2, resources
 low-only/high-only/both/zero and high-byte values 1/65, mineral on body versus
@@ -227,6 +237,17 @@ overlaid mineral rock, mixed terrain and occupied deposits. Record which cells
 are tested, the first rejecting reason, snap position, per-cell colour and
 acceptance. Do not infer validity from an attractive ghost frame alone.
 
-Only these original-game measurements and the missing normalization dependency
+**G** (superseded implementation/reference policy). Only these original-game measurements and the missing normalization dependency
 have status **needs live run**. Deterministic synthetic success establishes the
 implemented policies and switch plumbing, not original-game balance or parity.
+
+## Label audit corrections (2026-11-23)
+
+Evidence checked: Reference: 0x409940 and 0x42acd0 contradict the old radius/clearance/overlay policy. Clone: `GameSim::placement_cells`, `Modifications`, `tests/test_engine.cpp` and [placement_rules.md](placement_rules.md). The old policy table is G as a reference rule and historical as an implementation report; task 150 supersedes it.
+
+1. Corrected present-tense placement and replay claims to a historical snapshot superseded by task 150.
+
+No original executable or reference runtime was run for this audit. Historical
+validation totals retain their original dates; they are not this
+audit's test results. Private captures, derived source and probe output remain
+outside the tracked documentation.

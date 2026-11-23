@@ -1,10 +1,20 @@
 # Missions 1–5 player-command playthroughs
 
-This task is incomplete. Only mission 5 currently has three winning repetitions.
+Evidence labels (audit 2026-11-23): V = inspected source fact, with reference
+or clone scope stated; M = measurement rechecked from retained captures or an
+offline clone probe; G = inference, proposed procedure or uncorroborated
+historical report. A clone V does not establish native parity. A marker covers
+one paragraph/list item or the entire immediately following table. Unresolved
+meanings remain G even inside a table whose codec structure is V.
+See [label_audit.md](label_audit.md) for counts and evidence limits.
+
+**G** (historical report). Historical scope: Replay version 11 belongs to the recorded run; current saves require replay semantics 15. Current ferry motion/capture contracts supersede historical fallback descriptions.
+
+**G** (historical report). This task is incomplete. Only mission 5 currently has three winning repetitions.
 Failures and bounded experiments below are not winning campaign coverage or
 original-game parity. The original executable and reference runtime were not run.
 
-All attempts use task 112's route runner, the faithful profile, normal player
+**G** (historical report). All attempts use task 112's route runner, the faithful profile, normal player
 commands, dummy SDL video/audio, `unshare -rn`, separate private installations and
 isolated profiles. No mission scripts, resources, starting state, ownership,
 health or outcome are changed by the routes. Private scenarios, observations,
@@ -15,10 +25,12 @@ document.
 
 ## Results
 
-Each row uses three repetitions of one fixed private route and a pinned engine
+**G** (historical report). Each row uses three repetitions of one fixed private route and a pinned engine
 binary. Anomaly totals include failed route checkpoints and process diagnostics;
 they are not counts of confirmed engine bugs. Earlier exploratory attempts are
 excluded from this comparison.
+
+**G** (historical report).
 
 | Mission | Result in each repetition | Tick | Anomalies per run | Remaining acceptance |
 | --- | --- | ---: | ---: | --- |
@@ -28,7 +40,7 @@ excluded from this comparison.
 | 4 | Escort selection depleted; mission still running | 1261 | 3 / 3 / 3 | The corridor assault stops before bringing the protected hero through. A complete escorted route remains open. |
 | 5 | Victory | 2088 | 0 / 0 / 0 | Surviving cargo is evacuated, with substantial casualties before boarding; this is not a complete rescue. |
 
-Mission 5 uses idle/economy bounds of 6000 ticks for its bounded retreat; it does
+**G** (historical report). Mission 5 uses idle/economy bounds of 6000 ticks for its bounded retreat; it does
 not claim economic development or harmless inactivity from those settings. The
 default movement, stuck-order and failed-path detectors remain enabled. Winning
 checkpoints require surviving vessels and embarked survivors, excluding the
@@ -39,7 +51,7 @@ Repeatable failure is not acceptance of a mission.
 
 ## Engine findings
 
-**F-TRANSPORT-COMBAT — labelled fallback, native eligibility unmeasured.** The
+**G** (historical report). **F-TRANSPORT-COMBAT — labelled fallback, native eligibility unmeasured.** The
 existing rule tables deliberately assign zero maximum health to vessel
 controllers. Ordinary automatic targeting, explicit attacks, direct hits,
 projectiles and spatial blasts nevertheless treated these controllers as damage
@@ -52,7 +64,7 @@ vessel destruction protocol still require a controlled reference measurement;
 zero maximum health alone does not prove immunity. This fallback is not a claim
 that ferries are invulnerable in the original game.
 
-**Automatic pursuit across disconnected terrain.** Side-wide visibility could
+**G** (historical report). **Automatic pursuit across disconnected terrain.** Side-wide visibility could
 select a land target without reachable firing ground, repeatedly initiating
 failed searches across water. Automatic selection now checks reachable firing
 positions with the attacker's movement class, weapon reach and collision radius.
@@ -60,7 +72,7 @@ Visibility alone does not establish reachability. Explicit player orders retain
 their existing semantics; a bad route can still request an unreachable move.
 This is an independent engine policy, not measured original target selection.
 
-**Residual mission 2 movement blocker — not fixed.** The final repeated attempt
+**G** (historical report). **Residual mission 2 movement blocker — not fixed.** The final repeated attempt
 still reports four failed-path findings, two stuck-order findings and two
 unfinished movement goals. A remaining ranged unit and siege unit retain attack
 targets without progressing. The acquisition fix addresses disconnected target
@@ -77,12 +89,12 @@ damage, projectile splash, spatial blasts, ordinary damage recipients and
 positive-health vessel controls. Existing transport destruction tests continue
 to cover cargo cleanup. No real campaign map is used by these tests.
 
-Replay semantics use version 11 after integration with develop's version 10
+**G** (historical report). Replay semantics use version 11 after integration with develop's version 10
 because the combined combat and pursuit policies change deterministic outcomes.
 Earlier engine saves are rejected by the existing version check rather than
 replayed with different rules.
 
-The unsuccessful routes do not establish a pathfinding, economy or AI defect
+**G** (historical report). The unsuccessful routes do not establish a pathfinding, economy or AI defect
 merely because the player loses. Route errors, intentional waiting and detector
 signals must be distinguished from diagnosed engine failures. Balance, night
 visibility, acquisition policy and full transport parity remain unverified;
@@ -94,10 +106,21 @@ unsupported claims that their defeats prove an engine defect.
 
 ## Verification
 
-Bootstrap with `--no-hooks`, the Release build with `AZTEC_GEN_DIR=` and an empty
+**G** (historical report). Bootstrap with `--no-hooks`, the Release build with `AZTEC_GEN_DIR=` and an empty
 game-data test directory, and the full CTest suite pass: 66 passed, six optional
 checks skipped. Targeted engine and transport regressions, all pre-commit hooks,
 and `git diff --check` also pass. Separate private-copy format and engine checks
 pass with dummy SDL under `unshare -rn`. Original observations and the remaining
 mission acceptance stay open; a green synthetic suite does not complete the
 campaign task.
+
+## Label audit corrections (2026-11-23)
+
+Evidence checked: Reference: native command/transport research does not validate winning clone routes. Clone: combat eligibility and reachable-target checks in `sim/game_sim.cpp`, route diagnostics in `tools/playthrough_route.py` and transport/engine regressions. Route results remain G historical reports; neither native runs nor winning-route repetitions were made in this audit.
+
+1. Replay version 11 belongs to the recorded run; current saves require replay semantics 15. Current ferry motion/capture contracts supersede historical fallback descriptions.
+
+No original executable or reference runtime was run for this audit. Historical
+validation totals retain their original dates; they are not this
+audit's test results. Private captures, derived source and probe output remain
+outside the tracked documentation.

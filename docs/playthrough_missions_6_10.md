@@ -1,6 +1,16 @@
 # Missions 6–10 player-command playthroughs
 
-This task is incomplete. Mission 6 has a winning player-command route; missions
+Evidence labels (audit 2026-11-23): V = inspected source fact, with reference
+or clone scope stated; M = measurement rechecked from retained captures or an
+offline clone probe; G = inference, proposed procedure or uncorroborated
+historical report. A clone V does not establish native parity. A marker covers
+one paragraph/list item or the entire immediately following table. Unresolved
+meanings remain G even inside a table whose codec structure is V.
+See [label_audit.md](label_audit.md) for counts and evidence limits.
+
+**G** (historical report). Historical scope: The mineral-blocked hall-upgrade and detached-troop transfer descriptions are historical: tasks 150 and the capture/service implementation changed those policies. The old failure is not a diagnosis of the current clone.
+
+**G** (historical report). This task is incomplete. Mission 6 has a winning player-command route; missions
 7–10 still require winning routes. Task 112's framework and task 113's code are
 present, but [the missions 1–5 report](playthrough_missions_1_5.md) still marks
 that prerequisite incomplete. The independent attempts here do not complete it.
@@ -21,8 +31,10 @@ object identities, positions, assets or generated fixtures are distributed here.
 
 ## Results
 
-Each row uses three fresh processes with one fixed private scenario and the same
+**G** (historical report). Each row uses three fresh processes with one fixed private scenario and the same
 engine binary. Anomaly totals include route failures and process diagnostics.
+
+**G** (historical report).
 
 | Mission | Result in each repetition | Tick | Anomalies per run | Remaining acceptance |
 | --- | --- | ---: | --- | --- |
@@ -32,11 +44,11 @@ engine binary. Anomaly totals include route failures and process diagnostics.
 | 9 | Tick bound exhausted; route incomplete and still running | 1500 | 13 / 13 / 13 | Complete the rescue and elimination route beyond this limited horizon. |
 | 10 | Catapult selection exhausted; still running | 3419 | 26 / 26 / 26 | Preserve or replace the siege force and complete elimination. |
 
-All tick/hash pairs match across the three repetitions for each row. Identical
+**G** (historical report). All tick/hash pairs match across the three repetitions for each row. Identical
 failed routes remain failures. Earlier winning mission 6 runs with
 the shorter detector window remain separate from its clean repetitions.
 
-Mission 6 builds an armory and mineral producers, pays for a siege reserve,
+**G** (historical report). Mission 6 builds an armory and mineral producers, pays for a siege reserve,
 witnesses production and income, then attacks through the player command path.
 Its intentional reserve-building phase uses an idle bound of 43,200 ticks. Each
 planned attack leg has a 1,600-tick travel window. The first exploratory winning
@@ -45,7 +57,7 @@ arrivals; fresh repetitions verify the longer window. Stuck-order and failed-pat
 detectors retain their defaults, and the economy detector remains at 1,200 ticks.
 These settings describe this route's planned waiting and travel.
 
-Mission 7's first assault destroyed a hall before the capture checkpoint.
+**G** (historical report). Mission 7's first assault destroyed a hall before the capture checkpoint.
 Subsequent routes continued the eastern conquest, but troop losses exhausted a
 required selection. A separate exploration captures the first town at tick 712
 using direct movement while holding back siege troops. This milestone has not
@@ -71,7 +83,7 @@ after it; it witnesses payment, queue completion and the original hall's stable
 identity and position. This fixes command submission without changing upgrade
 prices, prerequisites or simulation rules.
 
-**F-PLACEMENT-LIMIT — existing fallback, original measurement unavailable.** A
+**G** (historical report). **F-PLACEMENT-LIMIT — existing fallback, original measurement unavailable.** A
 later mission 7 expansion attempt submits and pays for its hall upgrade, but
 completion remains blocked. Read-only cell diagnostics identify mineral and
 unit restrictions; moving guards alone does not remove the mineral restriction
@@ -87,7 +99,7 @@ invalidated by navigation-grid changes. It retains the existing blocked-start
 relocation and firing-position clearance checks. The cache is excluded from
 simulation hashes.
 
-Four-neighbour flood fill preserves the existing field's connectivity: every
+**G** (historical report). Four-neighbour flood fill preserves the existing field's connectivity: every
 permitted diagonal has an orthogonal alternative because corner cutting is
 forbidden. Synthetic regressions compare every destination with the existing
 field across random maps, all three movement classes and blocked/outside starts.
@@ -96,13 +108,13 @@ building blockers, copies, resets and map reloads. Queries must preserve the
 navigation hash. No campaign map or executable-derived implementation is used
 by these tests.
 
-A completed private mission 9 control preserves all 2,001 tick/hash pairs through
+**G** (historical report). A completed private mission 9 control preserves all 2,001 tick/hash pairs through
 tick 2,000 across the optimization. It uses the same player scenario and rules;
 its unsuccessful route verdict is retained. This establishes agreement for that
 bounded engine control, not original-game equivalence or campaign completion.
 Replay semantics remain unchanged.
 
-Town transfers also change ownership of detached town members in the current
+**G** (historical report). Town transfers also change ownership of detached town members in the current
 engine. Mission 6's early retreats therefore did not preserve all withdrawn
 troops when their home towns fell. The existing campaign-sweep documentation
 labels detached-troop handling provisional. No capture, combat, health, economy
@@ -111,7 +123,7 @@ detector signals need diagnosis on synthetic maps before further engine fixes.
 
 ## Reproduction and verification
 
-Use a fresh output directory for every attempt. For the private mission 6 route:
+**G** (proposed verification procedure). Use a fresh output directory for every attempt. For the private mission 6 route:
 
 ```sh
 python3 tools/playthrough.py --game /home/adrox/aztec-re/game --mission 6 \
@@ -120,7 +132,7 @@ python3 tools/playthrough.py --game /home/adrox/aztec-re/game --mission 6 \
   --out work/playthrough/new-mission-6-repeat-1
 ```
 
-Missions 7, 8 and 10 use a 16,000-tick budget, 300-second process limit and default
+**G** (historical report). Missions 7, 8 and 10 use a 16,000-tick budget, 300-second process limit and default
 detectors. Mission 9's final bounded repetitions use 1,500 ticks and a 90-second
 process limit. Its earlier 300-second attempt timed out while still running at
 tick 4,187; later interrupted attempts have no complete reports and are excluded
@@ -129,9 +141,20 @@ completion, scenario/binary hashes, anomalies and observations. Input manifests
 also pin the mission files, rules and source revision privately. No periodic
 captures were requested; these attempts provide no screenshot comparison.
 
-Bootstrap with `--no-hooks`, the baseline Release build and pre-commit hooks
+**G** (historical report). Bootstrap with `--no-hooks`, the baseline Release build and pre-commit hooks
 passed. The baseline and final full CTest suites each contain 74 entries: 68 pass
 and six optional checks skip. Targeted path, engine, transport, framework and pathing
 stress checks pass. Separate format and engine checks pass against individual
 private installation copies with dummy SDL under `unshare -rn`. All pre-commit
 hooks and the final whitespace check pass.
+
+## Label audit corrections (2026-11-23)
+
+Evidence checked: Reference: 0x409940 and capture rules do not certify these engine routes. Clone: `tools/playthrough_route.py`, `app/playtest.cpp`, `sim/path/navgrid.cpp`, `sim/game_sim.cpp` and `tests/test_playthrough_framework.py`. Historical route ticks/anomalies and before/after control hashes were not rerun; they remain G, not native measurements.
+
+1. The mineral-blocked hall-upgrade and detached-troop transfer descriptions are historical: tasks 150 and the capture/service implementation changed those policies. The old failure is not a diagnosis of the current clone.
+
+No original executable or reference runtime was run for this audit. Historical
+validation totals retain their original dates; they are not this
+audit's test results. Private captures, derived source and probe output remain
+outside the tracked documentation.

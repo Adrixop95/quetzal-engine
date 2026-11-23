@@ -1,12 +1,20 @@
 # Mission startup group formation
 
-Status: **implemented guess; mission 1 acceptance remains unmet**. The best
+Evidence labels (audit 2026-11-23): V = inspected source fact, with reference
+or clone scope stated; M = measurement rechecked from retained captures or an
+offline clone probe; G = inference, proposed procedure or uncorroborated
+historical report. A clone V does not establish native parity. A marker covers
+one paragraph/list item or the entire immediately following table. Unresolved
+meanings remain G even inside a table whose codec structure is V.
+See [label_audit.md](label_audit.md) for counts and evidence limits.
+
+**G** (candidate interpretation or historical report). Status: **implemented guess; mission 1 acceptance remains unmet**. The best
 candidate found matches 22/31 initial walkers in mission 1 and 6/6 in mission 3.
 Mission 1 does not reach the requested 90% threshold. This replaces the earlier
 measurement-only outcome with actual startup movement, without claiming that the
 original formation algorithm has been identified.
 
-The supplied private offline dataset is the oracle. Its repeated measurements
+**G** (candidate interpretation or historical report). The supplied private offline dataset is the oracle. Its repeated measurements
 are accepted as evidence for this task; no reference process was launched.
 No captures, campaign fixtures, private dataset, assets or executable-derived
 implementation are included. The older task-95/98 documents describe the earlier
@@ -25,31 +33,31 @@ uses its ordinary integer vector normalization, per-type descriptor speeds,
 `NavGrid` movement classes and `FlowField` path costs. Formation has a tile
 approach mode instead of ordinary commands' continuous destination lattice:
 
-1. Seed a field with every passable tile in the anchor's central 3 by 3 square.
+1. **V** (clone candidate; native algorithm remains G). Seed a field with every passable tile in the anchor's central 3 by 3 square.
    Use the existing 10/14 cardinal/diagonal costs, without the steering field's
    extra wall penalty. Rebuild fields if navigation blockers change.
-2. Process agents in reverse placement order. This is a deterministic guess at
+2. **V** (clone candidate; native algorithm remains G). Process agents in reverse placement order. This is a deterministic guess at
    pool traversal, not a claim that guest handles equal placement indices.
-3. At a tile centre, choose an unoccupied neighbour with strictly lower remaining
+3. **V** (clone candidate; native algorithm remains G). At a tile centre, choose an unoccupied neighbour with strictly lower remaining
    field cost. Minimize the complete edge plus remaining cost. Break ties in
    N, NE, E, SE, S, SW, W, NW order. Diagonals obey the shared terrain corner rule.
-4. Reserve both source and destination until a step finishes. Ground units
+4. **V** (clone candidate; native algorithm remains G). Reserve both source and destination until a step finishes. Ground units
    outside the group also reserve their occupied tiles; other initial objects
    obstruct their centre tiles. Buildings additionally use their loaded footprint
    masks. Whole-tile steps land exactly on centres at the shared per-type speed.
-5. Tick 1 establishes reservations. Displacement starts at tick 2. Stop in the
+5. **V** (clone candidate; native algorithm remains G). Tick 1 establishes reservations. Displacement starts at tick 2. Stop in the
    central square. If no downhill neighbour is available, wait up to the existing
    mover stuck window (24 ticks), then settle at the current centre. This waiting
    duration and the stopping policy are guesses, not measured original timers.
 
-The waiting window lets a follower advance after another unit vacates a tile.
+**V** (clone candidate; native algorithm remains G). The waiting window lets a follower advance after another unit vacates a tile.
 It improved the production-code comparator from 20/31 to 22/31 in mission 1 and
 from 5/6 to 6/6 in mission 3. Immediate stopping, a special dominant-axis stop on
 the second ring, and forbidding diagonals between two occupied side cells were
 also tried; none improved both missions. No endpoint table or mission-specific
 branch is used. There is no fitted speed multiplier or per-member start delay.
 
-Explicit movement/stop commands cancel formation mode. Startup route state,
+**V** (clone candidate; native algorithm remains G). Explicit movement/stop commands cancel formation mode. Startup route state,
 reservations and obstacle coordinates participate in the mover hash. No random
 numbers are used. Balanced and Defensive idle target acquisition is unchanged;
 the PR-138 idle leash tests still require stationary units through tick 60.
@@ -81,13 +89,15 @@ The initialization regression separately verifies that real mission placement
 records actually activate this mover mode. This does not establish whole-game
 parity or a full prior-engine-versus-new-engine mission transcript.
 
+**M** (offline clone probe against retained reference dataset).
+
 | Mission | Walkers | Final tiles before | Final tiles after | After exact | Tick tiles before | Tick tiles after |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | 1 | 31 | 0/31 | 22/31 | 71.0% | 120/868 | 624/868 |
 | 2 | 11 | 0/11 | 1/11 | 9.1% | 56/308 | 92/308 |
 | 3 | 6 | 0/6 | 6/6 | 100% | 27/168 | 162/168 |
 
-Each tick-tile denominator is walker count times the 28 supplied ticks: 1..24,
+**G** (candidate interpretation or historical report). Each tick-tile denominator is walker count times the 28 supplied ticks: 1..24,
 30, 36, 48 and 60. The JSON report also gives exact matches at each individual
 tick and final matches for the initially idle cohort. Matching a final tile does
 not mean its complete trajectory matches: mission 3 still has six differing
@@ -96,10 +106,12 @@ they are not substituted from older reports about other mobile kinds.
 
 ## Residual explanations
 
-The following identifies every mission-1 endpoint residual using anchor and
+**G** (candidate interpretation or historical report). The following identifies every mission-1 endpoint residual using anchor and
 initial offset, without publishing the private trajectories. These explanations
 state how the candidate fails; the original branch causing each difference is
 still unresolved. They are not asserted discoveries about the original code.
+
+**G** (candidate interpretation or historical report).
 
 | Anchor | Initial offset(s) | Candidate limitation |
 | --- | --- | --- |
@@ -109,26 +121,26 @@ still unresolved. They are not asserted discoveries about the original code.
 | (5,4) | (+4,-2), (+3,-2), (+4,-1) | All three compete for the same approach corridor. Exclusive reservations, placement priority and downhill-only routing give a different allocation from the original's detours. Each of these three endpoints remains wrong. |
 | (78,40) | (+1,+3), (+4,+2), (+1,+4) | The fast member takes the direct central slot instead of making the observed side detour. The other two consequently stop at different reservations. All three endpoints remain wrong. |
 
-Mission 3 has no endpoint residuals. All six tick mismatches are ticks 7..12
+**G** (candidate interpretation or historical report). Mission 3 has no endpoint residuals. All six tick mismatches are ticks 7..12
 for the follower initially at (47,56). Reserving both ends of the preceding
 unit's step delays this follower's admission to the diagonal approach. The
 original admits it earlier. Shared Euclidean normalization and exact centre
 snapping also remain unverified against the original's step-update arithmetic;
 no global mover speed change was made to disguise timing differences.
 
-Mission 2 is reported separately and has ten endpoint residuals:
+**G** (candidate interpretation or historical report). Mission 2 is reported separately and has ten endpoint residuals:
 
-- Six walkers starting at (57,34), (27,49), (29,49), (27,50), (36,25) and (37,23)
+- **G** (candidate interpretation or historical report). Six walkers starting at (57,34), (27,49), (29,49), (27,50), (36,25) and (37,23)
   continue far beyond the initial anchor region in the oracle. A fixed-anchor
   startup candidate cannot reproduce these later orders or moving anchors.
-- The units starting at (109,112) and (52,117) settle through a different free
+- **G** (candidate interpretation or historical report). The units starting at (109,112) and (52,117) settle through a different free
   gap in their crowded groups. Direction ties and occupancy classification are
   unresolved; the candidate chooses the opposite side of each group.
-- The units starting at (77,17) and (75,16) have no immediately descending free
+- **G** (candidate interpretation or historical report). The units starting at (77,17) and (75,16) have no immediately descending free
   step under the candidate reservations, and time out. The original first-step
   choices require a different occupancy/path admission policy.
 
-No missing task dependency was assumed complete. Original path admission,
+**G** (candidate interpretation or historical report). No missing task dependency was assumed complete. Original path admission,
 approximate step normalization and mission-2 moving-anchor/non-formation orders
 remain unresolved; the shared mover's existing implementations are used where
 available. An exact formation rule requires further inference or controlled
@@ -143,3 +155,14 @@ original-save bypass and per-tick deterministic replay. `formation_fit` generate
 its own terrain, descriptor CSV and trajectory, checks exact counts and residual
 reporting, and verifies that changing an expected endpoint cannot change the
 candidate endpoint. Neither test imports private campaign measurements.
+
+## Label audit corrections (2026-11-23)
+
+Evidence checked: Reference: 0x433820, 0x455a90/0x455b10 and 0x461d50/0x461fe0 establish step/member arithmetic but not this candidate. Clone: `MoveSystem::order_formation`, formation stepping, `GameSim::init`, `tools/formation_fit.py`, and `tests/test_formation.cpp`. The offline production probe was rerun against the retained private dataset and reproduced every published comparison-table count.
+
+No numeric correction established. Labels were added without promoting unresolved reference behavior.
+
+No original executable or reference runtime was run for this audit. Historical
+validation totals retain their original dates; they are not this
+audit's test results. Private captures, derived source and probe output remain
+outside the tracked documentation.

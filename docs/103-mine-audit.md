@@ -1,27 +1,35 @@
 # Mine audit (task 103)
 
-Synthetic audit: complete. No contradiction with the documented harvest rules was
+Evidence labels (audit 2026-11-23): V = inspected source fact, with reference
+or clone scope stated; M = measurement rechecked from retained captures or an
+offline clone probe; G = inference, proposed procedure or uncorroborated
+historical report. A clone V does not establish native parity. A marker covers
+one paragraph/list item or the entire immediately following table. Unresolved
+meanings remain G even inside a table whose codec structure is V.
+See [label_audit.md](label_audit.md) for counts and evidence limits.
+
+**G** (historical report or pending measurement). Synthetic audit: complete. No contradiction with the documented harvest rules was
 found that justifies changing simulation behavior. Original placement thresholds,
 worker/depletion semantics and the reported mission-2 cash phase: **needs live run**.
-No reference or private-data game process was launched. Task 101 is present,
-including its default placement policy and optional relaxed helper. Task 64's
+No reference or private-data game process was launched. Task 101 supplied the historical policy below; task 150 later replaced its predicate. See [placement_rules.md](placement_rules.md) for the current radius-8 body-cell rule and helper boundaries. Task 64's
 aligned interactive observation/setup adapters remain unavailable; custom-map
 reference comparisons below depend on those adapters or audited manual routes.
 
 ## Deterministic cases and findings
 
-`test_mine_audit` in `tests/test_engine.cpp` runs from `test_engine --pure` and
+**V** (clone synthetic contract). `test_mine_audit` in `tests/test_engine.cpp` runs from `test_engine --pure` and
 CTest `engine_unit`. Fixtures are invented; they use the public rules tables,
 not original maps, assets or executable-derived code. Existing
 `test_mine_construction_flow` covers all three races' UI placement, construction,
 completion and first active tick. `test_resource_clock_save_boundary` covers
 mid-harvest save/replay, global pause and day wrap for mine, farm and hall.
 
-Reference contracts: [rules_types.md](rules_types.md#economy-and-harvest-cycle),
+**V** (clone synthetic contract). Reference contracts: [rules_types.md](rules_types.md#economy-and-harvest-cycle),
 [rules_summary.md](rules_summary.md), the V08/V09 section of
 [engine_rules_status.md](engine_rules_status.md), and `harvest_tick` in
-`src/engine/sim/rules.cpp`. Placement remains a provisional engine policy as
-recorded by [task 101](101-faithful-placement-and-relaxed-helper.md).
+`src/engine/sim/rules.cpp`. Current placement combines statically verified predicates and explicit integration assumptions in [placement_rules.md](placement_rules.md).
+
+**V** (clone synthetic contract).
 
 | Synthetic case | Result and interpretation |
 | --- | --- |
@@ -34,12 +42,12 @@ recorded by [task 101](101-faithful-placement-and-relaxed-helper.md).
 | Invalid preplaced mine on no resource | Zero over 600 ticks. This bypasses placement deliberately; a normal placement is rejected. |
 | Mineral byte 1 over every body cell | Placement accepts it; every mine earns zero over 600 ticks because its integer rate is zero. Reproduces a possible “mine produces nothing” symptom. Positive deposit placement threshold is provisional; the rate follows the documented formula. Measure original acceptance before changing it. |
 | Natural resource use over 600 ticks | Resource map is unchanged, including with nearby units. No finite quantity or natural depletion mechanism exists in the documented model or engine path. |
-| Inject resource removal after 50 active ticks | At tick 100 accumulated work still pays 8 Rus/Aztec or 12 Chinese; no further cash through 600. Nearby unit survives and can move afterward. This is a synthetic rate-change test, not evidence of natural depletion or worker return. |
+| Inject resource removal after 50 active ticks | The completion-sampled rate is retained: over 600 ticks Rus/Aztec earn 96 and Chinese earns 144 despite the injected removal. The nearby unit survives and can move afterward. This tests a frozen rate, not natural depletion or worker return. |
 | Two injected overlapping Rus mines sharing a body/resource cell | Each independently earns 96 over 600; mine total 192 plus 120 from the hall, unchanged resource bytes. Killing one leaves the other earning another 96 plus the next 120 from the hall. Ordinary placement rejects overlap, so this is an invalid-world robustness control, not an achievable player construction claim. |
 | Destroy mine with 47 ticks pending after tick 600 | Cash stays at its last paid value for another 600 ticks; unpaid accumulation is discarded. Footprint becomes placeable again, nearby unit survives and can move. Uses the normal death cleanup via `script_kill`, not a measurement of player demolition timing. Existing town-service tests cover the demolition command path. |
 | Serialize/load at tick 47, before first payout | Replay hash matches at load and every subsequent tick through 600, including all cash boundaries, for all races. This tests engine command-log saves, not original-save harvesting imports. |
 
-No crash, negative cash, unexplained frozen cash or lost mobile unit occurred in
+**V** (clone synthetic contract). No crash, negative cash, unexplained frozen cash or lost mobile unit occurred in
 these fixtures. Zero cash on empty/trace deposits and cash stopping after resource
 removal/death are explicit controls. Workers cannot be assigned, counted inside a
 mine, depleted or returned using an engine mining API: that API does not exist.
@@ -47,19 +55,17 @@ The rules do not specify one. Adding worker-dependent yield, consumption or
 return behavior would invent mechanics. Those requests remain open for original
 measurement; synthetic nearby-unit checks cannot establish them.
 
-One likely placement lead is already recorded in task 101: default placement
-rejects mineral overlays. Compare mineral rock overlays with clear terrain before
-adding exceptions. No arbitrary threshold, worker system or clock offset was added.
+**V** (clone synthetic contract). The task-101 overlay rejection is superseded: current placement does not independently reject overlay IDs. Required resource channels and body-cell terrain/occupancy checks determine acceptance. No worker system or clock offset is inferred.
 
 ## First harvest and the supplied mission-2 observation
 
-The supplied report states +60 every 300 ticks and an approximately 100-tick
+**G** (historical report or pending measurement). The supplied report states +60 every 300 ticks and an approximately 100-tick
 clone delay, with values 2000,2060,2120,2180,2240,2300 and tick labels
 300,600,900,1200,1500. There are six values and five labels; the exact initial
 sample/payout alignment cannot be inferred. Preserve that ambiguity in the live
 comparison instead of assigning a missing label silently.
 
-Rus hall/village d60=20, period=300 yields accumulator increment 51 and rounded
+**V** (clone clock contract). Rus hall/village d60=20, period=300 yields accumulator increment 51 and rounded
 payout 60 after 300 active ticks. The synthetic completed hall starts at 2000 and
 pays 2060 at tick 300, 2120 at 600, 2180 at 900, 2240 at 1200 and 2300 at 1500.
 Every tick is checked at StartTime 0, 100 and 7150 (including wrap). Thus StartTime
@@ -67,16 +73,14 @@ Every tick is checked at StartTime 0, 100 and 7150 (including wrap). Thus StartT
 activation, not global multiples of 300. Mines instead use period 100 and
 terrain-dependent increments. A +60/300 cash stream alone does not identify a mine.
 
-There is no worker travel/spawn gate in this income path. Construction skips
-income on completion, then initializes clocks for its first active tick; existing
-construction tests verify that convention. An incomplete producer, different
+**V** (clone clock contract). There is no worker travel/spawn gate in this income path. Construction skips income accrual on completion, but initializes gold rate and clock at completion; repair is initialized at creation/admission and retains its age. Existing synthetic tests check those distinct boundaries. An incomplete producer, different
 initial activation, scripts/spending or observer phase could shift the stream.
 No exact cause was reproduced here. Do not subtract 100 ticks, grant an early
 payment or alter mine periods based on sparse aggregate cash samples.
 
 ## Modification compatibility
 
-This audit adds no alternate simulation behavior and therefore no new switch or
+**V** (clone synthetic contract). This audit adds no alternate simulation behavior and therefore no new switch or
 preference bit. Placement controls use task 101's existing
 `--mod relaxed_placement=on|off`, default off. Its graphical setting persists in
 `modifications.ini` alongside `parallel_construction`; headless runs require
@@ -97,7 +101,7 @@ git diff --check
 
 ## Exact live commands: mission-2 first cash step
 
-Run only on a namespace-capable host. The existing production collector creates
+**G** (proposed verification procedure). Run only on a namespace-capable host. The existing production collector creates
 separate private installation copies with immutable asset symlinks, copied mutable
 state and ordinary Maps/Saves directories for each process. Both programs run with
 `SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy`, a timeout and `unshare -rn`.
@@ -116,7 +120,7 @@ python3 -I tools/production_measure.py compare "$mines_clock" \
   --output "$mines_clock-tables"
 ```
 
-Inspect owner-0 cash at every tick, especially 299/300/301, 399/400/401 and each
+**G** (proposed verification procedure). Inspect owner-0 cash at every tick, especially 299/300/301, 399/400/401 and each
 subsequent step. Record initial day clock, producer type and completion/active
 state. Audit script grants, spending/refunds and before/after-update observation
 phase. Confirm the same first divergent tick in both independent repeats.
@@ -129,7 +133,7 @@ clone expectations. Task 96's separate post-fix AI acceptance is outside this au
 
 ## Exact live commands: controlled mine cases
 
-Use task 101's custom-map setup with fresh private copies. Before launching, author
+**G** (proposed verification procedure). Use task 101's custom-map setup with fresh private copies. Before launching, author
 and audit normal-input routes for each case in the table: mask offsets/partial
 coverage, non-resource and trace-byte deposits, overlay/no-overlay, no/one/several
 observed workers if such a mechanic exists, warehouse/no-warehouse, long harvest
@@ -139,7 +143,7 @@ The current catalogue is a plan, not an executable worker/depletion scenario.
 An audited route and observer are prerequisites; these commands refuse missing
 scripts rather than inventing coordinates or worker assignments.
 
-Prepare a fresh root and independent reference/default/relaxed copies for one
+**G** (proposed verification procedure). Prepare a fresh root and independent reference/default/relaxed copies for one
 case and repetition. Repeat preparation for every case and at least twice per
 variant; set `MINES_CASE` to a descriptive identifier before each preparation.
 All original maps and generated maps stay private.
@@ -174,7 +178,7 @@ for variant in reference default relaxed; do
 done
 ```
 
-Review generated layout manifests and retain only the selected generated custom
+**G** (historical report or pending measurement). Review generated layout manifests and retain only the selected generated custom
 map in each Maps directory before original custom-map navigation. Apply identical
 reviewed resource patches to the three private map copies for each control; record
 byte values and masks privately. The generator alone does not configure every
@@ -216,7 +220,7 @@ for variant in default relaxed; do
 done
 ```
 
-Do not bypass namespace failures. Retain process exit codes, runtime/engine/input
+**G** (historical report or pending measurement). Do not bypass namespace failures. Retain process exit codes, runtime/engine/input
 hashes, cash per active tick, initial and final resource bytes, producer identities,
 construction state and observed worker identities/orders privately. Extend the
 observer if resource quantity or worker assignment is unavailable; unit logs alone
@@ -227,10 +231,24 @@ findings; no captures, game files, modified maps or derived code belong in git.
 
 ## Validation
 
-On 2026-11-07, bootstrap (`--no-hooks`), Release configure/build, full CTest and
+**G** (historical report or pending measurement). On 2026-11-07, bootstrap (`--no-hooks`), Release configure/build, full CTest and
 all-file pre-commit passed before changes. After changes the Release build and
 full CTest passed again: 65 entries, 59 passed and six skipped (formats, engine,
 lockstep processes, private save import, campaign script inventory and private
 parity rules). All-file and explicit changed-file pre-commit gates pass, as does
 `git diff --check`. All four shell blocks pass `bash -n`; live commands were not
 executed. Changes remain uncommitted because git metadata is read-only.
+
+## Label audit corrections (2026-11-23)
+
+Evidence checked: Reference: 0x42acd0 and the harvest lifetime analysis in [economy_rules.md](economy_rules.md). Clone: `GameSim::initialize_gold`, `initialize_repair`, `economy`, `harvest_tick` and `test_mine_audit` in `tests/test_engine.cpp`. The synthetic table is V for the current assertions, not a measurement of native mine behavior.
+
+1. Corrected the obsolete placement-policy authority and overlay-rejection lead.
+2. Corrected injected resource-removal results to the frozen initial rate asserted by test_mine_audit.
+3. Removed the obsolete mineral-overlay rejection diagnosis.
+4. Corrected gold/repair initialization boundaries to the current economy implementation.
+
+No original executable or reference runtime was run for this audit. Historical
+validation totals retain their original dates; they are not this
+audit's test results. Private captures, derived source and probe output remain
+outside the tracked documentation.

@@ -1,5 +1,13 @@
 # Save/load full-state audit (task 116)
 
+Evidence labels (audit 2026-11-23): V = inspected source fact, with reference
+or clone scope stated; M = measurement rechecked from retained captures or an
+offline clone probe; G = inference, proposed procedure or uncorroborated
+historical report. A clone V does not establish native parity. A marker covers
+one paragraph/list item or the entire immediately following table. Unresolved
+meanings remain G even inside a table whose codec structure is V.
+See [label_audit.md](label_audit.md) for counts and evidence limits.
+
 This task verifies continuation of the independent engine, not original-game
 save compatibility or gameplay parity. No original executable was run, and no
 executable code or lifted source was inspected. The independent engine read its
@@ -10,7 +18,7 @@ contracts; they remain assumptions about the desired original-game experience.
 
 ## Restoration contract and fixes
 
-A save represents a completed tick, including tick zero. The engine reconstructs
+**V** (clone replay contract). A save represents a completed tick, including tick zero. The engine reconstructs
 the mission with identical fingerprinted inputs, initial modifications and the
 applied command log, then checks tick and simulation hash before publishing the
 candidate world. Tick advancement also records paused simulation ticks. The UI
@@ -19,25 +27,25 @@ hashed and cannot silently produce a successful incomplete replay. Direct editor
 mutations, imported original saves and different simulation inputs are outside
 this replay contract. Restoration cost grows with elapsed mission time.
 
-The audit found two presentation losses. Local UI selection was discarded on
+**V** (clone replay contract). The audit found two presentation losses. Local UI selection was discarded on
 load, although deterministic command selection and control groups were replayed.
 Format 5 now stores selection order and viewing side separately from gameplay
 hashes. A replayed historical camera request could also override the saved
 camera on the first frame. Both startup resume and in-session load now mark
 those requests consumed. Subsequent script camera requests still work normally.
 
-Readers return distinct English diagnostics for unsupported AZS2/layout/replay
+**V** (clone replay contract). Readers return distinct English diagnostics for unsupported AZS2/layout/replay
 versions, damaged/truncated input, unreadable files and oversized files. The UI,
 slot labels and headless runner surface them. Failed reads/replays publish no
-partial state. Format 4 and earlier layouts are deliberately rejected rather
-than replayed under incomplete presentation semantics. Replay version stays 7:
-this change does not alter simulation or its hash contract.
+partial state. Current readers accept layouts 4 and 5 when replay semantics match; new writes use layout 5. Replay semantics are currently 15. The task-116 presentation change itself did not change simulation hashing.
 
 ## Field inventory
 
 The following are observations of the independent source and synthetic checks,
 not (V) claims about the original. All rows require unchanged mission/rule/sight
 inputs. Immutable input identities are checked separately from mutable state.
+
+**V** (clone replay contract).
 
 | State | Restoration and verification |
 | --- | --- |
@@ -52,7 +60,7 @@ inputs. Immutable input identities are checked separately from mutable state.
 | Selection/groups | Command selection and all ten groups are hashed/replayed; local UI selection is format-5 presentation metadata and does not change gameplay hashes. |
 | Camera/messages | Camera position/zoom is explicit save metadata. Script center serial/coordinates and timed messages reconstruct; the full-state fixture also compares these outside the gameplay hash. |
 | Diplomacy | The entire directed relation matrix and changes to town ownership replay and enter the digest. |
-| Random state | The simulation's visual RNG stream and spawn counter replay and enter the digest; births and projectile impact effects exercise subsequent draws. Audio has its own presentation RNG and is outside simulation continuation. |
+| Random state | The shared simulation CRT-compatible RNG and spawn counter replay and enter the digest; combat, planner and supported scene-sound choices consume that stream. Standalone UI playback retains a separate presentation stream. |
 | Session/input | Initial and commanded modification bits and simulation pause replay. Local targeting mode, modal windows, audio playback and wall-clock interpolation are not saved. (G) Loading closes the modal and resumes the saved simulation rather than restoring an open save dialog. |
 
 The existing `determinism_state` test checks sensitivity to future-affecting
@@ -62,14 +70,14 @@ is not a proof over every possible command sequence or future engine field.
 
 ## Synthetic acceptance
 
-`save_state_processes` creates 15 invented river/town scenarios, without game
+**G** (historical results or pending native acceptance). `save_state_processes` creates 15 invented river/town scenarios, without game
 files or repository rule tables. Generated prices, health, weapon, sight masks,
 terrain and scripts are test inputs only. Each runs 400 ticks and saves at
 0, 1, 2, 5, 20, 45, 60, 120, 240, 355 and 399. Every case exits and restores in a
 fresh process. The comparator requires the loaded boundary and every subsequent
 tick through 400, with explicit lengths and first-divergence reporting.
 
-Coverage assertions require boarding in progress, occupied cargo, active
+**G** (historical results or pending native acceptance). Coverage assertions require boarding in progress, occupied cargo, active
 construction, queued production, projectiles, births, evolving fog, AI elapsed
 state and mission victory. The tick-1 checkpoint must contain boarding, combat
 and construction; tick 120 must contain cargo. Scripts exercise stopped/restarted
@@ -77,14 +85,14 @@ timers, trigger disable flags, repeated money changes, diplomacy and camera/text
 requests. Paused ticks and later unload/production/impact behavior test future
 state rather than only equality at the boundary. All 165 continuations match.
 
-`campaign_save_processes` uses 15 generated mission files and empty invented
+**G** (historical results or pending native acceptance). `campaign_save_processes` uses 15 generated mission files and empty invented
 archives. It checks headless continuation, Ctrl+S/Ctrl+L in separate processes,
 selection and camera after a historical script camera event plus manual panning,
 the actual pause-menu save/load confirmation flow, frontend slot selection,
 corrupt files and old version refusals. It requires the camera to have moved
 before saving, so merely restoring the old script camera cannot pass.
 
-`engine_save` retains truncation/bit-flip/checksum-repaired malformed input,
+**G** (historical results or pending native acceptance). `engine_save` retains truncation/bit-flip/checksum-repaired malformed input,
 resource limits, unchanged-output, atomic-write and replay-refusal checks. New
 cases cover legacy/future layout diagnostics and invalid selection count, IDs,
 duplicates and viewing side, including checksummed malformed metadata.
@@ -106,7 +114,7 @@ python3 -I tools/save_roundtrip.py \
   --save-ticks 1 120 600 1200 --out work/save-roundtrip-campaign
 ```
 
-The default mission list is all 15. Each save tick has its own uninterrupted
+**G** (historical results or pending native acceptance). The default mission list is all 15. Each save tick has its own uninterrupted
 recording and a separate restoring process. Each process gets its own private
 game directory, ordinary Maps/Saves directories, immutable asset symlinks,
 copied configuration and private user profile. Engine/rules/routes are pinned
@@ -129,6 +137,8 @@ original game revision, engine revision/diff, mission, speed, profile, route and
 save tick privately. Repeat each capture twice. Never publish saves, scripts,
 raw state dumps or assets.
 
+**G** (historical results or pending native acceptance).
+
 | Measurement | Required capture / acceptance |
 | --- | --- |
 | Original save/load policy (G) | For all 15 missions, save during combat, boarding, occupied transport and construction; record which selections/groups/camera, timers, objectives and modal/pause state survive. Mark a finding (V) only after the captures establish it. |
@@ -137,7 +147,7 @@ raw state dumps or assets.
 | Compatibility/corruption | Present AZS2, earlier AZS3 layout/replay versions, truncations, damaged checksum, mismatched content and checksummed bad state hashes. Require a clear refusal and unchanged active session/slot; never overwrite the only copy. |
 | Unsupported script/objective semantics | Resolve the missing counter/objective/presentation producers before claiming original mission-state completeness. Extend this inventory and synthetic continuation tests whenever those fields are introduced. |
 
-Tasks 126 (script presentation/objectives), 120 (fog parity), 105 (transport)
+**G** (historical results or pending native acceptance). Tasks 126 (script presentation/objectives), 120 (fog parity), 105 (transport)
 and the all-mission campaign sweep remain queued in this checkout. Their engine
 implementations are partial; this task completes the independent persistence
 checks available here without inventing missing game semantics. Original-save
@@ -146,13 +156,13 @@ original-game parity are not established by save determinism.
 
 ## Local validation
 
-Baseline: Release build, 63 passing CTests, six skips, and all-file pre-commit
+**G** (historical results or pending native acceptance). Baseline: Release build, 63 passing CTests, six skips, and all-file pre-commit
 passed before editing. Final Linux GCC Release build and CTest passed: 65
 passed, six skipped (five private-data entries and UDP process isolation). Both
 tracked-file pre-commit and explicit new-file checks passed. Native Windows and
 macOS were not run.
 
-The private independent-engine campaign collector used dummy SDL, `unshare -rn`,
+**G** (historical results or pending native acceptance). The private independent-engine campaign collector used dummy SDL, `unshare -rn`,
 private symlink installations and a single scripted move at tick 1 in each
 mission. The 400-tick sweep at save ticks 1/20/120/240 produced 52 full-horizon
 passes and seven equal continuations through earlier mission outcomes; one
@@ -164,3 +174,15 @@ The final-binary sweep through 200 ticks at save ticks 1/20/60/120 passed all
 60 cases across all 15 missions, including every loaded boundary and continued
 tick. Private evidence remains under `work/save-fidelity-campaign-200/`. This
 short smoke horizon verifies continuation, not full-mission completion.
+
+## Label audit corrections (2026-11-23)
+
+Evidence checked: Reference: native 0x432ba0/0x432d50 and 0x4455f0 serialize object state, not command-log replay. Clone: `sim/savegame.*`, `game_sim.cpp`, `world/world.cpp`, `tests/test_save_state.cpp` and process continuation collectors. Inventory entries are V clone fields; old campaign sweep totals and original restoration policies remain G.
+
+1. Corrected layout-4 acceptance and replaced the obsolete current replay-version claim.
+2. Corrected random-state inventory to the shared simulation stream and sound-choice hashing.
+
+No original executable or reference runtime was run for this audit. Historical
+validation totals retain their original dates; they are not this
+audit's test results. Private captures, derived source and probe output remain
+outside the tracked documentation.

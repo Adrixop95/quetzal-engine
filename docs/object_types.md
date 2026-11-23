@@ -1,7 +1,17 @@
 # Game object types (UGI)
 
-Table `0x4933f8` (kind, variant parameter) joined with the list of `UGI_*` names (pointers `0x4acb4c..0x4accb4`, index = type id).
+Evidence labels (audit 2026-11-23): V = inspected source fact, with reference
+or clone scope stated; M = measurement rechecked from retained captures or an
+offline clone probe; G = inference, proposed procedure or uncorroborated
+historical report. A clone V does not establish native parity. A marker covers
+one paragraph/list item or the entire immediately following table. Unresolved
+meanings remain G even inside a table whose codec structure is V.
+See [label_audit.md](label_audit.md) for counts and evidence limits.
+
+**V** (reference factory/dispatch and clone metadata). Table `0x4933f8` (kind, variant parameter) joined with the list of `UGI_*` names (pointers `0x4acb4c..0x4accb4`, index = type id).
 The type id is used in mission files (`Unit# = x, y, type, health`), scripts (`UGI_ABDULA`) and in `DisabledID`.
+
+**V** (reference factory/dispatch and clone metadata).
 
 | id | UGI name | kind (class) | parameter |
 |---|---|---|---|
@@ -98,7 +108,9 @@ The type id is used in mission files (`Unit# = x, y, type, health`), scripts (`U
 
 # Command / packet types (PCT)
 
-Name table `0x4ad5dc` (45 pointers), index = packet type. Frame commands (`PCT_FRAME_*`) are processed in the logic tick (`0x4577b0`).
+**V** (reference factory/dispatch and clone metadata). Name table `0x4ad5dc` (45 pointers), index = packet type. Frame commands (`PCT_FRAME_*`) are processed in the logic tick (`0x4577b0`).
+
+**G** (packet name inventory).
 
 | Type | Name |
 |---|---|
@@ -148,9 +160,20 @@ Name table `0x4ad5dc` (45 pointers), index = packet type. Frame commands (`PCT_F
 | 0x2b | PCT_SETSPEED |
 | 0x2c | PCT_ERROR |
 
-Handling in the tick (switch in `0x4577b0`): 0x12 SAVE (save flag), 0x13 PAUSEON, 0x15 CREATEGROUP (`0x448b40`), 0x16 SELECTGROUP (`0x448520`),
+**V** (reference factory/dispatch and clone metadata). Handling in the tick (switch in `0x4577b0`): 0x12 SAVE (save flag), 0x13 PAUSEON, 0x15 CREATEGROUP (`0x448b40`), 0x16 SELECTGROUP (`0x448520`),
 0x18 ATTACK (`0x447e00`), 0x1a DESTROYHERE (`0x4489b0`), 0x1c BUILD, 0x1d GARRISON (`0x448350`), 0x1e REPEARMODE, 0x1f ATTACKMODE, 0x20 BUILDMODE,
 0x21 PAUSEBUILD, 0x22 QUEUEKILL, 0x23 SELECTBYNO (`0x448f60`), 0x24 FOLLOWTEAM (`0x448210`). The command structure (53 dwords, queue of 64 entries from `0x4d9c50`)
 is created by the interface code; the type field lies at index 2 (`cmd[2]`).
 
-Verified command semantics: `PCT_FRAME_GARRISON` extracts mobile troops from the selected town into a new tactic. `PCT_FRAME_REPEARMODE` selects town repairer mode 0/1/2 (off/repair/destroy); `PCT_FRAME_DESTROYHERE` toggles a building in that repairer list. See [rule details](rules_types.md) and [AI rules](rules_ai.md). These command names do not establish building boarding or immediate object deletion.
+**V** (reference factory/dispatch and clone metadata). Verified command semantics: `PCT_FRAME_GARRISON` extracts mobile troops from the selected town into a new tactic. `PCT_FRAME_REPEARMODE` selects town repairer mode 0/1/2 (off/repair/destroy); `PCT_FRAME_DESTROYHERE` toggles a building in that repairer list. See [rule details](rules_types.md) and [AI rules](rules_ai.md). These command names do not establish building boarding or immediate object deletion.
+
+## Label audit corrections (2026-11-23)
+
+Evidence checked: Reference: factory 0x43d5d0, its read-only 0x4933f8 kind/parameter table and tick dispatcher 0x4577b0. Clone: `docs/data/types.csv`, `src/engine/data/type_anims.hpp`, `src/core/ugi.cpp` and `sim/commands.hpp`. The type table agrees with the factory metadata, including surprising aliases 36 and 68. `save_unit_kind(36)` in the core codec disagrees with that factory; this audit records the discrepancy without changing simulation or import code.
+
+No numeric correction established. Labels were added without promoting unresolved reference behavior.
+
+No original executable or reference runtime was run for this audit. Historical
+validation totals retain their original dates; they are not this
+audit's test results. Private captures, derived source and probe output remain
+outside the tracked documentation.
