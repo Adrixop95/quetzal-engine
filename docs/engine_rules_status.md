@@ -1,5 +1,43 @@
 # Engine: status of the simulation rules (verified / measured / placeholder)
 
+## Descriptor use audit (2026-11-23)
+
+**V fields / synthetic loader and simulation checks:** the
+[descriptor use matrix](descriptor_use_matrix.md) inventories all 520 layout
+words, including the 201 data-bearing columns, with V/G status and explicit
+consumer locations. Existing rules already connect primary/secondary HP,
+regeneration, fire and physical armour, movement speed, weapon range/reload,
+Building income schedules, footprints and Defence aiming to simulation.
+Price/time and build prerequisites come from separate type/build tables;
+no descriptor word is reinterpreted as a cost, range or transport capacity.
+
+The loader additionally retains auxiliary armour, animation IDs, turret variant
+indices, sound-list IDs, Bird presentation flags and Headtruck/Spider/Cannon turn
+steps. Marine/Defence combat animation lookup now uses loaded resource IDs.
+Types absent from `types.csv` retain defaults rather than inheriting descriptor
+record zero. Guest name-pointer words remain ignored; localized UI names use
+stable ordinals independently.
+
+**G / integration limits:** auxiliary armour has a verified accessor but no known
+damage consumer, so it never becomes resistance. Sound lists, turret variant
+indices, Bird presentation flags and the newly loaded ground turn steps are
+loader metadata; event timing, general renderer integration and complete ground
+turn/firing behavior remain open. Defence d63 is G in the latest shared layout:
+its former height interpretation is removed and Defence projectile height uses
+the explicit zero fallback. This supersedes the older d63 height claim below.
+No unknown or unread field is assigned new behavior. Replay semantics advance
+to 15 because the projectile height and descriptor-selected animation resources
+can change simulation state; older replay saves are rejected explicitly.
+
+Invented descriptors cover all nine families, primary/secondary HP separation,
+regeneration, armour, speed/range/reload, type costs, Defence metadata, footprint
+value 2, schedules and simulation initialization. Additional invented animation
+banks check descriptor-selected resources, explicit zero and missing resources.
+Changes to auxiliary armour, G d63 and guest pointer noise cannot alter tested
+damage or install a projectile height. Matrix checks require every layout word
+and its source evidence status. No original executable or reference runtime was
+run; these checks do not establish game parity or native Windows/macOS execution.
+
 ## Marine shot period (2026-11-22)
 
 **V resource facts / clone construction / synthetic checks:** Marine cooldown

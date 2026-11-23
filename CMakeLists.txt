@@ -105,6 +105,12 @@ aztec_warnings(test_combat)
 add_test(NAME combat_unit COMMAND test_combat)
 set_tests_properties(combat_unit PROPERTIES LABELS "unit")
 
+add_executable(test_descriptor_use tests/test_descriptor_use.cpp)
+target_link_libraries(test_descriptor_use PRIVATE aztec_engine_lib)
+aztec_warnings(test_descriptor_use)
+add_test(NAME descriptor_use COMMAND test_descriptor_use)
+set_tests_properties(descriptor_use PROPERTIES LABELS "unit")
+
 # ---- static recompilation runtime: needs generated C from tools/ghidra_scripts/LiftAll.java
 # cmake -DAZTEC_GEN_DIR=work/gen ..   (generated code is derived from the user's own Aztec.exe; never commit it)
 set(AZTEC_GEN_DIR "" CACHE PATH "Directory with gen_*.c produced by LiftAll.java")
