@@ -18,7 +18,7 @@ struct TownState {
   int phase = 0, science_timer = 50, target_town = -1, remaining = 0;
   int wanted_type = 90;
   int plan_target_town = -1;
-  bool defence_enabled = true;
+  bool defence_enabled = true, economy_enabled = true;
   uint64_t elapsed = 0;
   int64_t harvested = 0, spent = 0;
   uint32_t last_alert = 0;

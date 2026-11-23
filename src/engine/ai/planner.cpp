@@ -2,6 +2,7 @@
 #include "engine/sim/random.hpp"
 #include <algorithm>
 #include <cstdlib>
+#include <functional>
 #include <limits>
 #include "engine/world/world.hpp"
 #include "engine/world/visibility.hpp"
@@ -97,7 +98,7 @@ std::vector<PlanEntry> make_plan(const World& w, const RulesData& rules, int tow
   std::array<std::vector<uint32_t>, 90> reusable;
   if (!w.enemy_all(source.side)) {
     // V: offensive plans can reuse nearby town troops.
-    // G: town/member anchors stand in for the unresolved native coordinate operands.
+    // V: the reuse radius is measured from the requesting town to the candidate tactic.
     // G: script tactic eligibility has no complete adapter yet; preserve explicit script groups.
     for (const auto& o : w.objects) {
       if (!live(o) || o.type >= 90 || o.side != source.side || rules.type(o.type).structure || o.tactic < -1) continue;
@@ -146,7 +147,7 @@ std::vector<PlanEntry> make_plan(const World& w, const RulesData& rules, int tow
     plan.push_back(e); ++allocated[size_t(type)]; return true;
   };
   std::vector<int> candidates;
-  for (int type = 0; type < 90; ++type)
+  for (int type = 89; type >= 0; --type)
     if (!rules.type(type).structure && rules.type(type).dev_level <= level) candidates.push_back(type);
   // V: visit ordinary targets from high type to low type; new counters use HP weights
   // and random 0..63, while reusable counters compete using their unweighted score.
@@ -262,7 +263,11 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
   if (t.side < 0 || t.side >= int(w.side_state.size())) return d;
   auto& s = d.next;
   ++s.elapsed;
-  if (s.science_timer >= 0 && s.science_timer < std::numeric_limits<int>::max()) ++s.science_timer;
+  auto finish = [&]() {
+    // V: the phase sees the old counter; increment follows its handler, even while busy.
+    if (s.science_timer >= 0 && s.science_timer < std::numeric_limits<int>::max()) ++s.science_timer;
+    return d;
+  };
   uint32_t anchor = 0;
   bool busy = false;
   int forces = 0, defences = 0;
@@ -274,8 +279,7 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
     if (r.structure && !anchor) anchor = o.id;
     busy |= o.progress < 1000;
     if (r.kind == 7) ++defences; else ++forces;
-    // G: autonomous groups contain only unassigned combat units. Scripts retain their tactics.
-    if ((r.mobile || r.flier) && r.armed && o.tactic < 0 && o.order == 0) available.push_back(o.id);
+    // G: last-hit alerts supplement the documented proximity threat cycle.
     if (r.structure && o.last_hit_by) {
       const auto* a = w.find(o.last_hit_by);
       if (a && live(*a) && w.hostile(t.side, a->side) && visible(w, t.side, a->id) &&
@@ -283,7 +287,7 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
           std::abs((a->cur_y >> 8) / kTilePx - t.y) < 8 && (!attacker || a->id < attacker->id)) attacker = a;
     }
   }
-  if (!anchor) return d;  // A destroyed town cannot issue purchases through a stale mission record.
+  if (!anchor) return finish();  // A destroyed town cannot issue purchases through a stale mission record.
   auto command = [&](Pct kind) { Command c; c.type = kind; c.side = uint8_t(t.side); return c; };
   const bool queued = std::any_of(w.side_state[t.side].queue.begin(), w.side_state[t.side].queue.end(),
                                   [town](const auto& q) { return q.town == town; });
@@ -309,13 +313,15 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
            std::find(s.known_towns.begin(), s.known_towns.end(), ti) != s.known_towns.end() &&
            std::any_of(w.objects.begin(), w.objects.end(), [&](const auto& o) { return live(o) && o.town == w.mission.towns[ti].index && o.side == w.mission.towns[ti].side; });
   };
-  s.target_town = -1;
-  int best_score = std::numeric_limits<int>::max();
-  for (int ti : s.known_towns) if (enemy(ti)) {
-    Intelligence record; record.town = ti;
-    for (const auto& r : s.knowledge) if (r.town == ti) record = r;
-    const int score = target_score(w, rules, town, record);
-    if (score < best_score) { best_score = score; s.target_town = ti; }
+  if (s.phase < 16) {
+    s.target_town = -1;
+    int best_score = std::numeric_limits<int>::max();
+    for (int ti : s.known_towns) if (enemy(ti)) {
+      Intelligence record; record.town = ti;
+      for (const auto& r : s.knowledge) if (r.town == ti) record = r;
+      const int score = target_score(w, rules, town, record);
+      if (score < best_score) { best_score = score; s.target_town = ti; }
+    }
   }
   bool entered_threat = false, foreign_nearby = false;
   const int radius = t.type != 0 ? 8 : 4;
@@ -359,9 +365,9 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
   }
   if (!attacker) s.last_alert = 0;
   if (!entered_threat) for (const auto& q : w.side_state[t.side].queue) busy |= q.town == town;
-  if (busy) return d;
+  if (busy) return finish();
   const int dev = development(w, rules, town);
-  bool poor = income(w, rules, state, town) < 2 * (state.spent * 256 / int64_t(state.elapsed + 1));
+  bool poor = s.economy_enabled && income(w, rules, state, town) < 2 * (state.spent * 256 / int64_t(state.elapsed + 1));
   auto buy = [&](const Offer* o) {
     if (!o) return false;
     auto c = command(Pct::Build); c.a = o->type; c.b = o->x; c.c = o->y; c.ids = {anchor};
@@ -374,11 +380,19 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
   auto economy = [&]() {
     static constexpr int farms[] = {12, 39, 65}, warehouses[] = {18, 40, 70}, mines[] = {13, 48, 66};
     int race = std::clamp(t.race, 0, 2);
-    if (count(w, town, farms[race]) > 2 && !count(w, town, warehouses[race]) && buy(find(warehouses[race]))) return true;
-    return buy(find(farms[race])) || buy(find(mines[race]));
+    const int primary = count(w, town, farms[race]) > 2 && !count(w, town, warehouses[race]) ? warehouses[race] : farms[race];
+    return buy(find(primary)) || buy(find(mines[race]));
   };
-  // G: science and defence selection remain cheapest-offer policies.
+  // V: defence candidates follow the reversed type list, then one CRT draw.
   auto choose = [&](int category) -> const Offer* {
+    if (category == 1) {
+      std::vector<const Offer*> candidates;
+      for (int type = 0; type < 90; ++type)
+        for (const auto& o : offers) if (o.type == type && rules.type(type).kind == 7) candidates.push_back(&o);
+      if (candidates.empty()) return nullptr;
+      return candidates[msvc_rand(s.random) % candidates.size()];
+    }
+    // G: outpost specialization needs the native preference/ranking fields.
     const Offer* best = nullptr;
     for (const auto& o : offers) {
       const auto& r = rules.type(o.type);
@@ -387,16 +401,73 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
     }
     return best;
   };
-  auto prepare = [&](bool offensive) {
+  auto science_offer = [&]() -> const Offer* {
+    if (t.type == 0) return choose(2); // G: specialization preferences are not represented yet.
+    const auto& tree = rules.build_list(t.race, t.type);
+    auto present = [&](const Prerequisite& p) {
+      return std::any_of(w.objects.begin(), w.objects.end(), [&](const auto& o) {
+        return live(o) && o.side == t.side && o.type == p.type && o.progress == 1000 &&
+            (p.side_wide || o.town == t.index);
+      });
+    };
+    std::array<bool, 90> visiting{};
+    std::function<const Offer*(int)> resolve = [&](int type) -> const Offer* {
+      if (type < 0 || type >= 90 || visiting[size_t(type)]) return nullptr;
+      const auto item = std::find_if(tree.begin(), tree.end(), [&](const auto& it) { return it.type == type; });
+      if (item == tree.end()) return nullptr;
+      for (const auto& sd : w.mission.sides) if (sd.index == t.side &&
+          std::find(sd.disabled.begin(), sd.disabled.end(), type) != sd.disabled.end()) return nullptr;
+      // Completed/queued unique structures are terminal filter markers, not new leaves.
+      if (rules.type(type).kind == 2 && count(w, town, type)) return nullptr;
+      for (const auto& q : w.side_state[t.side].queue) if (q.town == town && q.type == type) return nullptr;
+      visiting[size_t(type)] = true;
+      const Offer* leaf = nullptr;
+      bool missing = false, failed = false;
+      for (const auto& p : item->prereq) if (!present(p)) {
+        missing = true;
+        const auto* prerequisite = resolve(p.type);
+        if (!prerequisite) { failed = true; break; }
+        leaf = prerequisite;
+      }
+      visiting[size_t(type)] = false;
+      if (failed) return nullptr;
+      if (!missing) for (const auto& offer : offers) if (offer.type == type) return &offer;
+      return leaf;
+    };
+    if (s.wanted_type != 90) {
+      if (const auto* leaf = resolve(s.wanted_type))
+        return rules.type(leaf->type).structure ? leaf : nullptr;
+    }
+    const Offer* best = nullptr;
+    int best_score = std::numeric_limits<int>::max();
+    // V: the science list is traversed in increasing type order.
+    for (int type = 0; type < 90; ++type) {
+      const auto& r = rules.type(type);
+      if (r.kind != 2 || r.harvest.period != -1 || type == 18 || type == 40 || type == 70) continue;
+      const auto* leaf = resolve(type);
+      if (!leaf) continue;
+      int unlocks = 0;
+      for (const auto& item : tree) for (const auto& p : item.prereq)
+        if (p.type == type && !present(p)) ++unlocks;
+      if (!unlocks) continue;
+      // V: recursive costs start at zero and only sum child costs (0x45b940).
+      const int score = 10 - unlocks;
+      if (score < best_score || (score == best_score && (msvc_rand(s.random) & 127) < 64)) {
+        best = leaf; best_score = score;
+      }
+    }
+    return best;
+  };
+  auto prepare = [&](bool offensive, bool reuse_towns = false) {
     ++s.plan_generation;
-    s.plan = make_plan(w, rules, town, offensive ? s.target_town : town, offensive, s.random, s.knowledge, &s.wanted_type);
+    s.plan = make_plan(w, rules, town, offensive ? s.target_town : town, offensive || reuse_towns, s.random, s.knowledge, &s.wanted_type);
     s.remaining = int(s.plan.size());
     const int target = offensive ? s.target_town : town;
     s.plan_target_town = target;
     return std::any_of(s.knowledge.begin(), s.knowledge.end(), [&](const auto& r) { return r.town == target; });
   };
   auto progress = [&](int done, bool allow_economy = true) {
-    if (allow_economy && poor && economy()) return;
+    if (allow_economy && poor) economy();
     if (s.remaining > 0) return; // The side allocator owns outstanding production.
     s.plan.clear();
     s.remaining = 0; s.plan_target_town = -1; s.phase = done;
@@ -406,7 +477,12 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
     case 1: s.phase = enemy(s.target_town) && prepare(true) ? 2 : 11; break;
     case 2: {
       if (s.remaining > 0) { progress(2); break; }
-      for (const auto& entry : s.plan) if (entry.object) available.push_back(entry.object);
+      if (poor) economy();
+      for (const auto& entry : s.plan) {
+        const auto* member = w.find(entry.object);
+        if (member && live(*member) && member->side == t.side && member->progress == 1000)
+          available.push_back(entry.object);
+      }
       s.plan.clear();
       const int destination = s.plan_target_town >= 0 ? s.plan_target_town : s.target_town;
       if (enemy(destination) && !w.enemy_all(t.side) && !available.empty()) {
@@ -418,26 +494,24 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
       s.plan_target_town = -1; s.phase = 11; break;
     }
     case 3: {
-      const Offer* science = choose(2);
-      // G: map the recommendation to a directly offered prerequisite; recursive
-      // reference development scoring is still unresolved.
-      for (const auto& item : rules.build_list(t.race, t.type)) if (item.type == s.wanted_type)
-        for (const auto& p : item.prereq) if (const auto* offer = find(p.type)) science = offer;
-      if (s.science_timer > 0 && science && science->price <= w.side_state[t.side].money && buy(science)) s.phase = 4;
+      if (s.science_timer <= 0) break;
+      const Offer* science = science_offer();
+      if (science && science->placeable && science->price <= w.side_state[t.side].money && buy(science)) s.phase = 4;
       else { s.science_timer = 0; s.phase = 13; }
       break;
     }
     case 4: s.phase = 13; break;
-    case 5: case 18:
-      if (buy(choose(1))) s.phase = s.phase == 5 ? 6 : 19;
+    case 5: case 18: {
+      const auto* defence = choose(1);
+      if (defence && defence->placeable && buy(defence)) s.phase = s.phase == 5 ? 6 : 19;
       else {
-        // Only a failed placement disables attempts; lack of funds is temporary.
-        for (const auto& o : offers) if (rules.type(o.type).kind == 7 && !o.placeable) s.defence_enabled = false;
+        if (defence) s.defence_enabled = false;
         s.phase = s.phase == 5 ? 0 : 16;
       }
       break;
+    }
     case 6: case 8: s.phase = 11; break;
-    case 7: economy(); s.phase = 8; break;
+    case 7: if (!economy()) s.economy_enabled = false; s.phase = 8; break;
     // V: the non-outpost gate concerns the source town, not the target town.
     case 9: s.phase = t.type != 0 && enemy(s.target_town) ? 1 : 11; break;
     case 10: s.phase = s.science_timer <= 100 * (dev + 1) && s.wanted_type == 90 ? 13 : 3; break;
@@ -453,9 +527,9 @@ Decision step(const World& w, const RulesData& rules, int town, const TownState&
     case 21: s.phase = forces < 7 * (dev + 1) ? 23 : 20; break;
     // V: the threatened plan progresses without the economic detour in states 2/14.
     case 22: progress(20, false); break;
-    case 23: s.phase = prepare(false) ? 22 : 20; break;
+    case 23: s.target_town = town; s.phase = prepare(false, true) ? 22 : 20; break;
     default: s.phase = 0; break;
   }
-  return d;
+  return finish();
 }
 }  // namespace aztec::engine::ai
