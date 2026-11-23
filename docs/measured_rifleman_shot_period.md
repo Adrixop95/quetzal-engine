@@ -1,6 +1,6 @@
 # Measured Rifleman shot period (headless oracle)
 
-Status: M (measured, one run, three gaps). Not a confirmed rule.
+Status: M (measured, one run, three gaps). Superseded in its conclusion: see the resolution at the end of this document.
 
 Setup: the recompiled original binary was run headless under `tools/parity_run.py`. A Rifleman
 and a stationary Bear on the opposing side stood within range on open tiles, and the hit
@@ -39,3 +39,14 @@ rule still gives 21 ticks and does not explain the measured 26 to 27. The differ
 to 6 ticks stays unexplained. Candidates that nothing has checked yet: a target acquisition or
 re-aim delay between shots, a re-entry step through the idle state, or a different reload
 value in the original than in the clone tables. The clone keeps 21 ticks until this is resolved.
+
+## Resolution (task 173)
+
+The 26 to 27 tick gaps are explained in `docs/shot_period_implementation.md` (section on the
+Rifleman discrepancy). The Bear in the measured run was not stationary: it changed position
+during the interval, so the Rifleman returned to stand after each attack and waited 5 to 6
+ticks for a tile-completion step before the next attack could start. The stationary period of
+21 ticks and the 10 tick attack animation stand. The statement above that the target was
+stationary is wrong, and a constant of 26 to 27 ticks must not be used for a stationary
+Rifleman. The explanation is inferred from the code and the logged frames; a measurement
+against a target that really does not move would confirm it.
