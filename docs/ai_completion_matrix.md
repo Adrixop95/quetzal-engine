@@ -19,13 +19,15 @@ assuming that missing dependency has landed.
 | Priority / part | Before this task | Current implementation | Evidence boundary |
 | --- | --- | --- | --- |
 | Production gate | Implemented | One phase per idle town update; unaffordable FIFO head blocks strategy; payment at production start, no reserve | V; existing synthetic payment/allocation checks retained |
+| Build-tree wait | Implemented prerequisite wait | Blocked FIFO head retains cash and prevents the tail from starting; restoring the prerequisite permits the independent money check | V ordinary prerequisite wait; G complete native filter markers and refresh |
+| Computer scaling | Implemented | Existing normal/fast, outpost, computer 0.8 and all-enemies price/time branches retained and tested | V production factors; G global difficulty effects, no invented bonus |
 | Science counter | Incremented before phase; no admission/completion lifecycle | Phase observes old counter; admission of ordinary buildings freezes at -1; cancellation/removal/completion resets to 0; increment follows handler | V; boundary, busy-town and simulation lifecycle checks |
 | Economy requests | Farm/warehouse/mine preferences, no disable flag | Warehouse replaces farm after three farms when absent; failed primary falls back to mine; phase 7 disables failed economy requests; hall completion enables them | V selection/flags; G site ranking |
 | Developed-town science | Cheapest building or directly offered prerequisite | Recursive missing-prerequisite traversal; persistent recommendation; general unlock ranking and seeded random ties; forced speed 1 and affordability test | V selection; G build-filter representation, see below |
-| Expansion / specialization | Cheapest available development offer | Existing outpost fallback retained and explicitly G | V hall IDs and fallthroughs known; native priority/preferences absent, so autonomous selection is incomplete |
+| Expansion / specialization | Cheapest available development offer | Phase-4 serialization; explicit optional priority/preferences select the first unused race specialization, with 1 -> 2 -> 3 fallthrough and the race-1 final fallback; absent inputs retain a cheapest-hall-only fallback | V selection with supplied inputs; G native priority/preferences initialization, so autonomous selection is incomplete |
 | Production allocation | Implemented | Reverse plan-entry scan; one request per idle eligible town; production town separate from reserved plan membership | V; existing outpost, shared-cash, cancellation and stale-generation checks |
 | M, W and development rows | Implemented arithmetic | HP-normalized W; kill-time M; side maximum development; candidate row now walked from high type to low | V arithmetic/order; G prototype and weapon gaps |
-| Attack composition | Implemented arithmetic, ascending candidates | Descending candidate order, including wanted-candidate and new-score ties; existing 256-entry / 32-reuse limits and batches retained | V; synthetic seeded composition checks |
+| Attack composition | Implemented arithmetic, ascending candidates | Descending candidate order, including wanted-candidate and new-score ties; existing 256-entry / 32-reuse limits and batches retained; type 33 excluded only from the main pass | V; synthetic seeded composition checks |
 | Attack launch | Also swept unrelated idle town troops into each wave | Only living completed plan members receive the destination order; no wave for an empty plan | V plan membership; G movement/tactic adapter |
 | Plan completion | Economy request could postpone completed-plan release | Economy request and completion are processed in the same eligible phase-2/14 update | V; production still suspends later handlers |
 | Threatened plan | Own record used with mode 0 | Phase 23 writes own target and uses mode 1, permitting nearby town troops; targets remain frozen in phases 16..23 | V mode/target; G tactic eligibility |
@@ -42,7 +44,7 @@ coverage from incomplete native data/tactic adapters.
 | 0 | Idle -> 10 | Loaded side-plan arbitration; no runtime side plan is invented (V: fresh side plan is null) |
 | 1 | Offensive plan -> 2, failure -> 11 | G native intelligence/tactic adapters |
 | 2 | Economy request, allocate, launch completed plan -> 11 | G native tactic busy/readiness and launch movement |
-| 3 | Positive counter: science -> 4; failure resets counter -> 13; nonpositive waits | G outpost priority/preferences and filter marker representation |
+| 3 | Positive counter: science -> 4; failure resets counter -> 13; nonpositive waits; zero-unlock science roots remain eligible | G initialization of outpost priority/preferences and filter marker representation |
 | 4 | -> 13 | None in transition |
 | 5 | Random defence -> 6; failure -> 0 | G site search; selected placement failure clears defence flag |
 | 6 | -> 11 | None in transition |
@@ -90,10 +92,12 @@ and native record indexing prevent claiming exact original M/W or target scores.
 
 ## Explicit remaining dependencies (G; do not guess)
 
-- Outpost specialization needs the native preference list and town priority fields
-  corresponding to +0x190/+0x194. Known hall tables, no-free-preference failure and
-  1 -> 2 -> 3 fallthrough do not establish a default preference or priority.
-  No new ordering, ranking fields or default specialization are invented here.
+- Outpost specialization still needs native initialization of the preference list
+  and the combined priority corresponding to +0x190/+0x194. The planner accepts
+  these as optional explicit inputs and hashes them; it does not populate them
+  from an inferred economy score or default list. Tests supply invented inputs
+  to verify ranking, race-local occupancy, no-free-preference failure and
+  1 -> 2 -> 3 fallthrough. The autonomous missing-input fallback is G.
 - Build-filter markers -2/-3, disabled entries, queued counts and hall-tree refresh
   have only partial engine equivalents. Science uses existing build-tree recipes
   and validated offers. Exact list reconstruction remains open.
@@ -110,16 +114,27 @@ and native record indexing prevent claiming exact original M/W or target scores.
 - Shared deterministic mission RNG is retained. New verified draws change later
   draws; original RNG consumption order and exact replay compatibility with old
   engine saves are not guaranteed. The save container format is unchanged.
+- Global difficulty scaling remains G: no verified global difficulty value or
+  bonus formula is available. Map `Difficulty` is editor metadata. The verified
+  computer/non-all-enemies 0.8 price/time factor, all-enemies branches and
+  harvest/spend speed choice already have synthetic coverage; these do not
+  establish global difficulty effects. No HP, income or damage bonus is added.
 
 ## Synthetic verification
 
-`ai_unit` adds a 1,800-tick invented skirmish requiring actual building starts and
-completed structures, recruit production and accepted attack waves, comparing
-both viewing sides at every tick and a fresh command-log replay at the end.
+`ai_unit` includes a 7,200-tick invented two-computer skirmish requiring actual
+building starts and completed structures, recruits and accepted attack waves on
+both sides. Each side must earn harvest income in every 1,800-tick interval;
+pending production must never remain unchanged for 1,800 ticks. Idle lanes after
+successful reuse are legitimate. Every tick matches across
+viewing sides and a fresh replay, including external pause/resume commands.
 It also checks recursive recommendations, affordability equality, malformed cycles,
 science timer boundaries and construction cancellation/completion, economy flags,
 warehouse fallback, random defence selection, target freezing, threatened reuse,
-wave membership and state hashing. Existing synthetic 14,400-tick opposition and
+wave membership and state hashing. A blocked-prerequisite FIFO head retains
+cash and prevents its tail from starting, then resumes when the prerequisite is
+restored; insufficient money still blocks until the exact price is available.
+Existing synthetic 14,400-tick opposition and
 per-tick replay checks remain required. These tests use no private game data.
 
 Baseline: Release build, 77 passed / six skipped CTest entries, all-file pre-commit

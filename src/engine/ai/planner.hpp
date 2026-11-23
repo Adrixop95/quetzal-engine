@@ -2,6 +2,7 @@
 #pragma once
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <vector>
 #include "engine/sim/commands.hpp"
 
@@ -14,6 +15,12 @@ struct PlanEntry {
   uint32_t object = 0;
 };
 struct Intelligence { int town = -1; std::array<int, 90> counts{}; };
+// Explicit reference inputs. Their native initialization is unresolved; absence
+// retains the documented engine fallback rather than inventing preferences.
+struct Expansion {
+  uint32_t priority = 0; // Combined town priority, not an inferred economy score.
+  std::vector<int> preferences;
+};
 struct TownState {
   int phase = 0, science_timer = 50, target_town = -1, remaining = 0;
   int wanted_type = 90;
@@ -27,6 +34,7 @@ struct TownState {
   std::vector<PlanEntry> plan;
   uint32_t random = 0; // Pure planner input/output; GameSim supplies its shared mission stream
   uint64_t plan_generation = 0;
+  std::optional<Expansion> expansion;
 };
 struct Offer {
   int type = -1, price = 0, x = 0, y = 0;

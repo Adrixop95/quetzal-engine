@@ -2596,6 +2596,10 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(s.random); mix(s.plan_generation);
     if (s.wanted_type != 90) { mix(0x57414e54); mix(s.wanted_type); }
     if (s.plan_target_town != -1) { mix(0x504c414e); mix(s.plan_target_town); }
+    if (s.expansion) {
+      mix(0x45585041); mix(s.expansion->priority); mix(s.expansion->preferences.size());
+      for (int preference : s.expansion->preferences) mix(uint32_t(preference));
+    }
     mix(s.knowledge.size());
     for (const auto& record : s.knowledge) { mix(record.town); for (int n : record.counts) mix(n); }
     mix(s.plan.size());
