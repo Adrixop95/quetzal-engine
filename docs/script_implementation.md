@@ -1,8 +1,11 @@
 # Mission script implementation
 
 Evidence: [condition and flow survey](script_conditions_flow.md),
-[command survey](script_gift_command.md), and
-[tactic lookup survey](script_codes_and_ai_purchase.md). **V** means a rule
+[command survey](script_gift_command.md),
+[tactic lookup survey](script_codes_and_ai_purchase.md), and
+[later corrections](leftovers_scripts_descriptors.md). The current
+[gap list](script_runtime_gap_list.md) reconciles loader/runtime coverage and
+the historical 19 transport sites. **V** means a rule
 established by those static inspections or an explicitly identified engine
 construction test. **G** means an approximation or unconfirmed integration
 choice. No reference executable was run for this task. Synthetic tests and
@@ -36,9 +39,10 @@ stay outside tracked files.
   The counter uses explicit signed 32-bit wraparound without C++ signed overflow.
 - **V:** comparison operator values are `== 0`, `> 1`, `>= 2`, `!= 3`, `< -1`,
   `<= -2`. Counter comparisons are signed. **V:** localTime is a day clock
-  initialized from mission StartTime and wrapping at 7200. **G:** the clone
-  advances it once per active script tick and maps globalTime to active elapsed
-  ticks; the native frame/day/timer clock ratios and phase are unmeasured.
+  initialized from mission StartTime and wrapping at 7200. **V:** localTime and
+  globalTime advance once per simulation tick, as established by the later
+  corrections. **G:** the clone maps globalTime to active elapsed
+  ticks; startup phase and native timer/trigger pool integration are unmeasured.
 - **V, construction:** gameplay hashes include each trigger's latch and
   enablement, timer existence/value/pause, both clocks and tactic state. Diagnostic
   condition snapshots are read-only; previewing a missing timer as zero does not
@@ -62,7 +66,7 @@ The remaining two have no identified script producers.
 | 0c, 0d | **V:** native side-plan complete / no-plan checks. **G / missing dependency:** no independent side-plan model or identified script grammar; these are not exposed or claimed implemented |
 | 0e, 0f, 10 | **V:** compare directional friendship, neutrality or hostility |
 | 11, 12, 15 | **V:** missing valid compares zero; missing locked returns false. Plain team lookup requires reservation; town lookup is the fallback. **G:** defence provenance and numerical group identities approximate native objects |
-| 13, 14 | **V:** sort both rectangle axes and count living runtime categories 0, 1, 6, 7, optionally restricted by UGI. These include ordinary units, structures, boats and Johnkas, and exclude cameras; they are not construction-class numbers. **G:** inclusive tile bounds substitute for the uninspected native spatial-query edges |
+| 13, 14 | **V:** sort both rectangle axes and count living runtime categories 0, 1, 6, 7, optionally restricted by UGI. These include ordinary units, structures, boats and Johnkas, and exclude cameras; they are not construction-class numbers. **V:** strict overlap of object boxes with the sorted pixel rectangle, without adding a tile to maximum corners; degenerate rectangles are empty. **G:** render height substitutes for the virtual height offset and absent descriptors use common bounds |
 
 Additional **V** static check: category accessors at `0x402430`, `0x45f030`,
 `0x4083b0`, `0x42d930` and `0x402a40`, checked through the documented unit,
@@ -84,7 +88,8 @@ codes identify the rules already documented in the linked surveys.
 | 05, 06, 07, 08 | timer set, stop, start, kill | **V:** implemented lifecycle above |
 | 09, 0a, 0b, 0c | path, cycled path, inverted path, cycled inverted path | **G:** existing idle-gated waypoint follower with direction/cycling state in hashes; native route-controller timing unmeasured |
 | 0d, 0e, 0f, 10 | boat activate, submarine go, Johnka enable, Johnka disable | Existing vessel adapter, **G** for native transport/controller/effect parity; see [transport follow-up](campaign_scripts.md#transport-follow-up-2026-11-04-needs-live-run) |
-| 11, 12 | side buildCommand, moveCommand | **G / missing dependency:** still explicitly unsupported and counted as such. The town AI planner does not provide the native general side plan. Native build creates/replaces a plan from available type requests; move checks plan completion. The existing parser's one-type/integer-arguments approximation is not a complete native build grammar. No campaign site in the supplied inventory exercises these actions |
+| 11 | side buildCommand | **Missing dependency:** execution remains explicitly unsupported. The town AI planner does not provide the native general side plan. Native `buildCommand(integer) {UGI_name,...}` now parses with ordered, duplicate-preserving requests and a safe 32-request limit; the earlier engine-only syntax remains accepted. Native build creates/replaces a plan from admitted available type requests. No campaign site in the supplied inventory exercises this action |
+| 12 | side moveCommand | **V:** supported no-op. The handler discards the result of a read-only nearest-town lookup; it does not move units |
 | 13, 21 | camera activate, deactivate | Existing stationary vision source and latest-source deactivation. **G:** lifetime/update phase and exact native camera integration; see [presentation contract](mission_script_presentation.md) |
 | 14 | centerView | Tile-origin view request; **G:** independent viewport clamping/scaling details |
 | 15, 16, 17 | friendly, neutral, enemy | **V:** directional relation changes |
@@ -106,7 +111,8 @@ native parser error and optional-section compatibility is not claimed.
 one-tick delay, repeating actions, empty/AND conditions, self-disable,
 forward/backward enables, frozen latches, duplicate IDs, lazy timer lifecycle,
 stopped sets, kill/recreation, signed overflow, day wrap, directional relations,
-rectangle normalization/class filtering, separate gift groups, town ownership,
+rectangle normalization/class filtering and strict box edges, native build grammar,
+verified move no-op, separate gift groups, town ownership,
 locked lookup, missing join targets, scripted kills, outcome precedence, message
 capacity/deadlines, paths and command-log replay. Presentation-time expiry remains
 independent of gameplay hashes. Integration checks cover result UI, forced-world

@@ -40,8 +40,9 @@ AttackFrame RulesData::attack_frame(int type_id, int facing, int64_t elapsed, in
   if (!combat_animations_ || type_id < 0 || type_id >= 90) return {};
   const int kind = type(type_id).kind;
   if (kind != 0 && kind != 7) return {};
-  const bool turret = kind == 7 && data::kTypeAnims[type_id].anim2 != 0;
-  auto animation = combat_animations_->anim(combat_animations_->anim_id(type_id, turret));
+  const auto& descriptor = type(type_id);
+  const bool turret = kind == 7 && descriptor.turret_anim_id != 0;
+  auto animation = combat_animations_->anim(turret ? descriptor.turret_anim_id : descriptor.anim_id);
   if (!animation.ok()) return {};
   const int slot = kind == 0 ? 9 + (facing & 7) : turret ?
       2 + data::direction32_from_angle(angle < 0 ? facing * 32 : angle) : 8;
@@ -51,7 +52,7 @@ AttackFrame RulesData::attack_frame(int type_id, int facing, int64_t elapsed, in
 
 int RulesData::marine_attack_ticks(int type_id, int facing) const {
   if (!combat_animations_ || type_id < 0 || type_id >= 90 || type(type_id).kind != 0) return -1;
-  const auto animation = combat_animations_->anim(combat_animations_->anim_id(type_id));
+  const auto animation = combat_animations_->anim(type(type_id).anim_id);
   const int slot = 9 + (facing & 7);
   const int count = animation.frame_count(slot);
   if (!count) return -1;
@@ -201,6 +202,8 @@ void RulesData::init_defaults() {
     TypeRules& r = types_[t];
     const TypeInfo* ti = type_info(t);
     r.kind = ti ? ti->kind : -1;
+    r.anim_id = data::kTypeAnims[t].anim;
+    r.turret_anim_id = data::kTypeAnims[t].anim2;
     r.structure = ti && ti->is_structure();
     r.mobile = r.kind == 0 || r.kind == 1 || r.kind == 4 || r.kind == 6 || r.kind == 8 || r.kind == 10;
     r.nonorganic = r.structure || r.kind == 1 || r.kind == 4 || r.kind == 6 || r.kind == 9;
@@ -262,6 +265,7 @@ bool RulesData::load_dir(const std::string& dir) {
   auto speeds = read_csv(dir + "/speed_measured.csv");
   for (int id = 0; id < kNumTypes; id++) {
     TypeRules& t = types_[id];
+    if (kind_param[id].first < 0) continue;
     int param = kind_param[id].second;
     if (t.kind == 0) {
       for (auto& r : marine)
@@ -382,9 +386,14 @@ bool RulesData::load_dir(const std::string& dir) {
     const auto rows = read_csv(dir + "/desc_" + f.family + ".csv");
     for (int id = 0; id < kNumTypes; ++id) {
       auto& t = types_[id];
-      if (t.kind != f.kind) continue;
+      if (t.kind != f.kind || kind_param[id].first != f.kind) continue;
       const auto r = row(rows, kind_param[id].second);
       if (r.size() <= size_t(f.hp + 1)) continue;
+      t.anim_id = num(r, 1, t.anim_id);
+      if (f.kind == 1 || f.kind == 6 || f.kind == 7) {
+        t.turret_variant_index = num(r, 2);
+        t.turret_anim_id = num(r, 3, t.turret_anim_id);
+      }
       if ((f.kind == 2 || f.kind == 7) && r.size() >= size_t((f.kind == 2 ? 6 : 9) + 50)) {
         const int first = f.kind == 2 ? 6 : 9;
         for (int cell = 0; cell < 49; ++cell) t.footprint_mask[cell] = num(r, first + cell + 1);
@@ -412,6 +421,7 @@ bool RulesData::load_dir(const std::string& dir) {
       t.regen = f.regen >= 0 ? num(r, f.regen + 1) : 0;
       t.regen_alt_threshold = f.threshold >= 0 ? num(r, f.threshold + 1) : 0;
       t.physical_armor = num(r, f.armor + 1);
+      t.auxiliary_armor = num(r, f.armor + 2);
       t.weapon_id = f.weapon >= 0 ? num(r, f.weapon + 1, -1) : -1;
       t.armed = t.weapon_id >= 0;
       t.weapon = visual_weapon(t.weapon_id, 0);
@@ -421,10 +431,29 @@ bool RulesData::load_dir(const std::string& dir) {
       t.blast_multiplier = num(r, multiplier + 1, 256);
       if (f.kind == 3 || f.kind == 5) t.cruise_height = num(r, (f.kind == 3 ? 6 : 7) + 1);
       if (f.kind == 5) t.turn_rate = std::clamp(num(r, 7), 1, 128);
+      if (f.kind == 1 || f.kind == 6) t.turn_rate = std::clamp(num(r, 14), 1, 128);
+      if (f.kind == 9) t.turn_rate = std::clamp(num(r, 2), 1, 128);
       if (f.kind == 7) {
         t.turn_rate = std::clamp(num(r, 5), 1, 128);
-        t.launch_height = num(r, 64);
       }
+      // Name-pointer words are deliberately never imported. They are guest heap
+      // addresses, not stable string IDs (descriptor_config_cells.md).
+      if (f.kind == 0 || f.kind == 5) {
+        const int first = f.kind == 0 ? 15 : 17;
+        t.spawn_sound_list_id = num(r, first + 1);
+        t.hit_sound_list_id = num(r, first + 2);
+        t.death_sound_list_id = num(r, first + 3);
+        if (f.kind == 5) {
+          t.organic_flag = (uint32_t(num(r, 14)) & 255u) != 0;
+          t.attack_sound_list_id = num(r, 21);
+        }
+      } else if (f.kind == 1 || f.kind == 6) {
+        t.spawn_sound_list_id = num(r, 18);
+        if (f.kind == 6) t.engine_sound_list_id = num(r, 19);
+      } else if (f.kind == 4 || f.kind == 9) {
+        t.spawn_sound_list_id = num(r, 15);
+        if (f.kind == 4) t.engine_sound_list_id = num(r, 16);
+      } else if (f.kind == 3) t.spawn_sound_list_id = num(r, 16);
     }
   }
   // Scripted vessels and cameras have a zero maximum getter, not inferred health.

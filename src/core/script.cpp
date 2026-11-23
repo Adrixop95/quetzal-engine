@@ -352,9 +352,22 @@ Action parse_action(Reader& r) {
     else if (m == "buildcommand") {
       a.kind = ActKind::SideBuildCommand;
       r.expect('(', "Not enough parameters specified");
-      a.ugi = ugi_ident(r);
-      while (r.accept(',')) a.args.push_back(r.integer());
-      r.expect(')', "Not enough parameters specified");
+      if (r.at_digit()) {
+        // V: native grammar has a plan parameter followed by a list of types.
+        a.id = r.integer();
+        r.expect(')', "Not enough parameters specified");
+        r.expect('{', "Unit list expected");
+        do {
+          if (a.args.size() >= 32) r.fail("Too many unit requests");
+          a.args.push_back(ugi_ident(r));
+        } while (r.accept(','));
+        r.expect('}', "Unit list expected");
+      } else {
+        // Retain the earlier engine-only syntax for existing custom scripts.
+        a.ugi = ugi_ident(r);
+        while (r.accept(',')) a.args.push_back(r.integer());
+        r.expect(')', "Not enough parameters specified");
+      }
     } else if (m == "movecommand") { a.kind = ActKind::SideMoveCommand; paren_xy(r, a.a, a.b); }
     else if (m == "cameraactivate") { a.kind = ActKind::SideCameraActivate; paren_xy(r, a.a, a.b); }
     else if (m == "cameradeactivate") { a.kind = ActKind::SideCameraDeactivate; a.a = paren_int(r); }

@@ -64,13 +64,20 @@ struct TypeRules {
   bool service_damage_protected = false; // Building descriptor byte +0xec blocks damage callbacks
   int weapon_id = -1;
   int physical_armor = 0;
+  // Verified accessor only: no identified damage consumer, so never apply as resistance.
+  int auxiliary_armor = 0;
   int blast_multiplier = 256;
+  int anim_id = 0, turret_anim_id = 0, turret_variant_index = 0;
+  // Loaded metadata; event timing and the variant's animation entries remain separate contracts.
+  int spawn_sound_list_id = 0, hit_sound_list_id = 0, death_sound_list_id = 0;
+  int engine_sound_list_id = 0, attack_sound_list_id = 0;
+  bool organic_flag = false; // Bird low byte: name/death presentation, not a damage category
   bool nonorganic = false, category_f4 = false, category_e8 = false, hypno = false;
   Src class_src = Src::Placeholder;
   int speed = 0;      Src speed_src = Src::Placeholder;   // fixed 24.8 px per tick; descriptor preferred over historical averages
   int cruise_height = 0;
-  int turn_rate = 8; // angle units per tick; Bird d6, Zeppelin constant
-  int launch_height = 0; // Defence d63, in pixels
+  int turn_rate = 8; // angle units per tick; ground turn steps are loader metadata
+  int launch_height = 0; // Engine fallback; Defence d63's height interpretation is G.
   int radius_px = 14; Src radius_src = Src::Placeholder;
   // V: VisibleThing rectangle, overridden by Building/Defence descriptor bounds.
   std::array<int, 4> combat_bounds{-28, -48, 28, 16};

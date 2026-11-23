@@ -29,6 +29,43 @@ sound cues clear on pause while stage loops retain their choice. Presentation
 visibility, mute and device state do not advance simulation RNG. No original
 executable was run and synthetic replay equality does not establish game parity.
 Linux verification does not substitute for native Windows/macOS CI execution.
+## Descriptor use audit (2026-11-23)
+
+**V fields / synthetic loader and simulation checks:** the
+[descriptor use matrix](descriptor_use_matrix.md) inventories all 520 layout
+words, including the 201 data-bearing columns, with V/G status and explicit
+consumer locations. Existing rules already connect primary/secondary HP,
+regeneration, fire and physical armour, movement speed, weapon range/reload,
+Building income schedules, footprints and Defence aiming to simulation.
+Price/time and build prerequisites come from separate type/build tables;
+no descriptor word is reinterpreted as a cost, range or transport capacity.
+
+The loader additionally retains auxiliary armour, animation IDs, turret variant
+indices, sound-list IDs, Bird presentation flags and Headtruck/Spider/Cannon turn
+steps. Marine/Defence combat animation lookup now uses loaded resource IDs.
+Types absent from `types.csv` retain defaults rather than inheriting descriptor
+record zero. Guest name-pointer words remain ignored; localized UI names use
+stable ordinals independently.
+
+**G / integration limits:** auxiliary armour has a verified accessor but no known
+damage consumer, so it never becomes resistance. Sound lists, turret variant
+indices, Bird presentation flags and the newly loaded ground turn steps are
+loader metadata; event timing, general renderer integration and complete ground
+turn/firing behavior remain open. Defence d63 is G in the latest shared layout:
+its former height interpretation is removed and Defence projectile height uses
+the explicit zero fallback. This supersedes the older d63 height claim below.
+No unknown or unread field is assigned new behavior. Replay semantics advance
+to 15 because the projectile height and descriptor-selected animation resources
+can change simulation state; older replay saves are rejected explicitly.
+
+Invented descriptors cover all nine families, primary/secondary HP separation,
+regeneration, armour, speed/range/reload, type costs, Defence metadata, footprint
+value 2, schedules and simulation initialization. Additional invented animation
+banks check descriptor-selected resources, explicit zero and missing resources.
+Changes to auxiliary armour, G d63 and guest pointer noise cannot alter tested
+damage or install a projectile height. Matrix checks require every layout word
+and its source evidence status. No original executable or reference runtime was
+run; these checks do not establish game parity or native Windows/macOS execution.
 
 ## Marine shot period (2026-11-22)
 
@@ -194,7 +231,7 @@ and `engine` checks pass with the complete private map copy under dummy SDL in
 | Stop (0x50) and AttackMove (0x51) | P | engine extensions; the original has no such packets |
 | Command coordinates / tiles from packets | engine | clamped into the map before any fixed-point conversion; invalid tiles are ignored |
 | Command order inside a tick: ascending sides 0..6, then submission order | V side range/order / G packet mapping | Native one-packet ring, active-side gate and latency remain open; engine batches remain supported. See [RNG/tick implementation](rng_and_tick_order_implementation.md) |
-| Mission RNG and object phase order | V generator/construction / G consumption parity | Shared seed-zero MSVC stream for supported combat, decoration, planner and scene sound choices; logical unit pools walk newest first with LIFO reuse. Effects precede scripts; projectiles follow units; completed time advances last. Missing loading/wind/input/descriptor producers and grouped town/movement/sound phases prevent full sequence parity. Replay semantics 14 / AZC2 |
+| Mission RNG and object phase order | V generator/construction / G consumption parity | Shared seed-zero MSVC stream for supported combat, decoration, planner and scene sound choices; logical unit pools walk newest first with LIFO reuse. Effects precede scripts; projectiles follow units; completed time advances last. Missing loading/wind/input/descriptor producers and grouped town/movement/sound phases prevent full sequence parity. Replay semantics 15 / AZC2 |
 | Descriptor primary/max and secondary HP | V fields / engine checks | All nine descriptor families loaded; mission/spawn maxima never depend on other instances. Positive mission HP is preserved. Original-save +0x3c is secondary HP; maximum comes from rules at simulation initialization. See V04 below |
 | Descriptor regeneration | V inspected thresholds/countdown/overshoot / P facility producer | Marine, Truck, Zeppelin, Bird, Headtruck, Spider and Cannon recover below natural thresholds, or full HP while the hashed service countdown is positive. Pre-add check permits overshoot; countdown expires after the update. Facility coverage/refresh and exact tick alignment remain open |
 | Scripted object health and placement identity | V zero maximum getters / engine identity checks | Boat, Johnka and Camera maximum getters return zero; Submarine records create stationary decoration controllers, not combat units; their scenario actions now use the adapters in [transport_rules.md](transport_rules.md). Town membership uses section numbers, including sparse IDs; team scenario/tactic, defence and vessel provenance remain distinct. Live reference identity still depends on V02 |
@@ -446,7 +483,8 @@ push was run by the assistant.
 
 `side(local)` means the mission human side (`World::script_side`), independent
 of viewing side. The current audit and evidence boundaries are in
-[script_implementation.md](script_implementation.md); it supersedes older
+[script_implementation.md](script_implementation.md) and the
+[loader/runtime gap list](script_runtime_gap_list.md); they supersede older
 immediate-execution and eager-timer policies in historical campaign notes.
 V below identifies a statically inspected rule or an engine construction check,
 not a live parity result; G explicitly identifies approximations.
@@ -456,19 +494,29 @@ not a live parity result; G explicitly identifies approximations.
 | Enabled trigger executes previous latch, then short-circuit AND; empty conditions false | V static rule / synthetic | Initial latch false, all enabled, one-tick latency, every-tick repetition; disable freezes latch; self-disable finishes evaluation |
 | Trigger IDs | V static rule / synthetic | First matching ID addressed; duplicates retain separate latches, enablement and traces; G file order substitutes for pool order |
 | Timer lifecycle | V static rule / synthetic | Lazy zero/running creation; set preserves pause, stop/start retain value, kill erases and a later condition recreates; signed 32-bit counter. G existing timers advance before trigger pass |
-| Operators and clocks | V operators/day-clock rule; G clock integration | Signed operator codes, StartTime-based localTime wrapping at 7200; globalTime uses active elapsed ticks, native clock ratios unmeasured |
-| Side counters and rectangles | V hostile-side count and normalized axes; G counter/spatial adapters | Enemies counts active sides, not objects. Rectangles admit living runtime categories 0/1/6/7 (units, structures and vessels, excluding cameras); construction-class numbers are a different namespace. Inclusive tile edges remain G. Empty native groups and town-list lifetimes remain incomplete |
+| Operators and clocks | V operators/day-clock rule; G clock integration | Signed operator codes, StartTime-based localTime wrapping at 7200; both clocks advance once per simulation tick, globalTime uses active elapsed ticks; startup and timer/trigger pool phase remain G |
+| Side counters and rectangles | V hostile-side count and normalized axes; G counter/spatial adapters | Enemies counts active sides, not objects. Rectangles admit living runtime categories 0/1/6/7 (units, structures and vessels, excluding cameras); construction-class numbers are a different namespace. Strict pixel-box overlap replaces inclusive tile edges; equal corners count nothing. Render-height mapping and missing-descriptor bounds remain G. Empty native groups and town-list lifetimes remain incomplete |
 | Tactic lookup, lock/unlock and kill | V static lookup / synthetic; G hierarchy | Reserved plain groups before town fallback; unlocked plain group cannot be readdressed by ID. Kill uses member death without an attacker; recursive child groups, map Locked fields and AI reuse remain incomplete |
 | Group/town gift and join | V distinct gift group / synthetic; G hierarchy/production details | Gift allocates receiver group without merging colliding IDs; town gift uses shared ownership transfer. Join requires both lookups. Native nested membership and town queue cancellation/refund parity remain open |
 | Relations, money and outcomes | V static rules / synthetic | Directional relation changes; signed money adjustment floored at zero; first side outcome wins while playing, only human side ends mission |
 | printString and presentation | V ring/deadline rules / synthetic; G visual integration | 16 ring slots retain 15 prints; 4000 ms presentation deadlines, staggered retirement, alternate print discarded. Camera vision/deactivation implemented; exact layout and camera phase remain G |
 | Paths, attack/move and vessels | G existing adapters / synthetic | Path variants, whole-group orders and vessel activation exist; native hierarchy/controller parity unverified |
-| Side build/move commands; condition codes 0c/0d | Missing side-plan dependency | Build/move remain explicitly unsupported; native plan conditions have no identified grammar producer or independent side-plan equivalent |
+| Side build command; condition codes 0c/0d | Missing side-plan dependency | Native build list grammar parses with bounded ordered requests, but execution stays explicitly unsupported; native plan conditions have no identified grammar producer or independent side-plan equivalent |
+| Side move command | V static no-op / synthetic | The handler discards a read-only nearest-town lookup, so it now reports supported without issuing movement |
+| Ferry follow eligibility | V no alliance gate / synthetic | Friend, neutral and enemy ferries accept following groups under the same reach/phase/airborne rules, independent of activation byte; passenger ownership remains with requester. Native hit selection, anchor and timing remain G |
 
 All 15 supplied campaign scripts parse with zero unsupported action sites in the
 current inventory; two missing-target warnings remain in mission 6. Synthetic
 regressions cover latches, duplicate IDs, timers, signed comparisons, ownership,
 lookup, messages and replay, with integration expectations updated for latency.
+This follow-up adds synthetic checks for strict rectangle edges and delayed latches,
+native build grammar bounds, the move no-op, and ferry crossings across relations.
+Replay semantics are version 15; previous versions are refused. General side plans
+and native nested tactic/controller lifetimes remain missing dependencies.
+Follow-up validation on 2026-11-23: Linux Release build, 77 passing CTest entries
+with six private-data/namespace skips, and pre-commit passed. All new inputs were
+synthetic; the campaign inventory count above is inherited evidence. Native
+Windows/macOS CI was not run here.
 The reference executable was not run. Campaign objective reachability and full
 V12 parity remain unverified; see the implementation document for remaining G
 rules and validation results.

@@ -33,8 +33,8 @@ bool is_town_building(int t) {
 bool ScriptRunner::supports(ActKind kind) {
   switch (kind) {
     case ActKind::SideBuildCommand:
-    case ActKind::SideMoveCommand:
       return false;
+    case ActKind::SideMoveCommand:
     case ActKind::BoatActivate:
     case ActKind::JohnkaEnable:
     case ActKind::JohnkaDisable:
@@ -189,9 +189,16 @@ void ScriptRunner::notify_attack(World& w, const Object& target, int source_side
 bool ScriptRunner::eval(const World& w, const Condition& c) const {
   int side = resolve_side(w, c.side);
   auto in_rect = [&](const Object& o) {
-    int tx = (o.cur_x >> 8) / kTilePx, ty = (o.cur_y >> 8) / kTilePx;
-    return tx >= std::min(c.rect[0], c.rect[2]) && tx <= std::max(c.rect[0], c.rect[2]) &&
-        ty >= std::min(c.rect[1], c.rect[3]) && ty <= std::max(c.rect[1], c.rect[3]);
+    // V: strict box overlap, with no extra tile on the maximum corner.
+    // G: render_height supplies the native virtual height offset.
+    const auto bounds = w.visibility_rules ? w.visibility_rules->type(o.type).combat_bounds : TypeRules{}.combat_bounds;
+    const int64_t left = int64_t(std::min(c.rect[0], c.rect[2])) * kTilePx;
+    const int64_t right = int64_t(std::max(c.rect[0], c.rect[2])) * kTilePx;
+    const int64_t top = int64_t(std::min(c.rect[1], c.rect[3])) * kTilePx;
+    const int64_t bottom = int64_t(std::max(c.rect[1], c.rect[3])) * kTilePx;
+    const int64_t x = o.cur_x / 256, y = int64_t(o.cur_y / 256) - o.render_height;
+    return left < right && top < bottom && x + bounds[0] < right && left < x + bounds[2] &&
+        y + bounds[1] < bottom && top < y + bounds[3];
   };
   switch (c.kind) {
     case CondKind::Always: return true;
@@ -343,6 +350,9 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
       break;
     }
     case ActKind::PrintStringR: break;  // V: parsed and discarded in this executable revision.
+    case ActKind::SideMoveCommand:
+      // V: the native handler discards a read-only nearest-town lookup.
+      break;
     case ActKind::SideVictory: case ActKind::SideDefeat: {
       uint8_t r = a.kind == ActKind::SideVictory ? kVictory : kDefeat;
       if (side >= 0 && side < 8 && w.side_outcome[side] == kRunning) w.side_outcome[side] = r;
@@ -442,7 +452,7 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
       }
       break;
     }
-    default: // build/move commands remain unsupported
+    default: // General side build plans remain unsupported.
       unsupported_++;
       break;
   }

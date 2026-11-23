@@ -417,7 +417,7 @@ bool CommandsUi::update(const Input& in, World& w, const Camera& cam, float alph
         else { wx = cam.to_world_x(float(in.mx)); wy = cam.to_world_y(float(in.my)); }
         const Object* t = in_world ? pick_object(w, wx, wy, alpha, 24.f / cam.zoom + 8) : nullptr;
         Command c;
-        if (t && is_ferry(*t) && (t->side == w.local_side || (t->side >= 0 && t->side < 8 && w.relation[w.local_side][t->side] == kFriend))) { c.type = Pct::Attack; c.a = int(t->id); }
+        if (t && is_ferry(*t)) { c.type = Pct::Attack; c.a = int(t->id); }
         else if (t && t->side == w.local_side && is_transport(t->type)) { c.type = Pct::Board; c.a = int(t->id); }
         else if (t && t->side == w.local_side && t->type >= 0 && t->tactic >= 0 &&
                  (sim_->rules().type(t->type).mobile || sim_->rules().type(t->type).flier)) {
