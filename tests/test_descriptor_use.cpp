@@ -69,7 +69,7 @@ int main() {
     types << "id,name,kind,param,price,time,development\n";
     for (const auto& l : layouts) {
       int id = 0;
-      while (id < kNumTypes && type_info(id)->kind != l.kind) ++id;
+      while (id < kNumTypes && aztec::engine::type_info(id)->kind != l.kind) ++id;
       CHECK(id < kNumTypes); ids.push_back(id);
       types << id << ",SYNTHETIC,kind,41,37,11,2\n";
       write_record(dir, l, 991, 123456);
