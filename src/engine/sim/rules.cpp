@@ -371,7 +371,7 @@ bool RulesData::load_dir(const std::string& dir) {
     } else if (w.klass == 2 || w.klass == 13) {
       auto r = row(direct, w.parameter);
       w.range = num(r, 5); w.reload = num(r, 1);
-      w.muzzle = num(r, 11) == 106;
+      w.muzzle_anim = num(r, 11); w.hit_anim = num(r, 12); w.sound_set = num(r, 13);
     }
     return w;
   };

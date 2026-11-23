@@ -13,6 +13,7 @@ inline ObjectState object_sprite_state(const Object& o, int side_color) {
   st.facing = o.facing; st.angle = o.body_angle; st.secondary_angle = o.turret_angle;
   st.anim_state = o.anim_state; st.anim_tick = o.anim_tick; st.anim_variant = o.anim_variant;
   st.body_tick = o.body_tick; st.attack_tick = o.attack_tick;
+  st.turret_reload_tick = o.turret_reload_tick;
   st.moving = o.body_moving; st.initial_turret = !o.has_fired;
   st.hp = o.hp; st.max_hp = o.hp_max; st.progress = o.progress;
   st.height = o.render_height; st.destruction_radius = o.destruction_radius;

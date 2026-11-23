@@ -204,11 +204,14 @@ uint32_t AudioSystem::choose(uint32_t set_id) {
   if (set.empty()) return 0;
   return set[msvc_rand(rand_) % set.size()];
 }
-uint32_t AudioSystem::play_set_at(uint32_t set_id, float x, float y, float cx, float cy, uint32_t chosen_sound, uint32_t rate_q16) {
+uint32_t AudioSystem::play_set_at(uint32_t set_id, float x, float y, float cx, float cy, uint32_t chosen_sound,
+                                uint32_t rate_q16, int volume_offset) {
   if (!bank_ok_ || set_id == 0) return 0;
   const float dx = x - cx, dy = y - cy;
-  const auto p = positional_gain(dx, std::sqrt(dx * dx + dy * dy));
+  auto p = positional_gain(dx, std::sqrt(dx * dx + dy * dy));
   if (!p.audible) return 0;
+  const float gain = std::pow(10.f, std::clamp(volume_offset, -10000, 0) / 2000.f);
+  p.left *= gain; p.right *= gain;
   const auto id = chosen_sound ? chosen_sound : choose(set_id);
   auto pcm = sound_pcm(id);
   if (!pcm || pcm->empty()) return 0;

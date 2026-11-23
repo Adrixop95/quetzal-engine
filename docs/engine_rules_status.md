@@ -1,5 +1,34 @@
 # Engine: status of the simulation rules (verified / measured / placeholder)
 
+## Special commands and completion matrix (2026-11-23)
+
+The [completion matrix](specials_completion_matrix.md) inventories every scoped
+special unit, passive ability, tower and command button with **done / partial /
+missing** clone states and separate **V / G** evidence. It supersedes older
+inventory claims about missing sweeps, volleys, streams, facility service and
+Johnka patrol: those implementations already exist in this checkout. No cast,
+cloak, mana, conversion or hero power is inferred from a unit name.
+
+**V rules / synthetic implementation:** class-2 direct shots now use independent
+descriptor muzzle/impact/sound IDs without a beam. Class 13 produces the
+107 trail even when muzzle and impact IDs are zero. Direct sound selection runs
+after damage. Marine death consumes its variant draw; Abdula additionally emits
+sound set 150 at offset -400 and a cosmetic sprite 151 at y+1/height one, without
+a damage payload or revival. Tower activation consumes a random heading draw,
+including once at construction completion. Towers expose the finite slot-1
+reload cue at countdown 12 outside a running shot, retain damage-stage sound
+members, restart stage fire when crossing a health boundary, and emit sprite-105
+sparks immediately on entering the lowest quarter and every three updates at
+height 80. Reload/spark clocks, stage and selected sound join the state hash.
+Replay semantics advance from 14 to 15; old engine replay saves fail explicitly.
+
+**G limits:** beam origin retains the existing owner-centre fallback; exact
+native vector arithmetic, presentation pitch/base volume, spatial ordering,
+shot/pool/animation phase and tactic scoring remain unresolved. New one-shot
+sound cues clear on pause while stage loops retain their choice. Presentation
+visibility, mute and device state do not advance simulation RNG. No original
+executable was run and synthetic replay equality does not establish game parity.
+Linux verification does not substitute for native Windows/macOS CI execution.
 ## Descriptor use audit (2026-11-23)
 
 **V fields / synthetic loader and simulation checks:** the

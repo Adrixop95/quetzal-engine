@@ -79,7 +79,7 @@ int main(int argc, char** argv) {
   std::filesystem::create_directory(root / "Music");
   Bytes set(4); put(set, 0, 1);
   std::vector<Bytes> sets(401);
-  for (int id : {1, 2, 3, 4, 101, 103, 104, 107, 108, 301, 401}) sets[id - 1] = set;
+  for (int id : {1, 2, 3, 4, 101, 103, 104, 107, 108, 150, 151, 152, 153, 200, 201, 301, 401}) sets[id - 1] = set;
   put(sets[3], 0, 3); // distinct invented speech member, long enough to stay active across updates
   write(root / "Res/Snd.xbe", archive({{0x460, {wav(), Bytes{}, wav(8)}}, {0x3e8, sets},
       {0x6, {Bytes{'R', 'e', 'a', 'd', 'y', 0}, Bytes{'N', 'o', ' ', 'W', 'A', 'V', 0}}}}));
@@ -435,6 +435,76 @@ int main(int argc, char** argv) {
   write(sound_root / "Res/Snd.xbe", archive({{0x460, {wav(), Bytes{}, wav(8)}}, {0x3e8, sets}}));
   std::filesystem::copy_file(root / "Res/Units.xbe", sound_root / "Res/Units.xbe");
   CHECK(rules->load_audio(sound_root.string()));
+  {
+    auto combat_rules = std::make_shared<RulesData>();
+    CHECK(combat_rules->load_dir(AZTEC_TEST_RULES_DIR));
+    CHECK(combat_rules->load_audio(sound_root.string()));
+    for (int source : {1,69,0}) {
+      World initial; initial.terrain.w = initial.terrain.h = 24; initial.terrain.cells.resize(24 * 24);
+      initial.relation[0][1] = initial.relation[1][0] = kEnemy;
+      Object attacker; attacker.id = 1; attacker.type = source; attacker.hp = 100000;
+      attacker.teleport(to_fixed(400),to_fixed(400));
+      Object victim = attacker; victim.id = 2; victim.type = source == 0 ? 82 : 0;
+      victim.side = 1; victim.hp = source == 0 ? 1 : 100000;
+      victim.cooldown = 10000; victim.attack_mode = AttackMode::Direct;
+      victim.teleport(to_fixed(410),to_fixed(400));
+      initial.objects = {attacker,victim};
+      World live = initial; GameSim sim(combat_rules); sim.init(live);
+      Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2; sim.submit(attack);
+      live.begin_tick(); sim.tick(live);
+      CHECK(live.combat_sounds.size() == 1);
+      const uint32_t expected = source == 1 ? 200 : source == 69 ? 201 : 150;
+      if (!live.combat_sounds.empty()) {
+        CHECK(live.combat_sounds[0].set == expected && live.combat_sounds[0].sound == 1);
+        CHECK(live.combat_sounds[0].x == to_fixed(source == 0 ? 410 : 400));
+      }
+      const auto random = sim.random_state();
+      const auto hash = sim.state_hash(live);
+      AudioSystem backend; CHECK(backend.init(sound_root.string(),false));
+      std::vector<AudioEvent> resolved;
+      backend.event_sink = [&](const auto& e) { resolved.push_back(e); };
+      emit_scene_audio(live,provider,units,backend,400,400,[](float,float,int) { return false; });
+      CHECK(resolved.empty());
+      backend.mixer().sfx_volume = 0;
+      emit_scene_audio(live,provider,units,backend,400,400,[](float,float,int) { return true; });
+      CHECK(resolved.empty());
+      backend.mixer().sfx_volume = 1;
+      emit_scene_audio(live,provider,units,backend,400,400,[](float,float,int) { return true; });
+      CHECK(std::count_if(resolved.begin(),resolved.end(),[&](const auto& e) {
+        return e.set == expected && e.sound == 1 && e.trigger == AudioEvent::Trigger::Combat;
+      }) == 1);
+      CHECK(sim.random_state() == random && sim.state_hash(live) == hash);
+      auto replay = GameSim::replay(initial,combat_rules,sim.log(),1);
+      CHECK(replay->state_hash(initial) == hash);
+      CHECK(initial.combat_sounds.size() == live.combat_sounds.size());
+      Command pause; pause.type = Pct::PauseOn; sim.submit(pause); live.begin_tick(); sim.tick(live);
+      CHECK(live.combat_sounds.empty() && sim.random_state() == random);
+    }
+    World scene; scene.terrain.w = scene.terrain.h = 16; scene.terrain.cells.resize(256);
+    Object tower; tower.id = 1; tower.type = 80; tower.hp = combat_rules->type(80).hp_max / 2;
+    tower.teleport(to_fixed(200),to_fixed(200)); scene.objects = {tower};
+    GameSim sim(combat_rules); sim.init(scene); scene.begin_tick(); sim.tick(scene);
+    CHECK(scene.combat_sounds.size() == 1 && scene.combat_sounds[0].sound == 1 && scene.combat_sounds[0].loop);
+    AudioSystem backend; CHECK(backend.init(sound_root.string(),false));
+    std::vector<AudioEvent> resolved;
+    backend.event_sink = [&](const auto& e) { resolved.push_back(e); };
+    auto present = [&]() { emit_scene_audio(scene,provider,units,backend,200,200,[](float,float,int) { return true; }); };
+    present();
+    CHECK(std::count_if(resolved.begin(),resolved.end(),[](const auto& e) {
+      return e.kind == AudioEvent::Kind::LoopStart && e.set == 152;
+    }) == 1);
+    const auto random = sim.random_state();
+    scene.begin_tick(); sim.tick(scene); present();
+    CHECK(sim.random_state() == random); // a persistent stage keeps its chosen member
+    CHECK(std::count_if(resolved.begin(),resolved.end(),[](const auto& e) {
+      return e.kind == AudioEvent::Kind::LoopStart && e.set == 152;
+    }) == 1);
+    scene.objects[0].hp = scene.objects[0].hp_max; scene.begin_tick(); sim.tick(scene); present();
+    CHECK(scene.combat_sounds.empty());
+    CHECK(std::count_if(resolved.begin(),resolved.end(),[](const auto& e) {
+      return e.kind == AudioEvent::Kind::LoopStop && e.set == 152;
+    }) == 1);
+  }
   {
     World scene; scene.terrain.w = scene.terrain.h = 4; scene.terrain.cells.resize(16);
     GameSim choices(rules); choices.init(scene);

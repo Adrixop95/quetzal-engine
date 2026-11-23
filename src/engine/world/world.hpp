@@ -53,6 +53,9 @@ struct Object {
   int transport_phase = 0, orientation = 0;
   bool construction_overlay = false;
   bool has_fired = false;
+  int64_t turret_reload_tick = -1;
+  int tower_damage_level = 0, tower_spark_ticks = 0;
+  uint32_t tower_damage_sound = 0;
   int64_t body_tick = -1, attack_tick = -1;  // independent visual clocks, advanced only by GameSim
   bool body_moving = false;
   // --- simulation state (written only by the Simulation) ---
@@ -226,6 +229,7 @@ struct World {
   uint64_t next_unit_tactic = 1;
   bool simulation_sounds = false; // presentation must use resolved simulation choices
   std::vector<SoundChoice> sound_choices; // current tick output; no device or view state
+  std::vector<CombatSound> combat_sounds; // current tick descriptor/death cues
   std::vector<TownState> town_state;
   std::vector<SideState> side_state;   // indexed by side number
   // V: attacked is the notifying nonfriendly side, retained by the side-local tactic.

@@ -137,6 +137,7 @@ class GameSim : public Simulation {
   void path_tactic(UnitTactic& t, const Object& leader, int x, int y);
   bool advance_aircraft(Object& object, path::Vec2 goal, bool attacking, int range = 0);
   void run_tower(World& world, Object& tower);
+  void tower_presentation(World& world, Object& tower);
   void advance_effects(World& w, bool projectiles);
   void advance_attack(World& w, Object& source);
   void fire(World& w, const Object& source, Object& target, int damage);
@@ -147,6 +148,7 @@ class GameSim : public Simulation {
   void update_animation_state(World& w);
   void update_fog(World& w);
   void choose_scene_sounds(World& w);
+  void combat_sound(World& w, int set, const Object& source, int volume_offset = 0);
   std::map<uint64_t, SoundChoice> sound_loops_;
   void run_ai(World& w);   // sim/ai.cpp
   void kill(World& w, Object& o);

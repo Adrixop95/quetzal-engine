@@ -190,6 +190,7 @@ void GameSim::init(World& w) {
   random_ = 0;
   sound_loops_.clear();
   w.sound_choices.clear();
+  w.combat_sounds.clear();
   w.simulation_sounds = rules_->audio() != nullptr;
   if (script_.loaded() && !w.original_save) script_.init(w);
   for (Object& o : w.objects) {
@@ -211,6 +212,9 @@ void GameSim::init(World& w) {
       o.gold_harvest = {}; o.repair_harvest = {}; o.harvest_ready = false;
       if (r.structure) { initialize_gold(w, o); initialize_repair(w, o); }
       o.body_angle = o.facing * 32; o.turret_angle = o.body_angle;
+      if (r.kind == 7 && o.alive && !o.removed) o.turret_angle = int(next_rand() & 255);
+      o.turret_reload_tick = -1; o.tower_damage_level = o.tower_spark_ticks = 0;
+      o.tower_damage_sound = 0;
       if (o.source == ObjectSource::Johnka) {
         o.removed = !o.vessel_enabled;
         o.vessel_route = o.vessel_enabled;
@@ -377,6 +381,7 @@ uint32_t GameSim::spawn(World& w, int type, int side, int pxx, int pyy, int hp, 
   const TypeRules& r = rules_->type(type);
   o.hp = hp;
   o.initialize_health(r);
+  if (r.kind == 7 && !constructing) o.turret_angle = int(next_rand() & 255);
   if (r.kind == 5 && r.cruise_height > 0) o.render_height = 30;
   if (r.kind == 5 && r.cruise_height > 0) {
     o.air_min_speed_px = 6 + int((next_rand() % 32768) * 6 / 32767);
@@ -420,6 +425,14 @@ void GameSim::kill(World& w, Object& o) {
   o.attack_facing = 0;
   o.corpse_ticks = 0;
   const TypeRules& r = rules_->type(o.type);
+  if (r.kind == 0) {
+    o.anim_variant = next_rand() % 3;
+    if (o.type == 82) {
+      combat_sound(w, 150, o, -400);
+      decoration(w, data::kMarineDeathExplosionAnim, int(next_rand() % 3),
+                 o.cur_x, o.cur_y + to_fixed(1), 1, o.side, o.id);
+    }
+  }
   if (r.kind == 1 || r.kind == 3 || r.kind == 4 || r.kind == 5 || r.kind == 6 || r.kind == 9) {
     decoration(w, data::kVehicleExplosionAnim, int(next_rand() % 3), o.cur_x, o.cur_y, o.render_height, o.side);
     if (!r.flier) decoration(w, data::kVehicleDebrisAnim, int(next_rand() % 20), o.cur_x, o.cur_y, -1, o.side);
@@ -1200,12 +1213,16 @@ void GameSim::economy(World& w) {
       if (auto* o = w.find_mut(q.object)) {
         // Buildings use their actual health as the work clock. Damage delays
         // completion; it never causes another payment for the accepted item.
+        const bool unfinished = o->progress < 1000;
         o->hp = int(std::min(int64_t(o->hp_max), int64_t(o->hp) + q.work_rate));
         if (q.work_rate > 0)
           q.remaining = int((int64_t(o->hp_max - o->hp) + q.work_rate - 1) / q.work_rate);
         o->build_elapsed = q.total - q.remaining;
         o->progress = q.remaining == 0 ? 1000 : std::min(999, int(int64_t(o->hp) * 1000 / std::max(1, o->hp_max)));
-        if (q.remaining == 0) { o->set_anim(kAnimIdle); o->body_tick = -1; }
+        if (q.remaining == 0) {
+          o->set_anim(kAnimIdle); o->body_tick = -1;
+          if (unfinished && rules_->type(o->type).kind == 7) o->turret_angle = int(next_rand() & 255);
+        }
       }
       bool finished = false;
       if (q.remaining <= 0 && !starting) {
@@ -1282,7 +1299,10 @@ void GameSim::economy(World& w) {
       o.build_elapsed = std::min(total, o.build_elapsed + 1);
       o.progress = int(int64_t(o.build_elapsed) * 1000 / total);
       o.hp = std::min(o.hp_max, o.hp + std::max(1, int(int64_t(o.hp_max) * o.build_elapsed / total)) - before);
-      if (o.progress >= 1000) { o.anim_state = kAnimIdle; o.anim_tick = 0; o.body_tick = -1; initialize_gold(w, o); }
+      if (o.progress >= 1000) {
+        o.anim_state = kAnimIdle; o.anim_tick = 0; o.body_tick = -1; initialize_gold(w, o);
+        if (r.kind == 7) o.turret_angle = int(next_rand() & 255);
+      }
     } else if (o.side >= 0 && o.side < int(w.side_state.size())) {
       const auto& h = r.harvest;
       if (!o.harvest_ready) initialize_gold(w, o);
@@ -1415,6 +1435,36 @@ bool GameSim::advance_aircraft(Object& o, path::Vec2 goal, bool attacking, int r
   return aligned;
 }
 
+void GameSim::tower_presentation(World& w, Object& o) {
+  if (o.hp_max <= 0) return;
+  const int level = std::clamp(3 - int((int64_t(o.hp) * 4 - 1) / o.hp_max), 0, 3);
+  bool changed = level != o.tower_damage_level;
+  if (changed) {
+    o.tower_damage_level = level; o.tower_damage_sound = 0;
+    // The stage effect restarts when damage crosses a boundary in either direction.
+    std::erase_if(w.effects, [&](const Effect& e) { return e.source == o.id && e.loop && e.anim >= 154 && e.anim <= 156; });
+    if (level) {
+      combat_sound(w, 150 + level, o);
+      o.tower_damage_sound = w.combat_sounds.back().sound;
+      w.combat_sounds.pop_back();
+    }
+    if (level == 3) o.tower_spark_ticks = 1;
+  }
+  if (level) {
+    CombatSound cue;
+    cue.source = (uint64_t(1) << 62) | o.id;
+    cue.set = uint32_t(150 + level); cue.sound = o.tower_damage_sound;
+    cue.x = o.cur_x; cue.y = o.cur_y; cue.side = o.side; cue.loop = true;
+    w.combat_sounds.push_back(cue);
+  }
+  if (o.tower_spark_ticks > 0) --o.tower_spark_ticks;
+  if (level == 3 && o.tower_spark_ticks == 0) {
+    const int offset = int(next_rand() % 29) - 14;
+    decoration(w, 105, 0, o.cur_x + to_fixed(offset), o.cur_y + to_fixed(1), 80, o.side, o.id);
+    o.tower_spark_ticks = 3;
+  }
+}
+
 void GameSim::run_tower(World& w, Object& o) {
   const auto& r = rules_->type(o.type);
   auto usable = [&](const Object* target) {
@@ -1460,6 +1510,7 @@ void GameSim::run_tower(World& w, Object& o) {
   if (o.cooldown || !usable(target)) return;
   const auto shot = rules_->attack(o.type, target->type, !w.hostile(o.side, target->side));
   o.cooldown = shot.reload; o.has_fired = true;
+  o.turret_reload_tick = -1;
   o.anim_state = kAnimAttack; o.anim_tick = 0; o.attack_tick = 0;
   if (rules_->attack_frame(o.type, o.facing, 0, o.turret_angle).known) {
     o.release_target = target->id; o.target = 0;
@@ -1506,7 +1557,11 @@ void GameSim::run_orders(World& w) {
     bool flight_advanced = false;
 
     if (r.kind == 7) {
+      if (o.turret_reload_tick >= 0 && o.turret_reload_tick < std::numeric_limits<int64_t>::max()) ++o.turret_reload_tick;
+      if (o.cooldown == 12 && !o.release_target && data::kTypeAnims[o.type].anim2)
+        o.turret_reload_tick = 0;
       if (r.armed) run_tower(w, o);
+      tower_presentation(w, o);
       continue;
     }
     if (o.release_target) {
@@ -1769,15 +1824,12 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
     trace_combat("launch", e); w.effects.push_back(e);
     return;
   }
-  if (weapon.muzzle) {
-    auto offset = path::with_length({dx, dy}, 20 * 256);
-    decoration(w, data::kBeamMuzzleAnim, 0, source.cur_x + offset.x, source.cur_y + offset.y, 0, source.side);
-    int count = path::length({dx, dy}) / (30 * 256);
-    for (int i = 1; i <= count; i++)
-      decoration(w, data::kBeamSegmentAnim, data::direction32_from_angle(angle),
-                 source.cur_x + int(int64_t(dx) * i / (count + 1)),
-                 source.cur_y + int(int64_t(dy) * i / (count + 1)), 0, source.side);
-    decoration(w, data::kBeamImpactAnim, 0, target.cur_x, target.cur_y, 0, source.side);
+  if (weapon.hit_anim)
+    decoration(w, weapon.hit_anim, 0, target.cur_x, target.cur_y, target.render_height, source.side);
+  if (weapon.muzzle_anim) {
+    const int facing = source.turret_angle >= 0 ? source.turret_angle : source.facing * 32;
+    const auto offset = path::from_angle((256 - facing) & 255, to_fixed(20));
+    decoration(w, weapon.muzzle_anim, 0, source.cur_x + offset.x, source.cur_y + offset.y, 0, source.side);
   }
   if (weapon.anim == 0) {
     Effect hit;
@@ -1815,6 +1867,24 @@ void GameSim::fire_weapon(World& w, const WeaponRules& weapon, const Object& sou
           if (!weapon_allied(w, source.side, o.side) && !r.flier && (r.category_e8 || r.category_f4))
             o.cooldown = int(std::min(int64_t(std::numeric_limits<int>::max()), int64_t(o.cooldown) + 18));
         }
+      }
+    }
+    combat_sound(w, weapon.sound_set, source);
+    if (weapon.klass == 13) {
+      // G: retain the owner's centre as the origin until the native shot-origin
+      // input is resolved. The inspected trail uses 30-pixel, jittered steps.
+      path::Vec2 point{source.cur_x, source.cur_y};
+      const path::Vec2 goal{target.cur_x, target.cur_y};
+      for (int count = 0; count < 10000; ++count) {
+        const auto delta = path::Vec2{goal.x - point.x, goal.y - point.y};
+        const int distance = path::length(delta) / 256;
+        if (distance <= 30) break;
+        const int spread = std::max(0, 64 - 960 / distance);
+        const int jitter = spread ? int(next_rand() % (2 * spread)) - spread : 0;
+        const int direction = (256 - path::angle_of(delta.x, delta.y) + jitter + 4) & 248;
+        decoration(w, data::kBeamSegmentAnim, direction / 8, point.x, point.y, 0, source.side);
+        const auto step = path::from_angle((256 - direction) & 255, to_fixed(30));
+        point.x += step.x; point.y += step.y;
       }
     }
     return;
@@ -2162,6 +2232,18 @@ void GameSim::update_fog(World& w) {
   if (changed) w.fog_version++;
 }
 
+void GameSim::combat_sound(World& w, int set, const Object& source, int volume_offset) {
+  if (set <= 0) return;
+  CombatSound cue;
+  cue.set = uint32_t(set); cue.x = source.cur_x; cue.y = source.cur_y;
+  cue.side = source.side; cue.volume_offset = volume_offset;
+  if (const auto* inputs = rules_->audio()) {
+    const auto members = inputs->bank.sound_set(cue.set);
+    if (!members.empty()) cue.sound = members[next_rand() % members.size()];
+  }
+  w.combat_sounds.push_back(cue);
+}
+
 void GameSim::choose_scene_sounds(World& w) {
   w.sound_choices.clear();
   const auto* inputs = rules_->audio();
@@ -2206,6 +2288,8 @@ void GameSim::choose_scene_sounds(World& w) {
 }
 
 void GameSim::tick(World& w) {
+  auto previous_sounds = std::move(w.combat_sounds);
+  w.combat_sounds.clear();
   tick_++;
   std::stable_sort(pending_.begin(), pending_.end(), [](const Command& a, const Command& b) { return a.side < b.side; });
   for (Command& c : pending_) {
@@ -2214,6 +2298,7 @@ void GameSim::tick(World& w) {
   }
   pending_.clear();
   if (paused_) {
+    for (const auto& cue : previous_sounds) if (cue.loop) w.combat_sounds.push_back(cue);
     w.sound_choices.clear();
     for (const auto& [source, choice] : sound_loops_) w.sound_choices.push_back(choice);
     for (const auto& e : w.effects) if (e.flight) trace_combat("position", e);
@@ -2550,6 +2635,9 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(uint32_t(o.transport_phase)); mix(uint32_t(o.orientation)); mix(o.construction_overlay); mix(o.has_fired);
     mix(o.body_tick); mix(o.attack_tick); mix(o.body_moving); mix(o.anim_tick);
     mix(uint32_t(o.body_angle)); mix(uint32_t(o.turret_angle));
+    if (rules_->type(o.type).kind == 7) {
+      mix(o.turret_reload_tick); mix(o.tower_damage_level); mix(o.tower_spark_ticks); mix(o.tower_damage_sound);
+    }
     mix(o.facing); mix(o.anim_state); mix(uint32_t(o.corpse_ticks));
     mix(uint32_t(o.idle_anchor_x)); mix(uint32_t(o.idle_anchor_y)); mix(o.idle_attack); mix(o.return_to_tactic);
     mix(uint32_t(o.dest_x)); mix(uint32_t(o.dest_y)); mix(o.resume); mix(uint32_t(o.build_elapsed)); mix(uint32_t(o.build_total));

@@ -49,7 +49,7 @@ struct WeaponRules {
   int impact_anim = 0, splash_px = 0, shockwave = 0;
   int spread_px = 0;
   int duration = 0; // class 11 active flame; class 8 dispatch window
-  bool muzzle = false;
+  int muzzle_anim = 0, hit_anim = 0, sound_set = 0;
   std::vector<WeaponRules> components;  // class 12 sums both child weapons
 };
 

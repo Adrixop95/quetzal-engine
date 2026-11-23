@@ -83,6 +83,14 @@ void emit_scene_audio(const World& world, const AnimSpriteProvider& provider,
   audio.event_tick = world.tick;
   const auto previous_trigger = audio.event_trigger;
   audio.begin_scene_tick();
+  for (const auto& cue : world.combat_sounds) {
+    const float x = cue.x / 256.f, y = cue.y / 256.f;
+    if (!cue.sound) continue;
+    const bool audible = visible(x, y, cue.side);
+    audio.event_trigger = AudioEvent::Trigger::Combat;
+    if (cue.loop) audio.loop_at(cue.source, cue.set, x, y, cx, cy, cue.sound, 65536, audible);
+    else if (audible) audio.play_set_at(cue.set, x, y, cx, cy, cue.sound, 65536, cue.volume_offset);
+  }
   auto play = [&](const data::SpriteRef& frame, uint64_t key, float x, float y, bool audible) {
     if (!frame.valid()) return;
     auto dispatch = [&](uint32_t set, bool loop) {

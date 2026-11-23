@@ -4478,7 +4478,9 @@ static void test_fire_air_siege() {
   }
   // Volleys retain sixteen snapshot positions, dispatch during ten ticks, and survive the source.
   for (auto [type, target] : {std::pair{9,0}, {58,0}, {81,33}, {88,0}}) {
-    initial = scene(type, target, 180); w = initial;
+    initial = scene(type, target, 180);
+    if (type == 81) initial.objects[1].teleport(to_fixed(508),to_fixed(256)); // seeded tower heading
+    w = initial;
     GameSim volley(rules, Modifications::faithful()); volley.init(w); volley.submit(attack);
     int impacts = 0, launches = 0;
     volley.set_combat_observer([&](uint64_t, const char* event, const Effect&, uint32_t, int, int) {
@@ -4486,7 +4488,8 @@ static void test_fire_air_siege() {
       launches += std::string(event) == "launch";
     });
     w.begin_tick(); volley.tick(w);
-    CHECK(launches == 16 && impacts == (type == 81 ? 2 : 1));
+    // The air tower consumes an activation heading before the Bird speed draw.
+    CHECK(launches == 16 && impacts == (type == 81 ? 3 : 1));
     const int hp_after_launch = w.objects[1].hp;
     for (const auto& e : w.effects) {
       if (e.payload_id < 0) continue; // launch-tick impacts also create decorations

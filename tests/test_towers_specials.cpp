@@ -7,6 +7,8 @@
 #include "core/endian.hpp"
 #include "engine/data/type_anims.hpp"
 #include "engine/sim/game_sim.hpp"
+#include "engine/assets/anim_provider.hpp"
+#include "engine/world/object_state.hpp"
 #include "temp_dir.hpp"
 
 using namespace aztec;
@@ -45,6 +47,12 @@ static std::string animations(const TempDir& dir) {
     if (!selected) continue;
     Bytes animation(0x208 + 137 * 32);
     std::memcpy(animation.data(), "Anim", 4); put(animation, 4, 3);
+    if (turret) {
+      // An invented, finite reload cue, distinct from directional shots.
+      put(animation, 12, 134);
+      put(animation, 0x208 + 134 * 32, 77);
+      put(animation, 0x208 + 134 * 32 + 28, 2);
+    }
     for (int slot = 2; slot < 34; ++slot) {
       if (!turret && slot != 8) continue;
       const int first = 1 + (slot - 2) * 4;
@@ -66,7 +74,11 @@ static std::string animations(const TempDir& dir) {
 
 static void towers(const std::shared_ptr<RulesData>& rules) {
   for (int type : {17,23,26,42,49,69,81}) {
-    World initial = scene(type, type == 81 ? 33 : 0), w = initial;
+    World initial = scene(type, type == 81 ? 33 : 0);
+    // Align with the first seeded activation heading. Acquisition/marker checks
+    // below stay independent of the separate turn-step controls.
+    initial.objects[1].teleport(to_fixed(460),to_fixed(320));
+    World w = initial;
     GameSim sim(rules); sim.init(w);
     int launches = 0, launch_height = -1;
     sim.set_combat_observer([&](uint64_t, const char* event, const Effect& e, uint32_t, int, int) {
@@ -152,6 +164,74 @@ static void towers(const std::shared_ptr<RulesData>& rules) {
   CHECK(w.objects[1].hp < 100000);
 }
 
+static void tower_visuals(const std::shared_ptr<RulesData>& rules, const std::string& bank) {
+  // Unarmed Defence shares activation, damage stages and sparks with armed towers.
+  World initial = scene(80,0,1000), w = initial;
+  w.objects[0].hp = rules->type(80).hp_max;
+  GameSim sim(rules); sim.init(w);
+  uint32_t rng = 0;
+  CHECK(w.objects[0].turret_angle == int(msvc_rand(rng) & 255));
+  CHECK(sim.random_state() == rng);
+  for (int hp : {w.objects[0].hp_max * 3 / 4, w.objects[0].hp_max / 2, w.objects[0].hp_max / 4}) {
+    w.objects[0].hp = hp; tick(sim,w);
+    CHECK(w.objects[0].tower_damage_level == (hp == w.objects[0].hp_max * 3 / 4 ? 1 : hp == w.objects[0].hp_max / 2 ? 2 : 3));
+    CHECK(w.combat_sounds.size() == 1 && w.combat_sounds[0].loop);
+    CHECK(w.combat_sounds[0].set == uint32_t(150 + w.objects[0].tower_damage_level));
+  }
+  auto spark_count = [&]() { int count = 0; for (const auto& e : w.effects) if (e.anim == 105) ++count; return count; };
+  CHECK(spark_count() == 1);
+  for (const auto& e : w.effects) if (e.anim == 105) {
+    CHECK(e.height == 80 && e.y == w.objects[0].cur_y + to_fixed(1));
+    CHECK(e.x >= w.objects[0].cur_x - to_fixed(14) && e.x <= w.objects[0].cur_x + to_fixed(14));
+    CHECK(!e.flight && e.payload_id == -1);
+  }
+  const auto hash = sim.state_hash(w);
+  ++w.objects[0].tower_spark_ticks; CHECK(hash != sim.state_hash(w)); --w.objects[0].tower_spark_ticks;
+  Command pause; pause.type = Pct::PauseOn; sim.submit(pause); tick(sim,w);
+  CHECK(spark_count() == 1 && w.objects[0].tower_spark_ticks == 3);
+  CHECK(w.combat_sounds.size() == 1 && w.combat_sounds[0].loop);
+  pause.type = Pct::PauseOff; sim.submit(pause);
+  tick(sim,w); tick(sim,w); CHECK(spark_count() == 1);
+  tick(sim,w); CHECK(spark_count() == 2);
+  w.objects[0].hp = w.objects[0].hp_max; tick(sim,w);
+  CHECK(w.objects[0].tower_damage_level == 0 && w.combat_sounds.empty());
+  for (const auto& e : w.effects) CHECK(!e.loop);
+
+  w = scene(23,0,1000); sim.init(w); w.objects[0].cooldown = 14;
+  tick(sim,w); CHECK(w.objects[0].turret_reload_tick == -1);
+  tick(sim,w); CHECK(w.objects[0].turret_reload_tick == 0);
+  AnimSpriteProvider provider; CHECK(provider.open(bank));
+  auto st = object_sprite_state(w.objects[0],0);
+  auto frames = provider.sound_frames(st,false);
+  CHECK(frames.size() == 2 && frames[1].sprite == 77);
+  const auto parts = provider.parts(st);
+  CHECK(!parts.empty() && parts.back().key.index == 77);
+  tick(sim,w); CHECK(w.objects[0].turret_reload_tick == 1);
+  tick(sim,w); CHECK(w.objects[0].turret_reload_tick == 2);
+  frames = provider.sound_frames(object_sprite_state(w.objects[0],0),false);
+  CHECK(frames.size() == 2 && frames[1].sprite != 77);
+
+  // Pause/replay retain an activated tower's presentation clocks and RNG draws.
+  initial = scene(80,0,1000); initial.objects[0].hp = rules->type(80).hp_max / 4;
+  w = initial; sim.init(w);
+  for (int n = 1; n <= 8; ++n) {
+    tick(sim,w); World restored = initial;
+    auto replay = GameSim::replay(restored,rules,sim.log(),n);
+    CHECK(replay->state_hash(restored) == sim.state_hash(w));
+  }
+
+  // Legacy construction without a queue activates once when progress completes.
+  w = scene(80,0,1000); sim.init(w);
+  const auto before_build = sim.random_state(); rng = before_build;
+  const int activated_heading = int(msvc_rand(rng) & 255);
+  auto& building = w.objects[0];
+  building.progress = 0; building.build_elapsed = 0; building.build_total = 2; building.hp = 1;
+  tick(sim,w); CHECK(building.progress == 500 && sim.random_state() == before_build);
+  tick(sim,w); CHECK(building.progress == 1000 && sim.random_state() == rng);
+  CHECK(building.turret_angle == activated_heading);
+  tick(sim,w); CHECK(sim.random_state() == rng);
+}
+
 static void aircraft(const std::shared_ptr<RulesData>& rules) {
   for (int type : {7,33,34,60,85}) {
     auto w = scene(type,14,700); GameSim sim(rules); sim.init(w);
@@ -209,7 +289,9 @@ static void protection(const std::shared_ptr<RulesData>& rules) {
 int main() {
   TempDir dir;
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
-  CHECK(rules->load_combat_animations(animations(dir)));
+  const auto bank = animations(dir);
+  CHECK(rules->load_combat_animations(bank));
   towers(rules); aircraft(rules); protection(rules);
+  tower_visuals(rules,bank);
   return failures ? 1 : 0;
 }

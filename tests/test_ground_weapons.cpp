@@ -191,8 +191,16 @@ static void test_point_payload(const std::shared_ptr<RulesData>& rules) {
 }
 
 static void test_direct(const std::shared_ptr<RulesData>& rules) {
-  for (int type : {0,1,54}) {
-    World w = duel(type, type == 0 ? 30 : 100);
+  for (int distance : {30,31}) {
+    World w = duel(54,distance); GameSim sim(rules); sim.init(w); attack(sim); tick(sim,w);
+    CHECK(w.effects.size() == size_t(distance == 31));
+    if (!w.effects.empty()) {
+      CHECK(w.effects[0].anim == 107 && w.effects[0].x == to_fixed(400) && w.effects[0].y == to_fixed(400));
+      CHECK(w.effects[0].slot >= 0 && w.effects[0].slot < 32);
+    }
+  }
+  for (int type : {0,1,5,54,55,82}) {
+    World initial = duel(type, type == 1 || type == 54 ? 100 : 10), w = initial;
     w.objects.push_back(object(3, 0, 1, 440, 440));
     GameSim sim(rules); sim.init(w); attack(sim); tick(sim, w);
     const auto shot = rules->attack(type, 0);
@@ -201,6 +209,46 @@ static void test_direct(const std::shared_ptr<RulesData>& rules) {
     CHECK(w.objects[1].side == 1 && w.objects[1].secondary_hp == rules->type(0).secondary_hp);
     CHECK(w.objects[1].cooldown == 999);
     for (const auto& e : w.effects) CHECK(!e.flight);
+    int muzzle = 0, impact = 0, trail = 0;
+    for (const auto& e : w.effects) {
+      muzzle += e.anim == 106; impact += e.anim == 110; trail += e.anim == 107;
+    }
+    CHECK(muzzle == (type == 1) && impact == (type == 1));
+    CHECK((trail > 0) == (type == 54));
+    CHECK(w.combat_sounds.size() == size_t(type == 1));
+    if (!w.combat_sounds.empty()) CHECK(w.combat_sounds[0].set == 200);
+    // Add the same innocent bystander to the fresh replay world.
+    initial.objects.push_back(object(3, 0, 1, 440, 440));
+    auto replay = GameSim::replay(initial, rules, sim.log(), 1);
+    CHECK(replay->state_hash(initial) == sim.state_hash(w));
+  }
+}
+
+static void test_abdula_death(const std::shared_ptr<RulesData>& rules) {
+  for (int type : {5,28,54,55,82}) {
+    World initial = duel(0, 10);
+    initial.objects[1].type = type; initial.objects[1].hp = 1;
+    World w = initial; GameSim sim(rules); sim.init(w); attack(sim); tick(sim,w);
+    CHECK(!w.objects[1].alive && w.objects[1].anim_variant < 3);
+    CHECK(w.objects[1].side == 1 && w.objects[1].secondary_hp == rules->type(type).secondary_hp);
+    CHECK(w.effects.size() == size_t(type == 82));
+    CHECK(w.combat_sounds.size() == size_t(type == 82));
+    if (type == 82 && !w.effects.empty() && !w.combat_sounds.empty()) {
+      const auto& e = w.effects[0];
+      CHECK(e.anim == 151 && e.slot >= 0 && e.slot < 3);
+      CHECK(e.x == w.objects[1].cur_x && e.y == w.objects[1].cur_y + to_fixed(1));
+      CHECK(e.height == 1 && e.payload_id == -1 && !e.flight && !e.flame);
+      CHECK(w.combat_sounds[0].set == 150 && w.combat_sounds[0].volume_offset == -400);
+    }
+    auto replay = GameSim::replay(initial, rules, sim.log(), 1);
+    CHECK(replay->state_hash(initial) == sim.state_hash(w));
+    const auto random = sim.random_state();
+    sim.script_kill(w,2); CHECK(sim.random_state() == random); // death is emitted once
+    Command pause; pause.type = Pct::PauseOn; sim.submit(pause); tick(sim,w);
+    CHECK(w.combat_sounds.empty() && sim.random_state() == random);
+    pause.type = Pct::PauseOff; sim.submit(pause);
+    for (int n = 0; n < 12; ++n) tick(sim,w);
+    CHECK(w.effects.empty()); // decoration never becomes an explosion payload or resurrection
   }
 }
 
@@ -209,6 +257,7 @@ int main() {
   CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
   test_formulas(rules); test_mage_and_tower(rules); test_demolisher(rules);
   test_melee(rules); test_snowman(rules); test_point_payload(rules); test_direct(rules);
+  test_abdula_death(rules);
   std::puts(failures ? "FAILED" : "ground weapons passed");
   return failures ? 1 : 0;
 }
