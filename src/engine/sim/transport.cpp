@@ -60,7 +60,7 @@ bool occupied(const World& w, const Object& passenger, Fixed x, Fixed y, const R
 
 void GameSim::ferry_follow(World& w, const std::vector<uint32_t>& ids, int side, Object& boat) {
   if (!boat.alive || boat.removed || !is_ferry(boat) || side < 0 || side >= 8 ||
-      boat.side < 0 || boat.side >= 8 || (side != boat.side && w.relation[side][boat.side] != kFriend)) return;
+      boat.side < 0 || boat.side >= 8) return;
   std::vector<uint32_t> members;
   int group = -1;
   bool same_group = true;
@@ -239,13 +239,12 @@ void GameSim::transport_tick(World& w) {
       for (auto& follower : w.objects) if (follower.boarding == boat.id) script_stop(w, {follower.id});
     }
   }
-  // Follow is generic: approach the allied target anchor, then ask a ready ferry.
+  // V: follow approaches the ferry without an alliance test.
   // Group anchors are currently centroids, a documented engine approximation.
   for (auto& o : w.objects) {
     if (!o.boarding || !o.alive || o.removed) continue;
     auto* boat = w.find_mut(o.boarding);
-    if (!boat || !boat->alive || boat->removed || !is_ferry(*boat) ||
-        (o.side != boat->side && w.relation[o.side][boat->side] != kFriend)) {
+    if (!boat || !boat->alive || boat->removed || !is_ferry(*boat)) {
       script_stop(w, {o.id}); continue;
     }
     int64_t sx = 0, sy = 0, count = 0;

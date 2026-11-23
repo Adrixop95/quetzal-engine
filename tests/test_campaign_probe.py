@@ -60,7 +60,7 @@ class CampaignProbe(unittest.TestCase):
             events.write_text('2 kill-side 1\n')
             script.write_text(
                 'trigger(0) conditions side(1).units == 0 actions side(local).victory end\n'
-                'trigger(1) conditions localTime == 100 actions side(local).moveCommand(1,1) end\n')
+                'trigger(1) conditions localTime == 100 actions side(local).buildCommand(7) {UGI_FOOTMAN} end\n')
             self.assertIn('unsupported_sites\t1', run(1))
 
 

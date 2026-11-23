@@ -125,7 +125,7 @@ class PlaythroughTests(unittest.TestCase):
     def test_script_parse_missing_and_unsupported_errors(self):
         self.script.write_text('broken script')
         self.assertTrue('script parse error' in self.run_engine(code=1)['error'])
-        self.script.write_text('trigger(0) conditions always actions side(local).moveCommand(1,2) end\n')
+        self.script.write_text('trigger(0) conditions always actions side(local).buildCommand(7) {UGI_FOOTMAN} end\n')
         report = self.run_engine()
         self.assertTrue(report['script_errors'])
         self.assertEqual(len(report['unsupported_actions']), 1)

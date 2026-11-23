@@ -159,7 +159,7 @@ class FrameworkTests(unittest.TestCase):
 
     def test_unsupported_dormant_script_sites_are_reported(self):
         path = self.game / 'Maps/demo.scn'
-        path.write_text('trigger(1) conditions localTime > 100 actions side(local).moveCommand(1,2) end\n')
+        path.write_text('trigger(1) conditions localTime > 100 actions side(local).buildCommand(7) {UGI_FOOTMAN} end\n')
         report, _ = self.run_route('wait 3\nquit\n')
         self.assertIn('unsupported-action', [a['kind'] for a in report['anomalies']])
 

@@ -29,10 +29,15 @@ class ScriptAudit(unittest.TestCase):
             self.assertTrue('unsupported_action_sites=0' in result.stderr)
             (maps / 'MiSsIoN_3.ScN').write_text(
                 'trigger(0) conditions always actions side(local).moveCommand(1,2) end\n', encoding='ascii')
+            result = run('--require-supported')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('\taction\tSideMoveCommand\t1\timplemented', result.stdout)
+            (maps / 'MiSsIoN_3.ScN').write_text(
+                'trigger(0) conditions always actions side(local).buildCommand(7) {UGI_FOOTMAN} end\n', encoding='ascii')
             self.assertEqual(run().returncode, 0)
             result = run('--require-supported')
             self.assertEqual(result.returncode, 1)
-            self.assertTrue('mission_3: trigger 0 line 1: unsupported SideMoveCommand' in result.stderr)
+            self.assertTrue('mission_3: trigger 0 line 1: unsupported SideBuildCommand' in result.stderr)
             (maps / 'MiSsIoN_3.ScN').write_text('invalid', encoding='ascii')
             self.assertTrue('mission_3: parse failure' in run().stderr)
             self.assertEqual(run().returncode, 1)

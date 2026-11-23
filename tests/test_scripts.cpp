@@ -221,8 +221,8 @@ static void conditions_and_identity() {
   const std::string checks[] = {
     "always", "localTime == 0", "globalTime == 0", "timer(0) == 0",
     "side(local).units == 2", "side(local).towns == 1", "side(local).enemies == 1",
-    "side(local).tactics == 1", "side(local).money == 50", "side(local).unitsInRect(3,4,6,7) == 2",
-    "side(local).unitsOfUGIInRect(UGI_FOOTMAN,3,4,3,4) == 1", "side(local).unitsOfId(UGI_FOOTMAN) == 1",
+    "side(local).tactics == 1", "side(local).money == 50", "side(local).unitsInRect(3,4,7,8) == 2",
+    "side(local).unitsOfUGIInRect(UGI_FOOTMAN,3,4,4,5) == 1", "side(local).unitsOfId(UGI_FOOTMAN) == 1",
     "side(local).tactic(10).valid == 1", "side(local).tactic(10).idle == 1",
     "side(local).tactic(10).locked == 1", "side(local).tactic(10).attacked == -1",
     "side(local).defence(42).valid == 1", "side(local).isEnemy(1) == 1",
@@ -238,7 +238,7 @@ static void conditions_and_identity() {
     CHECK(condition(r, w, std::string("side(local).money ") + op));
   CHECK(!condition(r, w, "side(8).isEnemy(1) == 1"));
   CHECK(condition(r, w, "side(local).unitsInRect(4,5,3,4) == 1"));
-  CHECK(condition(r, w, "side(local).unitsInRect(15,15,15,15) == 1")); // defence kind counts
+  CHECK(condition(r, w, "side(local).unitsInRect(15,15,16,16) == 1")); // defence kind counts
   w.objects[0].last_hit_by = 5;
   const auto quiet_hash = sim.state_hash(w);
   CHECK(condition(r, w, "side(local).tactic(10).attacked == -1"));
@@ -274,12 +274,71 @@ static void rectangle_runtime_categories() {
     object(w, type, 2, -1, 5, 6);
   GameSim sim(rules(), Modifications::faithful()); sim.init(w);
   auto r = runner(w, "");
-  CHECK(condition(r, w, "side(local).unitsInRect(5,6,5,6) == 11"));
-  CHECK(condition(r, w, "side(local).unitsOfUGIInRect(UGI_BOAT,5,6,5,6) == 1"));
-  CHECK(condition(r, w, "side(local).unitsOfUGIInRect(UGI_JOHNKA,5,6,5,6) == 1"));
-  CHECK(condition(r, w, "side(local).unitsOfUGIInRect(UGI_CAMERA,5,6,5,6) == 0"));
+  CHECK(condition(r, w, "side(local).unitsInRect(5,6,6,7) == 11"));
+  CHECK(condition(r, w, "side(local).unitsOfUGIInRect(UGI_BOAT,5,6,6,7) == 1"));
+  CHECK(condition(r, w, "side(local).unitsOfUGIInRect(UGI_JOHNKA,5,6,6,7) == 1"));
+  CHECK(condition(r, w, "side(local).unitsOfUGIInRect(UGI_CAMERA,5,6,6,7) == 0"));
   w.objects[8].alive = false;
-  CHECK(condition(r, w, "side(local).unitsOfUGIInRect(UGI_BOAT,5,6,5,6) == 0"));
+  CHECK(condition(r, w, "side(local).unitsOfUGIInRect(UGI_BOAT,5,6,6,7) == 0"));
+}
+
+static void rectangle_box_edges() {
+  World w = world(); object(w, 0, 2, 5, 4, 6);
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+  auto r = runner(w, "trigger(1) conditions side(local).unitsInRect(5,6,6,7) == 1 "
+      "actions side(local).addMoney(1) end");
+  const auto bounds = sim.rules().type(0).combat_bounds;
+  auto place = [&](int x, int y) { w.objects[0].teleport(to_fixed(x), to_fixed(y)); };
+  auto inside = [&] { return condition(r, w, "side(local).unitsInRect(5,6,6,7) == 1"); };
+  place(5 * 48 - bounds[2], 6 * 48 + 24);
+  CHECK(!inside()); // right edge merely touches the query's left edge
+  place(5 * 48 - bounds[2] + 1, 6 * 48 + 24);
+  CHECK(inside()); // anchor is outside, but the box overlaps
+  CHECK(condition(r, w, "side(local).unitsOfUGIInRect(UGI_FOOTMAN,6,7,5,6) == 1"));
+  CHECK(condition(r, w, "side(local).unitsInRect(5,6,5,7) == 0"));
+  CHECK(condition(r, w, "side(local).unitsInRect(5,6,6,6) == 0"));
+  CHECK(condition(r, w, "side(local).unitsInRect(-2147483648,-2147483648,2147483647,2147483647) == 1"));
+  r.tick(sim, w); CHECK(w.side_state[2].money == 0);
+  place(6 * 48 - bounds[0], 6 * 48 + 24);
+  CHECK(!inside());
+  r.tick(sim, w); CHECK(w.side_state[2].money == 1); // previous overlapping box was latched
+  r.tick(sim, w); CHECK(w.side_state[2].money == 1);
+  place(6 * 48 - bounds[0] - 1, 6 * 48 + 24); CHECK(inside());
+  place(5 * 48 + 24, 6 * 48 - bounds[3]); CHECK(!inside());
+  place(5 * 48 + 24, 6 * 48 - bounds[3] + 1); CHECK(inside());
+  place(5 * 48 + 24, 7 * 48 - bounds[1]); CHECK(!inside());
+  place(5 * 48 + 24, 7 * 48 - bounds[1] - 1); CHECK(inside());
+  w.objects[0].render_height = 48; CHECK(inside());
+  w.objects[0].removed = true; CHECK(!inside());
+}
+
+static void side_command_contracts() {
+  const std::string command = "side(local).buildCommand(7) {UGI_FOOTMAN,UGI_TRUCK_AXETHROWER,UGI_FOOTMAN}";
+  const auto s = parse("trigger(0) conditions always actions " + command + " end");
+  const auto& a = s.triggers[0].actions[0];
+  CHECK(a.kind == ActKind::SideBuildCommand && a.id == 7 && a.ugi == -1);
+  CHECK(a.args == std::vector<int>({0, 3, 0})); // preserve duplicate requests and order
+  CHECK(!ScriptRunner::supports(a.kind)); // no general side-plan model yet
+  Script invalid;
+  for (const auto& bad : {"buildCommand(7) {}", "buildCommand(7) {UGI_UNKNOWN}",
+                         "buildCommand(7) {UGI_FOOTMAN,}", "buildCommand(7) {UGI_FOOTMAN"})
+    CHECK(!parse_script("trigger(0) conditions always actions side(local)." + std::string(bad) + " end", invalid));
+  std::string list = "UGI_FOOTMAN";
+  for (int i = 1; i < 32; ++i) list += ",UGI_FOOTMAN";
+  parse("trigger(0) conditions always actions side(local).buildCommand(7) {" + list + "} end");
+  CHECK(!parse_script("trigger(0) conditions always actions side(local).buildCommand(7) {" + list + ",UGI_FOOTMAN} end", invalid));
+
+  World w = world(); object(w, 0, 2, 5, 4, 6);
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+  auto r = runner(w, "trigger(0) conditions always actions side(local).moveCommand(30,30) "
+      "side(local).addMoney(2) end");
+  CHECK(ScriptRunner::supports(ActKind::SideMoveCommand));
+  const auto x = w.objects[0].cur_x, y = w.objects[0].cur_y;
+  for (int i = 0; i < 4; ++i) r.tick(sim, w);
+  CHECK(r.unsupported() == 0 && w.side_state[2].money == 6);
+  CHECK(w.objects[0].cur_x == x && w.objects[0].cur_y == y);
+  CHECK(w.objects[0].order == uint8_t(Order::Idle) && w.objects[0].tactic == 5);
+  CHECK(r.action_observations(w)[0].trace.executions == 3);
 }
 
 static void paths_and_gifts() {
@@ -399,8 +458,8 @@ static void actions_and_outcomes() {
       "trigger(0) conditions always actions boat(1).activate johnka(1).enable johnka(1).disable submarine(1).go "
       "side(local).buildCommand(UGI_FOOTMAN,1,2) side(local).moveCommand(1,2) side(local).cameraDeactivate(0) end");
   for (const auto& a : unsupported_script.triggers[0].actions)
-    CHECK(ScriptRunner::supports(a.kind) == (a.kind == ActKind::BoatActivate || a.kind == ActKind::JohnkaEnable || a.kind == ActKind::JohnkaDisable || a.kind == ActKind::SubmarineGo || a.kind == ActKind::SideCameraDeactivate));
-  unsupported.tick(sim, w); unsupported.tick(sim, w); CHECK(unsupported.unsupported() == 2);
+    CHECK(ScriptRunner::supports(a.kind) == (a.kind == ActKind::SideMoveCommand || a.kind == ActKind::BoatActivate || a.kind == ActKind::JohnkaEnable || a.kind == ActKind::JohnkaDisable || a.kind == ActKind::SubmarineGo || a.kind == ActKind::SideCameraDeactivate));
+  unsupported.tick(sim, w); unsupported.tick(sim, w); CHECK(unsupported.unsupported() == 1);
   unsupported.init(w); CHECK(unsupported.unsupported() == 0);
   CHECK(!ScriptRunner::supports(static_cast<ActKind>(999)));
 }
@@ -437,7 +496,7 @@ static void defence_loading() {
 
 static void action_observation_contracts() {
   // Each unresolved grammar branch must remain visible both before and after dispatch.
-  for (const auto& method : {"side(local).buildCommand(UGI_FOOTMAN,1,2)", "side(local).moveCommand(1,2)"}) {
+  for (const auto& method : {"side(local).buildCommand(7) {UGI_FOOTMAN}", "side(local).buildCommand(UGI_FOOTMAN,1,2)"}) {
     World w = world(); GameSim sim(rules(), Modifications::faithful()); sim.init(w);
     auto r = runner(w,
         "trigger(7) conditions localTime == 2 actions " + std::string(method) + " trigger(7).disable end\n"
@@ -700,6 +759,7 @@ static void pending_path_uses_previous_latch() {
 }
 
 int main() {
+  rectangle_box_edges(); side_command_contracts();
   rectangle_runtime_categories(); gift_detaches_home_and_outcome_precedence(); tactic_lookup_and_money(); presentation_contracts();
   campaign_outcome_requires_script(); campaign_gates(); town_tactics_and_capture(); embarked_script_identity(); pending_path_uses_previous_latch();
   attacked_notification();

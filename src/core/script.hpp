@@ -43,7 +43,7 @@ enum class ActKind {
   CenterView,                      // a=x, b=y
   PrintString, PrintStringR,       // text; V: alternate form is discarded by the inspected parser
   SideVictory, SideDefeat,
-  SideBuildCommand,                // ugi + args
+  SideBuildCommand,                // id + args (UGI requests); legacy syntax uses ugi + integer args
   SideMoveCommand,                 // a=x, b=y
   SideCameraActivate,              // a=vision camera index, b=lifetime in updates (nonpositive: indefinite)
   SideCameraDeactivate,            // a (index)
@@ -63,7 +63,7 @@ struct Action {
   int id = 0;        // trigger/boat/johnka/submarine/timer/tactic id
   int a = 0, b = 0;
   int ugi = -1;
-  std::vector<int> args;  // buildCommand extra args
+  std::vector<int> args;  // buildCommand type requests (integer arguments in legacy syntax)
   std::string text;       // raw bytes of the string literal (cp1250 or cp1251)
   int line = 0;
 };

@@ -550,8 +550,7 @@ void GameSim::apply(World& w, const Command& c) {
     }
     case Pct::Attack: {
       const Object* t = w.find(uint32_t(c.a));
-      if (t && is_ferry(*t) && (t->side == c.side ||
-          (c.side < 8 && t->side >= 0 && t->side < 8 && w.relation[c.side][t->side] == kFriend))) {
+      if (t && is_ferry(*t)) {
         ferry_follow(w, command_ids, c.side, *w.find_mut(t->id));
         break;
       }
