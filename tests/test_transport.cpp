@@ -118,6 +118,20 @@ static void occupied_shore() {
   CHECK(w.objects[0].cargo.empty() && !w.objects[1].removed && !w.objects[1].carrier);
 }
 static void eligibility() {
+  // V: ferry follow has no alliance test, even when the boat is not activated.
+  for (auto relation : {kFriend, kNeutral, kEnemy}) {
+    World w = river(2); w.objects[0].side = 1; w.objects[0].vessel_enabled = false;
+    w.relation[0][1] = w.relation[1][0] = relation;
+    for (auto& o : w.objects) o.attack_mode = AttackMode::Direct;
+    GameSim sim(rules()); sim.init(w);
+    command(sim, Pct::Attack, {2,3}, 1);
+    until(sim, w, [&]{ return w.objects[0].ferry_phase == 3; });
+    CHECK(w.objects[0].cargo.size() == 2 && w.objects[0].ferry_group_side == 0);
+    until(sim, w, [&]{ return w.objects[0].ferry_phase == 0; });
+    CHECK(w.objects[0].side == 1);
+    CHECK(w.objects[1].side == 0 && w.objects[2].side == 0);
+    CHECK(!w.objects[1].removed && !w.objects[2].removed);
+  }
   for (bool town : {false,true}) {
     World w=river(2);
     if (town) for (size_t i=1;i<w.objects.size();++i) w.objects[i].town=0;
@@ -457,7 +471,10 @@ static void ferry_combat() {
   CHECK(w.objects[0].alive && w.objects[0].cargo.size()==1);
   CHECK(w.objects[2].target!=1); // G: automatic acquisition excludes the ferry only.
   Command attack; attack.type=Pct::Attack; attack.side=1; attack.ids={3}; attack.a=1; sim.submit(attack);
-  ticks(sim,w,120); CHECK(!w.objects[0].alive && !w.objects[1].alive);
+  ticks(sim,w,1);
+  CHECK(w.objects[2].boarding==1 && w.objects[2].order==uint8_t(Order::Follow));
+  CHECK(w.objects[0].alive && w.objects[1].alive); // V: ferry hit follows, regardless of alliance.
+  sim.script_kill(w,1); CHECK(!w.objects[0].alive && !w.objects[1].alive);
   // A positive-health Johnka within shore firing range remains eligible.
   World johnka=river(0); add(johnka,88,5,8); add(johnka,32,4,7,1);
   johnka.objects[1].hp=johnka.objects[2].hp=100000;
@@ -474,9 +491,11 @@ static void zero_maximum_combat_fallback() {
     GameSim sim(rules()); sim.init(w);
     CHECK(w.objects[0].hp_max==0 && w.objects[0].hp==0);
     Command attack; attack.side=1; attack.type=Pct::Attack; attack.ids={2}; attack.a=1;
-    sim.submit(attack); ticks(sim,w,12);
+    sim.submit(attack); ticks(sim,w,1);
     CHECK(w.objects[0].alive && w.objects[0].hp==0);
     CHECK(w.objects[1].target!=1); // automatic acquisition also excludes the controller
+    // Explicit ferry hits now follow; order an ordinary victim to check damage separately.
+    attack.a=3; sim.submit(attack); ticks(sim,w,12);
     CHECK(w.objects[2].hp<10000); // ordinary recipients still take direct damage
 
     World impact=river(0); impact.objects[0].type=type;
