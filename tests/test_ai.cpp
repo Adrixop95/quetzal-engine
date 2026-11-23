@@ -71,6 +71,7 @@ static void unit(const RulesData& rules) {
   w = world();
   object(w, 0, 0, 0, 10, 8); object(w, 0, 0, 0, 12, 8, 7);
   s = {}; s.phase = 2; s.target_town = 1; s.known_towns = {0, 1}; s.elapsed = 1;
+  s.plan = {{0, -1, 3}};
   d = ai::step(w, rules, 0, s, {});
   CHECK(issued(d, Pct::AttackMove) && issued(d, Pct::AttackMove)->ids == std::vector<uint32_t>{3});
   w.visibility.sides[0].v.assign(1600, 152);
@@ -89,6 +90,7 @@ static void unit(const RulesData& rules) {
   // No arbitrary 80-unit cap: a large idle force can still launch an offensive plan.
   w = world(); for (int i = 0; i < 101; ++i) object(w, 0, 0, 0, 12, 12);
   s = {}; s.phase = 2; s.target_town = 1; s.known_towns = {1}; s.elapsed = 1;
+  for (uint32_t id = 3; id <= 103; ++id) s.plan.push_back({0, -1, id});
   d = ai::step(w, rules, 0, s, {}); CHECK(issued(d, Pct::AttackMove)->ids.size() == 101);
 }
 // Busy towns still update speed and dispatch newly available defenders.
@@ -310,6 +312,7 @@ static void sparse_towns(std::shared_ptr<const RulesData> rules) {
   CHECK(intel.size() == 2 && intel[0].town == 0 && intel[1].town == 1);
   CHECK(intel[0].counts[11] == 1 && intel[1].counts[11] == 1);
   ai::TownState attack; attack.phase = 2; attack.target_town = 1;
+  attack.plan = {{0, -1, 3}};
   attack.known_towns = {1}; attack.elapsed = 1;
   auto decision = ai::step(w, *rules, 0, attack, {});
   CHECK(issued(decision, Pct::AttackMove) && issued(decision, Pct::AttackMove)->ids == std::vector<uint32_t>{3});
@@ -363,6 +366,7 @@ static void observation(std::shared_ptr<const RulesData> rules) {
   auto b = a;
   GameSim plain(rules, Modifications::faithful()), traced(rules, Modifications::faithful()); plain.init(a); traced.init(b);
   a.ai_towns[0].phase = b.ai_towns[0].phase = 2;
+  a.ai_towns[0].plan = b.ai_towns[0].plan = {{0, -1, 3}};
   a.ai_towns[0].known_towns = b.ai_towns[0].known_towns = {1};
   a.ai_towns[0].elapsed = b.ai_towns[0].elapsed = 1;
   std::vector<AiEvent> events;
@@ -547,6 +551,7 @@ static void scoring(const RulesData& rules) {
   // Rescoring the town's next target must not redirect a plan already in flight.
   object(w, 0, 0, 0, 9, 8);
   s.phase = 2; s.plan_target_town = 1;
+  s.plan = {{0, -1, 4}};
   auto launch = ai::step(w, rules, 0, s, {});
   CHECK(launch.next.target_town == 2 && issued(launch, Pct::AttackMove));
   CHECK(issued(launch, Pct::AttackMove) && issued(launch, Pct::AttackMove)->a == 28 * kTilePx + kTilePx / 2);
@@ -674,11 +679,10 @@ static void composition() {
     CHECK(std::all_of(plan.begin(), plan.end(), [](const auto& e) { return e.object != 0; }));
   }
   rules = plan_rules(directory.path(), 0, true);
-  // The original wanted-score bug is observable: weaker type 1 overwrites type 0.
-  // Correcting its score bar would leave type 0 (254+noise versus 127+noise).
+  // Candidates run from high to low type; the last eligible blocked candidate wins.
   w = world(); random = 1; wanted = 90;
   plan = ai::make_plan(w, rules, 0, 1, false, random, {enemy}, &wanted);
-  CHECK(plan.empty() && wanted == 1);
+  CHECK(plan.empty() && wanted == 0);
   object(w, 33, 0, 0, 9, 8); ai::Intelligence building; building.town = 1; building.counts[11] = 10;
   random = 1; CHECK(ai::make_plan(w, rules, 0, 1, true, random, {building}).empty()); // Type 33 is excluded even when reusable.
   ai::TownState s; s.phase = 10; s.wanted_type = wanted;
@@ -701,7 +705,7 @@ static void composition() {
   for (uint32_t initial = 1; initial <= 1024 && !(tie && first && second); ++initial) {
     seed = initial; const int a = draw() & 0x3f, b = draw() & 0x3f; draw();
     random = initial; plan = ai::make_plan(w, rules, 0, 1, false, random, {enemy});
-    CHECK(plan.size() == 1 && plan[0].type == (b > a ? 1 : 0) && random == seed);
+    CHECK(plan.size() == 1 && plan[0].type == (b > a ? 0 : 1) && random == seed);
     tie |= a == b; first |= a > b; second |= b > a;
   }
   CHECK(tie && first && second);
@@ -842,6 +846,165 @@ static void scripted(std::shared_ptr<const RulesData> rules) {
   }
   CHECK(sa.script().unsupported() == 0);
 }
+static void completion_rules(const RulesData& rules) {
+  auto w = world();
+  ai::TownState state; state.phase = 10; state.science_timer = 200;
+  CHECK(ai::step(w, rules, 0, state, {}).next.phase == 13); // Compare before incrementing.
+  state.phase = 3; state.science_timer = 0;
+  auto d = ai::step(w, rules, 0, state, {});
+  CHECK(d.next.phase == 3 && d.next.science_timer == 1);
+  state.science_timer = -1;
+  CHECK(ai::step(w, rules, 0, state, {}).next.science_timer == -1);
+  state = {}; state.phase = 7; state.spent = 20000;
+  d = ai::step(w, rules, 0, state, {});
+  CHECK(!d.next.economy_enabled && d.next.phase == 8);
+  state = d.next; state.phase = 11;
+  CHECK(ai::step(w, rules, 0, state, {}).next.phase == 12);
+  state = {}; state.phase = 7;
+  for (int n = 0; n < 3; ++n) object(w, 12, 0, 0, 3 + n, 3);
+  d = ai::step(w, rules, 0, state, {{12, 100, 12, 8, true}, {13, 100, 13, 8, true}});
+  CHECK(issued(d, Pct::Build) && issued(d, Pct::Build)->a == 13); // Warehouse failure falls back to mine.
+  state = {}; state.phase = 5;
+  bool cheap = false, costly = false;
+  for (uint32_t seed = 1; seed <= 32; ++seed) {
+    state.random = seed;
+    d = ai::step(w, rules, 0, state, {{23, 900, 14, 8, true}, {17, 100, 13, 8, true}});
+    const auto* build = issued(d, Pct::Build);
+    CHECK(build && d.next.phase == 6);
+    if (build) { cheap |= build->a == 17; costly |= build->a == 23; }
+    CHECK(d.next.random != seed);
+  }
+  CHECK(cheap && costly);
+  state = {}; state.phase = 5;
+  CHECK(ai::step(w, rules, 0, state, {}).next.defence_enabled); // No candidates is not placement failure.
+  // Threat phases freeze the foreign target, then phase 23 replaces it with the own record.
+  w = world(); state = {}; state.phase = 23; state.target_town = 1;
+  object(w, 0, 0, 0, 9, 8);
+  d = ai::step(w, rules, 0, state, {});
+  CHECK(d.next.phase == 22 && d.next.target_town == 0);
+  CHECK(std::any_of(d.next.plan.begin(), d.next.plan.end(), [](const auto& e) { return e.object == 3; }));
+  state = d.next;
+  CHECK(ai::step(w, rules, 0, state, {}).next.target_town == 0);
+  // Launch only the completed plan; idle town members stay with the town.
+  object(w, 0, 0, 0, 10, 8);
+  state = {}; state.phase = 2; state.elapsed = 1; state.known_towns = {1};
+  state.plan = {{0, -1, 3}}; state.plan_target_town = 1;
+  d = ai::step(w, rules, 0, state, {});
+  CHECK(issued(d, Pct::AttackMove) && issued(d, Pct::AttackMove)->ids == std::vector<uint32_t>{3});
+  state.plan.clear();
+  CHECK(!issued(ai::step(w, rules, 0, state, {}), Pct::AttackMove));
+
+  TempDir directory;
+  std::ofstream(directory.path() / "types.csv") <<
+      "id,ugi,kind,param,unit_price,build_time,dev_level\n"
+      "0,SOLDIER,Marine,0,100,100,0\n1,SCOUT,Marine,0,100,100,0\n11,HALL,Building,0,0,0,1\n"
+      "14,LAB,Building,0,900,10,1\n15,ACADEMY,Building,0,100,10,1\n16,FACTORY,Building,0,50,10,1\n"
+      "20,WORKSHOP,Building,0,1,10,1\n21,GUARD,Marine,0,100,100,0\n";
+  const auto tree = directory.path() / "buildtree.csv";
+  std::ofstream(tree) <<
+      "race,townhall_type,slot,item_ugi,flagB_construct,prereq_ugi(A=flag 0x8000000)\n"
+      "0,1,0,0,0,16\n0,1,1,14,1,\n0,1,2,15,1,14\n0,1,3,16,1,15\n"
+      "0,1,4,1,0,14\n0,1,5,20,1,\n0,1,6,21,0,20\n";
+  RulesData synthetic; CHECK(synthetic.load_dir(directory.path().string()));
+  w = world(); state = {}; state.phase = 3; state.wanted_type = 0;
+  d = ai::step(w, synthetic, 0, state, {{14, 900, 12, 8, true}});
+  CHECK(issued(d, Pct::Build) && issued(d, Pct::Build)->a == 14 && d.next.phase == 4);
+  CHECK(d.next.wanted_type == 0); // Recommendations persist after use.
+  state.wanted_type = 90;
+  d = ai::step(w, synthetic, 0, state, {{14, 900, 12, 8, true}, {20, 1, 13, 8, true}});
+  CHECK(issued(d, Pct::Build) && issued(d, Pct::Build)->a == 14); // Unlocks outrank price.
+  state.wanted_type = 0;
+  w.side_state[0].money = 899;
+  CHECK(!issued(ai::step(w, synthetic, 0, state, {{14, 900, 12, 8, true}}), Pct::Build));
+  w.side_state[0].money = 900;
+  CHECK(issued(ai::step(w, synthetic, 0, state, {{14, 900, 12, 8, true}}), Pct::Build));
+  // A completed prerequisite advances the same recommendation down its chain.
+  object(w, 14, 0, 0, 12, 8);
+  d = ai::step(w, synthetic, 0, state, {{15, 100, 13, 8, true}});
+  CHECK(issued(d, Pct::Build) && issued(d, Pct::Build)->a == 15);
+  // Malformed synthetic cycles must terminate without inventing a building.
+  std::ofstream(tree) <<
+      "race,townhall_type,slot,item_ugi,flagB_construct,prereq_ugi(A=flag 0x8000000)\n"
+      "0,1,0,0,0,16\n0,1,1,14,1,15\n0,1,2,15,1,14\n0,1,3,16,1,15\n";
+  CHECK(synthetic.load_dir(directory.path().string()));
+  w = world();
+  CHECK(!issued(ai::step(w, synthetic, 0, state, {{14, 900, 12, 8, true}}), Pct::Build));
+}
+
+static void construction_lifecycle(std::shared_ptr<const RulesData> rules) {
+  auto w = world(); w.resources.v.assign(1600, 128);
+  for (auto& side : w.mission.sides) side.only_comp = false;
+  for (auto& o : w.objects) o.town_hall = true;
+  GameSim sim(rules, Modifications::faithful()); sim.init(w);
+  auto tick = [&]() { w.begin_tick(); sim.tick(w); };
+  Command build; build.type = Pct::Build; build.side = 0; build.a = 14; build.b = 12; build.c = 8; build.ids = {1};
+  sim.submit(build); tick();
+  CHECK(w.side_state[0].queue.size() == 1 && w.ai_towns[0].science_timer == -1);
+  Command cancel; cancel.type = Pct::QueueKill; cancel.side = 0; cancel.a = 0;
+  sim.submit(cancel); tick();
+  CHECK(w.side_state[0].queue.empty() && w.ai_towns[0].science_timer == 0);
+  sim.submit(build); tick();
+  CHECK(w.ai_towns[0].science_timer == -1);
+  for (int n = 0; n < 600 && !w.side_state[0].queue.empty(); ++n) tick();
+  CHECK(w.side_state[0].queue.empty() && w.ai_towns[0].science_timer == 0);
+  CHECK(std::any_of(w.objects.begin(), w.objects.end(), [](const auto& o) {
+    return o.alive && o.type == 14 && o.progress == 1000;
+  }));
+  w.ai_towns[0].defence_enabled = false;
+  build.a = 17; build.b = 13; build.c = 11;
+  sim.submit(build); tick();
+  CHECK(w.side_state[0].queue.size() == 1);
+  for (int n = 0; n < 600 && !w.side_state[0].queue.empty(); ++n) tick();
+  CHECK(w.side_state[0].queue.empty() && w.ai_towns[0].defence_enabled);
+  const auto hash = sim.state_hash(w);
+  w.ai_towns[0].economy_enabled = false;
+  CHECK(sim.state_hash(w) != hash);
+
+  auto outpost = world();
+  for (auto& side : outpost.mission.sides) side.only_comp = false;
+  outpost.mission.towns[0].type = 0; outpost.objects[0].type = 10;
+  for (auto& o : outpost.objects) o.town_hall = true;
+  GameSim upgrade(rules, Modifications::faithful()); upgrade.init(outpost);
+  outpost.ai_towns[0].economy_enabled = false;
+  build.a = 11; upgrade.submit(build);
+  for (int n = 0; n < 600 && outpost.mission.towns[0].type == 0; ++n) {
+    outpost.begin_tick(); upgrade.tick(outpost);
+  }
+  CHECK(outpost.mission.towns[0].type == 1 && outpost.ai_towns[0].economy_enabled);
+}
+
+static void completion_skirmish(std::shared_ptr<const RulesData> rules) {
+  auto initial = world(); initial.resources.v.assign(1600, 128);
+  for (auto& o : initial.objects) { o.town_hall = true; o.hp = 1000000; }
+  for (auto& side : initial.mission.sides)
+    for (int type = 0; type < 90; ++type)
+      if (type != 0 && type != 11 && type != 12 && type != 14) side.disabled.push_back(type);
+  auto a = initial, b = initial; b.local_side = 1;
+  GameSim sa(rules, Modifications::faithful()), sb(rules, Modifications::faithful());
+  sa.init(a); sb.init(b);
+  int buildings = 0, recruits = 0, attacks = 0;
+  sa.set_ai_observer([&](uint64_t, const AiEvent& event) {
+    if (std::string(event.kind) == "production") {
+      for (int type = 0; type < 90; ++type)
+        (rules->type(type).structure ? buildings : recruits) += event.composition[size_t(type)];
+    }
+    if (std::string(event.kind) == "launch") ++attacks;
+  });
+  constexpr int ticks = 1800;
+  for (int tick = 0; tick < ticks; ++tick) {
+    a.begin_tick(); b.begin_tick(); sa.tick(a); sb.tick(b);
+    CHECK(sa.state_hash(a) == sb.state_hash(b));
+  }
+  CHECK(buildings > 0 && recruits > 0 && attacks > 0);
+  CHECK(std::any_of(a.objects.begin() + 2, a.objects.end(), [&](const auto& o) {
+    return o.alive && o.progress == 1000 && rules->type(o.type).structure;
+  }));
+  auto replayed = initial;
+  auto replay = GameSim::replay(replayed, rules, sa.log(), ticks);
+  CHECK(replay->state_hash(replayed) == sa.state_hash(a));
+  std::printf("Short skirmish: %d building starts, %d recruit starts, %d attacks\n", buildings, recruits, attacks);
+}
+
 static void smoke(std::shared_ptr<const RulesData> rules) {
   // Use ranged recruits in this synthetic pressure soak so melee crowding at
   // durable halls cannot end opposition after production timing changes.
@@ -985,6 +1148,7 @@ int main(int argc, char** argv) {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
   if (argc > 1 && std::string(argv[1]) == "--smoke") smoke(rules); else { unit(*rules); reinforcements(*rules); threatened_plan(*rules); army_scenarios(rules); initialization(rules); neutral_computer(rules); sparse_towns(rules); observation(rules); town_orders(rules); enemy_price_mask(rules); remembered_intelligence(*rules); plan_allocation(rules); scripted(rules); }
   if (!(argc > 1 && std::string(argv[1]) == "--smoke")) {
+    completion_rules(*rules); construction_lifecycle(rules); completion_skirmish(rules);
     scoring(*rules); composition(); threat_rules(*rules); prices_and_caps(*rules); money_and_cancellation(rules);
   }
   return failures ? 1 : 0;

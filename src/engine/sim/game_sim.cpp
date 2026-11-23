@@ -764,6 +764,8 @@ void GameSim::apply(World& w, const Command& c) {
         object->build_total = q.total;
       }
       ss->queue.push_back(q);
+      if (rules_->type(q.type).kind == 2 && ti < int(w.ai_towns.size()))
+        w.ai_towns[size_t(ti)].science_timer = -1;
       break;
     }
     default: break;
@@ -1062,6 +1064,8 @@ int GameSim::production_refund(const World& w, const QueueItem& item) const {
 
 void GameSim::cancel_production(World& w, SideState& side, size_t index) {
   const auto q = side.queue[index];
+  if (rules_->type(q.type).kind == 2 && q.town >= 0 && q.town < int(w.ai_towns.size()))
+    w.ai_towns[size_t(q.town)].science_timer = 0;
   side.money += production_refund(w, q);
   if (Object* o = w.find_mut(q.object); o && o->alive && !o->removed) {
     if (rules_->type(o->type).structure)
@@ -1128,7 +1132,11 @@ void GameSim::economy(World& w) {
       QueueItem& q = ss.queue[i];
       if (q.object) {
         const auto* object = w.find(q.object);
-        if (!object || !object->alive || object->removed) { ss.queue.erase(ss.queue.begin() + i); continue; }
+        if (!object || !object->alive || object->removed) {
+          if (rules_->type(q.type).kind == 2 && q.town >= 0 && q.town < int(w.ai_towns.size()))
+            w.ai_towns[size_t(q.town)].science_timer = 0;
+          ss.queue.erase(ss.queue.begin() + i); continue;
+        }
       }
       const bool construction = modifications_.parallel_construction && rules_->type(q.type).structure &&
           upgrade_level(w.mission.towns[size_t(q.town)].race, q.type) < 0;
@@ -1235,6 +1243,13 @@ void GameSim::economy(World& w) {
         }
       }
       if (finished) {
+        if (q.town >= 0 && q.town < int(w.ai_towns.size())) {
+          auto& strategy = w.ai_towns[size_t(q.town)];
+          if (rules_->type(q.type).kind == 2) strategy.science_timer = 0;
+          if (rules_->type(q.type).kind == 7) strategy.defence_enabled = true;
+          if (upgrade_level(w.mission.towns[size_t(q.town)].race, q.type) >= 0)
+            strategy.economy_enabled = true;
+        }
         if (q.plan_town >= 0 && q.plan_town < int(w.ai_towns.size())) {
           auto& owner = w.ai_towns[size_t(q.plan_town)];
           if (owner.plan_generation == q.plan_generation && q.plan_entry >= 0 && q.plan_entry < int(owner.plan.size())) {
@@ -2492,6 +2507,7 @@ uint64_t GameSim::state_hash(const World& w) const {
   for (const auto& s : w.ai_towns) {
     mix(s.phase); mix(s.science_timer); mix(s.target_town); mix(s.remaining);
     mix(s.defence_enabled); mix(s.elapsed); mix(s.harvested); mix(s.spent); mix(s.last_alert);
+    if (!s.economy_enabled) mix(0x45434f4e);
     mix(s.random); mix(s.plan_generation);
     if (s.wanted_type != 90) { mix(0x57414e54); mix(s.wanted_type); }
     if (s.plan_target_town != -1) { mix(0x504c414e); mix(s.plan_target_town); }
