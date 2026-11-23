@@ -1,6 +1,14 @@
 # Engine save format and safety
 
-Engine saves are independent command-log replays, not original `.sav` files.
+Evidence labels (audit 2026-11-23): V = inspected source fact, with reference
+or clone scope stated; M = measurement rechecked from retained captures or an
+offline clone probe; G = inference, proposed procedure or uncorroborated
+historical report. A clone V does not establish native parity. A marker covers
+one paragraph/list item or the entire immediately following table. Unresolved
+meanings remain G even inside a table whose codec structure is V.
+See [label_audit.md](label_audit.md) for counts and evidence limits.
+
+**V** (clone save contract). Engine saves are independent command-log replays, not original `.sav` files.
 The pause menu and Ctrl+S/Ctrl+L use `Saves/engine_slot1.azs` for the current
 mission, inside SDL's per-user `Quetzal/Engine` directory (normally
 `%APPDATA%\Quetzal\Engine` on Windows), rather than the game installation.
@@ -11,7 +19,7 @@ load it. Imported original-save worlds cannot use this replay format.
 
 ## Compatibility and encoding
 
-New writes use AZS3 layout 5. Layout 4 remains readable with current replay
+**V** (clone save contract). New writes use AZS3 layout 5. Layout 4 remains readable with current replay
 semantics and upgrades to layout 5 when written. AZS2, other layouts and
 incompatible replay versions are refused with an explicit unsupported-version
 message; old simulation behavior is not migrated. `kSaveFormatVersion` describes the byte layout.
@@ -20,8 +28,10 @@ change incompatibly, even if the byte layout remains the same. This is an
 explicit compatibility policy. The current field audit and its limits are in
 [savegame_roundtrip_all_state.md](savegame_roundtrip_all_state.md).
 
-All multibyte values are little-endian, without native padding. Camera values are
+**V** (clone save contract). All multibyte values are little-endian, without native padding. Camera values are
 IEEE-754 binary32. The layout, in order, is:
+
+**V** (clone save contract).
 
 | Field | Encoding |
 | --- | --- |
@@ -36,12 +46,12 @@ IEEE-754 binary32. The layout, in order, is:
 | Initial modifications | Validated u32 modification bitset; unknown combinations refused |
 | Integrity checksum | u64 over every preceding byte |
 
-AZC1 logs are refused after the RNG/tick-order semantics change. AZC2 contains its four-byte magic, a u32 command count, then records containing
+**V** (clone save contract). AZC1 logs are refused after the RNG/tick-order semantics change. AZC2 contains its four-byte magic, a u32 command count, then records containing
 u64 tick, u32 packed type/side, three signed 32-bit command arguments, u32 ID
 count and that many u32 IDs. The packed type occupies bits 0-7, side bits 8-15;
 upper bits must be zero. Signed arguments retain their two's-complement bits.
 
-The integrity checksum and content fingerprints use the project's existing
+**V** (clone save contract). The integrity checksum and content fingerprints use the project's existing
 64-bit FNV-1a recurrence (initial value 1469598103934665603, multiplier
 1099511628211). They detect accidental changes; they are not authentication for
 hostile files. Tests also repair checksums on malformed inputs to exercise the
@@ -63,20 +73,20 @@ session fingerprint and refuses changes; it does not hot-reload rules.
 
 ## Bounded, transactional loading
 
-The reader checks file size before allocation and requires exact consumption,
+**V** (clone save contract). The reader checks file size before allocation and requires exact consumption,
 including the checksum. Unknown commands, invalid sides, reserved packed bits,
 zero/decreasing command ticks, commands after the save tick, trailing data and
 truncated or oversized counts fail. Equal command ticks retain submission order.
 Limits apply on writing as well as reading:
 
-- Save file: at most 32 MiB + 16 KiB + 512 bytes; command log: at most 32 MiB.
-- At most 200,000 commands and 4,096 object IDs per command.
-- At most 4,096 selected IDs; zero and duplicate IDs are refused. Replay also
+- **V** (clone save contract). Save file: at most 32 MiB + 16 KiB + 512 bytes; command log: at most 32 MiB.
+- **V** (clone save contract). At most 200,000 commands and 4,096 object IDs per command.
+- **V** (clone save contract). At most 4,096 selected IDs; zero and duplicate IDs are refused. Replay also
   requires every selected ID to exist in the reconstructed world.
-- At most 1,036,800 ticks (24 hours at 12 Hz), bounding replay work. Replay time
+- **V** (clone save contract). At most 1,036,800 ticks (24 hours at 12 Hz), bounding replay work. Replay time
   still depends on mission complexity; saves restore by replaying from tick zero.
-- Mission basename: 1-128 ASCII letters, digits, underscores or hyphens.
-- Camera positions: finite, absolute value at most 10,000,000; zoom: finite,
+- **V** (clone save contract). Mission basename: 1-128 ASCII letters, digits, underscores or hyphens.
+- **V** (clone save contract). Camera positions: finite, absolute value at most 10,000,000; zoom: finite,
   between 0.125 and 8 inclusive.
 
 Failed deserialization leaves the destination unchanged. `replay_save` checks
@@ -105,7 +115,7 @@ entry across sudden power loss is not guaranteed. This is not a backup system.
 
 ## Evidence and remaining acceptance
 
-`engine_save` checks every truncation, every single-bit corruption, structural
+**G** (historical test report or pending acceptance). `engine_save` checks every truncation, every single-bit corruption, structural
 mutations with repaired checksums, fixed-seed fuzzing, version/limit rejection,
 unchanged outputs, content identity, write/rename failures, script progression
 and refusal of replay mismatch. `engine_save_processes` writes at 14,400 ticks,
@@ -114,7 +124,7 @@ uninterrupted synthetic run. Camera and mission metadata roundtrip. On POSIX,
 a file-size resource limit injects a real short write: the old slot must remain
 byte-identical and the temporary file must be removed. These tests use no assets.
 
-The synthetic full-state and 15-mission collector checks are documented in
+**G** (historical test report or pending acceptance). The synthetic full-state and 15-mission collector checks are documented in
 [savegame_roundtrip_all_state.md](savegame_roundtrip_all_state.md).
 V16 remains open: every new state producer,
 long campaign saves, frontend/progression acceptance and native Linux/Windows
@@ -122,10 +132,21 @@ campaign continuation still require evidence. The tests are registered with the
 `unit` label for the existing platform CI matrix; registration is not a native
 Windows test result. No original-game behavior is claimed by these checks.
 
-Local validation (2026-10-28): Linux GCC Release build and CTest passed
+**G** (historical test report or pending acceptance). Local validation (2026-10-28): Linux GCC Release build and CTest passed
 (19 passed; three private-data checks and the UDP process check skipped).
 The two engine-save tests also passed with Clang ASan/UBSan, with leak detection
 disabled. GCC sanitizer configuration was unavailable because its runtime
 libraries were missing; the Clang sanitizer build succeeded. All tracked-file
 pre-commit checks and explicit checks of the new files passed using cached hook
 environments. No private game or reference runtime was run for this work.
+
+## Label audit corrections (2026-11-23)
+
+Evidence checked: Reference: native save dispatch/grammar (0x4455f0 and [savegame.md](savegame.md)) is a separate format. Clone: `sim/savegame.hpp`, `savegame.cpp`, `commands.hpp`, `commands.cpp` and save/replay tests. All size/version/checksum tables describe the independent codec, not original-save compatibility.
+
+No numeric correction established. Labels were added without promoting unresolved reference behavior.
+
+No original executable or reference runtime was run for this audit. Historical
+validation totals retain their original dates; they are not this
+audit's test results. Private captures, derived source and probe output remain
+outside the tracked documentation.

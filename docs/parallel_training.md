@@ -1,11 +1,18 @@
 # Task 100: parallel training
 
-The independent engine implements `parallel_training=1..8` and
+Evidence labels (audit 2026-11-23): V = inspected source fact, with reference
+or clone scope stated; M = measurement rechecked from retained captures or an
+offline clone probe; G = inference, proposed procedure or uncorroborated
+historical report. A clone V does not establish native parity. A marker covers
+one paragraph/list item or the entire immediately following table. Unresolved
+meanings remain G even inside a table whose codec structure is V.
+See [label_audit.md](label_audit.md) for counts and evidence limits.
+
+**V** (clone modification contract). The independent engine implements `parallel_training=1..8` and
 `parallel_training=per building` (`per-building` on the command line).
 Default `1` is off. See [modifications.md](modifications.md) for settings,
 queue policy, production-building matching, save metadata and live toggles.
-Use **Options > Game modifications** or the in-game pause menu. F9 retains its
-existing cursor-confinement function.
+Use **Options > Game modifications** or the in-game pause menu. F9 opens Game modifications; Ctrl+F9 toggles cursor confinement.
 
 ## Implementation and evidence
 
@@ -19,12 +26,12 @@ when training concurrency is enabled.
 
 Synthetic checks cover:
 
-- Default, explicit `1` and `off`: equal complete state hashes every tick,
+- **V** (clone modification contract). Default, explicit `1` and `off`: equal complete state hashes every tick,
   one running unit, and baseline serial payment/progress/completion checks.
-- Values 1–8: payment per started unit, waiting order, N first-cycle completions,
+- **V** (clone modification contract). Values 1–8: payment per started unit, waiting order, N first-cycle completions,
   save metadata round-trip and identical replay/continuation hashes every tick.
 - Cash shortage, unpaid cancellation, independent paid refund and pause timers.
-- Two and three barracks, capacity shared by different matching unit recipes,
+- **V** (clone modification contract). Two and three barracks, capacity shared by different matching unit recipes,
   independent stable capacity, and side-wide technology excluded from capacity.
 - Incomplete, removed, enemy and other-town buildings excluded from capacity.
 - Live enable/disable, retained paid work, per-slot Shift-click pause and replay.
@@ -33,7 +40,7 @@ Synthetic checks cover:
 - Interaction with serial/parallel construction, persisted menu settings, CLI
   overrides, invalid values and lockstep mismatch rejection.
 
-The default-mode test compares complete hashes between the implicit default and
+**G** (historical validation). The default-mode test compares complete hashes between the implicit default and
 explicit `1`/`off` at initialization and every tick through 120. It also checks
 serial queue size, lump payment, unpaid waiting entries, progress and same-tick
 handover against baseline production facts at ticks 1, 50 and 120. This avoids
@@ -45,7 +52,7 @@ Final verification also passed: Release build, 57 passed CTest entries with the
 same six skips, pre-commit on all tracked files and the new task document, and
 `git diff --check`. No files were committed; git metadata remains read-only.
 
-No reference runtime, original assets, generated code or decompilation was used.
+**V** (clone modification contract). No reference runtime, original assets, generated code or decompilation was used.
 The modification does not depend on unmerged task 96 (AI early spending); its
 existing planner/spending behavior remains the foundation. This task makes no
 claim to fix that planner's baseline parity gaps or to measure original training
@@ -72,7 +79,7 @@ not run the reference: network namespaces are unavailable in this environment.
 Use the following commands on a namespace-capable host, from this worktree.
 Do not remove isolation when setup fails.
 
-First author and audit a private `work/parallel-training-input/reference.rt`
+**G** (proposed verification procedure). First author and audit a private `work/parallel-training-input/reference.rt`
 script through normal reference UI input. It must select mission 1, queue several
 units, pause/resume production and cancel waiting and active entries, then quit.
 Use the documented 800x600 menu navigation in EXPERIMENTS.md as a starting point;
@@ -84,7 +91,7 @@ Record the initial profile, town, speed, cash, queue acceptance and observation
 phase. Millisecond waits alone do not locate exact simulation boundaries.
 The private input is required, not supplied or fabricated by this task.
 
-Create three independent private installations with immutable asset symlinks and
+**G** (historical report or pending measurements). Create three independent private installations with immutable asset symlinks and
 ordinary copied Maps/Saves/profile files. The existing helper handles that split:
 
 ```sh
@@ -145,7 +152,7 @@ for training_mode in record repeat replay; do
 done
 ```
 
-Before launching, clear unrelated inherited `RT_*` experiment switches. Record
+**G** (proposed verification procedure). Before launching, clear unrelated inherited `RT_*` experiment switches. Record
 runtime/build hashes and all controls privately. Review both reference repeats
 for lump start payments, cancel refund amounts, queue transitions, pause and
 spawn ticks. Raw runtime and engine state hashes have different representations;
@@ -184,7 +191,7 @@ for training_value in 1 3 per-building; do
 done
 ```
 
-Check terminal state hashes and every overlapping tick after the save boundary.
+**G** (historical report or pending measurements). Check terminal state hashes and every overlapping tick after the save boundary.
 The resumed setting comes from the save even if CLI/preferences differ. Separately
 play mission 1 through the UI with an isolated profile: choose 3, queue more than
 three units, inspect every active bar, pause a middle unit, cancel another, save
@@ -196,21 +203,32 @@ original saves and derived data under ignored `work/`.
 
 ## Landing regression correction
 
-The first landing onto develop failed only in `engine_unit`: six assertions used
+**G** (historical report or pending measurements). The first landing onto develop failed only in `engine_unit`: six assertions used
 three whole-world hash constants recorded before task 99 landed. Develop revision
 `ab389c3` adds formation obstacles during `GameSim::init` and includes them in the
 movement state hash, including for this fixture's town hall. The old constants
 therefore described an obsolete world-state representation; updating them would
 repeat the same integration problem on a future unrelated hash change.
 
-Reproduced the six failures in a fresh `git archive develop` snapshot under
+**G** (historical report or pending measurements). Reproduced the six failures in a fresh `git archive develop` snapshot under
 ignored `build_landing/source`, with the task patch applied and a separate Release
 build in `build_landing/build`. The correction replaces the cross-revision golden
 hashes with per-tick default/explicit-off equality and serial production facts.
 No training scheduler or formation behavior changed in this correction.
 
-After the correction, the clean develop snapshot with the task applied builds
+**G** (proposed verification procedure). After the correction, the clean develop snapshot with the task applied builds
 successfully and passes its complete 65-entry suite: 59 passed, six skipped
 (private-data checks and restricted UDP process creation). The original worktree
 also passes its complete 63-entry suite: 57 passed, the same six skips. Pre-commit
 on all tracked files and this new document, plus `git diff --check`, pass.
+
+## Label audit corrections (2026-11-23)
+
+Evidence checked: Reference: native production timers 0x40a3c0/0x40a400 describe serial work, not this optional modification. Clone: `sim/modifications.hpp`, `GameSim::training_capacity`, production scheduling, `app/engine.cpp` and synthetic queue/save tests. Values 1..8, per-building mode and bit assignments are V clone construction.
+
+1. Corrected the F9/Ctrl+F9 binding against engine.cpp and CLI help.
+
+No original executable or reference runtime was run for this audit. Historical
+validation totals retain their original dates; they are not this
+audit's test results. Private captures, derived source and probe output remain
+outside the tracked documentation.

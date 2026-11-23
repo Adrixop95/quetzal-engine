@@ -1,5 +1,37 @@
 # Engine: status of the simulation rules (verified / measured / placeholder)
 
+## Research verification-label audit (2026-11-23)
+
+The [label audit](label_audit.md) reviews all 27 documents in the private
+unlabelled-claims checklist. Each now distinguishes inspected reference facts,
+clone construction, rechecked cached measurements and G interpretations or
+uncorroborated historical results, with a correction section and evidence map.
+The summary counts labelled claim/table units; they are not parity percentages.
+
+**V source corrections:** object +0x3c is secondary HP; Marine primary maximum
+comes from d1. The docs now describe the shared seed-zero CRT-compatible stream,
+effects-before-scripts/projectiles-after-movement clone phases, completion-sampled
+mine rates, gold/repair initialization boundaries, current save versions/content
+checks and profile/helper branches. Old placement, renderer, AI and campaign
+reports are explicitly historical where later implementations supersede them.
+No engine behavior changed in this documentation task.
+
+**M cached/offline checks:** startup walking counts/scalar repeats, early AI
+queue/payment/phase samples and the formation candidate's 22/31, 1/11 and 6/6
+endpoint comparisons were rechecked. No original executable/reference runtime
+was run. Original live parity, native draw consumption and full route/observer
+acceptance remain G or pending; existing synthetic equality is not promoted.
+
+**G implementation discrepancy:** core `save_unit_kind(36)` selects Spider,
+whereas the reference factory metadata and clone type tables select Marine.
+A focused original-save codec fix/test is separate work; no implementation
+change or import-parity claim is made here. Missing live observer/capture
+prerequisites do not prevent the completed static label audit.
+
+Baseline and final Release build, 84-entry CTest (78 passes, six expected skips)
+and pre-commit pass. All 27 count rows and 41 table labels are consistent; native
+Windows/macOS CI and live reference parity remain unverified.
+
 ## Special commands and completion matrix (2026-11-23)
 
 The [completion matrix](specials_completion_matrix.md) inventories every scoped

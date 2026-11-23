@@ -1,6 +1,14 @@
 # Serialized object members
 
-This is a field map for the original save format, not a proposed C++ object ABI.
+Evidence labels (audit 2026-11-23): V = inspected source fact, with reference
+or clone scope stated; M = measurement rechecked from retained captures or an
+offline clone probe; G = inference, proposed procedure or uncorroborated
+historical report. A clone V does not establish native parity. A marker covers
+one paragraph/list item or the entire immediately following table. Unresolved
+meanings remain G even inside a table whose codec structure is V.
+See [label_audit.md](label_audit.md) for counts and evidence limits.
+
+**V** (codec structure; unresolved gameplay roles remain G). This is a field map for the original save format, not a proposed C++ object ABI.
 Offsets are hexadecimal and relative to the object named in the first column.
 All scalar members occupy four bytes **on disk**, even byte and short members.
 Wire order, conditional branches, counted lists and exact raw block lengths are
@@ -20,6 +28,8 @@ safely be treated as packed host structs.
 World classes inherit both tables; Decoration and weapon classes inherit only
 Visible. Save/load methods establish these offsets independently of C++ layout.
 
+**V** (codec structure; unresolved gameplay roles remain G).
+
 | Class | Field | Memory offset | Meaning |
 |---|---|---|---|
 | Visible | scalar members | `+10,+14,+18,+1c` | Unresolved visible-object state words |
@@ -28,7 +38,7 @@ Visible. Save/load methods establish these offsets independently of C++ layout.
 | World | owning group | `+30` | Tagged Tactic/Town reference; **not an animation pointer** |
 | World | scalar | `+34` | Unresolved scalar |
 | World | health | `+38` | Current HP; 6,000 for a full-health footman |
-| World | maximum health | `+3c` | Maximum HP |
+| World | secondary health | `+3c` | Secondary HP; distinct from the virtual maximum-primary-HP getter |
 | World | scalar | `+40` | Unresolved scalar |
 | World | tile x/y | `+44,+48` | Tile coordinates; nominal tile width 48 pixels |
 | World | short member | `+4c` | Signed 16-bit state member, widened to a word |
@@ -36,7 +46,7 @@ Visible. Save/load methods establish these offsets independently of C++ layout.
 | World | scalars | `+54,+58` | Unresolved scalar members |
 | World | flags | `+5c,+5d,+5e,+5f` | Four distinct boolean members |
 
-`+4,+8,+c` in Visible are reconstructed spatial list links. They are not part
+**V** (codec structure; unresolved gameplay roles remain G). `+4,+8,+c` in Visible are reconstructed spatial list links. They are not part
 of the Visible stream. Type-specific animations, descriptors and fixed-point
 movement state occur in different places in different classes.
 
@@ -45,6 +55,8 @@ movement state occur in different places in different classes.
 The offsets in each row are individual fields, listed in wire order within
 that category. No arithmetic progression or implicit struct padding is implied.
 The full interleaving of categories is specified in savegame.md.
+
+**V** (codec structure; unresolved gameplay roles remain G).
 
 | Class | Field | Memory offset | Meaning |
 |---|---|---|---|
@@ -116,6 +128,8 @@ The full interleaving of categories is specified in savegame.md.
 
 ## Animation and small subobjects
 
+**V** (codec structure; unresolved gameplay roles remain G).
+
 | Class | Field | Memory offset | Meaning |
 |---|---|---|---|
 | Animation | resource ID | `+0` | `Units.xbe` group `0x515` element number |
@@ -130,11 +144,13 @@ The full interleaving of categories is specified in savegame.md.
 | Effect (`004c1298`) | scalars | `+4,+8,+c,+10,+14,+18,+1c` | Seven state words |
 | Effect (`004c1298`) | floating state | `+20` | In-memory float saved as an eight-byte double |
 
-The Animation presence token describes whether `+8` is null; it is not a
+**V** (codec structure; unresolved gameplay roles remain G). The Animation presence token describes whether `+8` is null; it is not a
 standalone in-memory boolean. A null animation pointer and an animation with
 no active frames are different states.
 
 ## Tactic and Town fields
+
+**V** (codec structure; unresolved gameplay roles remain G).
 
 | Class | Field | Memory offset | Meaning |
 |---|---|---|---|
@@ -176,10 +192,12 @@ no active frames are different states.
 | BuildTree | descriptor | `+1470` | Byte displacement relative to `004af130` |
 | BuildTree | flags/scalar | `+2e0,+2e1,+2e2 / +2e4` | Three booleans and a state word |
 
-Two additional tokens belong to globals rather than any object's storage:
+**V** (codec structure; unresolved gameplay roles remain G). Two additional tokens belong to globals rather than any object's storage:
 Tactic's leading `004d9b78` state word and Town's `00515721` boolean.
 
 ## Side and fog
+
+**V** (codec structure; unresolved gameplay roles remain G).
 
 | Class | Field | Memory offset | Meaning |
 |---|---|---|---|
@@ -205,10 +223,12 @@ Tactic's leading `004d9b78` state word and Town's `00515721` boolean.
 
 ## Projectiles and other pools
 
-Every projectile inherits Visible. All weapon classes also serialize `+30`
+**V** (codec structure; unresolved gameplay roles remain G). Every projectile inherits Visible. All weapon classes also serialize `+30`
 (owner unit reference) and `+34` (unresolved scalar). The following table lists
 all additional serialized members, grouped by storage meaning. Descriptor
 indices and animations replace pointers; no process addresses are restored.
+
+**V** (codec structure; unresolved gameplay roles remain G).
 
 | Class / kind | Field | Memory offset | Meaning |
 |---|---|---|---|
@@ -238,6 +258,8 @@ indices and animations replace pointers; no process addresses are restored.
 
 ## Scenario objects and UI
 
+**V** (codec structure; unresolved gameplay roles remain G).
+
 | Class | Field | Memory offset | Meaning |
 |---|---|---|---|
 | All script kinds | scenario ID | `+4` | Identifier used by scenario scripts |
@@ -254,7 +276,18 @@ indices and animations replace pointers; no process addresses are restored.
 | UI build panel | link/state | `+4c,+11d8` | Tagged object reference and word |
 | UI build panel | raw build state | `+50` | `0x1188` bytes |
 
-The final daylight tokens are globals `004c1968` (day time) and `004c196c`
+**V** (codec structure; unresolved gameplay roles remain G). The final daylight tokens are globals `004c1968` (day time) and `004c196c`
 (stage), not object fields. The camera view and five game globals precede the
 object sections. Per-Side camera records and UGI_CAMERA world objects are two
 different serialized structures.
+
+## Label audit corrections (2026-11-23)
+
+Evidence checked: Reference spot checks: 0x43e890, 0x433190 and Marine save/load 0x432ba0/0x432d50. Clone: `src/core/savegame.cpp` Reader methods enumerate the table offsets, widths and reference families; `save_import.cpp` maps only a subset. V tables here certify that codec structure; unresolved gameplay meanings and native methods not individually corroborated remain G. A serialized secondary-HP word is not a maximum-HP getter.
+
+1. Corrected World +0x3c from maximum HP to secondary HP (Marine constructor 0x433190; primary maximum getter 0x45fe50).
+
+No original executable or reference runtime was run for this audit. Historical
+validation totals retain their original dates; they are not this
+audit's test results. Private captures, derived source and probe output remain
+outside the tracked documentation.

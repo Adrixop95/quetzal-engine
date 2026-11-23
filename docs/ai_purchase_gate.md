@@ -1,6 +1,16 @@
 # AI purchase gate investigation (2026-11-07, incomplete)
 
-The recorded early purchases do **not** establish that development should include
+Evidence labels (audit 2026-11-23): V = inspected source fact, with reference
+or clone scope stated; M = measurement rechecked from retained captures or an
+offline clone probe; G = inference, proposed procedure or uncorroborated
+historical report. A clone V does not establish native parity. A marker covers
+one paragraph/list item or the entire immediately following table. Unresolved
+meanings remain G even inside a table whose codec structure is V.
+See [label_audit.md](label_audit.md) for counts and evidence limits.
+
+**G** (historical investigation or unresolved policy). Historical scope: this is the 2026-11-07 investigation at `2fdf155`. Current plan allocation is implemented separately; see [ai_purchase_plan.md](ai_purchase_plan.md) and [ai_implementation.md](ai_implementation.md). The rejected trial and clone checkpoint columns below describe that snapshot, not current clone behavior.
+
+**G** (historical investigation or unresolved policy). The recorded early purchases do **not** establish that development should include
 units or defences. The original also rejects the local force gate in state 13,
 then buys through a different production-plan branch. A trial replacement policy
 made the clone spend, but failed timing, prices, composition and sustained growth.
@@ -8,7 +18,7 @@ The trial was reverted. **No gameplay fix or purchase-parity claim is delivered.
 
 ## Inputs and limits
 
-Checkout: `2fdf155`. Read [early_payment.md](early_payment.md),
+**G** (historical investigation or unresolved policy). Checkout: `2fdf155`. Read [early_payment.md](early_payment.md),
 [rules_ai.md](rules_ai.md), the task-96/97 prompts and the production/harvest
 run sheet before interpreting these results. Task 96 supplies integer production
 work and neutral-computer activation, but explicitly leaves side-plan allocation
@@ -19,18 +29,18 @@ Only recorded original observations were used. No reference executable or
 executable-derived source was run or inspected. Private inputs, relative to
 `/home/adrox/aztec-re/work/`, were:
 
-- `parity/d3_092158_dense_l0{,_mission_2,_mission_3}/reference/observations.jsonl`
+- **G** (historical investigation or unresolved policy). `parity/d3_092158_dense_l0{,_mission_2,_mission_3}/reference/observations.jsonl`
   and the earlier `dn_213657_*` streams: dense ticks through 24, then
   30, 36, 48 and 60; the newer streams expose planner fields.
-- `parity/dev_212738_private_l0{,_mission_2,_mission_3}_{a,b}/reference/observations.jsonl`:
+- **G** (historical investigation or unresolved policy). `parity/dev_212738_private_l0{,_mission_2,_mission_3}_{a,b}/reference/observations.jsonl`:
   independent archived captures at ticks 1, 6 and 12. Money and early queued
   types agree at those checkpoints. They do not repeat every dense transition.
-- `parity/long23_075041_m{2,3}/{reference,clone}/observations.jsonl`:
+- **G** (historical investigation or unresolved policy). `parity/long23_075041_m{2,3}/{reference,clone}/observations.jsonl`:
   22 checkpoints ending at **1600**, with 100-tick gaps for much of the run.
   The corresponding `dense_scenarios/` and `long_scenarios/` files describe
   schedules, not additional observations.
 
-All 17 supplied reference observation streams were checked for their terminal
+**G** (historical investigation or unresolved policy). All 17 supplied reference observation streams were checked for their terminal
 tick. None extends beyond 1600. Exact purchase times/types throughout 2000 ticks,
 and original checkpoint values at 2000, cannot be recovered from these inputs.
 Sparse net money changes cannot identify every intervening payment or harvest.
@@ -44,6 +54,8 @@ archived clone results. The current clone differs from those older results.
 Town numbers below are mission town indices, mapped using their hall type and
 position, not pool iteration order. Queuing is distinguished from payment.
 
+**M** (retained reference captures).
+
 | Mission | Side | Town | Recorded first request/payment |
 | --- | --- | --- | --- |
 | 2 | 1 | 0 | Mage 28 queued by tick 5; unpaid through tick 60 |
@@ -55,25 +67,27 @@ position, not pool iteration order. Queuing is distinguished from payment.
 | 3 | 2 | 1 | Footman 0 queued at tick 6; starts at tick 7; pays 67 |
 | 3 | 2 | 2 | No early queued or active purchase |
 
-Thus “every AI town buys one unit” is contradicted by the town-level records.
+**M** (retained reference captures). Thus “every AI town buys one unit” is contradicted by the town-level records.
 Mission 3 side 1 additionally starts a farm 39 in town 3 and a mine 48 in town 4
 between ticks 48 and 60, paying 193 and 121. The side's combined drop of 314
 is two economic purchases, not a single unit or a research payment.
 
-The 129 archer price retains the previously documented reference-runtime
+**G** (historical investigation or unresolved policy). The 129 archer price retains the previously documented reference-runtime
 conversion discrepancy: the clone's independent pricing model gives 128.
 This investigation does not justify adding a one-gold surcharge.
 
 ### State 13 is not the original's purchase entry path
 
-In mission 3, both side-1 towns and the developed side-2 town have these recorded
+**M** (retained reference captures). In mission 3, both side-1 towns and the developed side-2 town have these recorded
 post-update strategist states:
+
+**M** (retained reference captures).
 
 | Recorded tick | 1 | 2 | 3 | 4 | 5 | 6 |
 | --- | --- | --- | --- | --- | --- | --- |
 | Phase | 10 | 13 | 9 | 1 | 2 | 2 |
 
-The two side-1 development diagnostics are 2 and 1 for mission towns 3 and 4;
+**M** (retained reference captures). The two side-1 development diagnostics are 2 and 1 for mission towns 3 and 4;
 the developed side-2 town reports 0. The outposts instead take
 `10 -> 13 -> 9 -> 11 -> 12 -> 0`. Nevertheless town 0 receives its footman
 request while on that path. Its request therefore needs another planning source.
@@ -81,7 +95,7 @@ Mission 2's purchasing side-2 town also takes the offensive path through 9/1/2;
 its reported development is 0. Mission 2 side 1 takes 13/15/14 and queues its mage
 without sufficient money to start it.
 
-Mission 3 membership diagnostics provide a separate allocation observation:
+**G** (historical investigation or unresolved policy). Mission 3 membership diagnostics provide a separate allocation observation:
 between ticks 4 and 5, types 27, 28 and 29 leave both side-1 town tactics.
 For town 3 their counts change from 8/2/4 to 0/0/0; for town 4 from 10/4/4
 to 0/0/0. Types 30/31/32 and ordinary buildings remain. This movement happens
@@ -89,36 +103,36 @@ after the recorded force-gate decision; it cannot explain that earlier branch
 by simply reducing its force count. A unit's production town and its current
 tactic membership are different concepts.
 
-The clone currently conflates these responsibilities: its offensive plan uses
-`3 * (development + 1) - available_units`, and its target predicate requires
-hostility. The original neutral side also enters phase 1, so neutral diplomacy
+**G** (historical investigation or unresolved policy). The investigated clone conflated these responsibilities: its offensive plan used
+`3 * (development + 1) - available_units`, and its target predicate required
+hostility. Current `make_plan` and side allocation replace that target shortcut; no new purchase-timing acceptance follows from their presence. The original neutral side also enters phase 1, so neutral diplomacy
 does not prevent that planning transition. These observations establish missing
 plan behavior; they do not reveal its complete scoring, composition or arbitration.
 
-Counting all unit/defence development towards the clamp would change the original
+**G** (historical investigation or unresolved policy). Counting all unit/defence development towards the clamp would change the original
 phase path to 13/15/14 and produce a local target of 30. That hypothesis is
 inconsistent with the recorded development diagnostics and phase path. Counting
 only buildings as forces would likewise select the wrong branch in these towns.
 
 ## Rejected independent candidate
 
-A temporary three-part policy was tested: allow non-allied neutral target towns,
+**G** (historical investigation or unresolved policy). A temporary three-part policy was tested: allow non-allied neutral target towns,
 restrict the offensive branch to developed source towns, and request at least
 one unit even when the existing available army exceeds the offensive target.
 The minimum-one rule was an explicit fit, not a recovered original rule.
 The development calculation and original force threshold were unchanged.
 
-Both missions completed 2000 clone updates with the trial. The trial was rejected:
+**G** (historical investigation or unresolved policy). Both missions completed 2000 clone updates with the trial. The trial was rejected:
 
-- Mission 2 town 3 paid for a footman on simulation tick 7, first visible in
+- **G** (historical investigation or unresolved policy). Mission 2 town 3 paid for a footman on simulation tick 7, first visible in
   the before-commands observation at tick 8, for **160**, versus the original's
   tick **7** and price **67**. The clone work rate produced a 54-update job;
   the original's active record at tick 100 still has accumulated work 2820
   at increment 30. Fixing only the planner cannot reconcile that discrepancy.
-- Mission 3 both side-1 archer debits first appear at tick **8**, at **128**
+- **G** (historical investigation or unresolved policy). Mission 3 both side-1 archer debits first appear at tick **8**, at **128**
   each, versus ticks **6/7**, at **129** each. The outpost footman remains absent;
   the developed town pays **160**, versus **67** in its original record.
-- The trial starts the side-1 farm/mine on simulation tick 58, but this timing
+- **G** (historical investigation or unresolved policy). The trial starts the side-1 farm/mine on simulation tick 58, but this timing
   proximity does not establish the subsequent economic policy. At tick 1000,
   mission 3 side 1 has **67** objects and **39** gold versus **71/52** in the
   original; side 2 has **97/120** versus **92/1285**. At tick 1600 the trial
@@ -129,7 +143,7 @@ is insufficient evidence to retain a policy that fails the requested series.
 
 ## Checkpoint comparison of the unchanged clone
 
-Each cell is **money / all live objects / mobile units**. Mobile units here are
+**G** (historical investigation or unresolved policy). Each cell is **money / all live objects / mobile units**. Mobile units here are
 types classified as Marine, Spider, Headtruck, Truck, Cannon, Bird, Zeppelin,
 Boat or Johnka in `docs/data/rules.json`; buildings, defences, cameras and unknown
 virtual types are excluded. These are observed physical objects, not a population
@@ -138,6 +152,8 @@ observed physical pool. Side 3 has zero money and objects throughout.
 
 Original values use the archived long streams. Clone values use the fresh
 unchanged runs described below. A dash means unavailable, with no extrapolation.
+
+**G** (historical investigation or unresolved policy).
 
 | Mission | Side | Tick | Original | Clone |
 | --- | --- | --- | --- | --- |
@@ -166,7 +182,9 @@ unchanged runs described below. A dash means unavailable, with no extrapolation.
 | 3 | 2 | 1000 | 1285 / 92 / 86 | 1000 / 88 / 81 |
 | 3 | 2 | 2000 | — | 610 / 88 / 81 |
 
-At the last shared checkpoint, tick 1600:
+**G** (historical investigation or unresolved policy). At the last shared checkpoint, tick 1600:
+
+**G** (historical investigation or unresolved policy).
 
 | Mission | Side | Original | Clone |
 | --- | --- | --- | --- |
@@ -177,23 +195,23 @@ At the last shared checkpoint, tick 1600:
 | 3 | 1 | 675 / 82 / 51 | 1151 / 58 / 42 |
 | 3 | 2 | 64 / 95 / 89 | 280 / 88 / 81 |
 
-The original mission-2 side-2 growth from 18 to 24 objects is two footmen and
+**G** (historical investigation or unresolved policy). The original mission-2 side-2 growth from 18 to 24 objects is two footmen and
 four farms, not six additional army units. Mission 3 side 1 grows from 54 to 82
 objects, but only from 42 to 51 mobile units. A force-target adjustment fitted to
 aggregate object growth would confuse economic construction with army production.
-The unchanged clone also currently contains the mission-2 type-minus-one object;
+The recorded unchanged clone also contains the mission-2 type-minus-one object;
 the older task-96 count correction is not the current placement behavior.
 
 ## Reproduction and verification
 
-Baseline and final checks use `sh tools/bootstrap.sh --no-hooks`, Release CMake
+**G** (historical investigation or unresolved policy). Baseline and final checks use `sh tools/bootstrap.sh --no-hooks`, Release CMake
 with `AZTEC_GEN_DIR=` in this worktree's `build/`, build with two jobs, CTest and
 all-file pre-commit. Baseline and final: **62 passed, six skipped, zero failed**;
 pre-commit passed, including an explicit check of this untracked document.
 The skipped entries include private-data checks and restricted network
 process creation; they are not game-data verification.
 
-Each clone process used an ordinary private copy made with
+**G** (historical investigation or unresolved policy). Each clone process used an ordinary private copy made with
 `tools/parity_report.py:private_game`: immutable assets symlinked, Maps/Saves
 and mutable configuration copied, and a separate `AZTEC_USER_DIR`. No external
 installation files were changed. The observation schedule contains ticks 1–12,
@@ -213,7 +231,7 @@ timeout -s KILL 180 unshare -rn env \
   --report "$purchase_run/report.json" 2
 ```
 
-Use mission argument 3 for the other mission. The schedule header is
+**G** (proposed verification procedure). Use mission argument 3 for the other mission. The schedule header is
 `L0 2 0 0 0`, followed by one tick per line. All four processes exited zero and
 reported 2000 updates, no script errors and no unsupported executions. Report
 status `timeout` means the headless simulation reached its tick horizon; no
@@ -224,20 +242,31 @@ independent repeatability runs. Their captures are retained privately.
 
 Needed before a defensible planner fix:
 
-1. Side-plan request/composition and membership allocation, including the
+1. **G** (historical investigation or unresolved policy). Side-plan request/composition and membership allocation, including the
    outpost request that arrives without entering the offensive branch. Task 96
    explicitly leaves this unfinished; the full task-64 side-plan observer is
    also missing. This investigation completed the recorded-data review and clone
    measurements that do not depend on that observer.
-2. An audited explanation of the differing effective production factors and
+2. **G** (historical investigation or unresolved policy). An audited explanation of the differing effective production factors and
    observation/update phase. The trial demonstrates a large 67-versus-160
    discrepancy in addition to the known 128-versus-129 conversion artifact.
-3. Original observations through 2000, with adequate temporal resolution and
+3. **G** (historical investigation or unresolved policy). Original observations through 2000, with adequate temporal resolution and
    repeated town request/active-production diagnostics. The supplied long series
    cannot identify exact intermediate starts even before 1600.
 
-The observed phase paths, early money changes and the rejected candidate's
+**G** (historical investigation or unresolved policy). The observed phase paths, early money changes and the rejected candidate's
 failures are measurements. The replacement minimum and target policy were a fit.
 No full rule, sustained-growth tolerance, exact purchase parity or original
 tick-2000 values are proven. Status: **needs additional recorded evidence and
 side-plan implementation**.
+
+## Label audit corrections (2026-11-23)
+
+Evidence checked: Reference: 0x45e8e0 and phase handlers described in [ai_phases.md](ai_phases.md); early states/payments were rechecked in retained dense mission-2/3 observations, and original money/object checkpoints in retained long captures ending at tick 1600. Clone: `src/engine/ai/planner.cpp`, `src/engine/sim/ai.cpp` and `rules.cpp`. Mixed original/old-clone comparison tables stay G as a whole because the old clone runs were not reconstructed.
+
+1. Scoped the formula, rejected trial, checkpoint columns and missing-plan claims to revision 2fdf155; current make_plan/side allocation supersede that clone diagnosis.
+
+No original executable or reference runtime was run for this audit. Historical
+validation totals retain their original dates; they are not this
+audit's test results. Private captures, derived source and probe output remain
+outside the tracked documentation.

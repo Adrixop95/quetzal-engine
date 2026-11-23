@@ -1,9 +1,19 @@
 # Sprite and lighting integration inventory
 
-Updated 2026-10-26. Reference labels **R/C/T/P** retain the meanings in
+Evidence labels (audit 2026-11-23): V = inspected source fact, with reference
+or clone scope stated; M = measurement rechecked from retained captures or an
+offline clone probe; G = inference, proposed procedure or uncorroborated
+historical report. A clone V does not establish native parity. A marker covers
+one paragraph/list item or the entire immediately following table. Unresolved
+meanings remain G even inside a table whose codec structure is V.
+See [label_audit.md](label_audit.md) for counts and evidence limits.
+
+**G** (historical integration snapshot). Historical integration snapshot, 2026-10-26, with dated follow-ups below. Current producers and rendering changes are tracked in [render_implementation.md](render_implementation.md), [specials_implementation.md](specials_implementation.md) and [ferry_implementation.md](ferry_implementation.md). Reference labels **R/C/T/P** retain the meanings in
 [sprites_mapping.md](sprites_mapping.md). An implementation or synthetic control
 is not new reference evidence. No new P evidence was obtained in this worktree.
 The historical rebuild checklist is not the integration inventory.
+
+**G** (historical integration snapshot).
 
 | Contract | Implementation and synthetic controls | Evidence / remaining uncertainty |
 | --- | --- | --- |
@@ -23,7 +33,7 @@ The historical rebuild checklist is not the integration inventory.
 
 ## Private probe status
 
-`tools/zspr_contract_probes.py` schedules attack/death (Headtruck, Spider,
+**G** (historical integration snapshot). `tools/zspr_contract_probes.py` schedules attack/death (Headtruck, Spider,
 Zeppelin, Bird), overlapping objects, and a candidate night-time capture. It
 calls the existing isolated runner; it never bypasses network namespaces or
 shares writable game state. It writes its inventory only under ignored `work/`.
@@ -32,7 +42,7 @@ active glow and local vision before calling it a night-lighting observation.
 A process exit of zero only means a capture completed, not P verification.
 
 The current attempt wrote `work/render-contract-probes/inventory.json` and exited
-2. All three cases are **pending**: `game/Aztec.exe`, mission data,
+2. **G** (historical integration snapshot). All three cases are **pending**: `game/Aztec.exe`, mission data,
 `build/aztec_recomp` and `work/vtables.txt` are absent. No reference run or pixels
 were produced. Earlier namespace failures remain failures, not evidence here.
 
@@ -47,7 +57,7 @@ python3 tools/zspr_compare.py /private/game work/render-contract-probes-new/over
   --require-stable --tolerance 40 --report work/overlap-comparison.json
 ```
 
-The runner writes a pre-shot scan, screenshot, post-shot scan, and three-column
+**G** (historical integration snapshot). The runner writes a pre-shot scan, screenshot, post-shot scan, and three-column
 `samples.tsv`. `--require-stable` rejects unequal raw or dereferenced dumps. A
 stable bracket is necessary evidence of unchanged sampled state; it is **not**
 an atomic render/tick snapshot: the reference host presents staged frames on a
@@ -57,7 +67,7 @@ P just because a nearby frame scores well. `PROBE_SCRIPT` can supply private
 orders/setup commands before sampling; verify target orders instead of treating
 idle no-hit results as immunity.
 
-For alpha, supply `--background /private/registered-background.ppm`. The report
+**G** (historical integration snapshot). For alpha, supply `--background /private/registered-background.ppm`. The report
 names the assumed straight-alpha/floor/RGB565 model, included alpha count and
 skipped alpha count. Compare occluded/overlapping items with a known full scene
 or visibility mask; per-component scores are diagnostic and cannot prove the
@@ -66,7 +76,7 @@ under ignored paths.
 
 ## Checks
 
-Baseline: Release configure/build and CTest passed (six independent checks,
+**G** (historical integration snapshot). Baseline: Release configure/build and CTest passed (six independent checks,
 two game-data skips); pre-commit passed. The cache was relocated to
 `build/ccache` after the default cache attempted a read-only home-directory write.
 After integration: Release configure/build and ten CTest entries passed (eight
@@ -80,7 +90,7 @@ is read-only; changes remain uncommitted.
 
 ## Remaining animation states (2026-10-27)
 
-`GameSim` supplies independent body and attack ages in simulation ticks. The
+**G** (historical integration snapshot). `GameSim` supplies independent body and attack ages in simulation ticks. The
 renderer samples installed frame durations at 12 Hz, including timed prefixes,
 holds and one-shot completion. Firing can finish after the legacy eight-tick
 simulation animation tag returns to idle; body cycles do not restart on a shot.
@@ -91,7 +101,7 @@ vision mask as their render-only transport ids. Explicit construction state 6
 is recognized without relying on the progress fallback. Unaligned aircraft and
 Truck motion seeks the direction frame until cycle readiness and alignment hold.
 
-Synthetic controls cover idle and supported movement for all 90 initialized
+**G** (historical integration snapshot). Synthetic controls cover idle and supported movement for all 90 initialized
 types (Camera intentionally has no body), independent turret/body ages, long
 firing sequences, corpse retention, construction, direction alignment and clocks
 beyond 32-bit ticks. `animation_headless` renders invented RGB565 sprites through
@@ -107,7 +117,7 @@ are guessed for these names. Boat/Johnka phase transitions, independent turret
 aim, Bird steering cooldown, Cannon hop restarts and aircraft altitude still need
 simulation producers.
 
-Release build and all nine independent CTest checks passed; the two configured
+**G** (historical integration snapshot). Release build and all nine independent CTest checks passed; the two configured
 game-data entries skipped. Both game-data binaries subsequently passed against a
 private game copy inside `unshare -rn` with dummy SDL drivers. The independent
 engine also rendered mission 1 after 24 simulation ticks in that namespace:
@@ -121,7 +131,7 @@ were obtained, so synchronized reference animation validation remains pending.
 
 ## V13 producer follow-up (2026-10-28)
 
-See the [producer status](engine_rules_status.md#v13-simulation-animation-producers-2026-10-28-partial)
+**G** (historical integration snapshot). See the [producer status](engine_rules_status.md#v13-simulation-animation-producers-2026-10-28-partial)
 for implementation tests and dependencies. Full body/turret angles now reach
 rendering, audio and simulation lighting through the same object snapshot.
 Finite Boat phases complete from installed frame durations; V12 must still
@@ -131,3 +141,14 @@ displacement and idle resumes when motion stops; altitude dynamics remain open.
 No new reference pixel comparison or visibility/minimap acceptance was possible:
 all three isolated reference scene probes failed at namespace interface setup.
 The earlier remaining-producer list above records the preceding snapshot.
+
+## Label audit corrections (2026-11-23)
+
+Evidence checked: Reference: the existing selector/render research in [sprites_mapping.md](sprites_mapping.md), plus alpha blitters 0x47f0a0/0x47f270. Clone: `assets/anim_provider.cpp`, `data/sprites.hpp`, `render/light_grid.hpp`, `scene_renderer.cpp` and render contract tests. The old integration table mixes code/resource contracts with historical missing-producer claims and remains G as a whole; newer producers are linked above.
+
+1. Scoped the old zero-altitude/missing-transport-producer inventory to its date; current producers exist and are documented separately.
+
+No original executable or reference runtime was run for this audit. Historical
+validation totals retain their original dates; they are not this
+audit's test results. Private captures, derived source and probe output remain
+outside the tracked documentation.

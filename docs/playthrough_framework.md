@@ -1,6 +1,14 @@
 # Player-command playthrough framework
 
-The route mode of `tools/playthrough.py` drives the independent engine's existing
+Evidence labels (audit 2026-11-23): V = inspected source fact, with reference
+or clone scope stated; M = measurement rechecked from retained captures or an
+offline clone probe; G = inference, proposed procedure or uncorroborated
+historical report. A clone V does not establish native parity. A marker covers
+one paragraph/list item or the entire immediately following table. Unresolved
+meanings remain G even inside a table whose codec structure is V.
+See [label_audit.md](label_audit.md) for counts and evidence limits.
+
+**V** (clone tooling contract). The route mode of `tools/playthrough.py` drives the independent engine's existing
 `--script` playtest loop at virtual 12 Hz. It submits the same `Command` types as
 `CommandsUi`; the ordinary simulation handles payment, prerequisites, placement,
 pathfinding, combat and transports. It never grants money, creates units directly,
@@ -9,7 +17,7 @@ local UI selection, as mouse selection does. Group assignment and recall also us
 normal queued group commands. Existing campaign sweep options and low-level
 click/key scripts continue to work.
 
-This is a framework, not fifteen completed mission routes or original-game parity
+**V** (clone tooling contract). This is a framework, not fifteen completed mission routes or original-game parity
 evidence. Worker-based resource gathering has no command in this checkout.
 `harvest`/`gather` therefore construct income-producing buildings through the
 normal build path; attempts to use a mobile worker fail as unsupported. The
@@ -36,7 +44,7 @@ python3 tools/playthrough.py --demo --max-ticks 2000 --capture-every 120
 ctest --test-dir build -R playthrough_framework --output-on-failure
 ```
 
-The generator in `tools/playthrough_route.py:demo_game` writes empty resource
+**V** (clone tooling contract). The generator in `tools/playthrough_route.py:demo_game` writes empty resource
 archives, a synthetic map and a normal mission victory trigger into private
 output. The public script is `tests/playtest/playthrough_demo.txt`. It builds a
 factory and farm, witnesses income, trains two units, assigns and recalls a group,
@@ -72,7 +80,7 @@ exercise the recovery helpers. Reports record the profile, and capture replay
 uses the same selection. Synthetic pathing courses and their measurement limits
 are documented in [pathing-regression-from-playthroughs.md](pathing-regression-from-playthroughs.md).
 
-The default mode is `--mode headless`: dummy SDL video/audio, software rendering,
+**V** (clone tooling contract). The default mode is `--mode headless`: dummy SDL video/audio, software rendering,
 no fog and no lighting. It renders offscreen so captures and UI clicks remain
 available; it uses virtual time rather than the separate engine `--headless`
 policy driver. `--mode xvfb` uses `xvfb-run`, X11, software rendering and dummy
@@ -81,7 +89,7 @@ launch the engine inside `unshare -rn`; isolation or X11 failures remain failed
 runs. There is no CLI switch to bypass namespaces. The tests replace the launcher
 only for their generated fixtures. The process group is killed on wall timeout.
 
-Every production run uses a private installation directory: ordinary Maps/Saves,
+**V** (clone tooling contract). Every production run uses a private installation directory: ordinary Maps/Saves,
 read-only asset/map symlinks and copied mutable configuration, plus a separate
 `AZTEC_USER_DIR`. It never runs against the shared writable installation and never
 launches the original executable or lifted runtime. Keep symlink targets stable
@@ -91,12 +99,14 @@ that skip is not an Xvfb verification.
 
 ## Script commands
 
-Commands are case-insensitive. `#` starts a comment. Arguments are whitespace
+**V** (clone tooling contract). Commands are case-insensitive. `#` starts a comment. Arguments are whitespace
 separated, with no quoting/expansion. Tile coordinates are zero-based; object IDs
 are the engine's stable, one-based IDs. Each player command submits at the next
 simulation tick and consumes one virtual frame. Successful conditions/checkpoints
 can continue to the next statement in that frame. Empty or foreign selections,
 unavailable production and invalid high-level arguments fail the script.
+
+**V** (clone tooling contract).
 
 | Command | Behavior |
 | --- | --- |
@@ -120,12 +130,13 @@ producer. Queues can contain unpaid work, and engine command rejection can still
 occur after validation. Always witness completion with a count/checkpoint. The
 ignored-order detector catches requests not queued/created in full.
 
-`build` also accepts in-place hall upgrades. These submit the normal `Build`
+**V** (clone tooling contract). `build` also accepts in-place hall upgrades. These submit the normal `Build`
 command, as the UI does. Their coordinates must be inside the map but do not
-choose a new site. Payment, prerequisites, the town queue and placement checks
-at completion still apply; successful completion preserves the hall's identity.
+choose a new site. Payment, prerequisites, the town queue still apply; the current task-150 placement predicate runs at preview/click, not again at admission or production start; successful completion preserves the hall's identity.
 
-Conditions use `NAME OP INTEGER`, where OP is `==`, `!=`, `<`, `<=`, `>` or `>=`:
+**V** (clone tooling contract). Conditions use `NAME OP INTEGER`, where OP is `==`, `!=`, `<`, `<=`, `>` or `>=`:
+
+**V** (clone tooling contract).
 
 | Condition | Observed value |
 | --- | --- |
@@ -152,7 +163,7 @@ An exact anomaly capture inside such a jump cannot be claimed; the report then
 records capture failure. High-level commands, waits and malformed/unknown actions
 cannot silently pass.
 
-The runner prepends internal `budget N` and `record FILE` directives. The budget
+**V** (clone tooling contract). The runner prepends internal `budget N` and `record FILE` directives. The budget
 is a hard simulation limit even for `run`; `--frames` also bounds stalled/paused
 virtual frames. Internal `capture TICK FILE` directives schedule exact replay
 frames. Route input must not contain any of these three runner-owned directives.
@@ -161,7 +172,7 @@ language. Direct `--script` users may use these directives themselves.
 
 ## Reports and detectors
 
-The default new output directory is
+**V** (clone tooling contract). The default new output directory is
 `work/playthrough/reports/<UTC timestamp>/`. `--out` must name a new directory
 inside this worktree's ignored `work/`. The adjacent `<name>-inputs/` holds the
 private generated/copied installation. `report.json` (schema 1) and `report.md`
@@ -177,7 +188,7 @@ The JSON contains:
 - `script_complete`: whether all route steps/checkpoints executed; a victory
   reached at the budget boundary cannot hide skipped assertions.
 - `process`: command, return code, wall-timeout flag and launch error if any.
-- `scenario_sha256`, `engine_sha256`, `mode`, and configured detector `bounds`.
+- **V** (clone tooling contract). `scenario_sha256`, `engine_sha256`, `mode`, and configured detector `bounds`.
 - `pending_goals`: orders still short of their target when the simulation ended.
 - `anomalies`: `kind`, `tick`, `object`, `position` in world pixels, and English
   `reason`, plus a relative `capture` path when verified. Global events use null
@@ -191,12 +202,14 @@ script completion flag and failure count. A missing or inconsistent terminal
 record cannot pass. Snapshot consumers should distinguish this record from
 ordinary tick/hash/object rows.
 
-The route CLI exits zero only for a victory with no anomalies. Loss, timeout,
+**V** (clone tooling contract). The route CLI exits zero only for a victory with no anomalies. Loss, timeout,
 checkpoint failures and anomalies return 1; configuration errors return 2.
 Direct engine scripts use the existing status 3 for failed expectations. A route
 ending while the mission is still running is a scenario failure unless a tick or
 wall budget was exhausted. Wall timeouts remain timeouts with retained partial
 anomalies. A clean defeat is `lost`, not a successful campaign completion.
+
+**V** (clone tooling contract).
 
 | Detection | Default and interpretation |
 | --- | --- |
@@ -222,7 +235,7 @@ Natural victory/defeat stops the simulation: unexpired movement goals are retain
 in `pending_goals` and do not invalidate that result. Use route checkpoints when
 an exact arrival is itself an acceptance condition.
 
-With `--capture-every N`, periodic captures go under `captures/`. If anomalies
+**V** (clone tooling contract). With `--capture-every N`, periodic captures go under `captures/`. If anomalies
 occur, a fresh process replays the same script with scheduled anomaly-tick shots.
 The runner attaches exact frames only after comparing every tick hash and exit
 status. Missing captures or changed replay become explicit failures. Pre-launch
@@ -252,3 +265,14 @@ framework, this documentation and independently invented fixtures belong in git.
 Do not convert a private winning route into a public regression fixture. Record
 unavailable mission/engine prerequisites as blockers rather than forcing states
 or claiming all-mission completion from this synthetic demo.
+
+## Label audit corrections (2026-11-23)
+
+Evidence checked: Reference: native command dispatch 0x4577b0 provides the semantic research boundary, not this route language. Clone: `tools/playthrough_route.py`, `src/engine/app/playtest.cpp` and `tests/test_playthrough_framework.py`. Command/condition/detector tables are V clone contracts; none is a native gameplay constant.
+
+1. Removed the superseded completion-site revalidation claim from the hall-upgrade command description.
+
+No original executable or reference runtime was run for this audit. Historical
+validation totals retain their original dates; they are not this
+audit's test results. Private captures, derived source and probe output remain
+outside the tracked documentation.

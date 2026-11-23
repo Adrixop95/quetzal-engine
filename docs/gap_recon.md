@@ -1,6 +1,16 @@
 # Gap reconnaissance (2026-11-08)
 
-Purpose: find mechanics that are unclear, approximated or missing in the clone and that
+Evidence labels (audit 2026-11-23): V = inspected source fact, with reference
+or clone scope stated; M = measurement rechecked from retained captures or an
+offline clone probe; G = inference, proposed procedure or uncorroborated
+historical report. A clone V does not establish native parity. A marker covers
+one paragraph/list item or the entire immediately following table. Unresolved
+meanings remain G even inside a table whose codec structure is V.
+See [label_audit.md](label_audit.md) for counts and evidence limits.
+
+**G** (historical report). Historical inventory from 2026-11-08. Current status is in [engine_rules_status.md](engine_rules_status.md), [specials_completion_matrix.md](specials_completion_matrix.md) and the linked implementation reports. The rank table below records investigation leads, not current missing-feature assertions.
+
+**G** (historical report). Purpose: find mechanics that are unclear, approximated or missing in the clone and that
 the campaign actually reaches, so each can be resolved the way the ferry was (live
 measurement of the original plus the lifted code). Method: three read-only passes over
 the documentation (about 960 raw open or assumed items, many repeated), cross-checked
@@ -9,7 +19,7 @@ Only mechanics and mission numbers are listed here; no object counts or map data
 
 ## Documentation state
 
-- `docs/ROADMAP.md` and parts of `docs/engine_rules_status.md` are stale: they still say
+- **G** (historical report). `docs/ROADMAP.md` and parts of `docs/engine_rules_status.md` are stale: they still say
   the 19 transport script sites are unsupported, which the campaign sweep disproved.
   They need a refresh from the current state (one dedicated task, not a side effect of
   other tasks).
@@ -20,6 +30,8 @@ Only mechanics and mission numbers are listed here; no object counts or map data
 ## Mechanics that the campaign reaches and the clone does not fully model
 
 Ranked by how directly they can block a mission. "Enemy" means the opponent owns them.
+
+**G** (historical report).
 
 | Rank | Mechanic | Missions | Status in the clone (from the docs) | How to resolve |
 | --- | --- | --- | --- | --- |
@@ -35,11 +47,22 @@ Ranked by how directly they can block a mission. "Enemy" means the opponent owns
 
 ## Proposed order of live reconnaissance
 
-1. Hypnosis (rank 1), because the player cannot plan around it and the enemy uses it in five missions.
-2. Air units and anti-air (rank 2).
-3. Siege weapons the player owns (rank 3), then fire (rank 4).
-4. Towers (rank 5) and the special infantry (rank 6), in the missions where they appear.
+1. **G** (historical report). Hypnosis (rank 1), because the player cannot plan around it and the enemy uses it in five missions.
+2. **G** (historical report). Air units and anti-air (rank 2).
+3. **G** (historical report). Siege weapons the player owns (rank 3), then fire (rank 4).
+4. **G** (historical report). Towers (rank 5) and the special infantry (rank 6), in the missions where they appear.
 
 Each item gets: a short live protocol (which mission, what to do, what to record), the
 observations as V rows in a document, the lifted functions involved, and a Codex task
 that implements the rule with synthetic tests.
+
+## Label audit corrections (2026-11-23)
+
+Evidence checked: Reference: current descriptor, weapon and aircraft audits supersede these early leads; 0x43d5d0 distinguishes kinds, while 0x433820 reads descriptor speed. Clone: `Rules::load`, weapon dispatch and current aircraft/transport producers. The ranked list and mission occurrences remain G historical reconnaissance, not a verified current implementation inventory.
+
+1. Scoped the obsolete speed-8, unresolved weapon/altitude and disabled-fire inventory to its research snapshot; later descriptor, aircraft and weapon implementations supersede it.
+
+No original executable or reference runtime was run for this audit. Historical
+validation totals retain their original dates; they are not this
+audit's test results. Private captures, derived source and probe output remain
+outside the tracked documentation.
