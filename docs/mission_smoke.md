@@ -59,7 +59,9 @@ report, leaving normal deterministic reports unchanged:
   [the runtime gap list](script_runtime_gap_list.md). Approximate sites,
   unsupported execution and intentional parser no-ops are distinguished.
   Existing action observations give actual execution counts. Inventory does not
-  establish that a site executes or that a condition takes either branch.
+  establish that a site executes or that a condition takes either branch. The
+  private manifest also ranks `script_gap_totals` by site count, grouped by
+  section, native code, kind and disposition; failed launches add no inventory.
 - Unresolved descriptors identify object IDs, types, first observed ticks and
   reasons. Unknown types and missing primary-HP descriptor provenance are checked
   before initialization and after every completed tick, including cargo and new

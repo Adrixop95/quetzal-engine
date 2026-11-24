@@ -10,6 +10,7 @@ Sources: [gift and command codes](script_gift_command.md),
 [conditions and flow](script_conditions_flow.md),
 [tactic lookup and AI purchase](script_codes_and_ai_purchase.md),
 [later corrections](leftovers_scripts_descriptors.md),
+[group controller rules](group_formation_leash.md),
 [ferry eligibility](ferry_eligibility.md), and the historical transport-site
 inventory in [campaign scripts](campaign_scripts.md#transport-follow-up-2026-11-04-needs-live-run).
 Later V findings supersede earlier guesses. ROADMAP.md is unchanged.
@@ -22,10 +23,11 @@ Codes below identify reference behavior, not the independent enum values.
 | Code | Parsed action | Runtime disposition and remaining gap |
 | --- | --- | --- |
 | 00, 01 | victory, defeat | V first result wins while playing; only the mission human side ends the local session |
-| 02, 03 | attackTown, moveTo | G flat group attack-move; native controller states, hierarchy and target selection remain incomplete |
-| 04 | joinTactic | Both lookups required; G immediate member-ID reassignment substitutes for following/merging and nested town/group controllers |
+| 02 | attackTown | V first town-controller scenario match, ignore own town, use its hall tile; dispatch through the shared group controller. G town-specific launch and nested controller hierarchy |
+| 03 | moveTo | V shared base-group controller movement, preserving native stopped/moving state distinction. G town-specific launch and full movement/controller equivalence |
+| 04 | joinTactic | V both lookups required; plain groups follow and merge strictly inside reach, retaining source identity until arrival and redirecting followers. G town-source recruitment, nested controller lifetime and movement scheduling |
 | 05, 06, 07, 08 | timer set, stop, start, kill | V lazy running-zero creation, set preserves pause, kill does not create; G timer-versus-trigger pool phase |
-| 09, 0a, 0b, 0c | path variants | G idle-gated waypoint follower; exact native path/controller scheduling and ferry-specific setter behavior remain incomplete |
+| 09, 0a, 0b, 0c | path variants | V waypoint progression uses group controller idle states instead of member orders. G exact native path/controller scheduling and ferry-specific setter behavior remain incomplete |
 | 0d | boat activate | Adapter exists: forces departure phase 3 in current direction. G movement, formation, ramp scheduling and unload placement; no longer an unsupported dispatch |
 | 0e | submarine go | V stationary effect controller, not a mobile combat unit: replace idle effect with departure sequence and retire controller. G effect scheduling; no longer an unsupported dispatch |
 | 0f, 10 | Johnka enable, disable | Existing patrol adapter; G visual-think scheduling and complete transport fidelity. Disable is not an ignored branch |
@@ -52,9 +54,10 @@ consumes and discards it. This intentional no-op is supported.
 | 02, 03 | tactics, towns | G distinct living group IDs and completed halls substitute for native lists; empty groups and duplicate scenario identities remain incomplete |
 | 04 | enemies | V hostile active sides; G activity inferred from objects/halls instead of native list counters |
 | 05, 06 | units, unitsOfId | G independent living object counts; embarked living passengers retain identity |
-| 07, 08 | localTime, globalTime | V one unit per simulation tick, day wraps at 7200 from StartTime. G startup phase and native pool/lockstep integration |
+| 07 | localTime | V StartTime clamped to 0..7199; advance before first and subsequent trigger updates on both tilesets, wrap at 7200. Startup phase closed |
+| 08 | globalTime | V single-player completed-tick counter: first trigger evaluation sees zero; increment after evaluation, with signed 32-bit comparisons. Multiplayer lockstep is outside this adapter |
 | 09 | timer | V lazy creation during actual short-circuit evaluation; diagnostic previews do not mutate timers |
-| 0a | tactic idle | Missing lookup always false; G all members idle with no pending route substitutes for native states 0/1 |
+| 0a | tactic idle | V missing lookup false; query group states 0/1 (inactive/stopped), independently of member orders; waiting/moving are nonidle. G native empty-controller lifetime and town/controller identity |
 | 0b | tactic attacked | V persistent notifying nonfriendly side, initially -1; G combat notification adapter and native controller lifetime |
 | 0e, 0f, 10 | isFriendly, isNeutral, isEnemy | V directional comparisons |
 | 11, 12 | tactic valid, locked | V reserved lookup/town fallback and missing-object rules; G flat object membership and map reservation metadata |
@@ -132,3 +135,23 @@ document. Baseline build/tests/pre-commit also passed before changes. This
 follow-up used synthetic inputs only; the campaign counts above come from the
 existing inventory. Native Windows/macOS CI and live reference parity were not
 verified in this session.
+
+## Approximation follow-up (2026-11-24)
+
+The [aggregate report](script_approximation_report.md) ranks all 255 baseline
+approximate sites and records 239 remaining after the clock fixes. Codes 02,
+03, 04, 09..0c and condition 0a have corrected base-controller behavior but
+retain approximate dispositions for the explicitly listed integration gaps.
+Trigger timing already obeyed the verified delayed, repeating latch contract;
+no additional fired-once flag or startup action pass was introduced.
+
+Static reinspection of `0x4184a0` confirms that both tileset branches increment
+the same clock. The older tileset-zero-only reading was incomplete. Global
+single-player time advances at `0x45864c`, after the trigger pool. Clock tests
+exercise the first evaluation, action delay, wrap and invalid StartTime bounds.
+Shared controller states and follow/merge state participate in hashes; replay
+semantics advance to 16. Synthetic evidence is not live reference parity.
+General side plans, town-specific recruitment/launch, nested native controller
+ownership and exact path/member readiness remain dependencies. These were not
+replaced with guessed successful behavior. The independent base-group fixes
+and single-player clocks do not depend on those missing models.

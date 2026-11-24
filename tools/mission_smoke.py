@@ -19,8 +19,8 @@ from playthrough import CAMPAIGN, ROOT, positive, private_game
 
 # Native codes from docs/script_runtime_gap_list.md, never the independent enums.
 ACTION_NAMES = '''SideVictory SideDefeat TacticAttackTown TacticMoveTo TacticJoinTactic
-TimerSet TimerStop TimerStart TimerKill TacticSetPath TacticSetInvertedPath
-TacticSetCycledPath TacticSetCycledInvertedPath BoatActivate SubmarineGo JohnkaEnable
+TimerSet TimerStop TimerStart TimerKill TacticSetPath TacticSetCycledPath
+TacticSetInvertedPath TacticSetCycledInvertedPath BoatActivate SubmarineGo JohnkaEnable
 JohnkaDisable SideBuildCommand SideMoveCommand SideCameraActivate CenterView
 SideSetFriendlyTo SideSetNeutralTo SideSetEnemyTo TacticGiftToSide PrintString
 TacticLock TacticUnlock SideAddMoney SideTakeMoney TacticKill TriggerDisable
@@ -81,6 +81,18 @@ def script_gaps(inventory, catalog):
         if gap['disposition'] in ('unsupported', 'approximate', 'intentional_noop'):
             sites.append(dict(site, **gap))
     return sites
+
+
+def aggregate_gaps(missions):
+    """Rank site counts by native action/condition code without mission details."""
+    counts = {}
+    for mission in missions:
+        for gap in mission.get('script_gaps', []):
+            key = gap['section'], gap['code'], gap['kind'], gap['disposition']
+            counts[key] = counts.get(key, 0) + 1
+    rows = [dict(section=key[0], code=key[1], kind=key[2], disposition=key[3], sites=count)
+            for key, count in counts.items()]
+    return sorted(rows, key=lambda row: (-row['sites'], row['section'], row['code'] or '', row['kind']))
 
 
 def private_output(path):
@@ -222,6 +234,7 @@ def main(argv=None):
             except (OSError, ValueError) as error:
                 row = dict(mission=mission, status='setup_error', error=str(error))
             manifest['missions'].append(row)
+            manifest['script_gap_totals'] = aggregate_gaps(manifest['missions'])
             # Per-mission details stay private, including in unattended CI logs.
             (output / 'report.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
         passed = sum(row['status'] == 'passed' for row in manifest['missions'])

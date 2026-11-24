@@ -24,9 +24,10 @@ The steps run in this order. All are V unless marked otherwise.
    of the pass.
 2. Clear `0x515a70`, `0x515a58` and `0x515a5c`, and copy `0x515a60[0..1]` into `0x515a68[0..1]`
    (two dwords, then zeroed). G: per-tick event latches.
-3. localTime `0x4184a0`: `0x4c1968 += 1` only when `0x4dd2e8 == 0` (the tileset index, see
-   `Res\Tiles_%i`). Phase table `0x4a8f68` (stride 9 dwords). Wraps to 0 above 0x1c1f (7199).
-   G: the day clock runs only on tileset 0.
+3. localTime `0x4184a0`: both tileset branches increment `0x4c1968` and wrap to zero
+   above 0x1c1f (7199). The tileset index `0x4dd2e8` selects phase table `0x4a8f68`
+   or `0x4a9338` (stride 9 dwords), not whether time advances. V: alternate branch
+   rechecked on 2026-11-24; this corrects the earlier tileset-zero-only reading.
 4. Countdown `0x4bc7f4`: when it reaches 0, set `0x4c1964 = 1`.
 5. Command packets: sides 0..6 in ascending order (counter `0x4dd290..0x4dd2ac`, 7 entries,
    stride 0x69c in the side array `0x4dd2f4`).

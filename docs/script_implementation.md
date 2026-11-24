@@ -41,8 +41,10 @@ stay outside tracked files.
   `<= -2`. Counter comparisons are signed. **V:** localTime is a day clock
   initialized from mission StartTime and wrapping at 7200. **V:** localTime and
   globalTime advance once per simulation tick, as established by the later
-  corrections. **G:** the clone maps globalTime to active elapsed
-  ticks; startup phase and native timer/trigger pool integration are unmeasured.
+  corrections. **V:** StartTime is clamped to 0..7199. Local time advances before the first
+  trigger evaluation on either tileset; single-player global time advances after
+  evaluation, so its first observed value is zero. Native timer/trigger pool
+  integration and multiplayer lockstep remain **G**.
 - **V, construction:** gameplay hashes include each trigger's latch and
   enablement, timer existence/value/pause, both clocks and tactic state. Diagnostic
   condition snapshots are read-only; previewing a missing timer as zero does not
@@ -62,7 +64,7 @@ The remaining two have no identified script producers.
 | 04 | **V:** count hostile active sides, rather than hostile objects. **G:** living groups, mobile units or halls stand in for native list counters |
 | 05, 06 | **G:** living non-structure and per-type counts; embarked living units retain side identity |
 | 07, 08, 09 | Day/global clock and lazy timers as described above |
-| 0a, 0b | **V:** missing lookup is false regardless of operator. **G:** idle means all members idle with no pending path; attacked uses the existing persistent side notification adapter |
+| 0a, 0b | **V:** missing lookup is false regardless of operator. **V:** idle reads inactive/stopped group states, independently of member orders. **G:** native controller lifetime and town identity; attacked uses the existing persistent side notification adapter |
 | 0c, 0d | **V:** native side-plan complete / no-plan checks. **G / missing dependency:** no independent side-plan model or identified script grammar; these are not exposed or claimed implemented |
 | 0e, 0f, 10 | **V:** compare directional friendship, neutrality or hostility |
 | 11, 12, 15 | **V:** missing valid compares zero; missing locked returns false. Plain team lookup requires reservation; town lookup is the fallback. **G:** defence provenance and numerical group identities approximate native objects |
@@ -83,10 +85,10 @@ codes identify the rules already documented in the linked surveys.
 | Code | Action | Implementation / remaining boundary |
 | --- | --- | --- |
 | 00, 01 | victory, defeat | **V:** change a side only while playing; first result wins. Only the mission human side ends the local mission, independent of viewing side |
-| 02, 03 | attackTown, moveTo | **G:** whole-group attack-move via existing orders; native tactic hierarchy, target selection and coordinate details remain incomplete |
-| 04 | joinTactic | **V:** requires both source and target lookup. **G:** reassigns flat member group IDs; town-specific virtual behavior and child-group nesting are incomplete |
+| 02, 03 | attackTown, moveTo | **V:** shared group controller movement; attackTown chooses the first matching town controller, ignores own towns and uses the hall tile. **G:** town-specific launch, native hierarchy and complete movement parity |
+| 04 | joinTactic | **V:** requires both source and target lookup. **V:** plain groups follow then merge strictly inside reach, retaining identity until arrival and redirecting followers. **G:** town-source virtual behavior, controller lifetime and child-group nesting are incomplete |
 | 05, 06, 07, 08 | timer set, stop, start, kill | **V:** implemented lifecycle above |
-| 09, 0a, 0b, 0c | path, cycled path, inverted path, cycled inverted path | **G:** existing idle-gated waypoint follower with direction/cycling state in hashes; native route-controller timing unmeasured |
+| 09, 0a, 0b, 0c | path, cycled path, inverted path, cycled inverted path | **G:** controller-idle waypoint follower with direction/cycling state in hashes; native route-controller timing unmeasured |
 | 0d, 0e, 0f, 10 | boat activate, submarine go, Johnka enable, Johnka disable | Existing vessel adapter, **G** for native transport/controller/effect parity; see [transport follow-up](campaign_scripts.md#transport-follow-up-2026-11-04-needs-live-run) |
 | 11 | side buildCommand | **Missing dependency:** execution remains explicitly unsupported. The town AI planner does not provide the native general side plan. Native `buildCommand(integer) {UGI_name,...}` now parses with ordered, duplicate-preserving requests and a safe 32-request limit; the earlier engine-only syntax remains accepted. Native build creates/replaces a plan from admitted available type requests. No campaign site in the supplied inventory exercises this action |
 | 12 | side moveCommand | **V:** supported no-op. The handler discards the result of a read-only nearest-town lookup; it does not move units |

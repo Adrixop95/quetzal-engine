@@ -58,9 +58,9 @@ void GameSim::refresh_tactics(World& w) {
   std::set<TacticKey> parents;
   for (const auto& [key, t] : w.unit_tactics) {
     (void)key;
-    if (t.lost && !t.members.empty()) parents.insert(t.parent);
+    if (t.merging && !t.members.empty()) parents.insert(t.parent);
   }
-  // Empty parents must survive until their lost followers can be absorbed.
+  // Keep empty parents until their merging followers can be absorbed.
   for (auto it = w.unit_tactics.begin(); it != w.unit_tactics.end();) {
     if (it->second.members.empty() && !parents.count(it->first)) it = w.unit_tactics.erase(it);
     else ++it;
@@ -68,16 +68,18 @@ void GameSim::refresh_tactics(World& w) {
 }
 
 void GameSim::path_tactic(UnitTactic& t, const Object& leader, int x, int y) {
+  const auto previous = t.state;
   t.dest_x = x; t.dest_y = y; t.node = 0; t.wait_ticks = 0; t.path_ticks = 0;
   t.path.clear();
-  if (leader.mover < 0) { t.walking = false; return; }
+  if (leader.mover < 0) { t.state = GroupState::Stopped; return; }
   auto cls = mover_->agents()[size_t(leader.mover)].cls;
   // G: use the independent A* route for tile steps. WaveSearch permits blocked
   // endpoints and diagonal corner crossings that order_step cannot execute.
   auto route = path::legacy_astar(nav_, cls, {t.x, t.y}, {x, y});
   if (!route.found) ++mover_->agents_mut()[size_t(leader.mover)].path_failures;
   for (size_t i = 1; i < route.tiles.size(); ++i) t.path.emplace_back(route.tiles[i].x, route.tiles[i].y);
-  t.walking = !t.path.empty();
+  // V: a failed path stops a moving controller; other states are preserved.
+  t.state = t.path.empty() ? (previous == GroupState::Moving ? GroupState::Stopped : previous) : GroupState::Moving;
 }
 
 void GameSim::move_tactic(World& w, const std::vector<uint32_t>& ids, int x, int y) {
@@ -127,6 +129,10 @@ void GameSim::move_tactic(World& w, const std::vector<uint32_t>& ids, int x, int
     }
     if (leader) path_tactic(t, *leader, x / kTilePx, y / kTilePx);
   }
+}
+
+void GameSim::script_join(World& w, const std::vector<uint32_t>& source, const std::vector<uint32_t>& target) {
+  if (!target.empty()) script_join(w, source, target.front());
 }
 
 // V: joining retains the source anchor until strictly inside its reach.
@@ -183,13 +189,16 @@ void GameSim::merge_tactic(World& w, TacticKey source) {
   const auto& joining = found->second;
   auto& parent = target->second;
   if (parent.members.empty()) { parent.x = joining.x; parent.y = joining.y; }
+  const int town = parent.members.empty() ? -1 : w.find(parent.members.front())->town;
   for (auto id : joining.members) {
     auto& m = *w.find_mut(id);
     m.tactic = destination.second < -int64_t(UINT32_MAX) ? -1 : int32_t(destination.second);
     if (m.tactic == -1) m.transient_tactic = destination.second;
-    m.order = uint8_t(parent.walking ? Order::Move : Order::Idle);
+    if (!joining.lost) m.town = town;
+    m.order = uint8_t(parent.moving() ? Order::Move : Order::Idle);
     m.return_to_tactic = true;
   }
+  parent.members.insert(parent.members.end(), joining.members.begin(), joining.members.end());
   // V: followers of the consumed tactic are redirected to its destination.
   for (auto& [key, follower] : w.unit_tactics) {
     (void)key;
@@ -207,6 +216,7 @@ void GameSim::member_step(World& w, Object& o, int x, int y, bool combat) {
   const auto it = w.unit_tactics.find(tactic_key(o));
   if (it == w.unit_tactics.end()) return;
   const auto& t = it->second;
+  if (t.state == GroupState::Inactive) return; // V: no member-step callback in state 0.
   const int sx = tile(o.cur_x), sy = tile(o.cur_y);
   if (combat && tactic_norm(sx - t.x, sy - t.y) > tactic_reach(o.attack_mode)) {
     x = t.x; y = t.y; combat = false;
@@ -230,7 +240,7 @@ void GameSim::member_step(World& w, Object& o, int x, int y, bool combat) {
     if (route.tiles.size() > 1) {
       const auto next = route.tiles[1];
       if (!fellow_at(next.x, next.y) && mover_->order_step(uint32_t(o.mover), next)) return;
-      if (!t.walking && !t.lost && std::abs(sx - x) <= 2 && std::abs(sy - y) <= 2) return;
+      if (!t.moving() && !t.lost && std::abs(sx - x) <= 2 && std::abs(sy - y) <= 2) return;
       // G: route around occupied fellow tiles when the direct member step is
       // blocked. This substitutes for the reference's short packed own path.
       auto occupied = nav_;
@@ -286,7 +296,7 @@ void GameSim::think_tactics(World& w) {
     if (t.merging) {
       auto parent = w.unit_tactics.find(t.parent);
       if (parent == w.unit_tactics.end() || (parent->second.members.empty() && !t.lost)) {
-        t.lost = false; t.merging = false; t.walking = false; t.path.clear();
+        t.lost = false; t.merging = false; t.state = GroupState::Stopped; t.path.clear();
         for (auto id : t.members) {
           auto& m = *w.find_mut(id);
           m.order = uint8_t(Order::Idle); m.target = 0; m.resume = 0; m.idle_attack = false;
@@ -296,7 +306,7 @@ void GameSim::think_tactics(World& w) {
       }
       else if (parent->second.members.empty() || tactic_norm(t.x - parent->second.x, t.y - parent->second.y) < reach) {
         merge.push_back(key); continue;
-      } else if (!t.walking || ++t.path_ticks > 36) {
+      } else if (!t.moving() || ++t.path_ticks > 36) {
         path_tactic(t, leader, parent->second.x, parent->second.y);
       }
     }
@@ -341,7 +351,15 @@ void GameSim::think_tactics(World& w) {
       if (!stragglers.empty()) detach.emplace_back(key, std::move(stragglers));
     }
     t.urgent = false;
-    if (!t.walking) continue;
+    if (t.state == GroupState::Waiting) {
+      // G: independent agents supply readiness until native member flags exist.
+      const bool ready = std::all_of(t.members.begin(), t.members.end(), [&](uint32_t id) {
+        const auto& member = *w.find(id);
+        return member.mover < 0 || mover_->agents()[size_t(member.mover)].state != path::AgentState::Moving;
+      });
+      if (ready) t.state = GroupState::Moving;
+    }
+    if (!t.moving()) continue;
     bool in_place = true, at_anchor = false, waiting_team = false;
     for (auto id : t.members) {
       const auto& m = *w.find(id);
@@ -366,7 +384,7 @@ void GameSim::think_tactics(World& w) {
       }
       t.x = x; t.y = y;
     } else {
-      t.walking = false;
+      t.state = GroupState::Stopped;
     }
   }
   for (const auto& [parent, members] : detach) {

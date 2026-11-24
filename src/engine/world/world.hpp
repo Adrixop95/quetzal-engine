@@ -195,13 +195,19 @@ inline int tactic_reach(AttackMode mode) {
   constexpr int reach[] = {4, 8, 8, 6};
   return reach[static_cast<unsigned>(mode)];
 }
+// V: native base controller states; script idle tests states 0 and 1.
+enum class GroupState : uint8_t { Inactive = 0, Stopped = 1, Waiting = 2, Moving = 3 };
+
 struct UnitTactic {
   int x = 0, y = 0; // persistent tile anchor, initialized from the first member
   std::vector<uint32_t> members;
   std::vector<TacticKey> enemies;
   int scan_ticks = 0, wait_ticks = 0, path_ticks = 0;
   uint32_t random = 1; // G: independent deterministic stream, not reference RNG parity
-  bool walking = false, lost = false, urgent = false;
+  GroupState state = GroupState::Stopped;
+  bool moving() const { return state == GroupState::Moving; }
+  bool idle() const { return state == GroupState::Inactive || state == GroupState::Stopped; }
+  bool lost = false, urgent = false;
   bool merging = false; // visible joins and hidden lost teams follow before absorption
   TacticKey parent = {-1, 0};
   int dest_x = -1, dest_y = -1;

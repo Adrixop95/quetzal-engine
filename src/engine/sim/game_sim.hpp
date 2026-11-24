@@ -87,6 +87,7 @@ class GameSim : public Simulation {
   bool attach_script(const std::string& scn_path) { return script_.load(scn_path); }
   const ScriptRunner& script() const { return script_; }
   // Used by the script runner (tactic orders).
+  void script_join(World& w, const std::vector<uint32_t>& source, const std::vector<uint32_t>& target);
   void script_order(World& w, const std::vector<uint32_t>& ids, int px, int py, bool attack_move);
   void script_join(World& w, const std::vector<uint32_t>& ids, uint32_t target);
   void script_stop(World& w, const std::vector<uint32_t>& ids);

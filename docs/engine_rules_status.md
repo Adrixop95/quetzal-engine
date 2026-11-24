@@ -280,7 +280,7 @@ and `engine` checks pass with the complete private map copy under dummy SDL in
 | Stop (0x50) and AttackMove (0x51) | P | engine extensions; the original has no such packets |
 | Command coordinates / tiles from packets | engine | clamped into the map before any fixed-point conversion; invalid tiles are ignored |
 | Command order inside a tick: ascending sides 0..6, then submission order | V side range/order / G packet mapping | Native one-packet ring, active-side gate and latency remain open; engine batches remain supported. See [RNG/tick implementation](rng_and_tick_order_implementation.md) |
-| Mission RNG and object phase order | V generator/construction / G consumption parity | Shared seed-zero MSVC stream for supported combat, decoration, planner and scene sound choices; logical unit pools walk newest first with LIFO reuse. Effects precede scripts; projectiles follow units; completed time advances last. Missing loading/wind/input/descriptor producers and grouped town/movement/sound phases prevent full sequence parity. Replay semantics 15 / AZC2 |
+| Mission RNG and object phase order | V generator/construction / G consumption parity | Shared seed-zero MSVC stream for supported combat, decoration, planner and scene sound choices; logical unit pools walk newest first with LIFO reuse. Effects precede scripts; projectiles follow units; completed time advances last. Missing loading/wind/input/descriptor producers and grouped town/movement/sound phases prevent full sequence parity. Replay semantics 16 / AZC2 |
 | Descriptor primary/max and secondary HP | V fields / engine checks | All nine descriptor families loaded; mission/spawn maxima never depend on other instances. Positive mission HP is preserved. Original-save +0x3c is secondary HP; maximum comes from rules at simulation initialization. See V04 below |
 | Descriptor regeneration | V inspected thresholds/countdown/overshoot / P facility producer | Marine, Truck, Zeppelin, Bird, Headtruck, Spider and Cannon recover below natural thresholds, or full HP while the hashed service countdown is positive. Pre-add check permits overshoot; countdown expires after the update. Facility coverage/refresh and exact tick alignment remain open |
 | Scripted object health and placement identity | V zero maximum getters / engine identity checks | Boat, Johnka and Camera maximum getters return zero; Submarine records create stationary decoration controllers, not combat units; their scenario actions now use the adapters in [transport_rules.md](transport_rules.md). Town membership uses section numbers, including sparse IDs; team scenario/tactic, defence and vessel provenance remain distinct. Live reference identity still depends on V02 |
@@ -2718,3 +2718,29 @@ fallback, process/sanitizer failures, private output and continued collection
 after a load failure. Release build and all 85 CTest entries completed with
 79 passes and six skips; separate isolated private format/engine checks passed.
 Native Windows/macOS execution was not verified locally.
+
+## Mission script approximations (2026-11-24)
+
+**V static rules / synthetic implementation:** script idle now reads the shared
+group controller's inactive/stopped states, rather than individual member
+orders. Waiting and moving are nonidle. Attack-town selects the first matching
+town controller, ignores the acting side's own town and uses the hall tile;
+plain-group joins follow before merging strictly inside reach and redirect
+followers. These operate through the existing anchor/path controller. The
+one-update-late repeating trigger latch was already correct and is retained.
+
+**V clock correction:** StartTime is clamped to 0..7199. LocalTime advances
+before trigger evaluation and wraps on both tilesets; the alternate tileset
+branch was missed in the earlier tileset-zero-only inventory. Single-player
+GlobalTime starts at zero for the first trigger evaluation and advances after
+the trigger pass. Replay semantics are now 16. New controller/follow state is
+hashed and reconstructed through command-log replay.
+
+**G / remaining dependencies:** town-specific recruitment/launch, native nested
+controller ownership and empty lifetime, path budgeting/member readiness,
+assignment scoring and native timer/trigger pool ordering remain incomplete.
+The corrected controller subrules retain approximate site classifications
+where these dependencies apply. General side plans remain absent. No original
+executable or reference runtime was launched. See the
+[ranked before/after report](script_approximation_report.md) and
+[per-code dispositions](script_runtime_gap_list.md).
