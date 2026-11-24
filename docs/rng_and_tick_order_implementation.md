@@ -116,7 +116,7 @@ phases. The clone now follows these supported phase boundaries:
 | Phase | Engine behavior | Evidence / remaining difference |
 | --- | --- | --- |
 | Command boundary | Stable ascending sides 0..6, preserving same-side submission order; side 7 packets are logged but ignored | V engine/reference side range; G active-side gate and original one-packet-per-side ring/latency. Multiple commands remain an engine protocol convention |
-| Day clock / visual clocks | Day clock advances only on tileset zero and wraps at 7200; visual clocks advance on active ticks | V engine/reference tileset rule. G: day-clock advance follows pause commands instead of preceding packet processing; visual clocks remain grouped |
+| Day clock / visual clocks | Day clock advances on both tilesets and wraps at 7200; visual clocks advance on active ticks | V reference branches rechecked on 2026-11-24. G: day-clock advance follows pause commands instead of preceding packet processing; visual clocks remain grouped |
 | Effects | Decorations advance before scripts, newest first | V engine. New decorations created during the walk wait until the next effects phase |
 | Scripts | Trigger evaluation before town/unit work | V engine. G: source-order triggers and numeric/path collections have not been mapped to native loader creation order |
 | Towns / sides | Production/economy, then AI and town service/capture; AI/service/capture walk towns in reverse creation-vector order | V engine order. G: grouped passes and side-indexed production queues do not yet reproduce interleaved native town callbacks and side updates; harvest remains grouped here |

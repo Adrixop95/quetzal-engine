@@ -73,7 +73,7 @@ class SmokeTests(unittest.TestCase):
         self.assertLessEqual(report['smoke']['max_tick_seconds'], report['smoke']['tick_seconds'])
         gaps = smoke.script_gaps(report['smoke']['script_inventory'], smoke.gap_catalog(ROOT / 'docs/script_runtime_gap_list.md'))
         self.assertEqual([(row['code'], row['disposition']) for row in gaps],
-                         [('07', 'approximate'), ('11', 'unsupported')])
+                         [('11', 'unsupported')])
         self.assertEqual(report['unsupported_executions'], 0)  # Dormant build site is still inventoried.
         normal = self.engine('--no-auto-orders', '--max-ticks', '3', '--rules-dir', str(ROOT / 'docs/data'), '1')
         self.assertNotIn('smoke', normal)
@@ -103,8 +103,26 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(len(catalog), len(smoke.ACTION_NAMES) + len(smoke.CONDITION_NAMES) + 1)
         self.assertEqual(catalog['action', 'SideMoveCommand']['disposition'], 'implemented')
         self.assertEqual(catalog['action', 'SideCameraDeactivate']['code'], '21')
+        self.assertEqual(catalog['action', 'TacticSetCycledPath']['code'], '0a')
+        self.assertEqual(catalog['action', 'TacticSetInvertedPath']['code'], '0b')
+        self.assertEqual(catalog['condition', 'LocalTime']['disposition'], 'implemented')
+        self.assertEqual(catalog['condition', 'GlobalTime']['disposition'], 'implemented')
         with self.assertRaises(ValueError):
             smoke.script_gaps([dict(section='action', kind='unknown')], catalog)
+
+    def test_aggregate_sites_keep_action_and_condition_codes_distinct(self):
+        def gap(section, kind):
+            return dict(section=section, code='02', kind=kind, disposition='approximate',
+                        line=123, trigger=99)
+        action = gap('action', 'TacticAttackTown')
+        condition = gap('condition', 'SideTactics')
+        rows = smoke.aggregate_gaps([{'script_gaps': [action, condition]},
+                                    {'script_gaps': [condition]}, {'status': 'crash'}])
+        self.assertEqual(rows, [dict(section='condition', code='02', kind='SideTactics',
+                                     disposition='approximate', sites=2),
+                                dict(section='action', code='02', kind='TacticAttackTown',
+                                     disposition='approximate', sites=1)])
+        self.assertEqual(smoke.aggregate_gaps([]), [])
 
     def test_crash_isolation_and_sanitizer_failures(self):
         args = SimpleNamespace(engine=ENGINE, rules_dir=ROOT / 'docs/data', timeout=2,

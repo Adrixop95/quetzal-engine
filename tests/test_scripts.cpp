@@ -156,7 +156,7 @@ static void order_and_enablement() {
   auto frozen = runner(w,
       "trigger(0) conditions always actions trigger(1).disable trigger(0).disable end "
       "trigger(1) conditions side(local).money > 0 actions side(0).addMoney(3) trigger(1).disable end "
-      "trigger(2) conditions globalTime == 3 actions trigger(1).enable end");
+      "trigger(2) conditions globalTime == 2 actions trigger(1).enable end");
   frozen.tick(sim, w); frozen.tick(sim, w);
   w.side_state[2].money = 0;
   frozen.tick(sim, w); frozen.tick(sim, w); CHECK(w.side_state[0].money == 202);
@@ -177,8 +177,8 @@ static void timers() {
 
   auto lifecycle = runner(w,
       "trigger(0) conditions always actions timer(2).stop timer(2).set(20) trigger(0).disable end "
-      "trigger(1) conditions globalTime == 3 actions timer(2).start trigger(1).disable end "
-      "trigger(2) conditions globalTime == 5 actions timer(2).kill trigger(2).disable end "
+      "trigger(1) conditions globalTime == 2 actions timer(2).start trigger(1).disable end "
+      "trigger(2) conditions globalTime == 4 actions timer(2).kill trigger(2).disable end "
       "trigger(3) conditions timer(2) == 0 actions side(0).addMoney(1) end");
   lifecycle.tick(sim, w); CHECK(condition(lifecycle, w, "timer(2) == 0"));
   lifecycle.tick(sim, w); CHECK(condition(lifecycle, w, "timer(2) == 20"));
@@ -355,8 +355,10 @@ static void paths_and_gifts() {
     auto first_hash = r.state_hash();
     r.tick(sim, w); CHECK(r.state_hash() != first_hash); // clock advances while path waits for idle
     CHECK(w.objects[0].dest_y == (inverted ? 9 : 7) * kTilePx + kTilePx / 2);
+    w.unit_tactics.at({2, 5}).state = GroupState::Stopped;
     w.objects[0].order = uint8_t(Order::Idle); r.tick(sim, w);
     CHECK(w.objects[0].dest_x == (inverted ? 6 : 8) * kTilePx + kTilePx / 2);
+    w.unit_tactics.at({2, 5}).state = GroupState::Stopped;
     w.objects[0].order = uint8_t(Order::Idle); r.tick(sim, w);
     CHECK(w.objects[0].order == uint8_t(cycled ? Order::AttackMove : Order::Idle));
     if (cycled) CHECK(w.objects[0].dest_x == (inverted ? 8 : 6) * kTilePx + kTilePx / 2);
@@ -382,8 +384,8 @@ static void tactic_lookup_and_money() {
   GameSim sim(rules(), Modifications::faithful()); sim.init(w);
   auto r = runner(w,
       "trigger(0) conditions always actions side(local).tactic(5).joinTactic(99) trigger(0).disable end "
-      "trigger(1) conditions globalTime == 2 actions side(local).tactic(5).joinTactic(6) trigger(1).disable end "
-      "trigger(2) conditions globalTime == 3 actions side(local).tactic(6).kill trigger(2).disable end "
+      "trigger(1) conditions globalTime == 1 actions side(local).tactic(5).joinTactic(6) trigger(1).disable end "
+      "trigger(2) conditions globalTime == 2 actions side(local).tactic(6).kill trigger(2).disable end "
       "trigger(3) conditions always actions side(local).addMoney(-10) trigger(3).disable end");
   r.tick(sim, w); r.tick(sim, w); CHECK(w.objects[0].tactic == 5);
   CHECK(w.side_state[2].money == 0);
@@ -418,7 +420,8 @@ static void gift_detaches_home_and_outcome_precedence() {
 
 static void actions_and_outcomes() {
   World w = world(); object(w, 0, 2, 5, 3, 4); object(w, 11, 1, -1, 10, 12);
-  w.objects[1].scenario = 30;
+  w.objects[1].scenario = 30; w.objects[1].town = 4;
+  w.mission.towns.push_back({4, 1, 10, 12, 11, 0, 30});
   SideDef sd; sd.index = 2; sd.cameras.push_back({7, 8, 0}); w.mission.sides.push_back(sd);
   GameSim sim(rules(), Modifications::faithful()); sim.init(w);
   auto r = runner(w,
@@ -443,7 +446,7 @@ static void actions_and_outcomes() {
       "trigger(0) conditions always actions side(local).tactic(5).unlock "
       "side(local).tactic(5).lock side(local).tactic(5).kill side(local).tactic(5).giftToSide(1) "
       "side(local).setNeutralTo(1) trigger(0).disable end "
-      "trigger(1) conditions globalTime == 2 actions side(local).setEnemyTo(1) end");
+      "trigger(1) conditions globalTime == 1 actions side(local).setEnemyTo(1) end");
   next.tick(sim, w); next.tick(sim, w);
   CHECK(w.objects[0].tactic == 5 && w.objects[0].alive && w.objects[0].side == 2);
   CHECK(w.relation[2][1] == kNeutral);
@@ -758,7 +761,151 @@ static void pending_path_uses_previous_latch() {
   r.tick(sim, w); CHECK(w.side_state[2].money == 1); // latched idle before path assignment
 }
 
+static void controller_idle_states() {
+  World w = world(); object(w, 0, 2, 5, 3, 4);
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+  auto r = runner(w, "");
+  auto& group = w.unit_tactics.at({2, 5});
+  std::set<uint64_t> hashes;
+  for (auto state : {GroupState::Inactive, GroupState::Stopped, GroupState::Waiting, GroupState::Moving}) {
+    group.state = state;
+    hashes.insert(sim.state_hash(w));
+    const bool idle = state == GroupState::Inactive || state == GroupState::Stopped;
+    // Member orders deliberately disagree with the controller.
+    w.objects[0].order = uint8_t(idle ? Order::AttackMove : Order::Idle);
+    CHECK(condition(r, w, std::string("side(local).tactic(5).idle == ") + (idle ? "1" : "0")));
+  }
+  CHECK(hashes.size() == 4);
+  CHECK(!condition(r, w, "side(local).tactic(99).idle != 1"));
+  // V: inactive groups do not supply member movement callbacks.
+  group.state = GroupState::Inactive; group.x = 5; group.y = 4;
+  w.objects[0].order = uint8_t(Order::Move); w.objects[0].return_to_tactic = true;
+  const auto x = w.objects[0].cur_x, y = w.objects[0].cur_y;
+  for (int i = 0; i < 3; ++i) { w.begin_tick(); sim.tick(w); }
+  CHECK(w.objects[0].cur_x == x && w.objects[0].cur_y == y);
+
+}
+
+static void attack_town_controller_lookup() {
+  for (bool own : {false, true}) {
+    World w = world(); object(w, 0, 2, 5, 3, 4);
+    const int target_side = own ? 2 : 1;
+    // First controller wins; object scenario numbers and later duplicates lose.
+    w.mission.towns.push_back({7, target_side, 12, 14, 11, 0, 30});
+    w.mission.towns.push_back({8, 0, 25, 26, 11, 0, 30});
+    object(w, 11, target_side, -1, 12, 14); w.objects.back().town = 7;
+    w.objects.back().scenario = 999;
+    object(w, 11, 0, -1, 25, 26); w.objects.back().town = 8;
+    w.objects.back().scenario = 30;
+    // A friendly foreign town is still a valid script destination.
+    w.relation[2][1] = kFriend;
+    GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+    auto r = runner(w, "trigger(0) conditions always actions side(local).tactic(5).attackTown(30) "
+        "trigger(0).disable end");
+    r.tick(sim, w); CHECK(w.objects[0].order == uint8_t(Order::Idle));
+    r.tick(sim, w);
+    if (own) CHECK(w.objects[0].order == uint8_t(Order::Idle));
+    else {
+      CHECK(w.objects[0].dest_x == 12 * kTilePx + 24);
+      CHECK(w.objects[0].dest_y == 14 * kTilePx + 24);
+      CHECK(w.unit_tactics.at({2, 5}).state == GroupState::Moving);
+      CHECK(condition(r, w, "side(local).tactic(5).idle == 0"));
+    }
+    const auto before = w.objects[0].dest_x;
+    auto missing = runner(w, "trigger(0) conditions always actions side(local).tactic(5).attackTown(777) "
+        "side(local).tactic(99).attackTown(30) trigger(0).disable end");
+    missing.tick(sim, w); missing.tick(sim, w);
+    CHECK(w.objects[0].dest_x == before);
+  }
+}
+
+static void join_follows_before_merging() {
+  World w = world(); object(w, 0, 2, 5, 3, 4); object(w, 0, 2, 6, 23, 4);
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+  auto r = runner(w, "trigger(0) conditions always actions side(local).tactic(5).joinTactic(6) "
+      "trigger(0).disable end");
+  r.tick(sim, w); r.tick(sim, w);
+  CHECK(w.objects[0].tactic == 5); // no remote reassignment
+  CHECK(w.unit_tactics.at({2, 5}).joining);
+  CHECK(w.unit_tactics.at({2, 5}).parent == TacticKey(2, 6));
+  CHECK(w.objects[0].order == uint8_t(Order::Follow));
+  const auto x = w.objects[0].cur_x;
+  for (int i = 0; i < 12; ++i) { w.begin_tick(); sim.tick(w); }
+  CHECK(w.objects[0].cur_x > x && w.objects[0].tactic == 5);
+  // Exactly reach is outside: only strictly inside allows absorption.
+  auto& source = w.unit_tactics.at({2, 5});
+  const auto& target = w.unit_tactics.at({2, 6});
+  const int reach = tactic_reach(w.objects[0].attack_mode);
+  source.x = target.x - reach; source.y = target.y;
+  source.path_ticks = 0; source.state = GroupState::Stopped;
+  CHECK(tactic_norm(source.x - target.x, 0) == reach);
+  w.begin_tick(); sim.tick(w); CHECK(w.objects[0].tactic == 5);
+  w.unit_tactics.at({2, 5}).x = target.x - reach + 1;
+  w.begin_tick(); sim.tick(w); CHECK(w.objects[0].tactic == 6);
+  CHECK(!w.unit_tactics.contains({2, 5}));
+}
+
+static void joining_replay_and_followers() {
+  TempDir directory;
+  const auto path = directory.path() / "joining.scn";
+  std::ofstream(path) << "trigger(0) conditions always actions side(local).tactic(5).joinTactic(6) "
+      "side(local).tactic(7).joinTactic(5) trigger(0).disable end";
+  World initial = world();
+  object(initial, 0, 2, 5, 3, 4); object(initial, 0, 2, 6, 23, 4);
+  object(initial, 0, 2, 7, 3, 24);
+  auto data = rules(); World w = initial;
+  GameSim sim(data, Modifications::faithful()); CHECK(sim.attach_script(path.string())); sim.init(w);
+  for (int i = 0; i < 12; ++i) { w.begin_tick(); sim.tick(w); }
+  CHECK(w.unit_tactics.at({2, 5}).joining && w.unit_tactics.at({2, 7}).joining);
+  const auto before = sim.state_hash(w);
+  w.unit_tactics.at({2, 5}).joining = false;
+  CHECK(sim.state_hash(w) != before);
+  w.unit_tactics.at({2, 5}).joining = true;
+  World rebuilt = initial;
+  auto replayed = GameSim::replay(rebuilt, data, sim.log(), sim.tick_count(), path.string());
+  CHECK(replayed->state_hash(rebuilt) == sim.state_hash(w));
+  for (int i = 0; i < 24; ++i) {
+    w.begin_tick(); rebuilt.begin_tick(); sim.tick(w); replayed->tick(rebuilt);
+    CHECK(replayed->state_hash(rebuilt) == sim.state_hash(w));
+  }
+  // Reject an engine merge cycle without disturbing the existing follow chain.
+  sim.script_join(w, {2}, {1});
+  CHECK(!w.unit_tactics.at({2, 6}).joining);
+  const auto& target = w.unit_tactics.at({2, 6});
+  w.objects[2].follow_tactic = 5; // ordinary followers are redirected as well
+  w.unit_tactics.at({2, 5}).x = target.x;
+  w.unit_tactics.at({2, 5}).y = target.y;
+  w.begin_tick(); sim.tick(w);
+  CHECK(w.objects[0].tactic == 6);
+  CHECK(w.unit_tactics.at({2, 7}).parent == TacticKey(2, 6));
+  CHECK(w.objects[2].follow_tactic == 6);
+}
+
+static void clock_startup_phase() {
+  for (int start : {-2147483647 - 1, -1, 0, 7198, 7199, 7200, 2147483647}) {
+    World w = world(); w.mission.start_time = start;
+    GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+    auto r = runner(w, "");
+    const int clock = std::clamp(start, 0, 7199);
+    CHECK(w.day_clock == clock);
+    CHECK(condition(r, w, "localTime == " + std::to_string(clock)));
+    r.tick(sim, w);
+    CHECK(condition(r, w, "localTime == " + std::to_string((clock + 1) % 7200)));
+  }
+  TempDir directory;
+  const auto path = directory.path() / "clock.scn";
+  std::ofstream(path) << "trigger(0) conditions localTime == 0 globalTime == 0 actions side(local).addMoney(7) end";
+  for (int tileset : {0, 1}) {
+    World w = world(); w.mission.start_time = 7199; w.mission.tileset = tileset;
+    GameSim sim(rules(), Modifications::faithful()); CHECK(sim.attach_script(path.string())); sim.init(w);
+    w.begin_tick(); sim.tick(w); CHECK(w.day_clock == 0 && w.side_state[2].money == 0);
+    w.begin_tick(); sim.tick(w); CHECK(w.day_clock == 1 && w.side_state[2].money == 7);
+    w.begin_tick(); sim.tick(w); CHECK(w.side_state[2].money == 7);
+  }
+}
+
 int main() {
+  controller_idle_states(); attack_town_controller_lookup(); join_follows_before_merging(); joining_replay_and_followers(); clock_startup_phase();
   rectangle_box_edges(); side_command_contracts();
   rectangle_runtime_categories(); gift_detaches_home_and_outcome_precedence(); tactic_lookup_and_money(); presentation_contracts();
   campaign_outcome_requires_script(); campaign_gates(); town_tactics_and_capture(); embarked_script_identity(); pending_path_uses_previous_latch();

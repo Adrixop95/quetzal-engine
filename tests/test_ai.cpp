@@ -289,7 +289,7 @@ static void initialization(std::shared_ptr<const RulesData> rules) {
   w.objects[0].town_hall = w.objects[1].town_hall = true;
   w.side_state[0].selected_tactic = 7;
   GameSim sim(rules, Modifications::faithful()); sim.init(w);
-  CHECK(sim.tick_count() == 0 && w.day_clock == kDayTicks - 1);
+  CHECK(sim.tick_count() == 0 && w.day_clock == 0);
   CHECK(w.ai_towns.size() == 2 && w.town_state.size() == 2);
   CHECK(w.town_state[0].hall == 1 && w.town_state[1].hall == 2);
   CHECK(w.side_state[0].selected_tactic == -1);
@@ -890,7 +890,8 @@ static void expansion_rules(const RulesData& rules) {
 }
 
 static void scripted(std::shared_ptr<const RulesData> rules) {
-  auto a = world(); a.objects[0].scenario = 42;
+  auto a = world(); a.objects[0].scenario = 999;
+  a.mission.towns[0].scenario_id = 42; // script IDs belong to town controllers
   object(a, 0, 1, 1, 25, 26, 7); object(a, 0, 1, 1, 26, 26, 8);
   a.mission.paths = {{{24, 22}, {23, 21}}};
   auto b = a; b.local_side = 1;

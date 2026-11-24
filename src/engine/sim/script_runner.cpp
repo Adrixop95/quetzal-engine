@@ -90,7 +90,7 @@ void ScriptRunner::init(const World& w) {
   latched_.assign(script_.triggers.size(), false);
   timers_.clear();
   tactics_.clear();
-  local_time_ = (w.mission.start_time % 7200 + 7200) % 7200;
+  local_time_ = std::clamp(w.mission.start_time, 0, 7199);
   elapsed_ticks_ = 0;
   unsupported_ = 0;
   outcome_origin_.reset();
@@ -262,12 +262,9 @@ bool ScriptRunner::eval(const World& w, const Condition& c) const {
         const auto hit = w.tactic_attacked_by.find({side, c.id});
         if (!m.empty() && hit != w.tactic_attacked_by.end()) v = hit->second;
       } else if (c.kind == CondKind::TacticIdle) {
-        v = 1;
-        for (uint32_t id : m) if (w.find(id)->order != uint8_t(Order::Idle)) v = 0;
-        // A path assigned earlier in this action pass is already work, even
-        // before follow_paths submits its first movement order.
-        const auto it = tactics_.find({side, c.id});
-        if (it != tactics_.end() && it->second.path >= 0) v = 0;
+        // V: idle is a controller-state query, not a member order query.
+        const auto controller = w.unit_tactics.find(tactic_key(*w.find(m.front())));
+        v = controller == w.unit_tactics.end() || controller->second.idle() ? 1 : 0;
       } else {
         auto it = tactics_.find({side, c.id});
         v = it != tactics_.end() && it->second.locked ? 1 : 0;
@@ -378,23 +375,41 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
       break;
     }
     case ActKind::TacticAttackTown: {
-      const Object* town = nullptr;
-      for (const Object& o : w.objects)
-        if (!o.removed && o.alive && is_town_building(o.type) && o.scenario == a.a) town = &o;
-      if (!town) break;
-      sim.script_order(w, tactic_members(w, side, a.id), town->cur_x >> 8, town->cur_y >> 8, true);
+      const auto members = tactic_members(w, side, a.id);
+      if (members.empty()) break;
+      // V: first matching town controller, irrespective of alliance. Own towns
+      // are ignored; a hall's object scenario ID is not the town scenario ID.
+      const auto town = std::find_if(w.mission.towns.begin(), w.mission.towns.end(),
+          [&](const TownDef& candidate) { return candidate.scenario_id == a.a; });
+      if (town == w.mission.towns.end() || town->side == side) break;
+      const auto hall = std::find_if(w.objects.begin(), w.objects.end(), [&](const Object& o) {
+        return script_present(o) && o.side == town->side && o.town == town->index && is_town_building(o.type);
+      });
+      if (hall == w.objects.end()) break;
+      const int x = (hall->cur_x / 256 / kTilePx) * kTilePx + kTilePx / 2;
+      const int y = (hall->cur_y / 256 / kTilePx) * kTilePx + kTilePx / 2;
+      sim.script_order(w, members, x, y, true);
       tactics_[{side, a.id}].path = -1;
       break;
     }
-    case ActKind::TacticMoveTo:
-      sim.script_order(w, tactic_members(w, side, a.id), std::clamp(a.a, 0, w.terrain.w - 1) * kTilePx + kTilePx / 2, std::clamp(a.b, 0, w.terrain.h - 1) * kTilePx + kTilePx / 2, true);
+    case ActKind::TacticMoveTo: {
+      const auto members = tactic_members(w, side, a.id);
+      if (members.empty()) break;
+      sim.script_order(w, members, std::clamp(a.a, 0, std::max(0, w.terrain.w - 1)) * kTilePx + kTilePx / 2,
+          std::clamp(a.b, 0, std::max(0, w.terrain.h - 1)) * kTilePx + kTilePx / 2, true);
       tactics_[{side, a.id}].path = -1;
       break;
-    case ActKind::TacticJoinTactic:
-      if (!tactic_members(w, side, a.a).empty())
-        for (uint32_t id : tactic_members(w, side, a.id)) w.find_mut(id)->tactic = a.a;
+    }
+    case ActKind::TacticJoinTactic: {
+      const auto source = tactic_members(w, side, a.id), target = tactic_members(w, side, a.a);
+      if (!source.empty() && !target.empty()) {
+        sim.script_join(w, source, target);
+        tactics_[{side, a.id}].path = -1;
+      }
       break;
+    }
     case ActKind::TacticSetPath: case ActKind::TacticSetInvertedPath: case ActKind::TacticSetCycledPath: case ActKind::TacticSetCycledInvertedPath: {
+      if (tactic_members(w, side, a.id).empty()) break;
       TacticState& t = tactics_[{side, a.id}];
       t.path = a.a; t.path_index = 0;
       t.cycled = a.kind == ActKind::TacticSetCycledPath || a.kind == ActKind::TacticSetCycledInvertedPath;
@@ -465,8 +480,8 @@ void ScriptRunner::follow_paths(GameSim& sim, World& w) {
     const auto& pts = w.mission.paths[size_t(t.path)];
     std::vector<uint32_t> m = tactic_members(w, kv.first.first, kv.first.second);
     if (m.empty()) continue;
-    bool idle = true;
-    for (uint32_t id : m) if (w.find(id)->order != uint8_t(Order::Idle)) idle = false;
+    const auto controller = w.unit_tactics.find(tactic_key(*w.find(m.front())));
+    const bool idle = controller == w.unit_tactics.end() || controller->second.idle();
     if (!idle) continue;
     int n = int(pts.size());
     int idx = t.path_index;
@@ -520,7 +535,6 @@ void ScriptRunner::tick(GameSim& sim, World& w) {
   w.script_cameras.erase(std::remove_if(w.script_cameras.begin(), w.script_cameras.end(),
       [](const ScriptCamera& camera) { return !camera.active && !camera.latest; }), w.script_cameras.end());
   local_time_ = (local_time_ + 1) % 7200;
-  ++elapsed_ticks_;
   // G: existing timers advance before triggers; pool ordering still needs measurement.
   for (auto& kv : timers_)
     if (kv.second.running) kv.second.value = std::bit_cast<int32_t>(uint32_t(kv.second.value) + 1u);
@@ -529,9 +543,9 @@ void ScriptRunner::tick(GameSim& sim, World& w) {
     if (!enabled_[i]) continue;
     if (latched_[i]) {
       auto& trace = trigger_traces_[i];
-      if (!trace.executions) trace.first_tick = elapsed_ticks_;
+      if (!trace.executions) trace.first_tick = elapsed_ticks_ + 1;
       ++trace.executions;
-      trace.last_tick = elapsed_ticks_;
+      trace.last_tick = elapsed_ticks_ + 1;
       for (const Action& a : t.actions) {
         const int outcome_side = w.script_side;
         const bool valid_side = outcome_side >= 0 && outcome_side < 8;
@@ -549,6 +563,7 @@ void ScriptRunner::tick(GameSim& sim, World& w) {
     }
     latched_[i] = ok;
   }
+  ++elapsed_ticks_; // V: single-player globalTime advances after trigger evaluation.
   follow_paths(sim, w);
   for (Message& m : w.messages) if (m.seconds_left < 0) m.ticks_left--;
   w.messages.erase(std::remove_if(w.messages.begin(), w.messages.end(), [](const Message& m) { return m.seconds_left < 0 && m.ticks_left <= 0; }), w.messages.end());

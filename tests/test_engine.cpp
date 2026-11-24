@@ -3655,14 +3655,15 @@ static void test_parallel_training() {
   }
 }
 
-// Pin replay hashes including tactic timers, paths and one-tile member reservations.
+// Replay semantics 16 include explicit group states and merge-follow flags,
+// alongside tactic timers, paths and one-tile member reservations.
 static void test_faithful_profile_hashes() {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
   World w = production_world(); production_object(w, 0, 0, 5, 5);
   GameSim sim(rules, Modifications::faithful()); sim.init(w);
   const uint64_t expected_hashes[] = {
-    10864587900854258484ull, 16743486661095447233ull, 1142895351005694060ull,
-    10665249060338723019ull, 11651758350123258734ull, 13826000158972783630ull};
+    16778420585115015665ull, 1176388582351093425ull, 6421802139135000842ull,
+    12099690391032206507ull, 99948178381031612ull, 4903879381414420630ull};
   CHECK(sim.state_hash(w) == expected_hashes[0]);
   Command move; move.type = Pct::Move; move.ids = {1}; move.a = 12 * 48; move.b = 12 * 48;
   sim.submit(move);

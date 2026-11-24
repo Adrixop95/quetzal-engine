@@ -72,9 +72,9 @@ static void phase_controls(const std::shared_ptr<RulesData>& r) {
   require(visited == std::vector<uint32_t>({2, 1}), "projectile storage reversed between ticks");
   auto cold = initial(); cold.mission.tileset = 1; cold.mission.start_time = 7199;
   GameSim clock(r); clock.init(cold); cold.begin_tick(); clock.tick(cold);
-  require(cold.day_clock == 7199, "nonzero tileset advanced day clock");
+  require(cold.day_clock == 0, "nonzero tileset day clock failed to wrap");
   cold.mission.tileset = 0; cold.begin_tick(); clock.tick(cold);
-  require(cold.day_clock == 0, "day clock failed to wrap");
+  require(cold.day_clock == 1, "day clock failed to advance");
   auto birds = initial(); birds.objects.resize(3);
   for (auto& bird : birds.objects) bird.type = 33;
   GameSim loaded(r); loaded.init(birds);

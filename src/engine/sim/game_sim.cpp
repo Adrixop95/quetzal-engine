@@ -128,7 +128,7 @@ void GameSim::init(World& w) {
   object_order_ = {};
   for (size_t i = 0; i < w.objects.size(); ++i)
     if (!w.objects[i].removed || w.objects[i].alive) object_order_.insert(uint32_t(i + 1));
-  if (!w.original_save) w.day_clock = (w.mission.start_time % kDayTicks + kDayTicks) % kDayTicks;
+  if (!w.original_save) w.day_clock = std::clamp(w.mission.start_time, 0, kDayTicks - 1);
   w.ai_towns.assign(w.mission.towns.size(), {});
   w.town_speed.assign(w.mission.towns.size(), 1);
   w.repair_credits.assign(w.mission.towns.size(), 0);
@@ -465,7 +465,7 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o, bool fire_
   const auto own = w.unit_tactics.find(tactic_key(o));
   if (own == w.unit_tactics.end()) return nullptr;
   const auto& tactic = own->second;
-  if (fire_only && tactic.walking && (o.attack_mode == AttackMode::Direct || o.attack_mode == AttackMode::Defensive)) return nullptr;
+  if (fire_only && tactic.moving() && (o.attack_mode == AttackMode::Direct || o.attack_mode == AttackMode::Defensive)) return nullptr;
   const Object* best = nullptr;
   int64_t distance = std::numeric_limits<int64_t>::max();
   // G: nearest eligible member with lower-id ties substitutes for assignment scores.
@@ -573,7 +573,7 @@ void GameSim::apply(World& w, const Command& c) {
         if (o->id == t->id || !rules_->type(o->type).armed) continue;
         o->boarding = 0;
         if (auto it = w.unit_tactics.find(tactic_key(*o)); it != w.unit_tactics.end()) {
-          it->second.walking = false; it->second.path.clear(); it->second.enemies.clear();
+          it->second.state = GroupState::Stopped; it->second.joining = false; it->second.path.clear(); it->second.enemies.clear();
         }
         o->return_to_tactic = false;
         o->order = uint8_t(Order::Attack); o->target = t->id; o->resume = 0; o->idle_attack = false;
@@ -1342,7 +1342,7 @@ void GameSim::follow_tactics(World& w) {
         o.order = uint8_t(Order::Idle); o.target = 0; o.resume = 0; o.return_to_tactic = false;
         if (o.mover >= 0) mover_->stop(uint32_t(o.mover));
       }
-      if (own != w.unit_tactics.end()) own->second.walking = false;
+      if (own != w.unit_tactics.end()) own->second.state = GroupState::Stopped;
       continue;
     }
     if (own == w.unit_tactics.end()) continue;
@@ -1352,7 +1352,7 @@ void GameSim::follow_tactics(World& w) {
     auto& t = own->second;
     if (std::find(updated.begin(), updated.end(), own->first) != updated.end()) continue;
     updated.push_back(own->first);
-    if (!t.walking || ++t.path_ticks > 36) path_tactic(t, o, leader->second.x, leader->second.y);
+    if (!t.moving() || ++t.path_ticks > 36) path_tactic(t, o, leader->second.x, leader->second.y);
   }
 }
 
@@ -1579,7 +1579,7 @@ void GameSim::run_orders(World& w) {
         flight_advanced = true;
       } else {
         moving = ag && ag->state == path::AgentState::Moving;
-        if (!tactic.walking && !tactic.lost && !moving && o.order != uint8_t(Order::Follow)) o.order = uint8_t(Order::Idle);
+        if (!tactic.moving() && !tactic.lost && !moving && o.order != uint8_t(Order::Follow)) o.order = uint8_t(Order::Idle);
       }
     }
 
@@ -1678,7 +1678,7 @@ void GameSim::run_orders(World& w) {
         }
       }
     } else if (o.attack_mode != AttackMode::Direct &&
-               !(o.attack_mode == AttackMode::Defensive && tactic.walking) && ag && !moving) {
+               !(o.attack_mode == AttackMode::Defensive && tactic.moving()) && ag && !moving) {
       if (o.idle_attack) {
         // V: member position and candidate steps, rather than the target centre,
         // are constrained by the tile leash. A retained target can be outside it.
@@ -2305,7 +2305,7 @@ void GameSim::tick(World& w) {
     ++w.tick;
     return;
   }
-  if (w.mission.tileset == 0) w.day_clock = (w.day_clock + 1) % kDayTicks;
+  w.day_clock = (w.day_clock + 1) % kDayTicks;
   for (auto& o : w.objects) {
     if (o.removed) continue;
     ++o.anim_tick;
@@ -2391,7 +2391,7 @@ void GameSim::script_stop(World& w, const std::vector<uint32_t>& ids) {
     o->order = uint8_t(Order::Idle); o->target = 0; o->resume = 0;
     o->idle_attack = false; o->return_to_tactic = false;
     if (auto it = w.unit_tactics.find(tactic_key(*o)); it != w.unit_tactics.end()) {
-      it->second.walking = false; it->second.path.clear(); it->second.enemies.clear();
+      it->second.state = GroupState::Stopped; it->second.joining = false; it->second.path.clear(); it->second.enemies.clear();
     }
     o->idle_anchor_x = px(o->cur_x); o->idle_anchor_y = px(o->cur_y);
     o->follow_tactic = -1;
@@ -2669,7 +2669,7 @@ uint64_t GameSim::state_hash(const World& w) const {
   mix(w.next_unit_tactic); mix(w.unit_tactics.size());
   for (const auto& [key, t] : w.unit_tactics) {
     mix(uint32_t(key.first)); mix(uint64_t(key.second)); mix(uint32_t(t.x)); mix(uint32_t(t.y));
-    mix(t.scan_ticks); mix(t.wait_ticks); mix(t.path_ticks); mix(t.random); mix(t.walking); mix(t.lost); mix(t.urgent);
+    mix(t.scan_ticks); mix(t.wait_ticks); mix(t.path_ticks); mix(t.random); mix(uint8_t(t.state)); mix(t.joining); mix(t.lost); mix(t.urgent);
     mix(uint32_t(t.parent.first)); mix(uint64_t(t.parent.second)); mix(uint32_t(t.dest_x)); mix(uint32_t(t.dest_y)); mix(t.node);
     mix(t.members.size()); for (auto id : t.members) mix(id);
     mix(t.enemies.size()); for (auto enemy : t.enemies) { mix(uint32_t(enemy.first)); mix(uint64_t(enemy.second)); }

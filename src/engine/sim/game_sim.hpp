@@ -87,6 +87,7 @@ class GameSim : public Simulation {
   bool attach_script(const std::string& scn_path) { return script_.load(scn_path); }
   const ScriptRunner& script() const { return script_; }
   // Used by the script runner (tactic orders).
+  void script_join(World& w, const std::vector<uint32_t>& source, const std::vector<uint32_t>& target);
   void script_order(World& w, const std::vector<uint32_t>& ids, int px, int py, bool attack_move);
   void script_stop(World& w, const std::vector<uint32_t>& ids);
   void script_kill(World& w, uint32_t id);
@@ -133,6 +134,7 @@ class GameSim : public Simulation {
   void refresh_tactics(World& w);
   void think_tactics(World& w);
   void move_tactic(World& w, const std::vector<uint32_t>& ids, int x, int y);
+  void merge_tactic(World& w, TacticKey source, TacticKey target);
   void member_step(World& w, Object& o, int x, int y, bool combat);
   void path_tactic(UnitTactic& t, const Object& leader, int x, int y);
   bool advance_aircraft(Object& object, path::Vec2 goal, bool attacking, int range = 0);
