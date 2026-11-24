@@ -165,6 +165,18 @@ std::vector<uint32_t> ScriptRunner::tactic_members(const World& w, int side, int
   return v;
 }
 
+static bool tactic_moving(const World& w, const std::vector<uint32_t>& members) {
+  for (auto id : members) {
+    const auto* member = w.find(id);
+    if (!member) continue;
+    const auto group = w.unit_tactics.find(tactic_key(*member));
+    if (group != w.unit_tactics.end()) {
+      if (group->second.walking) return true;
+    } else if (member->order != uint8_t(Order::Idle)) return true;
+  }
+  return false;
+}
+
 static bool cmp(Cmp c, int64_t a, int64_t b) {
   switch (c) {
     case Cmp::Eq: return a == b;
@@ -262,8 +274,8 @@ bool ScriptRunner::eval(const World& w, const Condition& c) const {
         const auto hit = w.tactic_attacked_by.find({side, c.id});
         if (!m.empty() && hit != w.tactic_attacked_by.end()) v = hit->second;
       } else if (c.kind == CondKind::TacticIdle) {
-        v = 1;
-        for (uint32_t id : m) if (w.find(id)->order != uint8_t(Order::Idle)) v = 0;
+        // V: script idle reads tactic movement state, independently of combat.
+        v = tactic_moving(w, m) ? 0 : 1;
         // A path assigned earlier in this action pass is already work, even
         // before follow_paths submits its first movement order.
         const auto it = tactics_.find({side, c.id});
@@ -390,10 +402,14 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
       sim.script_order(w, tactic_members(w, side, a.id), std::clamp(a.a, 0, w.terrain.w - 1) * kTilePx + kTilePx / 2, std::clamp(a.b, 0, w.terrain.h - 1) * kTilePx + kTilePx / 2, true);
       tactics_[{side, a.id}].path = -1;
       break;
-    case ActKind::TacticJoinTactic:
-      if (!tactic_members(w, side, a.a).empty())
-        for (uint32_t id : tactic_members(w, side, a.id)) w.find_mut(id)->tactic = a.a;
+    case ActKind::TacticJoinTactic: {
+      const auto target = tactic_members(w, side, a.a);
+      if (!target.empty()) {
+        sim.script_join(w, tactic_members(w, side, a.id), target.front());
+        tactics_[{side, a.id}].path = -1;
+      }
       break;
+    }
     case ActKind::TacticSetPath: case ActKind::TacticSetInvertedPath: case ActKind::TacticSetCycledPath: case ActKind::TacticSetCycledInvertedPath: {
       TacticState& t = tactics_[{side, a.id}];
       t.path = a.a; t.path_index = 0;
@@ -465,9 +481,7 @@ void ScriptRunner::follow_paths(GameSim& sim, World& w) {
     const auto& pts = w.mission.paths[size_t(t.path)];
     std::vector<uint32_t> m = tactic_members(w, kv.first.first, kv.first.second);
     if (m.empty()) continue;
-    bool idle = true;
-    for (uint32_t id : m) if (w.find(id)->order != uint8_t(Order::Idle)) idle = false;
-    if (!idle) continue;
+    if (tactic_moving(w, m)) continue;
     int n = int(pts.size());
     int idx = t.path_index;
     if (idx >= n) {

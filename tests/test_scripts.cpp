@@ -355,9 +355,9 @@ static void paths_and_gifts() {
     auto first_hash = r.state_hash();
     r.tick(sim, w); CHECK(r.state_hash() != first_hash); // clock advances while path waits for idle
     CHECK(w.objects[0].dest_y == (inverted ? 9 : 7) * kTilePx + kTilePx / 2);
-    w.objects[0].order = uint8_t(Order::Idle); r.tick(sim, w);
+    sim.script_stop(w, {1}); r.tick(sim, w);
     CHECK(w.objects[0].dest_x == (inverted ? 6 : 8) * kTilePx + kTilePx / 2);
-    w.objects[0].order = uint8_t(Order::Idle); r.tick(sim, w);
+    sim.script_stop(w, {1}); r.tick(sim, w);
     CHECK(w.objects[0].order == uint8_t(cycled ? Order::AttackMove : Order::Idle));
     if (cycled) CHECK(w.objects[0].dest_x == (inverted ? 8 : 6) * kTilePx + kTilePx / 2);
   }
@@ -747,6 +747,37 @@ static void embarked_script_identity() {
   CHECK(condition(r, w, "side(local).unitsOfId(UGI_ABDULA) == 0"));
 }
 
+static void tactic_idle_uses_controller() {
+  auto w = world(); object(w, 0, 2, 5, 3, 10);
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+  auto r = runner(w, "trigger(0) conditions always actions end");
+  w.objects[0].order = uint8_t(Order::Attack); w.objects[0].target = 99;
+  CHECK(condition(r, w, "side(local).tactic(5).idle == 1"));
+  sim.script_order(w, {1}, 26 * 48 + 24, 10 * 48 + 24, true);
+  CHECK(condition(r, w, "side(local).tactic(5).idle == 0"));
+}
+static void distant_join_replay() {
+  TempDir directory; const auto path = directory.path() / "join.scn";
+  std::ofstream(path) << "trigger(0) conditions always actions side(local).tactic(5).joinTactic(6) trigger(0).disable end";
+  auto data = rules();
+  auto initial = world(); object(initial, 0, 2, 5, 3, 10); object(initial, 0, 2, 6, 26, 10);
+  auto w = initial;
+  GameSim sim(data, Modifications::faithful()); CHECK(sim.attach_script(path.string())); sim.init(w);
+  for (int tick = 0; tick < 700; ++tick) {
+    w.begin_tick(); sim.tick(w);
+    if (tick == 2) {
+      CHECK(w.objects[0].tactic == 5);
+      CHECK(w.unit_tactics.at({2, 5}).merging);
+    }
+    if (tick == 100 || tick == 699) {
+      auto restored = initial;
+      auto replayed = GameSim::replay(restored, data, sim.log(), sim.tick_count(), path.string());
+      CHECK(replayed->state_hash(restored) == sim.state_hash(w));
+    }
+  }
+  CHECK(w.objects[0].tactic == 6);
+  CHECK(w.unit_tactics.at({2, 6}).x == 26);
+}
 static void pending_path_uses_previous_latch() {
   World w = world(); object(w, 0, 2, 7, 3, 4);
   w.mission.paths = {{{8, 9}}};
@@ -761,7 +792,7 @@ static void pending_path_uses_previous_latch() {
 int main() {
   rectangle_box_edges(); side_command_contracts();
   rectangle_runtime_categories(); gift_detaches_home_and_outcome_precedence(); tactic_lookup_and_money(); presentation_contracts();
-  campaign_outcome_requires_script(); campaign_gates(); town_tactics_and_capture(); embarked_script_identity(); pending_path_uses_previous_latch();
+  campaign_outcome_requires_script(); campaign_gates(); town_tactics_and_capture(); embarked_script_identity(); tactic_idle_uses_controller(); distant_join_replay(); pending_path_uses_previous_latch();
   attacked_notification();
   source_locations(); order_and_enablement(); timers(); conditions_and_identity(); paths_and_gifts(); actions_and_outcomes(); defence_loading(); action_observation_contracts(); replay();
   std::puts("Synthetic script contracts passed.");

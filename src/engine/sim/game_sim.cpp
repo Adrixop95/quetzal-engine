@@ -504,6 +504,8 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o, bool fire_
         }
       if (!reachable) continue;
     }
+    // V: Local_assign keeps the chase assignment when it is fireable.
+    if (fire_only && !tower && t.id == o.target) return &t;
     const auto d = d2(o, t);
     if (d < distance || (d == distance && best && t.id < best->id)) { best = &t; distance = d; }
   }
@@ -573,7 +575,8 @@ void GameSim::apply(World& w, const Command& c) {
         if (o->id == t->id || !rules_->type(o->type).armed) continue;
         o->boarding = 0;
         if (auto it = w.unit_tactics.find(tactic_key(*o)); it != w.unit_tactics.end()) {
-          it->second.walking = false; it->second.path.clear(); it->second.enemies.clear();
+          it->second.walking = false; it->second.merging = false; it->second.lost = false;
+          it->second.path.clear(); it->second.enemies.clear();
         }
         o->return_to_tactic = false;
         o->order = uint8_t(Order::Attack); o->target = t->id; o->resume = 0; o->idle_attack = false;
@@ -587,6 +590,10 @@ void GameSim::apply(World& w, const Command& c) {
       const auto members = own_ids(true);
       std::vector<TacticKey> tactics;
       for (const Object* o : members) tactics.push_back(tactic_key(*o));
+      for (size_t i = 0; i < tactics.size(); ++i)
+        for (const auto& [key, team] : w.unit_tactics)
+          if (team.lost && team.merging && team.parent == tactics[i] &&
+              std::find(tactics.begin(), tactics.end(), key) == tactics.end()) tactics.push_back(key);
       for (Object& o : w.objects) {
         if (o.removed || !o.alive || o.side != c.side || o.type < 0) continue;
         const auto& r = rules_->type(o.type);
@@ -2391,7 +2398,8 @@ void GameSim::script_stop(World& w, const std::vector<uint32_t>& ids) {
     o->order = uint8_t(Order::Idle); o->target = 0; o->resume = 0;
     o->idle_attack = false; o->return_to_tactic = false;
     if (auto it = w.unit_tactics.find(tactic_key(*o)); it != w.unit_tactics.end()) {
-      it->second.walking = false; it->second.path.clear(); it->second.enemies.clear();
+      it->second.walking = false; it->second.merging = false; it->second.lost = false;
+      it->second.path.clear(); it->second.enemies.clear();
     }
     o->idle_anchor_x = px(o->cur_x); o->idle_anchor_y = px(o->cur_y);
     o->follow_tactic = -1;
@@ -2670,6 +2678,7 @@ uint64_t GameSim::state_hash(const World& w) const {
   for (const auto& [key, t] : w.unit_tactics) {
     mix(uint32_t(key.first)); mix(uint64_t(key.second)); mix(uint32_t(t.x)); mix(uint32_t(t.y));
     mix(t.scan_ticks); mix(t.wait_ticks); mix(t.path_ticks); mix(t.random); mix(t.walking); mix(t.lost); mix(t.urgent);
+    if (t.merging) mix(0x6d657267696e67ULL);
     mix(uint32_t(t.parent.first)); mix(uint64_t(t.parent.second)); mix(uint32_t(t.dest_x)); mix(uint32_t(t.dest_y)); mix(t.node);
     mix(t.members.size()); for (auto id : t.members) mix(id);
     mix(t.enemies.size()); for (auto enemy : t.enemies) { mix(uint32_t(enemy.first)); mix(uint64_t(enemy.second)); }
