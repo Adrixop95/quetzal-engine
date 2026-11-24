@@ -207,7 +207,8 @@ struct UnitTactic {
   GroupState state = GroupState::Stopped;
   bool moving() const { return state == GroupState::Moving; }
   bool idle() const { return state == GroupState::Inactive || state == GroupState::Stopped; }
-  bool lost = false, joining = false, urgent = false;
+  bool lost = false, urgent = false;
+  bool merging = false; // visible joins and hidden lost teams follow before absorption
   TacticKey parent = {-1, 0};
   int dest_x = -1, dest_y = -1;
   std::vector<std::pair<int, int>> path;

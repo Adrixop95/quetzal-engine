@@ -355,11 +355,9 @@ static void paths_and_gifts() {
     auto first_hash = r.state_hash();
     r.tick(sim, w); CHECK(r.state_hash() != first_hash); // clock advances while path waits for idle
     CHECK(w.objects[0].dest_y == (inverted ? 9 : 7) * kTilePx + kTilePx / 2);
-    w.unit_tactics.at({2, 5}).state = GroupState::Stopped;
-    w.objects[0].order = uint8_t(Order::Idle); r.tick(sim, w);
+    sim.script_stop(w, {1}); r.tick(sim, w);
     CHECK(w.objects[0].dest_x == (inverted ? 6 : 8) * kTilePx + kTilePx / 2);
-    w.unit_tactics.at({2, 5}).state = GroupState::Stopped;
-    w.objects[0].order = uint8_t(Order::Idle); r.tick(sim, w);
+    sim.script_stop(w, {1}); r.tick(sim, w);
     CHECK(w.objects[0].order == uint8_t(cycled ? Order::AttackMove : Order::Idle));
     if (cycled) CHECK(w.objects[0].dest_x == (inverted ? 8 : 6) * kTilePx + kTilePx / 2);
   }
@@ -750,6 +748,37 @@ static void embarked_script_identity() {
   CHECK(condition(r, w, "side(local).unitsOfId(UGI_ABDULA) == 0"));
 }
 
+static void tactic_idle_uses_controller() {
+  auto w = world(); object(w, 0, 2, 5, 3, 10);
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+  auto r = runner(w, "trigger(0) conditions always actions end");
+  w.objects[0].order = uint8_t(Order::Attack); w.objects[0].target = 99;
+  CHECK(condition(r, w, "side(local).tactic(5).idle == 1"));
+  sim.script_order(w, {1}, 26 * 48 + 24, 10 * 48 + 24, true);
+  CHECK(condition(r, w, "side(local).tactic(5).idle == 0"));
+}
+static void distant_join_replay() {
+  TempDir directory; const auto path = directory.path() / "join.scn";
+  std::ofstream(path) << "trigger(0) conditions always actions side(local).tactic(5).joinTactic(6) trigger(0).disable end";
+  auto data = rules();
+  auto initial = world(); object(initial, 0, 2, 5, 3, 10); object(initial, 0, 2, 6, 26, 10);
+  auto w = initial;
+  GameSim sim(data, Modifications::faithful()); CHECK(sim.attach_script(path.string())); sim.init(w);
+  for (int tick = 0; tick < 700; ++tick) {
+    w.begin_tick(); sim.tick(w);
+    if (tick == 2) {
+      CHECK(w.objects[0].tactic == 5);
+      CHECK(w.unit_tactics.at({2, 5}).merging);
+    }
+    if (tick == 100 || tick == 699) {
+      auto restored = initial;
+      auto replayed = GameSim::replay(restored, data, sim.log(), sim.tick_count(), path.string());
+      CHECK(replayed->state_hash(restored) == sim.state_hash(w));
+    }
+  }
+  CHECK(w.objects[0].tactic == 6);
+  CHECK(w.unit_tactics.at({2, 6}).x == 26);
+}
 static void pending_path_uses_previous_latch() {
   World w = world(); object(w, 0, 2, 7, 3, 4);
   w.mission.paths = {{{8, 9}}};
@@ -821,12 +850,14 @@ static void attack_town_controller_lookup() {
 
 static void join_follows_before_merging() {
   World w = world(); object(w, 0, 2, 5, 3, 4); object(w, 0, 2, 6, 23, 4);
+  w.objects[0].town = 7; w.objects[1].town = 8;
   GameSim sim(rules(), Modifications::faithful()); sim.init(w);
   auto r = runner(w, "trigger(0) conditions always actions side(local).tactic(5).joinTactic(6) "
       "trigger(0).disable end");
   r.tick(sim, w); r.tick(sim, w);
   CHECK(w.objects[0].tactic == 5); // no remote reassignment
-  CHECK(w.unit_tactics.at({2, 5}).joining);
+  CHECK(w.objects[0].town == 7);
+  CHECK(w.unit_tactics.at({2, 5}).merging);
   CHECK(w.unit_tactics.at({2, 5}).parent == TacticKey(2, 6));
   CHECK(w.objects[0].order == uint8_t(Order::Follow));
   const auto x = w.objects[0].cur_x;
@@ -843,6 +874,7 @@ static void join_follows_before_merging() {
   w.unit_tactics.at({2, 5}).x = target.x - reach + 1;
   w.begin_tick(); sim.tick(w); CHECK(w.objects[0].tactic == 6);
   CHECK(!w.unit_tactics.contains({2, 5}));
+  CHECK(w.objects[0].town == 8); // visible absorption adopts the receiving town
 }
 
 static void joining_replay_and_followers() {
@@ -856,11 +888,11 @@ static void joining_replay_and_followers() {
   auto data = rules(); World w = initial;
   GameSim sim(data, Modifications::faithful()); CHECK(sim.attach_script(path.string())); sim.init(w);
   for (int i = 0; i < 12; ++i) { w.begin_tick(); sim.tick(w); }
-  CHECK(w.unit_tactics.at({2, 5}).joining && w.unit_tactics.at({2, 7}).joining);
+  CHECK(w.unit_tactics.at({2, 5}).merging && w.unit_tactics.at({2, 7}).merging);
   const auto before = sim.state_hash(w);
-  w.unit_tactics.at({2, 5}).joining = false;
+  w.unit_tactics.at({2, 5}).merging = false;
   CHECK(sim.state_hash(w) != before);
-  w.unit_tactics.at({2, 5}).joining = true;
+  w.unit_tactics.at({2, 5}).merging = true;
   World rebuilt = initial;
   auto replayed = GameSim::replay(rebuilt, data, sim.log(), sim.tick_count(), path.string());
   CHECK(replayed->state_hash(rebuilt) == sim.state_hash(w));
@@ -870,7 +902,7 @@ static void joining_replay_and_followers() {
   }
   // Reject an engine merge cycle without disturbing the existing follow chain.
   sim.script_join(w, {2}, {1});
-  CHECK(!w.unit_tactics.at({2, 6}).joining);
+  CHECK(!w.unit_tactics.at({2, 6}).merging);
   const auto& target = w.unit_tactics.at({2, 6});
   w.objects[2].follow_tactic = 5; // ordinary followers are redirected as well
   w.unit_tactics.at({2, 5}).x = target.x;
@@ -908,7 +940,7 @@ int main() {
   controller_idle_states(); attack_town_controller_lookup(); join_follows_before_merging(); joining_replay_and_followers(); clock_startup_phase();
   rectangle_box_edges(); side_command_contracts();
   rectangle_runtime_categories(); gift_detaches_home_and_outcome_precedence(); tactic_lookup_and_money(); presentation_contracts();
-  campaign_outcome_requires_script(); campaign_gates(); town_tactics_and_capture(); embarked_script_identity(); pending_path_uses_previous_latch();
+  campaign_outcome_requires_script(); campaign_gates(); town_tactics_and_capture(); embarked_script_identity(); tactic_idle_uses_controller(); distant_join_replay(); pending_path_uses_previous_latch();
   attacked_notification();
   source_locations(); order_and_enablement(); timers(); conditions_and_identity(); paths_and_gifts(); actions_and_outcomes(); defence_loading(); action_observation_contracts(); replay();
   std::puts("Synthetic script contracts passed.");
