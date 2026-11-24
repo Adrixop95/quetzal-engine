@@ -152,6 +152,20 @@ static void loss_and_visibility(std::shared_ptr<RulesData> rules) {
   step(sim, w); // local assignment can fire on this ready standing tick
   CHECK(w.objects[0].has_fired && w.objects[0].target == 2);
 }
+static void local_target_preference(std::shared_ptr<RulesData> rules) {
+  auto w = map(); add(w, 0, 20, 20); add(w, 1, 24, 20, 8); add(w, 1, 25, 20, 8);
+  for (auto& o : w.objects) o.attack_mode = AttackMode::Direct;
+  GameSim sim(rules, Modifications::faithful()); sim.init(w); step(sim, w);
+  sim.teleport(w, 2, 20 * 48 + 84, 20 * 48 + 24);
+  sim.teleport(w, 3, 20 * 48 + 54, 20 * 48 + 24);
+  auto& shooter = w.objects[0];
+  shooter.order = uint8_t(Order::Attack); shooter.target = 2; shooter.idle_attack = true; shooter.cooldown = 0;
+  step(sim, w);
+  CHECK(shooter.has_fired && shooter.target == 2);
+  CHECK(shooter.release_target == 2 || w.objects[1].hp < w.objects[1].hp_max ||
+        std::any_of(w.effects.begin(), w.effects.end(), [](const auto& e) { return e.flight && e.target == 2; }));
+  CHECK(w.objects[2].hp == w.objects[2].hp_max);
+}
 static void retaliation(std::shared_ptr<RulesData> rules) {
   for (int mode = 0; mode < 4; ++mode) for (bool moving : {false, true}) {
     auto w = map(); add(w, 0, 20, 20, 5); add(w, 1, 29, 20, 8);
@@ -230,6 +244,79 @@ static void selection_split(std::shared_ptr<RulesData> rules) {
   CHECK(w.objects[0].cur_x == tile_center_fixed(40));
   CHECK(w.objects[1].cur_x < tile_center_fixed(35) && w.objects[2].cur_x < tile_center_fixed(35));
 }
+static void hierarchy(std::shared_ptr<RulesData> rules) {
+  auto w = map(); add(w, 0, 10, 10, 5); add(w, 0, 30, 10, 6);
+  add(w, 0, 7, 10, 7); add(w, 0, 2, 10, 8);
+  GameSim sim(rules, Modifications::faithful()); sim.init(w);
+  sim.script_join(w, {4}, 1);
+  sim.script_join(w, {1}, 2);
+  CHECK(w.objects[0].tactic == 5); // no remote membership transfer
+  CHECK(w.unit_tactics.at({0, 5}).merging && !w.unit_tactics.at({0, 5}).lost);
+  sim.script_join(w, {2}, 1); // a cycle leaves the destination independent
+  CHECK(!w.unit_tactics.at({0, 6}).merging);
+  sim.script_join(w, {3}, 1); // nearby join is immediate
+  CHECK(w.objects[2].tactic == 5);
+  step(sim, w, 600);
+  CHECK(w.objects[0].tactic == 6 && w.objects[2].tactic == 6 && w.objects[3].tactic == 6);
+  CHECK(w.unit_tactics.at({0, 6}).x == 30);
+
+  // Equality with reach does not merge; a fresh movement order cancels a join.
+  auto boundary = map(); add(boundary, 0, 20, 20, 5); add(boundary, 0, 26, 20, 6);
+  GameSim edge(rules, Modifications::faithful()); edge.init(boundary);
+  edge.script_join(boundary, {1}, 2);
+  CHECK(boundary.objects[0].tactic == 5 && boundary.unit_tactics.at({0, 5}).merging);
+  edge.script_order(boundary, {1}, 10 * 48 + 24, 20 * 48 + 24, false);
+  CHECK(!boundary.unit_tactics.at({0, 5}).merging);
+  step(edge, boundary, 300);
+  CHECK(boundary.objects[0].tactic == 5 && boundary.unit_tactics.at({0, 5}).x == 10);
+
+  // A disappearing destination cancels a visible join; it cannot adopt the child.
+  auto cancelled = map(); add(cancelled, 0, 10, 10, 5); add(cancelled, 0, 30, 10, 6);
+  GameSim cancel(rules, Modifications::faithful()); cancel.init(cancelled);
+  cancel.script_join(cancelled, {1}, 2); cancel.script_kill(cancelled, 2);
+  step(cancel, cancelled);
+  CHECK(!cancelled.unit_tactics.at({0, 5}).merging);
+  CHECK(cancelled.objects[0].order == uint8_t(Order::Idle));
+
+  // A hidden follower receives stance changes while it is outside merge range.
+  auto lost = map(); add(lost, 0, 20, 20, 5); add(lost, 0, 34, 20, 5);
+  GameSim split(rules, Modifications::faithful()); split.init(lost); step(split, lost);
+  CHECK(lost.objects[1].tactic != 5);
+  Command stance; stance.type = Pct::AttackMode; stance.ids = {1}; stance.a = 1;
+  split.submit(stance); step(split, lost);
+  CHECK(lost.objects[1].attack_mode == AttackMode::Defensive);
+  const auto h = split.state_hash(lost);
+  auto& child = lost.unit_tactics.at(tactic_key(lost.objects[1]));
+  child.merging = false; CHECK(split.state_hash(lost) != h); child.merging = true;
+  split.script_kill(lost, 1); step(split, lost);
+  CHECK(lost.objects[1].tactic == 5); // hidden follower repopulates an empty parent
+  CHECK(lost.unit_tactics.at({0, 5}).members == std::vector<uint32_t>{2});
+}
+static void losses_and_return(std::shared_ptr<RulesData> rules) {
+  // Losing the first member during a march retains the route and anchor.
+  auto w = map(); add(w, 0, 10, 10, 5); add(w, 0, 11, 10, 5); add(w, 0, 12, 10, 5);
+  GameSim sim(rules, Modifications::faithful()); sim.init(w);
+  sim.script_order(w, {1, 2, 3}, 30 * 48 + 24, 10 * 48 + 24, true);
+  step(sim, w, 40);
+  const int anchor = w.unit_tactics.at({0, 5}).x;
+  sim.script_kill(w, 1); step(sim, w);
+  CHECK(w.unit_tactics.at({0, 5}).x >= anchor);
+  step(sim, w, 800);
+  CHECK(w.unit_tactics.at({0, 5}).x == 30);
+  CHECK(w.objects[1].cur_x > tile_center_fixed(27));
+  CHECK(w.objects[2].cur_x > tile_center_fixed(27));
+
+  // Retreat here means the verified disengage/return branch, not an HP threshold.
+  auto returning = map(); add(returning, 0, 20, 20, 5); add(returning, 1, 25, 20, 6);
+  returning.objects[1].attack_mode = AttackMode::Direct;
+  GameSim retreat(rules, Modifications::faithful()); retreat.init(returning);
+  step(retreat, returning, 35);
+  CHECK(returning.objects[0].cur_x > tile_center_fixed(20));
+  retreat.script_kill(returning, 2); step(retreat, returning, 250);
+  CHECK(returning.objects[0].target == 0);
+  CHECK(returning.objects[0].cur_x == tile_center_fixed(20));
+  CHECK(returning.unit_tactics.at({0, 5}).x == 20);
+}
 static void tile_steps() {
   path::NavGrid grid(20, 20); path::MoveSystem mover(grid);
   auto a = mover.add_agent({tile_center_fixed(5), tile_center_fixed(5)}, 14 * 256, 4 * 256, path::MoveClass::Small);
@@ -257,6 +344,6 @@ static void tile_steps() {
 }
 int main() {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
-  scan(rules); fog_and_tactics(rules); leash(rules); loss_and_visibility(rules); retaliation(rules); walking(rules); selection_split(rules); tile_steps();
+  scan(rules); fog_and_tactics(rules); leash(rules); loss_and_visibility(rules); local_target_preference(rules); retaliation(rules); walking(rules); selection_split(rules); hierarchy(rules); losses_and_return(rules); tile_steps();
   std::puts(failures ? "FAILED" : "OK"); return failures ? 1 : 0;
 }

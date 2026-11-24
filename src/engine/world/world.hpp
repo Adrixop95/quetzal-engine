@@ -202,6 +202,7 @@ struct UnitTactic {
   int scan_ticks = 0, wait_ticks = 0, path_ticks = 0;
   uint32_t random = 1; // G: independent deterministic stream, not reference RNG parity
   bool walking = false, lost = false, urgent = false;
+  bool merging = false; // visible joins and hidden lost teams follow before absorption
   TacticKey parent = {-1, 0};
   int dest_x = -1, dest_y = -1;
   std::vector<std::pair<int, int>> path;

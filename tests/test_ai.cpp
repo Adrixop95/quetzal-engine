@@ -205,6 +205,16 @@ static void army_scenarios(std::shared_ptr<const RulesData> rules) {
   while (!launches && wave.tick_count() < 4000) { w.begin_tick(); wave.tick(w); }
   std::printf("Army scenario: %d productions, %d launches, %d released recruits\n", productions, launches, released);
   CHECK(productions > 1 && launches == 1 && released > 1);
+  std::vector<uint32_t> wave_members;
+  for (const auto& o : w.objects)
+    if (o.side == 0 && o.alive && o.transient_tactic < -(int64_t(1) << 40)) wave_members.push_back(o.id);
+  CHECK(wave_members.size() == size_t(released));
+  if (!wave_members.empty()) {
+    const auto key = tactic_key(*w.find(wave_members.front()));
+    CHECK(w.unit_tactics.at(key).walking);
+    for (auto id : wave_members) CHECK(tactic_key(*w.find(id)) == key);
+  }
+
   auto restored = wave_initial;
   auto replay = GameSim::replay(restored, rules, wave.log(), wave.tick_count());
   CHECK(replay->state_hash(restored) == wave.state_hash(w));
