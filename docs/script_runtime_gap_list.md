@@ -28,8 +28,8 @@ Codes below identify reference behavior, not the independent enum values.
 | 04 | joinTactic | V both lookups required; plain groups follow and merge strictly inside reach, retaining source identity until arrival and redirecting followers. G town-source recruitment, nested controller lifetime and movement scheduling |
 | 05, 06, 07, 08 | timer set, stop, start, kill | V lazy running-zero creation, set preserves pause, kill does not create; G timer-versus-trigger pool phase |
 | 09, 0a, 0b, 0c | path variants | V waypoint progression uses group controller idle states instead of member orders. G exact native path/controller scheduling and ferry-specific setter behavior remain incomplete |
-| 0d | boat activate | Adapter exists: forces departure phase 3 in current direction. G movement, formation, ramp scheduling and unload placement; no longer an unsupported dispatch |
-| 0e | submarine go | V stationary effect controller, not a mobile combat unit: replace idle effect with departure sequence and retire controller. G effect scheduling; no longer an unsupported dispatch |
+| 0d | boat activate | **Closed script dispatch:** V last matching ferry scenario, force phase 3 and boat state 5 in any phase, preserve cargo/request and direction, no turn; missing controller is a silent no-op. Full trip and loss controls use the shared task-159 transport state machine; see the transport boundaries below |
+| 0e | submarine go | **Closed script dispatch:** V last matching decoration scenario, replace idle resource-27 loop with finite animation 1 at its anchor and retire controller. No route, passengers or combat; missing controller is a silent no-op. See the transport boundaries below |
 | 0f, 10 | Johnka enable, disable | Existing patrol adapter; G visual-think scheduling and complete transport fidelity. Disable is not an ignored branch |
 | 11 | buildCommand | **Unsupported execution.** V native parser `0x437fb0` accepts `buildCommand(integer) {UGI_name,...}`; handler `0x402180` builds a side plan from available type requests and replaces the previous plan only if requests were admitted. Native grammar is now parsed, retaining order/duplicates with a safe 32-request bound. The earlier engine-only `(UGI_name,integer,...)` syntax remains accepted. Both forms report unsupported execution; neither is silently dropped |
 | 12 | moveCommand | **Closed:** V handler `0x4022e0` only calls a read-only nearest-town lookup and discards its result. Explicit supported no-op; no movement, queue or money changes |
@@ -83,20 +83,21 @@ rectangle controls also check delayed execution after an object leaves the box.
 ## The 19 historical transport sites
 
 ROADMAP.md's task-25 row records an earlier unsupported-dispatch count. These
-sites now have adapters; **none is certified unreachable or behaviorally equal
-to the reference**. This table reconciles that count without changing the roadmap
+sites now have adapters; the twelve boat and three submarine dispatch sites
+are closed against the inspected action contract. **None is certified unreachable
+or fully equal to the reference during campaign play**. This table reconciles that count without changing the roadmap
 or reproducing script bodies. Numbers are source locations from the existing
 public inventory, not generated mission fixtures.
 
 | Mission | Trigger | Action lines | Action | Current disposition |
 | --- | --- | --- | --- | --- |
-| 2 | 0 | 5, 6 | BoatActivate | Implemented adapter; live loading/route validation pending |
-| 2 | 101 | 35 | SubmarineGo | Stationary effect adapter; live timing pending |
-| 2 | 3 | 64 | BoatActivate | Implemented adapter; live loading/route validation pending |
-| 7 | 2 | 30, 31, 32, 33, 34 | BoatActivate | Implemented adapter; live loading/route validation pending |
-| 9 | 1 | 18 | SubmarineGo | Stationary effect adapter; live timing pending |
-| 9 | 6 | 70, 71, 72, 73 | BoatActivate | Implemented adapter; live loading/route validation pending |
-| 15 | 1 | 18 | SubmarineGo | Stationary effect adapter; live timing pending |
+| 2 | 0 | 5, 6 | BoatActivate | Closed script dispatch; shared task-159 phases, loading, landing and loss rules |
+| 2 | 101 | 35 | SubmarineGo | Closed script dispatch; stationary loop replaced by finite effect |
+| 2 | 3 | 64 | BoatActivate | Closed script dispatch; shared task-159 phases, loading, landing and loss rules |
+| 7 | 2 | 30, 31, 32, 33, 34 | BoatActivate | Closed script dispatch; shared task-159 phases, loading, landing and loss rules |
+| 9 | 1 | 18 | SubmarineGo | Closed script dispatch; stationary loop replaced by finite effect |
+| 9 | 6 | 70, 71, 72, 73 | BoatActivate | Closed script dispatch; shared task-159 phases, loading, landing and loss rules |
+| 15 | 1 | 18 | SubmarineGo | Closed script dispatch; stationary loop replaced by finite effect |
 | 15 | 3 | 43, 44 | JohnkaEnable | Patrol adapter; live route validation pending |
 | 15 | 4 | 56, 57 | JohnkaEnable | Patrol adapter; live route validation pending |
 
@@ -155,3 +156,35 @@ General side plans, town-specific recruitment/launch, nested native controller
 ownership and exact path/member readiness remain dependencies. These were not
 replaced with guessed successful behavior. The independent base-group fixes
 and single-player clocks do not depend on those missing models.
+
+## Transport script closure (task 180, 2026-11-25)
+
+Task 159 is present in this checkout. All twelve BoatActivate and three
+SubmarineGo sites dispatch through its shared implementation; no mission-specific
+route, condition bypass or passenger spawn is added. The four JohnkaEnable sites
+remain approximate, so the historical nineteen-site count must not be read as
+nineteen newly verified sequences. The private-data campaign check now executes
+each original action through a freshly latched ScriptRunner before checking the
+controller, rather than invoking the vessel adapter directly.
+
+Static inspection of the two native action handlers confirms silent missing-target
+behavior. Repeated submarine actions may consume earlier duplicate controllers;
+after the last controller retires, subsequent calls leave effects and messages
+unchanged. Boat and submarine lookup namespaces remain separate.
+
+**Transport boundaries (G):** group centroid/formation and shore approach,
+continuous occupancy representatives, per-unit landing clearance, bounded blocked
+landing retries, repeated-activation side fallback, missing-resource animation
+fallbacks and exact within-tick scheduling remain as documented in
+[ferry_implementation.md](ferry_implementation.md). Normal-play boat vulnerability
+still lacks live evidence. Closing action dispatch does not close these shared
+simulation gaps or the general count/tactic/rectangle condition approximations.
+
+Invented scripts now cover a passenger group's boarding, loss of its old tactic,
+hidden-unit counts, arrival rectangle, fresh landing group, submarine departure,
+victory, boat return and command-log replay. Another script activates a preloaded
+boat onto a dockless line and reaches defeat only after its passengers die.
+Activation in every phase, duplicate scenario selection and missing/retired
+controllers are checked through ScriptRunner. Existing eligibility, load-block,
+ring-order and requester/loss tests remain enabled. No original executable or
+reference runtime was run; no private mission fixture is published.

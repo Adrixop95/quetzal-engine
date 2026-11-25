@@ -309,7 +309,9 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
     case ActKind::SubmarineGo: {
       ObjectSource source = a.kind == ActKind::BoatActivate ? ObjectSource::Boat :
           a.kind == ActKind::SubmarineGo ? ObjectSource::Submarine : ObjectSource::Johnka;
-      if (!sim.activate_vessel(w, a.id, source, a.kind != ActKind::JohnkaDisable))
+      // V: boat/submarine lookup silently does nothing once no controller matches.
+      const bool found = sim.activate_vessel(w, a.id, source, a.kind != ActKind::JohnkaDisable);
+      if (!found && source == ObjectSource::Johnka)
         w.messages.push_back({"Vessel action: no living vessel for scenario " + std::to_string(a.id), 72});
       break;
     }

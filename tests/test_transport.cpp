@@ -164,6 +164,87 @@ static void script_arrivals() {
   until(sim,w,[&]{return w.objects[0].ferry_phase==0;});
   CHECK(w.objects[0].cargo.empty() && !w.objects[1].removed && w.objects[1].tactic!=42);
 }
+static void scripted_passenger_trip() {
+  World w=river(3);
+  for (size_t i=1;i<w.objects.size();++i) w.objects[i].tactic=42;
+  add(w,-1,1,14); w.objects.back().source=ObjectSource::Submarine; w.objects.back().scenario=3;
+  const World initial=w;
+  TempDir tmp; const auto file=(tmp.path()/"passengers.scn").string();
+  std::ofstream(file)<<
+      "trigger(0) conditions side(0).tactic(42).valid == 0 "
+      "side(0).unitsOfId(UGI_FOOTMAN) == 3 "
+      "side(0).unitsOfUGIInRect(UGI_FOOTMAN,0,0,16,16) == 0 "
+      "actions side(0).addMoney(1) trigger(0).disable end "
+      "trigger(1) conditions side(0).money == 1 "
+      "side(0).unitsOfUGIInRect(UGI_FOOTMAN,10,0,16,8) == 3 "
+      "actions submarine(3).go side(0).addMoney(1) trigger(1).disable end "
+      "trigger(2) conditions side(0).money == 2 "
+      "actions side(0).victory trigger(2).disable end";
+  auto r=rules(); GameSim sim(r); CHECK(sim.attach_script(file)); sim.init(w);
+  const auto x=w.objects[0].cur_x,y=w.objects[0].cur_y;
+  command(sim,Pct::Attack,{2,3,4},1);
+  until(sim,w,[&]{return w.objects[0].ferry_phase==3;});
+  CHECK(w.objects[0].cargo.size()==3 && w.side_state[0].money==1);
+  CHECK(w.side_outcome[0]==kRunning && !w.objects.back().vessel_arrived);
+  until(sim,w,[&]{return w.objects[0].ferry_phase==4;});
+  CHECK(w.objects[0].cargo.empty());
+  for (size_t i=1;i<=3;++i) {
+    const auto& passenger=w.objects[i];
+    CHECK(passenger.alive && !passenger.removed && !passenger.carrier && passenger.side==0);
+    CHECK(passenger.tactic!=42 && passenger.tactic==w.objects[1].tactic);
+    CHECK(passenger.attack_mode==AttackMode::Balanced);
+  }
+  until(sim,w,[&]{return w.objects[0].ferry_phase==0;});
+  CHECK(w.objects[0].cur_x==x && w.objects[0].cur_y==y && w.objects[0].boat_state==1);
+  CHECK(w.side_state[0].money==2 && w.side_outcome[0]==kVictory);
+  CHECK(w.objects.back().removed && w.objects.back().vessel_arrived && w.effects.empty());
+  CHECK(sim.script().unsupported()==0 && w.selection.ids.empty());
+  for (const auto& action : sim.script().action_observations(w)) CHECK(action.trace.executions==1);
+  World restored=initial;
+  auto replayed=GameSim::replay(restored,r,sim.log(),sim.tick_count(),file);
+  CHECK(replayed->state_hash(restored)==sim.state_hash(w));
+}
+static void scripted_boat_loss() {
+  World w=river(1); w.passability.v.assign(256,0);
+  w.objects[0].source=ObjectSource::Boat; w.objects[0].scenario=4; w.objects[0].orientation=1;
+  w.objects[0].cargo={2}; w.objects[1].carrier=1; w.objects[1].removed=true;
+  TempDir tmp; const auto file=(tmp.path()/"loss.scn").string();
+  std::ofstream(file)<<
+      "trigger(0) conditions always actions boat(4).activate trigger(0).disable end "
+      "trigger(1) conditions side(0).unitsOfId(UGI_FOOTMAN) == 0 "
+      "actions side(0).defeat trigger(1).disable end";
+  GameSim sim(rules()); CHECK(sim.attach_script(file)); sim.init(w);
+  ticks(sim,w,1); CHECK(w.objects[0].ferry_phase==0);
+  ticks(sim,w,1); CHECK(w.objects[0].ferry_phase==3 && w.objects[0].boat_state==5);
+  until(sim,w,[&]{
+    CHECK(w.side_outcome[0]==kRunning); // Hidden living cargo must not trigger defeat.
+    return !w.objects[0].alive;
+  });
+  CHECK(!w.objects[1].alive && !w.objects[1].carrier && w.objects[0].cargo.empty());
+  CHECK(w.objects[0].boat_state==0 && !w.objects[0].vessel_route);
+  ticks(sim,w,2); CHECK(w.side_outcome[0]==kDefeat && sim.script().unsupported()==0);
+}
+static void scripted_vessel_lookup() {
+  World w=river(0); w.objects[0].source=ObjectSource::Boat; w.objects[0].scenario=4;
+  add(w,84,6,8); w.objects.back().source=ObjectSource::Boat; w.objects.back().scenario=4;
+  for (int y : {10,12}) {
+    add(w,-1,8,y); w.objects.back().source=ObjectSource::Submarine; w.objects.back().scenario=4;
+  }
+  GameSim sim(rules()); sim.init(w);
+  script::Script parsed;
+  CHECK(script::parse_script("trigger(0) conditions always actions "
+      "boat(4).activate submarine(4).go boat(999).activate submarine(999).go end",parsed));
+  ScriptRunner runner; runner.set(parsed); runner.init(w);
+  runner.tick(sim,w); CHECK(w.objects[1].ferry_phase==0 && !w.objects[3].removed);
+  runner.tick(sim,w);
+  CHECK(w.objects[0].ferry_phase==0 && w.objects[1].ferry_phase==3);
+  CHECK(w.objects[1].boat_state==5 && w.objects[1].orientation==0);
+  CHECK(!w.objects[2].removed && w.objects[3].removed && w.objects[3].vessel_arrived);
+  CHECK(w.effects.size()==2); // Earlier idle loop plus the last controller's one-shot.
+  runner.tick(sim,w); CHECK(w.objects[2].removed && w.effects.size()==2);
+  runner.tick(sim,w); CHECK(w.effects.size()==2 && runner.unsupported()==0);
+  CHECK(w.messages.empty()); // Native missing/retired targets are silent no-ops.
+}
 static void occupancy_order() {
   World w=river(3);
   w.objects[1].teleport(tile_center_fixed(4),tile_center_fixed(8));
@@ -316,7 +397,11 @@ static void activate_every_phase_and_loss() {
     w.objects[0].ferry_phase=ph; w.objects[0].boat_state=ph+1; w.objects[0].ferry_wait=20;
     w.objects[0].cargo={2}; w.objects[1].carrier=1; w.objects[1].removed=true;
     const auto x=w.objects[0].cur_x,y=w.objects[0].cur_y;
-    CHECK(sim.activate_vessel(w,4,ObjectSource::Boat));
+    script::Script parsed;
+    CHECK(script::parse_script("trigger(0) conditions always actions boat(4).activate end",parsed));
+    ScriptRunner runner; runner.set(parsed); runner.init(w);
+    runner.tick(sim,w); runner.tick(sim,w);
+    CHECK(runner.unsupported()==0);
     CHECK(w.objects[0].ferry_phase==3 && w.objects[0].boat_state==5 && !w.objects[0].ferry_wait);
     CHECK(w.objects[0].orientation==0 && w.objects[0].cargo==std::vector<uint32_t>{2});
     ticks(sim,w,1);
@@ -419,7 +504,11 @@ static void campaign_sites(const std::string& game) {
       CHECK(ScriptRunner::supports(action.kind));
       // Each site has a fresh world: repeated enables and dormant gates are tested independently.
       World probe=w; GameSim instance(r); instance.init(probe);
-      CHECK(instance.activate_vessel(probe,action.id,source)); ticks(instance,probe,1);
+      script::Script dispatch; script::Trigger site;
+      site.conditions.push_back({}); site.actions.push_back(action); dispatch.triggers.push_back(site);
+      ScriptRunner runner; runner.set(dispatch); runner.init(probe);
+      runner.tick(instance,probe); runner.tick(instance,probe); ticks(instance,probe,1);
+      CHECK(runner.unsupported()==0 && runner.action_observations(probe)[0].trace.executions==1);
       bool running=false;
       for (const auto& vessel : probe.objects) if (vessel.source==source && vessel.scenario==action.id)
         running=source==ObjectSource::Submarine ? vessel.vessel_arrived && vessel.removed :
@@ -542,5 +631,5 @@ int main(int argc,char** argv) {
   if (argc==3 && std::string(argv[1])=="--campaign") { campaign_sites(argv[2]); return 0; }
   bizon_pursuit(); ferry_combat(); zero_maximum_combat_fallback(); reachable_automatic_pursuit();
   original_motion_and_states(); original_landing(); requester_fate(); preloaded_request_cancellation(); activate_every_phase_and_loss(); mission_boat_and_submarine(); resource_animation_timing(); reserved_landing_group();
-  crossing(); limits(); occupied_shore(); eligibility(); script_arrivals(); occupancy_order(); placement_and_policy(); reach_and_direction(); no_player_control(); std::puts("Transport scenarios passed");
+  crossing(); limits(); occupied_shore(); eligibility(); script_arrivals(); scripted_passenger_trip(); scripted_boat_loss(); scripted_vessel_lookup(); occupancy_order(); placement_and_policy(); reach_and_direction(); no_player_control(); std::puts("Transport scenarios passed");
 }
