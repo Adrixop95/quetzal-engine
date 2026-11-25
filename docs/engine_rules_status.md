@@ -2744,3 +2744,34 @@ where these dependencies apply. General side plans remain absent. No original
 executable or reference runtime was launched. See the
 [ranked before/after report](script_approximation_report.md) and
 [per-code dispositions](script_runtime_gap_list.md).
+
+## Transport script sites (task 180, 2026-11-25)
+
+**V inspected action contracts / synthetic integration:** all twelve boat and
+three submarine campaign action sites use the integrated task-159 transport
+implementation. Activation selects the last matching controller; boats override
+any phase without turning, and submarines replace an idle loop with a one-shot
+at the same anchor and retire. Missing/retired boat and submarine targets now
+silently do nothing instead of adding an engine warning. The private campaign
+check exercises each action through ScriptRunner's delayed latch.
+
+Invented scripts cover boarding and hidden passenger counts, old tactic removal,
+arrival rectangles, fresh landing groups, submarine departure, victory, complete
+boat return, loss-triggered defeat and command-log replay. Existing eligibility,
+loading order, landing rings, requester cancellation and loss controls remain.
+The [gap list](script_runtime_gap_list.md) marks fifteen action sites implemented;
+the [aggregate report](script_approximation_report.md) records 224 remaining
+approximate sites. Four historical Johnka sites and shared formation, occupancy,
+landing clearance and exact scheduling approximations remain open. General side
+plans and nested tactic models are absent but do not block these action adapters.
+No original executable or reference runtime was launched. This does not establish
+campaign parity or native Windows/macOS behavior.
+
+Validation: baseline/final Release builds and all 85 CTest entries completed
+(79 passes, six expected skips); pre-commit passed. Private format/engine-data
+checks and all 19 campaign trigger-dispatch controls passed under dummy SDL and
+`unshare -rn` with an isolated installation. The clone-only 15-mission sweep
+reached 720 ticks per mission and confirmed 224 approximate sites, zero
+unsupported sites and one intentional parser no-op. Private logs remain ignored
+under `work/transport180/`. These are Linux implementation checks, not live
+reference or native Windows/macOS results.

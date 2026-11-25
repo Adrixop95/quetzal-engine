@@ -1,6 +1,6 @@
 # Mission script approximation report
 
-Audit: 2026-11-24. Counts cover parsed sites across all fifteen campaign
+Audit: 2026-11-25. Counts cover parsed sites across all fifteen campaign
 missions, including dormant triggers. They count source sites, not executions.
 Only aggregate counts are published; scripts, mission breakdowns and reports
 remain private. **V** denotes inspected reference behavior; synthetic checks
@@ -9,9 +9,9 @@ verify the independent implementation, not reference parity.
 ## Ranked aggregate inventory
 
 The baseline Release sweep passed all 15 missions through 720 ticks and
-reported **255 approximate sites**. After the clock corrections, **239 sites**
-remain approximate, a reduction of **16**. Unsupported execution sites remain
-zero; the intentional parser no-op count remains one. Partial controller fixes
+reported **255 approximate sites**. After the clock and transport dispatch
+corrections, **224 sites** remain approximate, a reduction of **31** (16 clock
+and 15 transport sites). Unsupported execution sites remain zero; the intentional parser no-op count remains one. Partial controller fixes
 retain approximate dispositions wherever native integration is still missing.
 
 | Rank | Section | Native code | Kind | Before | After |
@@ -23,7 +23,7 @@ retain approximate dispositions wherever native integration is still missing.
 | 5 | action | 0a | TacticSetCycledPath | 15 | 15 |
 | 6 | condition | 05 | SideUnits | 15 | 15 |
 | 7 | action | 04 | TacticJoinTactic | 13 | 13 |
-| 8 | action | 0d | BoatActivate | 12 | 12 |
+| 8 | action | 0d | BoatActivate | 12 | 0 |
 | 9 | action | 13 | SideCameraActivate | 11 | 11 |
 | 10 | condition | 0b | TacticAttacked | 11 | 11 |
 | 11 | action | 03 | TacticMoveTo | 10 | 10 |
@@ -34,7 +34,7 @@ retain approximate dispositions wherever native integration is still missing.
 | 16 | condition | 13 | SideUnitsInRect | 7 | 7 |
 | 17 | action | 14 | CenterView | 5 | 5 |
 | 18 | action | 0f | JohnkaEnable | 4 | 4 |
-| 19 | action | 0e | SubmarineGo | 3 | 3 |
+| 19 | action | 0e | SubmarineGo | 3 | 0 |
 | 20 | condition | 06 | SideUnitsOfId | 3 | 3 |
 | 21 | condition | 14 | SideUnitsOfUGIInRect | 3 | 3 |
 | 22 | action | 05 | TimerSet | 2 | 2 |
@@ -43,8 +43,8 @@ retain approximate dispositions wherever native integration is still missing.
 | 25 | action | 19 | PrintString | 1 | 1 |
 | 26 | action | 1e | TacticKill | 1 | 1 |
 
-All other parsed codes had zero baseline approximate sites. The condition
-LocalTime contributes seven closed sites and GlobalTime nine. Action codes
+The ranking retains baseline order. All other parsed codes had zero baseline
+approximate sites. The condition LocalTime contributes seven closed sites and GlobalTime nine. Action codes
 and condition codes are separate namespaces. Counts use the corrected native
 mapping: setCycledPath is 0a and setInvertedPath is 0b. The earlier smoke name
 array swapped these two labels; fixing the mapping changes no site total.
@@ -118,3 +118,38 @@ tracked files and this new report. Pinned hashes from the invented engine
 fixture were updated for the explicit group state and joining flag in replay
 semantics 16; these are independent-engine expectations, not native captures.
 Native Windows/macOS CI and live reference parity were not verified here.
+
+## Transport dispatch follow-up (task 180, 2026-11-25)
+
+The twelve BoatActivate and three SubmarineGo sites now have closed action
+contracts in the [gap list](script_runtime_gap_list.md). Task 159 already supplies
+the independent boat states, phases, loading scan, landing rings and cargo-loss
+rules. The action adapter selects the last matching scenario, forces immediate
+boat travel without changing direction, or replaces the stationary submarine
+loop with its finite departure effect and retires its controller. A missing or
+retired target silently does nothing, as the native handlers specify.
+
+New invented-script controls exercise complete passenger trips and boat loss,
+including count/rectangle/tactic gates and delayed victory/defeat, activation in
+every phase, duplicate lookup, submarine lifetime and replay. The campaign-site
+check now uses ScriptRunner dispatch for every action. These close fifteen
+action sites, not all nineteen historical transport sites: four Johnka
+sites remain approximate. General script conditions retain their dispositions;
+there is no separate boat-arrived or submarine-arrived condition in the grammar.
+
+Shared formation, shore routing, collision/placement and exact tick scheduling
+boundaries remain explicit in the gap list and task-159 specification. No live
+reference parity or native Windows/macOS result is inferred from these tests.
+Replay semantics remain 16: the runtime correction removes presentation warnings
+only; transport state transitions and gameplay hashes are unchanged.
+
+Validation: baseline and final Linux Release builds passed. Both full CTest runs
+completed all 85 entries with 79 passes and six expected private-data/network
+skips. Pre-commit passed. Separate private format/engine-data checks and all 19
+campaign trigger-dispatch controls passed. The final clone-only sweep completed
+all 15 missions at 720 ticks, confirming 224 approximate sites, zero unsupported
+sites and one intentional parser no-op. The retained manifest matches the final
+binary and gap-list hashes. Private checks used installation copies with immutable
+asset symlinks, private profiles, dummy SDL, timeouts and `unshare -rn`; outputs
+remain ignored under `work/transport180/`. No original executable or reference
+runtime was launched. Native Windows/macOS CI was not run in this worktree.

@@ -107,6 +107,9 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(catalog['action', 'TacticSetInvertedPath']['code'], '0b')
         self.assertEqual(catalog['condition', 'LocalTime']['disposition'], 'implemented')
         self.assertEqual(catalog['condition', 'GlobalTime']['disposition'], 'implemented')
+        for kind in ('BoatActivate', 'SubmarineGo'):
+            self.assertEqual(catalog['action', kind]['disposition'], 'implemented')
+        self.assertEqual(catalog['action', 'JohnkaEnable']['disposition'], 'approximate')
         with self.assertRaises(ValueError):
             smoke.script_gaps([dict(section='action', kind='unknown')], catalog)
 
