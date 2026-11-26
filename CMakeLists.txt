@@ -169,7 +169,14 @@ set_tests_properties(formation PROPERTIES LABELS "unit" TIMEOUT 20)
 add_test(NAME path_bench_smoke COMMAND path_bench --smoke)
 set_tests_properties(path_bench_smoke PROPERTIES LABELS "unit;benchmark" TIMEOUT 20)
 find_package(Python3 COMPONENTS Interpreter)
+add_executable(test_type_coverage tests/test_type_coverage.cpp)
+target_link_libraries(test_type_coverage PRIVATE aztec_engine_lib)
+aztec_warnings(test_type_coverage)
 if(Python3_Interpreter_FOUND)
+  add_test(NAME type_coverage COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_type_coverage.py $<TARGET_FILE:test_type_coverage>
+    ${CMAKE_CURRENT_SOURCE_DIR}/docs/data)
+  set_tests_properties(type_coverage PROPERTIES LABELS "unit" TIMEOUT 150)
   add_test(NAME formation_fit COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_formation_fit.py $<TARGET_FILE:formation_probe>)
   set_tests_properties(formation_fit PROPERTIES LABELS "unit" TIMEOUT 20)

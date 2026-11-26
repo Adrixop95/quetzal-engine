@@ -205,7 +205,7 @@ void RulesData::init_defaults() {
     r.anim_id = data::kTypeAnims[t].anim;
     r.turret_anim_id = data::kTypeAnims[t].anim2;
     r.structure = ti && ti->is_structure();
-    r.mobile = r.kind == 0 || r.kind == 1 || r.kind == 4 || r.kind == 6 || r.kind == 8 || r.kind == 10;
+    r.mobile = r.kind == 0 || r.kind == 1 || r.kind == 4 || r.kind == 6 || r.kind == 8 || r.kind == 9 || r.kind == 10;
     r.nonorganic = r.structure || r.kind == 1 || r.kind == 4 || r.kind == 6 || r.kind == 9;
     r.flier = r.kind == 3 || r.kind == 5;
     r.armed = r.kind == 0 || r.kind == 1 || r.kind == 6 || r.kind == 7 || r.kind == 9 || r.kind == 10;
@@ -213,6 +213,9 @@ void RulesData::init_defaults() {
     r.large = r.kind == 1 || r.kind == 4 || r.kind == 6;
     if (r.large) r.class_src = Src::Verified;
     r.speed = 8 * 256;
+    // V: Cannon walk sequences cover 48 pixels in eight ticks (animation_timing.md).
+    // G: constant pacing replaces the native per-frame displacement for now.
+    if (r.kind == 9) r.speed = 6 * 256;
     r.radius_px = r.large ? 20 : 14;
     r.range_px = is_melee(t) ? 56 : 288;
     if (r.structure) { r.hp_max = 30000; r.foot_w = r.foot_h = 2; r.range_px = 336; r.dmg = 400; }
