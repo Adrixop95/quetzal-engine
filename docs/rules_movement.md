@@ -100,7 +100,8 @@ operations on constant numbers), `z = 3` at each point, last point = goal. Numbe
 | Bird (kind 5), Zeppelin (kind 3) | `0x407820`/`0x4716f0`: target = centre of the tile in 24.8; wave waypoints form a straight track | **no occupancy** (`CanEnter` = map bounds only) | straight track (1.7) |
 | Boat (kind 8), Johnka (kind 10) | `+0xcc` = stub; scripted movement (waypoints from `[Boat#]`/`[Johnka#]`, `Boat.cpp` `0x408770`, `Johnka` `0x42dce0`) | outside the wave | not controlled by the player; **not checked in detail** [hyp] |
 | Building (kind 2) | fixed footprint | occupancy blocks the ground search when `flag=0`; terrain layers remain separate | [ver-code]; footprint dimensions depend on type |
-| Defence/Cannon (kind 7/9) | treated as stationary in the existing analysis | ground blockers | full kind-9 movement/footprint audit remains open [hyp]; UGI cannon id 4 is actually kind 6, not kind 9 |
+| Defence (kind 7) | stationary | ground blockers | UGI cannon id 4 is actually kind 6, not kind 9 |
+| Cannon / Hopcannon (kind 9) | walk animation covers 48 px in eight ticks; see [animation_timing.md](animation_timing.md) [ver-data] | engine ground agent; constant six-pixel pacing [hyp] | corrects the older stationary hypothesis; native per-frame hops, restart/turn phase and collision class remain open |
 | Other (kind 11) | no general player movement contract established | unknown | excluded from mobile benchmarks [hyp] |
 
 ## 3. Groups: `Tactic.cpp` (vtable `0x48fbd4`, 83 methods) [partly ver]

@@ -1,5 +1,39 @@
 # Engine: status of the simulation rules (verified / measured / placeholder)
 
+## All-type integration coverage (2026-11-25)
+
+`type_coverage` now checks all 90 type IDs against JSON-derived expectations and
+loaded CSV descriptors on synthetic maps, including body/turret sprite selection,
+movement controllers, armed/unarmed weapon dispatch and configured effects,
+category/physical/fire damage and protection, explicit death effects, and engine
+save restoration with matching continuation ticks. All 123 build-tree recipes are
+checked, including prerequisite scope and disabled attained hall upgrades; all
+78 distinct recipe types complete production. Types absent from the tree use
+placement, without invented recipes. See the grouped
+[type coverage matrix](type_coverage_matrix.md) for applicability and G limits.
+
+**V defect / G pacing boundary:** Hopcannon 87 was incorrectly stationary, which
+also rejected player Move/Attack and disabled their UI actions. Its V walk
+animation covers a tile in eight ticks (`animation_timing.md`). Kind 9 now gets a
+ground movement agent and accepts those commands; a regression selects the
+farther enemy explicitly. Six pixels per tick approximates average cardinal
+speed, retaining placeholder speed provenance and collision classification.
+Per-frame hopping, restart/turn phases and native movement parity remain G.
+Engine save replay version is now 17 because this changes simulation semantics;
+save-container version remains 5, and older replay versions are refused.
+
+These are synthetic integration contracts, including provisional marker/death
+behavior for scripted types. Existing special-unit, weapon, transport and script
+tests remain necessary. No original executable was run, and this does not close
+the native animation, projectile, rendering or original-save dependencies or
+declare the complete playable-game goal achieved.
+
+Validation (2026-11-26): Release build passed; CTest recorded 80 passes, six skips
+and zero failures across 86 entries. Separate private-data `formats`/`engine`
+checks passed under dummy SDL and `unshare -rn` with a private installation copy.
+Pre-commit passed for all tracked files and the new coverage files. Native
+Windows/macOS execution was not verified locally.
+
 ## Research verification-label audit (2026-11-23)
 
 The [label audit](label_audit.md) reviews all 27 documents in the private
