@@ -1,6 +1,7 @@
 # Mission script approximation report
 
 Audit: 2026-11-25. Counts cover parsed sites across all fifteen campaign
+Audit: 2026-11-28. Counts cover parsed sites across all fifteen campaign
 missions, including dormant triggers. They count source sites, not executions.
 Only aggregate counts are published; scripts, mission breakdowns and reports
 remain private. **V** denotes inspected reference behavior; synthetic checks
@@ -16,13 +17,16 @@ reported **255 approximate sites**. The clock corrections left 239. The camera
 and interface follow-up closes another 20 runtime sites, leaving **219 sites**
 approximate, a cumulative reduction of **36**. Unsupported execution sites remain
 zero; the intentional parser no-op count remains one. Partial controller fixes
+reported **255 approximate sites**. After the clock, transport dispatch and town-count
+corrections, **199 sites** remain approximate, a reduction of **56** (16 clock,
+15 transport and 25 town-count sites). Unsupported execution sites remain zero; the intentional parser no-op count remains one. Partial controller fixes
 retain approximate dispositions wherever native integration is still missing.
 
 | Rank | Section | Native code | Kind | Before | After |
 | --- | --- | --- | --- | --- | --- |
 | 1 | action | 02 | TacticAttackTown | 29 | 29 |
 | 2 | action | 18 | TacticGiftToSide | 29 | 29 |
-| 3 | condition | 03 | SideTowns | 25 | 25 |
+| 3 | condition | 03 | SideTowns | 25 | 0 |
 | 4 | condition | 11 | TacticValid | 18 | 18 |
 | 5 | action | 0a | TacticSetCycledPath | 15 | 15 |
 | 6 | condition | 05 | SideUnits | 15 | 15 |
@@ -100,6 +104,7 @@ and clock changes do not require them. This report does not claim that all 255
 sites now match native behavior.
 
 ## Validation before the camera and interface follow-up
+## Validation of the 2026-11-24 changes
 
 Baseline: Release build, all 85 CTest entries (79 passed, six skipped),
 and all pre-commit hooks passed before edits. Private smoke used a fresh
@@ -224,3 +229,55 @@ copies; partial interrupted output was preserved separately. The completed
 manifest matches the final binary and catalog. These passive smoke results do
 not establish campaign completion or native parity. Pre-commit and
 `git diff --check` passed; all changes remain uncommitted.
+
+## Priority follow-up (2026-11-25)
+
+**V implemented:** town conditions now count the current owner's controller
+records, independently of hall progress, hall-shaped objects and duplicate
+scenario IDs. Attack-town uses the designated hall; town-source moves are
+no-ops. Town-source joins recruit living non-buildings into a fresh group.
+Gift resets the receiving base group, copies scenario identity and handles
+same-owner town resets. All path variants cancel prior work, retain an existing
+cycle flag across ordinary setters and consume waypoints by shared-anchor arrival.
+The [per-code audit](script_runtime_gap_list.md#priority-script-follow-up-2026-11-25)
+records addresses and retained G policies.
+
+The other four highest-ranked codes retain approximate classifications, as does
+join: native duplicate plain-controller identity, validity-byte phase, nested
+ownership/recovery, member-order side effects, obstructed-route cycling and exact
+path/controller scheduling remain incomplete. Task 178's base controller is
+present; its documented full native hierarchy/lifetime dependency is still absent.
+Known dispatch and direct-member behavior were implemented without that dependency.
+This is partial completion of the priority request, not closure of all five codes.
+
+Synthetic controls cover all five requested codes and join, plus path replacement
+while following, forward/reverse traversal, duplicate anchor points, interruption
+before arrival, persistent cycling, source/receiver identity collisions, town
+counts and ownership, same-owner production/repair resets, preservation of
+individual defence IDs, and exclusion of separate groups that merely remember
+a home town. Receiving controller scenario identity is hashed and reconstructed
+through ordinary script replay. No original
+executable or reference runtime was launched. All private reports remain ignored.
+
+
+## Develop integration verification (2026-11-28)
+
+The landing regression came from restoring stale boat/submarine catalogue rows
+from the older task base. Develop's task-180 transport closures and silent
+missing-target behavior are retained, together with its type-rule changes.
+The catalogue regression test checks all three closed kinds: BoatActivate,
+SubmarineGo and SideTowns. The combined aggregate is **199 approximate sites**,
+25 fewer than develop's 224; the earlier task-base total of 214 omitted the
+fifteen transport closures. Replay semantics advance to 18 because develop
+already uses version 17.
+
+Verification used a fresh public-source snapshot of develop with the changed
+files applied and a separate worktree-local Release build. All 86 CTest entries
+finished with **80 passes and six expected private-data/network skips**,
+including mission_smoke, type coverage and transport. Separate private format
+and engine checks passed under dummy SDL and `unshare -rn`. A fresh isolated
+720-tick sweep passed all 15 missions and confirmed 199 approximate sites, zero
+unsupported sites and one intentional parser no-op. Its retained private
+manifest matches the combined binary and gap-catalogue hashes. Pre-commit passed.
+No original executable/reference runtime or native Windows/macOS CI was run.
+Remaining G dependencies above are unchanged; these are bounded clone checks.

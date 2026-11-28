@@ -64,6 +64,8 @@ class ScriptRunner {
   struct Timer { bool running = true; int32_t value = 0; };
   void set_enabled(int id, bool enabled);
   void run(GameSim& sim, World& w, const script::Action& a);
+  struct TacticLookup { std::vector<uint32_t> members; int town = -1; };
+  TacticLookup lookup_tactic(const World& w, int side, int tactic) const;
   std::vector<uint32_t> tactic_members(const World& w, int side, int tactic) const;
   int resolve_side(const World& w, int s) const { return s == script::kLocal ? w.script_side : s; }
   int count_units(const World& w, int side) const;

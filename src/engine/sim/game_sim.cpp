@@ -2459,6 +2459,22 @@ void GameSim::transfer_objects(World& w, const std::vector<uint32_t>& ids, int r
   }
 }
 
+void GameSim::script_gift_group(World& w, const std::vector<uint32_t>& ids, int recipient, int group, int scenario) {
+  if (recipient < 0 || recipient >= int(w.side_state.size()) || group < 0) return;
+  transfer_objects(w, ids, recipient);
+  for (auto id : ids) {
+    auto* member = w.find_mut(id);
+    if (!member || !member->alive) continue;
+    member->tactic = group; member->transient_tactic = 0; member->town = -1;
+    member->attack_mode = AttackMode::Balanced;
+  }
+  refresh_tactics(w);
+  // V: the new controller copies ScenarioId; individual object IDs are unchanged.
+  if (auto found = w.unit_tactics.find({recipient, group}); found != w.unit_tactics.end())
+    found->second.scenario_id = scenario;
+  w.tactic_attacked_by.erase({recipient, group});
+}
+
 void GameSim::transfer_town(World& w, int town, int recipient) {
   change_town_owner(w, town, recipient, false);
 }
@@ -2468,7 +2484,7 @@ void GameSim::change_town_owner(World& w, int town, int recipient, bool captured
       recipient >= int(w.side_state.size())) return;
   auto& definition = w.mission.towns[size_t(town)];
   const int previous = definition.side;
-  if (previous == recipient || previous < 0 || previous >= int(w.side_state.size())) return;
+  if ((captured && previous == recipient) || previous < 0 || previous >= int(w.side_state.size())) return;
   auto computer = [&](int side) {
     return std::any_of(w.mission.sides.begin(), w.mission.sides.end(),
         [side](const auto& s) { return s.index == side && s.only_comp; });
@@ -2508,6 +2524,8 @@ void GameSim::change_town_owner(World& w, int town, int recipient, bool captured
   std::vector<uint32_t> members, retained;
   for (auto& object : w.objects)
     if (object.alive && object.side == previous && object.town == definition.index) {
+      // A separate group may remember its home town without being a direct member.
+      if (!captured && object.tactic != definition.scenario_id && !object.town_hall) continue;
       if (!captured || rules_->type(object.type).structure) members.push_back(object.id);
       else {
         object.town = -1;
@@ -2679,6 +2697,7 @@ uint64_t GameSim::state_hash(const World& w) const {
     mix(uint32_t(key.first)); mix(uint64_t(key.second)); mix(uint32_t(t.x)); mix(uint32_t(t.y));
     mix(t.scan_ticks); mix(t.wait_ticks); mix(t.path_ticks); mix(t.random); mix(uint8_t(t.state)); mix(t.merging); mix(t.lost); mix(t.urgent);
     mix(uint32_t(t.parent.first)); mix(uint64_t(t.parent.second)); mix(uint32_t(t.dest_x)); mix(uint32_t(t.dest_y)); mix(t.node);
+    if (t.scenario_id >= 0) { mix(0x7363656e6172696fULL); mix(uint32_t(t.scenario_id)); }
     mix(t.members.size()); for (auto id : t.members) mix(id);
     mix(t.enemies.size()); for (auto enemy : t.enemies) { mix(uint32_t(enemy.first)); mix(uint64_t(enemy.second)); }
     mix(t.path.size()); for (auto [x, y] : t.path) { mix(uint32_t(x)); mix(uint32_t(y)); }

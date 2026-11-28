@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <limits>
 
 #include "core/text.hpp"
 #include "engine/sim/game_sim.hpp"
@@ -28,6 +29,19 @@ bool is_town_building(int t) {
   static const int th[] = {10, 11, 19, 24, 37, 38, 47, 63, 64, 71, 76};
   for (int v : th) if (v == t) return true;
   return false;
+}
+
+// G: stable side-local numbers stand in for independently allocated controllers.
+static int fresh_script_group(const World& w, int side) {
+  for (int64_t group = 0; group <= std::numeric_limits<int>::max(); ++group) {
+    const bool used = w.unit_tactics.contains({side, group}) || std::any_of(w.objects.begin(), w.objects.end(), [&](const Object& o) {
+      return o.side == side && o.tactic == group;
+    }) || std::any_of(w.mission.towns.begin(), w.mission.towns.end(), [&](const TownDef& town) {
+      return town.side == side && town.scenario_id == group;
+    });
+    if (!used) return int(group);
+  }
+  return -1;
 }
 
 bool ScriptRunner::supports(ActKind kind) {
@@ -136,33 +150,39 @@ int ScriptRunner::count_units(const World& w, int side) const {
 }
 
 int ScriptRunner::count_towns(const World& w, int side) const {
-  int n = 0;
-  for (const Object& o : w.objects)
-    if (!o.removed && o.alive && o.side == side && is_town_building(o.type) && o.progress >= 1000) n++;
-  return n;
+  // V: side +0x668 is the town-list length, independent of hall progress,
+  // member count, scenario ID and diplomacy (0x417bb0, 0x446fe0).
+  return int(std::count_if(w.mission.towns.begin(), w.mission.towns.end(),
+      [side](const TownDef& town) { return town.side == side; }));
+}
+
+ScriptRunner::TacticLookup ScriptRunner::lookup_tactic(const World& w, int side, int tactic) const {
+  TacticLookup result;
+  const auto state = tactics_.find({side, tactic});
+  // V: reserved living plain groups precede the side's town list.
+  if (state == tactics_.end() || state->second.locked) {
+    for (const auto& o : w.objects) {
+      const bool town_member = std::any_of(w.mission.towns.begin(), w.mission.towns.end(),
+          [&](const TownDef& town) { return town.side == side && town.index == o.town && town.scenario_id == o.tactic; });
+      if (script_present(o) && o.side == side && !town_member && o.tactic == tactic && tactic >= 0)
+        result.members.push_back(o.id);
+    }
+  }
+  if (!result.members.empty()) return result;
+  for (size_t i = 0; i < w.mission.towns.size(); ++i) {
+    const auto& town = w.mission.towns[i];
+    if (town.side != side || town.scenario_id != tactic) continue;
+    result.town = int(i);
+    for (const auto& o : w.objects)
+      if (script_present(o) && o.side == side && o.town == town.index &&
+          (o.tactic == town.scenario_id || o.town_hall)) result.members.push_back(o.id);
+    break;
+  }
+  return result;
 }
 
 std::vector<uint32_t> ScriptRunner::tactic_members(const World& w, int side, int tactic) const {
-  std::vector<uint32_t> v;
-  const auto state = tactics_.find({side, tactic});
-  // V: only reserved plain tactics are addressable, with towns as the fallback.
-  if (state == tactics_.end() || state->second.locked) {
-    for (const Object& o : w.objects) {
-      const bool town_group = std::any_of(w.mission.towns.begin(), w.mission.towns.end(), [&](const TownDef& t) {
-        return t.side == side && t.index == o.town && t.scenario_id == tactic;
-      });
-      if (script_present(o) && o.side == side && !town_group && o.tactic == tactic && tactic >= 0)
-        v.push_back(o.id);
-    }
-  }
-  if (!v.empty()) return v;
-  for (const auto& town : w.mission.towns) {
-    if (town.side != side || town.scenario_id != tactic) continue;
-    for (const Object& o : w.objects)
-      if (script_present(o) && o.side == side && o.town == town.index) v.push_back(o.id);
-    break;
-  }
-  return v;
+  return lookup_tactic(w, side, tactic).members;
 }
 
 static bool tactic_busy(const World& w, const std::vector<uint32_t>& members) {
@@ -262,9 +282,10 @@ bool ScriptRunner::eval(const World& w, const Condition& c) const {
     case CondKind::TacticAttacked:
     case CondKind::TacticIdle:
     case CondKind::TacticLocked: {
-      std::vector<uint32_t> m = tactic_members(w, side, c.id);
+      const auto lookup = lookup_tactic(w, side, c.id);
+      const auto& m = lookup.members;
       // V: an absent tactic does not satisfy idle/attacked/locked comparisons.
-      if (m.empty() && c.kind != CondKind::TacticValid) return false;
+      if (m.empty() && lookup.town < 0 && c.kind != CondKind::TacticValid) return false;
       int64_t v = 0;
       if (c.kind == CondKind::TacticValid) v = m.empty() ? 0 : 1;
       else if (c.kind == CondKind::TacticAttacked) {
@@ -388,17 +409,19 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
       break;
     }
     case ActKind::TacticAttackTown: {
-      const auto members = tactic_members(w, side, a.id);
-      if (members.empty()) break;
+      const auto source = lookup_tactic(w, side, a.id);
+      const auto& members = source.members;
+      // V: the town move slot is a no-op, not an order to its recruits.
+      if (source.town >= 0 || members.empty()) break;
       // V: first matching town controller, irrespective of alliance. Own towns
       // are ignored; a hall's object scenario ID is not the town scenario ID.
       const auto town = std::find_if(w.mission.towns.begin(), w.mission.towns.end(),
           [&](const TownDef& candidate) { return candidate.scenario_id == a.a; });
       if (town == w.mission.towns.end() || town->side == side) break;
-      const auto hall = std::find_if(w.objects.begin(), w.objects.end(), [&](const Object& o) {
-        return script_present(o) && o.side == town->side && o.town == town->index && is_town_building(o.type);
-      });
-      if (hall == w.objects.end()) break;
+      const size_t town_index = size_t(town - w.mission.towns.begin());
+      const Object* hall = town_index < w.town_state.size() ? w.find(w.town_state[town_index].hall) : nullptr;
+      // V: use the town's designated hall, not another hall-shaped member.
+      if (!hall) break;
       const int x = (hall->cur_x / 256 / kTilePx) * kTilePx + kTilePx / 2;
       const int y = (hall->cur_y / 256 / kTilePx) * kTilePx + kTilePx / 2;
       sim.script_order(w, members, x, y, true);
@@ -406,26 +429,59 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
       break;
     }
     case ActKind::TacticMoveTo: {
-      const auto members = tactic_members(w, side, a.id);
-      if (members.empty()) break;
+      const auto source = lookup_tactic(w, side, a.id);
+      const auto& members = source.members;
+      // V: the town move slot is a no-op, not an order to its recruits.
+      if (source.town >= 0 || members.empty()) break;
       sim.script_order(w, members, std::clamp(a.a, 0, std::max(0, w.terrain.w - 1)) * kTilePx + kTilePx / 2,
           std::clamp(a.b, 0, std::max(0, w.terrain.h - 1)) * kTilePx + kTilePx / 2, true);
       tactics_[{side, a.id}].path = -1;
       break;
     }
     case ActKind::TacticJoinTactic: {
-      const auto source = tactic_members(w, side, a.id), target = tactic_members(w, side, a.a);
-      if (!source.empty() && !target.empty()) {
-        sim.script_join(w, source, target);
+      auto source = lookup_tactic(w, side, a.id);
+      auto destination = lookup_tactic(w, side, a.a);
+      auto& target = destination.members;
+      if (destination.town >= 0 && size_t(destination.town) < w.town_state.size()) {
+        const auto hall = std::find(target.begin(), target.end(), w.town_state[size_t(destination.town)].hall);
+        if (hall != target.end()) std::rotate(target.begin(), hall, hall + 1);
+      }
+      if (!source.members.empty() && !target.empty()) {
+        if (source.town >= 0) {
+          // V: the town script-join override recruits living non-buildings into
+          // a new base group, then follows/merges that group (0x45c9d0).
+          std::erase_if(source.members, [&](uint32_t id) {
+            const auto* info = type_info(w.find(id)->type);
+            return !info || info->is_structure();
+          });
+          if (source.members.empty()) break;
+          const int group = fresh_script_group(w, side);
+          if (group < 0) break;
+          sim.script_stop(w, source.members);
+          for (auto id : source.members) {
+            auto& member = *w.find_mut(id);
+            member.tactic = group; member.transient_tactic = 0; member.town = -1;
+            member.attack_mode = AttackMode::Balanced;
+          }
+          tactics_[{side, group}] = TacticState{};
+          tactics_[{side, group}].locked = false;
+        }
+        sim.script_join(w, source.members, target);
         tactics_[{side, a.id}].path = -1;
       }
       break;
     }
     case ActKind::TacticSetPath: case ActKind::TacticSetInvertedPath: case ActKind::TacticSetCycledPath: case ActKind::TacticSetCycledInvertedPath: {
-      if (tactic_members(w, side, a.id).empty()) break;
+      const auto source = lookup_tactic(w, side, a.id);
+      if (source.members.empty()) break;
+      sim.script_stop(w, source.members); // V: native path setters first cancel (+0xdc).
+      // V: town path search returns false; appending waypoints cannot launch it.
+      if (source.town >= 0) break;
       TacticState& t = tactics_[{side, a.id}];
       t.path = a.a; t.path_index = 0;
-      t.cycled = a.kind == ActKind::TacticSetCycledPath || a.kind == ActKind::TacticSetCycledInvertedPath;
+      // V: ordinary/inverted setters cancel the route but do not clear +0xe8.
+      // Only the cycled variants explicitly set that persistent controller flag.
+      t.cycled = t.cycled || a.kind == ActKind::TacticSetCycledPath || a.kind == ActKind::TacticSetCycledInvertedPath;
       t.inverted = a.kind == ActKind::TacticSetInvertedPath || a.kind == ActKind::TacticSetCycledInvertedPath;
       break;
     }
@@ -444,38 +500,20 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
     case ActKind::TacticGiftToSide: {
       int to = resolve_side(w, a.a);
       if (to < 0 || to >= int(w.side_state.size())) break;
-      auto members = tactic_members(w, side, a.id);
-      if (members.empty()) break;
-      const Object* first = w.find(members.front());
-      const bool town_group = std::any_of(w.mission.towns.begin(), w.mission.towns.end(), [&](const TownDef& t) {
-        return t.side == side && t.index == first->town && t.scenario_id == a.id;
-      });
-      if (town_group) {
-        for (size_t i = 0; i < w.mission.towns.size(); ++i)
-          if (w.mission.towns[i].index == first->town && w.mission.towns[i].side == side) {
-            sim.transfer_town(w, int(i), to);
-            tactics_[{side, a.id}].path = -1;
-            tactics_[{to, a.id}] = TacticState{};
-            break;
-          }
+      const auto source = lookup_tactic(w, side, a.id);
+      const auto& members = source.members;
+      if (source.town >= 0) {
+        sim.transfer_town(w, source.town, to);
+        tactics_[{side, a.id}].path = -1;
+        // A preexisting reserved receiving group with this ID keeps priority.
+        tactics_.try_emplace({to, a.id});
       } else {
-        // Allocate an independent receiving group, avoiding all existing identities.
-        int group = 0;
-        for (;;) {
-          const bool used = std::any_of(w.objects.begin(), w.objects.end(), [&](const Object& o) {
-            return o.side == to && o.tactic == group;
-          }) || std::any_of(w.mission.towns.begin(), w.mission.towns.end(), [&](const TownDef& t) {
-            return t.side == to && t.scenario_id == group;
-          });
-          if (!used) break;
-          ++group;
-        }
-        sim.transfer_objects(w, members, to);
-        for (uint32_t id : members) {
-          auto* member = w.find_mut(id);
-          member->tactic = group;
-          member->town = -1;
-        }
+        if (members.empty()) break;
+        const int group = fresh_script_group(w, to);
+        if (group < 0) break;
+        sim.script_gift_group(w, members, to, group, a.id);
+        tactics_[{side, a.id}].path = -1;
+        tactics_[{to, group}] = TacticState{};
         tactics_[{to, group}].locked = false;
       }
       break;
@@ -489,20 +527,39 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
 void ScriptRunner::follow_paths(GameSim& sim, World& w) {
   for (auto& kv : tactics_) {
     TacticState& t = kv.second;
-    if (t.path < 0 || t.path >= int(w.mission.paths.size()) || w.mission.paths[size_t(t.path)].empty()) continue;
-    const auto& pts = w.mission.paths[size_t(t.path)];
-    std::vector<uint32_t> m = tactic_members(w, kv.first.first, kv.first.second);
-    if (m.empty()) continue;
-    if (tactic_busy(w, m)) continue;
-    int n = int(pts.size());
-    int idx = t.path_index;
-    if (idx >= n) {
-      if (!t.cycled) { t.path = -1; continue; }
-      idx = 0;
+    if (t.path < 0) continue;
+    if (t.path >= int(w.mission.paths.size()) || w.mission.paths[size_t(t.path)].empty()) {
+      // G: invalid native paths are fatal diagnostics; safely cancel in the engine.
+      t.path = -1;
+      continue;
     }
-    int k = t.inverted ? n - 1 - idx : idx;
-    sim.script_order(w, m, std::clamp(pts[size_t(k)].first, 0, w.terrain.w - 1) * kTilePx + kTilePx / 2, std::clamp(pts[size_t(k)].second, 0, w.terrain.h - 1) * kTilePx + kTilePx / 2, true);
-    t.path_index = idx + 1;
+    const auto& pts = w.mission.paths[size_t(t.path)];
+    const auto m = tactic_members(w, kv.first.first, kv.first.second);
+    if (m.empty()) { t.path = -1; continue; }
+    if (tactic_busy(w, m)) continue;
+    const auto group = w.unit_tactics.find(tactic_key(*w.find(m.front())));
+    if (group == w.unit_tactics.end()) continue;
+    const int n = int(pts.size());
+    // V: consume waypoints equal to the shared anchor, not a member position.
+    // A stopped/failed route by itself does not complete a waypoint (0x453570).
+    int skipped = 0;
+    while (skipped < n) {
+      if (t.path_index >= n) {
+        if (!t.cycled) { t.path = -1; break; }
+        t.path_index = 0;
+      }
+      const int k = t.inverted ? n - 1 - t.path_index : t.path_index;
+      const auto [x, y] = pts[size_t(k)];
+      if (group->second.x != x || group->second.y != y) break;
+      ++t.path_index;
+      ++skipped;
+    }
+    if (skipped == n || (!t.cycled && t.path_index >= n)) t.path = -1;
+    if (t.path < 0) continue;
+    if (t.path_index >= n) t.path_index = 0;
+    const int k = t.inverted ? n - 1 - t.path_index : t.path_index;
+    sim.script_order(w, m, std::clamp(pts[size_t(k)].first, 0, std::max(0, w.terrain.w - 1)) * kTilePx + kTilePx / 2,
+        std::clamp(pts[size_t(k)].second, 0, std::max(0, w.terrain.h - 1)) * kTilePx + kTilePx / 2, true);
   }
 }
 

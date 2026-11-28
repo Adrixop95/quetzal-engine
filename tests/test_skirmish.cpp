@@ -134,6 +134,14 @@ static void setup_and_replay(GameData& data, const fs::path& root) {
     advance(battle, elimination, 2); CHECK(elimination.outcome == kRunning);
     for (const auto& object : elimination.objects)
       if (object.side == (lose ? 1 : 2)) battle.script_kill(elimination, object.id);
+    // Killing hall-shaped objects does not remove the persistent town controller.
+    aztec::script::Condition town_count;
+    town_count.kind = aztec::script::CondKind::SideTowns;
+    town_count.side = lose ? 1 : 2; town_count.value = 1;
+    CHECK(battle.script().eval(elimination, town_count));
+    for (size_t town = 0; town < elimination.mission.towns.size(); ++town)
+      if (elimination.mission.towns[town].side == (lose ? 1 : 2))
+        battle.transfer_town(elimination, int(town), lose ? 2 : 1);
     advance(battle, elimination, 2);
     CHECK(elimination.outcome == (lose ? kDefeat : kVictory));
   }

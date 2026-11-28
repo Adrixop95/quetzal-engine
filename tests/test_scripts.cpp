@@ -218,6 +218,9 @@ static void conditions_and_identity() {
   object(w, 11, 2, -1, 12, 12); object(w, 17, 2, -1, 15, 15);
   object(w, 0, 1, 10, 20, 20); object(w, 11, 1, -1, 25, 25);
   w.objects[3].scenario = 42; w.objects[3].defence = true;
+  w.mission.towns = {{0, 2, 12, 12, 1, 0, 50}, {1, 1, 25, 25, 1, 0, 51}};
+  w.objects[2].town = 0; w.objects[2].town_hall = true;
+  w.objects[5].town = 1; w.objects[5].town_hall = true;
   w.side_state[2].money = 50;
   GameSim sim(rules(), Modifications::faithful()); sim.init(w); auto r = runner(w, "");
   const std::string checks[] = {
@@ -265,7 +268,7 @@ static void conditions_and_identity() {
   CHECK(condition(r, w, "side(local).defence(42).valid == 0"));
   w.objects[0].removed = true; CHECK(condition(r, w, "side(local).units == 1"));
   w.objects[1].alive = false; CHECK(condition(r, w, "side(local).tactic(10).valid == 0"));
-  w.objects[2].progress = 999; CHECK(condition(r, w, "side(local).towns == 0"));
+  w.objects[2].progress = 999; CHECK(condition(r, w, "side(local).towns == 1"));
 }
 
 static void rectangle_runtime_categories() {
@@ -357,8 +360,11 @@ static void paths_and_gifts() {
     auto first_hash = r.state_hash();
     r.tick(sim, w); CHECK(r.state_hash() != first_hash); // clock advances while path waits for idle
     CHECK(w.objects[0].dest_y == (inverted ? 9 : 7) * kTilePx + kTilePx / 2);
+    auto& anchor = w.unit_tactics.at({2, 5});
+    anchor.x = inverted ? 8 : 6; anchor.y = inverted ? 9 : 7;
     sim.script_stop(w, {1}); r.tick(sim, w);
     CHECK(w.objects[0].dest_x == (inverted ? 6 : 8) * kTilePx + kTilePx / 2);
+    anchor.x = inverted ? 6 : 8; anchor.y = inverted ? 7 : 9;
     sim.script_stop(w, {1}); r.tick(sim, w);
     CHECK(w.objects[0].order == uint8_t(cycled ? Order::AttackMove : Order::Idle));
     if (cycled) CHECK(w.objects[0].dest_x == (inverted ? 8 : 6) * kTilePx + kTilePx / 2);
@@ -420,7 +426,7 @@ static void gift_detaches_home_and_outcome_precedence() {
 
 static void actions_and_outcomes() {
   World w = world(); object(w, 0, 2, 5, 3, 4); object(w, 11, 1, -1, 10, 12);
-  w.objects[1].scenario = 30; w.objects[1].town = 4;
+  w.objects[1].scenario = 30; w.objects[1].town = 4; w.objects[1].town_hall = true;
   w.mission.towns.push_back({4, 1, 10, 12, 11, 0, 30});
   SideDef sd; sd.index = 2; sd.cameras.push_back({7, 8, 0}); w.mission.sides.push_back(sd);
   GameSim sim(rules(), Modifications::faithful()); sim.init(w);
@@ -943,9 +949,10 @@ static void attack_town_controller_lookup() {
     // First controller wins; object scenario numbers and later duplicates lose.
     w.mission.towns.push_back({7, target_side, 12, 14, 11, 0, 30});
     w.mission.towns.push_back({8, 0, 25, 26, 11, 0, 30});
-    object(w, 11, target_side, -1, 12, 14); w.objects.back().town = 7;
+    object(w, 11, target_side, -1, 18, 19); w.objects.back().town = 7; // earlier hall-shaped decoy
+    object(w, 11, target_side, -1, 12, 14); w.objects.back().town = 7; w.objects.back().town_hall = true;
     w.objects.back().scenario = 999;
-    object(w, 11, 0, -1, 25, 26); w.objects.back().town = 8;
+    object(w, 11, 0, -1, 25, 26); w.objects.back().town = 8; w.objects.back().town_hall = true;
     w.objects.back().scenario = 30;
     // A friendly foreign town is still a valid script destination.
     w.relation[2][1] = kFriend;
@@ -1057,7 +1064,168 @@ static void clock_startup_phase() {
   }
 }
 
+static void town_list_and_validity() {
+  World w = world();
+  // Duplicate scenario IDs and unfinished halls do not collapse town controllers.
+  w.mission.towns = {{0, 2, 4, 4, 1, 0, 50}, {1, 2, 9, 9, 1, 0, 50}, {2, 1, 20, 20, 1, 0, 50}};
+  place_mission_objects(w);
+  object(w, 11, 2, -1, 12, 12); // an unattached hall is not another town
+  w.objects[0].progress = 100;
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+  auto r = runner(w, "");
+  for (const auto& comparison : {"== 2", "!= 1", "> 1", ">= 2", "< 3", "<= 2"})
+    CHECK(condition(r, w, std::string("side(local).towns ") + comparison));
+  CHECK(condition(r, w, "side(1).towns == 1"));
+  CHECK(condition(r, w, "side(7).towns == 0"));
+  sim.script_kill(w, 1);
+  CHECK(condition(r, w, "side(local).towns == 2"));
+  CHECK(condition(r, w, "side(local).tactic(50).valid == 0"));
+  // The first empty town wins over the later live duplicate.
+  CHECK(condition(r, w, "side(local).tactic(999).valid == 0"));
+  sim.transfer_town(w, 1, 1);
+  CHECK(condition(r, w, "side(local).towns == 1"));
+  CHECK(condition(r, w, "side(1).towns == 2"));
+  w.script_side = 1;
+  CHECK(condition(r, w, "side(local).towns == 2"));
+}
+
+static void town_source_dispatch() {
+  World w = world(); w.mission.towns = {{0, 2, 3, 4, 1, 0, 50}, {1, 1, 25, 24, 1, 0, 60}};
+  place_mission_objects(w);
+  object(w, 0, 2, 50, 4, 4); w.objects.back().town = 0;
+  object(w, 17, 2, 50, 5, 4); w.objects.back().town = 0;
+  object(w, 0, 2, 7, 26, 26);
+  object(w, 0, 2, 9, 20, 10); w.objects.back().town = 0; // separate group remembers home
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+  auto r = runner(w, "trigger(0) conditions always actions side(local).tactic(50).moveTo(20,20) "
+      "side(local).tactic(50).attackTown(60) trigger(0).disable end");
+  const auto x = w.objects[2].cur_x, y = w.objects[2].cur_y;
+  r.tick(sim, w); r.tick(sim, w);
+  CHECK(w.objects[2].order == uint8_t(Order::Idle));
+  CHECK(w.objects[2].cur_x == x && w.objects[2].cur_y == y);
+  auto join = runner(w, "trigger(0) conditions always actions side(local).tactic(50).joinTactic(7) trigger(0).disable end");
+  join.tick(sim, w); join.tick(sim, w);
+  CHECK(w.objects[0].town == 0 && w.objects[0].tactic == 50);
+  CHECK(w.objects[3].town == 0 && w.objects[3].tactic == 50); // defence stays home
+  CHECK(w.objects[2].town == -1 && w.objects[2].tactic != 50 && w.objects[2].tactic != 7);
+  const auto& launched = w.unit_tactics.at(tactic_key(w.objects[2]));
+  CHECK(launched.merging && launched.parent == tactic_key(w.objects[4]));
+  CHECK(condition(join, w, "side(local).tactic(50).valid == 1"));
+  CHECK(condition(join, w, "side(local).tactic(" + std::to_string(w.objects[2].tactic) + ").valid == 0"));
+  // A same-owner gift still resets the town's production and repair state.
+  w.town_state[0].repair_mode = RepairMode::Repair;
+  QueueItem item; item.type = 0; item.town = 0; item.total = item.remaining = 10;
+  w.side_state[2].queue.push_back(item);
+  auto gift = runner(w, "trigger(0) conditions always actions side(local).tactic(50).giftToSide(local) trigger(0).disable end");
+  gift.tick(sim, w); gift.tick(sim, w);
+  CHECK(w.side_state[2].queue.empty() && w.town_state[0].repair_mode == RepairMode::Off);
+  CHECK(w.objects[2].town == -1); // detached recruits are not town members
+  CHECK(w.objects[5].town == 0 && w.objects[5].tactic == 9);
+  auto foreign = runner(w, "trigger(0) conditions always actions side(local).tactic(50).giftToSide(1) trigger(0).disable end");
+  foreign.tick(sim, w); foreign.tick(sim, w);
+  CHECK(w.objects[0].side == 1 && w.objects[3].side == 1);
+  CHECK(w.objects[5].side == 2 && w.objects[5].tactic == 9);
+}
+
+static void gift_controller_reset() {
+  World w = world(); object(w, 0, 2, 5, 3, 4); object(w, 0, 2, 5, 4, 4);
+  w.objects[0].attack_mode = w.objects[1].attack_mode = AttackMode::Aggressive;
+  object(w, 0, 1, 5, 25, 25);
+  object(w, 17, 2, 5, 5, 4); w.objects.back().defence = true; w.objects.back().scenario = 42;
+  w.mission.paths = {{{10, 10}, {20, 20}}};
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+  auto r = runner(w, "trigger(0) conditions always actions side(local).tactic(5).setCycledPath(0) trigger(0).disable end "
+      "trigger(1) conditions globalTime == 2 actions side(local).tactic(5).giftToSide(1) trigger(1).disable end");
+  for (int i = 0; i < 4; ++i) r.tick(sim, w);
+  CHECK(w.objects[0].side == 1 && w.objects[1].side == 1);
+  CHECK(w.objects[0].tactic == w.objects[1].tactic && w.objects[0].tactic != 5);
+  CHECK(w.unit_tactics.at(tactic_key(w.objects[0])).scenario_id == 5);
+  CHECK(w.objects[3].scenario == 42 && condition(r, w, "side(1).defence(42).valid == 1"));
+  CHECK(w.objects[0].attack_mode == AttackMode::Balanced && w.objects[0].follow_tactic == -1);
+  CHECK(w.objects[0].town == -1 && w.objects[0].target == 0);
+  CHECK(condition(r, w, "side(2).tactic(5).valid == 0"));
+  CHECK(condition(r, w, "side(1).tactic(5).valid == 1")); // receiver's preexisting reserved group
+  CHECK(condition(r, w, "side(1).tactic(" + std::to_string(w.objects[0].tactic) + ").valid == 0"));
+  w.begin_tick(); sim.tick(w);
+  const auto& receiving = w.unit_tactics.at(tactic_key(w.objects[0]));
+  CHECK(receiving.idle() && !receiving.merging && !receiving.lost && receiving.path.empty());
+  const auto hash = sim.state_hash(w);
+  w.unit_tactics.at(tactic_key(w.objects[0])).scenario_id = 99;
+  CHECK(sim.state_hash(w) != hash);
+  w.unit_tactics.at(tactic_key(w.objects[0])).scenario_id = 5;
+  CHECK(sim.state_hash(w) == hash);
+}
+
+static void path_and_gift_replay() {
+  TempDir directory; const auto path = directory.path() / "path-gift.scn";
+  std::ofstream(path) << "trigger(0) conditions always actions side(local).tactic(5).setCycledInvertedPath(0) trigger(0).disable end "
+      "trigger(1) conditions globalTime == 80 actions side(local).tactic(5).giftToSide(1) trigger(1).disable end";
+  World initial = world(); object(initial, 0, 2, 5, 3, 4); object(initial, 0, 2, 5, 4, 4);
+  initial.mission.paths = {{{6, 4}, {8, 4}}};
+  const auto data = rules(); World live = initial;
+  GameSim sim(data, Modifications::faithful()); CHECK(sim.attach_script(path.string())); sim.init(live);
+  for (int tick = 1; tick <= 140; ++tick) {
+    live.begin_tick(); sim.tick(live);
+    if (tick != 40 && tick != 82 && tick != 140) continue;
+    World restored = initial;
+    auto replayed = GameSim::replay(restored, data, sim.log(), sim.tick_count(), path.string());
+    CHECK(replayed->state_hash(restored) == sim.state_hash(live));
+    for (int extra = 0; extra < 10; ++extra) { restored.begin_tick(); replayed->tick(restored); }
+    World continued = initial;
+    auto control = GameSim::replay(continued, data, sim.log(), sim.tick_count() + 10, path.string());
+    CHECK(replayed->state_hash(restored) == control->state_hash(continued));
+  }
+  CHECK(live.objects[0].side == 1 && live.objects[1].side == 1);
+}
+
+static void persistent_cycle_flag() {
+  World w = world(); object(w, 0, 2, 5, 3, 4);
+  w.mission.paths = {{{8, 9}, {10, 11}}, {{12, 13}, {14, 15}}};
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+  auto r = runner(w, "trigger(0) conditions always actions side(local).tactic(5).setCycledPath(0) "
+      "side(local).tactic(5).setInvertedPath(1) trigger(0).disable end");
+  r.tick(sim, w); r.tick(sim, w);
+  auto& anchor = w.unit_tactics.at({2, 5});
+  CHECK(w.objects[0].dest_x == 14 * kTilePx + 24);
+  anchor.x = 14; anchor.y = 15; sim.script_stop(w, {1}); r.tick(sim, w);
+  CHECK(w.objects[0].dest_x == 12 * kTilePx + 24);
+  anchor.x = 12; anchor.y = 13; sim.script_stop(w, {1}); r.tick(sim, w);
+  CHECK(w.objects[0].dest_x == 14 * kTilePx + 24); // plain inverted setter retained cycling
+}
+
+static void path_replacement_and_anchor() {
+  for (const std::string method : {"setPath", "setCycledPath", "setInvertedPath", "setCycledInvertedPath"}) {
+    World w = world(); object(w, 0, 2, 5, 3, 4); object(w, 0, 2, 6, 26, 26);
+    w.mission.paths = {{{3, 4}, {3, 4}, {8, 9}, {10, 11}}};
+    const bool inverted = method.find("Inverted") != std::string::npos;
+    if (inverted) std::reverse(w.mission.paths[0].begin(), w.mission.paths[0].end());
+    GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+    sim.script_join(w, {1}, {2});
+    CHECK(w.unit_tactics.at({2, 5}).merging);
+    auto r = runner(w, "trigger(0) conditions always actions side(local).tactic(5)." + method + "(0) trigger(0).disable end");
+    r.tick(sim, w); r.tick(sim, w);
+    CHECK(!w.unit_tactics.at({2, 5}).merging);
+    CHECK(w.objects[0].dest_x == 8 * kTilePx + 24); // skip duplicate starting-anchor points
+    // Stopping before arrival retries this waypoint rather than skipping it.
+    sim.script_stop(w, {1}); r.tick(sim, w);
+    CHECK(w.objects[0].dest_x == 8 * kTilePx + 24);
+    // A member reaching the destination does not complete the shared route.
+    sim.teleport(w, 1, 8 * kTilePx + 24, 9 * kTilePx + 24);
+    sim.script_stop(w, {1}); r.tick(sim, w);
+    CHECK(w.objects[0].dest_x == 8 * kTilePx + 24);
+    auto& anchor = w.unit_tactics.at({2, 5}); anchor.x = 8; anchor.y = 9;
+    sim.script_stop(w, {1}); r.tick(sim, w);
+    CHECK(w.objects[0].dest_x == 10 * kTilePx + 24);
+    auto empty = runner(w, "trigger(0) conditions always actions side(local).tactic(5).setPath(1) trigger(0).disable end");
+    w.mission.paths.push_back({});
+    empty.tick(sim, w); empty.tick(sim, w);
+    CHECK(w.unit_tactics.at({2, 5}).idle() && w.objects[0].order == uint8_t(Order::Idle));
+    CHECK(condition(empty, w, "side(local).tactic(5).idle == 1"));
+  }
+}
+
 int main() {
+  town_list_and_validity(); town_source_dispatch(); gift_controller_reset(); path_and_gift_replay(); persistent_cycle_flag(); path_replacement_and_anchor();
   controller_idle_states(); attack_town_controller_lookup(); join_follows_before_merging(); joining_replay_and_followers(); clock_startup_phase();
   rectangle_box_edges(); side_command_contracts();
   rectangle_runtime_categories(); gift_detaches_home_and_outcome_precedence(); tactic_lookup_and_money(); presentation_contracts();
