@@ -36,6 +36,23 @@ void advance_messages(World& w, double seconds) {
   }
 }
 
+void draw_script_messages(SDL_Renderer* r, const Font& font, const std::vector<Message>& messages, const SDL_Rect& view, int scale) {
+  if (scale <= 0 || view.w <= 0 || view.h <= 0) return;
+  SDL_Rect previous{}; const bool clipped = SDL_RenderIsClipEnabled(r);
+  SDL_RenderGetClipRect(r, &previous);
+  SDL_Rect clip = view;
+  if (clipped) SDL_IntersectRect(&view, &previous, &clip);
+  SDL_RenderSetClipRect(r, &clip);
+  int y = view.y + 20 * scale;
+  for (const auto& message : messages) {
+    if (y >= view.y + view.h) break;
+    // Font's installed face is native slot 4; script prints use palette state 0.
+    font.draw_state(r, view.x + 10 * scale, y, message.text, font.ui_scale(scale), 0);
+    y += 18 * scale;
+  }
+  SDL_RenderSetClipRect(r, clipped ? &previous : nullptr);
+}
+
 void draw_messages(SDL_Renderer* r, const Font& font, const std::vector<Message>& messages, const SDL_Rect& area, int scale, bool left_align, int line_pitch) {
   const int ts = font.ui_scale(scale), line_height = line_pitch > 0 ? line_pitch : font.height(ts) + 3 * scale;
   if (area.w <= 0 || area.h < line_height) return;

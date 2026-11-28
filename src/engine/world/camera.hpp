@@ -20,13 +20,20 @@ class Camera {
   float zoom = 1.f;
   float view_w = 1280, view_h = 720;  // screen px
   float world_w = 0, world_h = 0;     // world px
+  // Native view edges leave four horizontal pixels and one vertical pixel.
+  bool original_bounds = false;
 
   float speed = 1100.f;   // world px/s at zoom 1 at full deflection
   float accel = 9.f;      // smoothing rate (1/s)
 
   void set_view(float w, float h) { view_w = w; view_h = h; clamp(); }
   void set_world(float w, float h) { world_w = w; world_h = h; clamp(); }
-  void center_on(float wx, float wy) { x = wx - view_w / zoom / 2; y = wy - view_h / zoom / 2; vx_ = vy_ = 0; clamp(); }
+  void center_on(float wx, float wy) {
+    const float half_w = view_w / zoom / 2, half_h = view_h / zoom / 2;
+    x = wx - (original_bounds ? std::floor(half_w) : half_w);
+    y = wy - (original_bounds ? std::floor(half_h) : half_h);
+    vx_ = vy_ = 0; clamp();
+  }
   void set_zoom(float z, float pivot_x, float pivot_y);
   // Advance by dt seconds (render rate, not sim rate).
   void update(const CameraInput& in, float dt);

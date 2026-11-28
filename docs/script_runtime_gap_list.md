@@ -26,18 +26,18 @@ Codes below identify reference behavior, not the independent enum values.
 | 02 | attackTown | V first town-controller scenario match, ignore own town, use its hall tile; dispatch through the shared group controller. G town-specific launch and nested controller hierarchy |
 | 03 | moveTo | V shared base-group controller movement, preserving native stopped/moving state distinction. G town-specific launch and full movement/controller equivalence |
 | 04 | joinTactic | V both lookups required; plain groups follow and merge strictly inside reach, retaining source identity until arrival and redirecting followers. G town-source recruitment, nested controller lifetime and movement scheduling |
-| 05, 06, 07, 08 | timer set, stop, start, kill | V lazy running-zero creation, set preserves pause, kill does not create; G timer-versus-trigger pool phase |
+| 05, 06, 07, 08 | timer set, stop, start, kill | V lazy running-zero creation, set preserves pause, kill does not create. Existing timers advance before triggers; newly created/recreated timers first advance next update. Actions retain the one-update latch delay |
 | 09, 0a, 0b, 0c | path variants | V waypoint progression uses group controller idle states instead of member orders. G exact native path/controller scheduling and ferry-specific setter behavior remain incomplete |
 | 0d | boat activate | **Closed script dispatch:** V last matching ferry scenario, force phase 3 and boat state 5 in any phase, preserve cargo/request and direction, no turn; missing controller is a silent no-op. Full trip and loss controls use the shared task-159 transport state machine; see the transport boundaries below |
 | 0e | submarine go | **Closed script dispatch:** V last matching decoration scenario, replace idle resource-27 loop with finite animation 1 at its anchor and retire controller. No route, passengers or combat; missing controller is a silent no-op. See the transport boundaries below |
-| 0f, 10 | Johnka enable, disable | Existing patrol adapter; G visual-think scheduling and complete transport fidelity. Disable is not an ignored branch |
+| 0f, 10 | Johnka enable, disable | V one last matching live controller, independent of side; action changes only its enable byte, missing target is silent. G visual-think scheduling and complete patrol fidelity |
 | 11 | buildCommand | **Unsupported execution.** V native parser `0x437fb0` accepts `buildCommand(integer) {UGI_name,...}`; handler `0x402180` builds a side plan from available type requests and replaces the previous plan only if requests were admitted. Native grammar is now parsed, retaining order/duplicates with a safe 32-request bound. The earlier engine-only `(UGI_name,integer,...)` syntax remains accepted. Both forms report unsupported execution; neither is silently dropped |
 | 12 | moveCommand | **Closed:** V handler `0x4022e0` only calls a read-only nearest-town lookup and discards its result. Explicit supported no-op; no movement, queue or money changes |
-| 13, 21 | camera activate, deactivate | V stationary source, mask clamp 64..71, positive tick lifetime, nonpositive indefinite, latest-source deactivation. G creation/update phase, original-save mapping and visual parity |
-| 14 | centerView | Tile-origin request; G independent viewport clamps and scaling |
+| 13, 21 | camera activate, deactivate | V stationary side vision at the defined tile center, mask clamp 64..71, positive lifetime decremented after actions including creation tick, nonpositive indefinite, latest-source deactivation. Neither view position nor input changes |
+| 14 | centerView | V tile-origin request with signed 32-bit pixel conversion; native lower-then-upper view clamp, horizontal margin 4 and vertical margin 1. Instant jump resets scroll velocity |
 | 15, 16, 17 | setFriendlyTo, setNeutralTo, setEnemyTo | V directional relation changes |
 | 18 | giftToSide | V distinct receiver group or shared town ownership transfer. G native follow/child hierarchy and full town queue/counter resets |
-| 19 | printString | V 16-slot ring retains 15 messages, 4000 ms presentation deadlines. G layout/encoding and native draw scheduling |
+| 19 | printString | V 16-slot ring retains 15 messages, 4000 ms wall-clock deadlines, one expired retirement per second; oldest first at (10,20), 18-pixel pitch, one clipped line per entry. G native debug-overlay suppression |
 | 1a, 1b | lock, unlock | V only reserved plain tactics are script-addressable; towns are fallback. G map Locked loading, empty-group lifetime and AI reuse integration |
 | 1c, 1d | addMoney, takeMoney | V signed 32-bit wrapping arithmetic floored at zero, without C++ signed overflow |
 | 1e | kill | V death without a damage source; G recursive child-group flags cannot be represented by flat group IDs |
@@ -188,3 +188,36 @@ Activation in every phase, duplicate scenario selection and missing/retired
 controllers are checked through ScriptRunner. Existing eligibility, load-block,
 ring-order and requester/loss tests remain enabled. No original executable or
 reference runtime was run; no private mission fixture is published.
+## Camera and interface follow-up (2026-11-25)
+
+Static reinspection resolves the creation phase: script-pool updates precede
+visual-object updates in `0x4577b0`; camera virtual `+0x120` enters `0x43edc0`,
+which calls its `+0x60` lifetime update `0x402a50`. A duration of one therefore
+expires on the activation update, before that update's vision calculation.
+Repeated sources, per-side vision and latest-source tombstones remain intact.
+Off-map camera definitions retain their coordinates instead of moving to an edge.
+Signed pixel/mask arithmetic wraps explicitly; sight stamping widens intermediate
+coordinates to handle extreme script positions without signed overflow.
+Original-save camera reconstruction and exact fog/render equivalence remain
+separate integration dependencies, not missing activation or input semantics.
+
+Timer allocation through `0x401930` uses the pool's prepend operation
+(`0x473f50`, `0x473de0`, traversal `0x4740d0`/`0x474110`). Lazy timers therefore
+precede already-loaded triggers; timers created during traversal are visited
+starting next update. Set/start/stop/kill preserve the documented latch delay.
+The adapter's existing file-order traversal of triggers remains an independent
+pool-order approximation; this follow-up does not claim to resolve it.
+
+Johnka handlers `0x4020c0` and `0x402120` scan for one last matching controller
+and only change its enable byte. Patrol startup now belongs to the patrol update;
+repeated enabling does not teleport an active vessel. Missing vessel actions are
+silent. Native controller-list ordering and visual scheduling remain transport
+dependencies. On-screen print layout follows the draw walk near `0x4681a0`;
+installed text uses native font slot 4 (glyph base 1200), palette state 0,
+through the existing font adapter. Debug-overlay suppression remains unintegrated.
+
+Synthetic scripts and a software-rendered message check cover these rules,
+including headless view edges, ungated drag input, one-tick camera expiry,
+foreign-side activation, timer kill/recreation and duplicate Johnka IDs.
+Replay semantics advance to 17 for the changed camera and vessel behavior.
+No original executable or reference runtime was launched.

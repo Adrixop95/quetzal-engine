@@ -287,7 +287,7 @@ static void cameras() {
   ticks(sim,w); CHECK(w.script_cameras.size() == 1 && w.script_cameras[0].active && w.center_serial == 0);
   const size_t cell = 10*33+10;
   CHECK(w.visibility.sides[1].v[cell] == 80 && w.visibility.sides[0].v[cell] == 0);
-  ticks(sim,w); CHECK(w.script_cameras.size() == 1 && w.script_cameras[0].active);
+  ticks(sim,w); CHECK(!w.script_cameras[0].active && w.visibility.sides[1].v[cell] == 32);
   ticks(sim,w); CHECK(!w.script_cameras.back().active && w.visibility.sides[1].v[cell] == 32);
   ticks(sim,w); CHECK(w.script_cameras.back().ticks_left == -1 && w.script_cameras.back().active);
   ticks(sim,w); CHECK(!w.script_cameras.back().active && sim.script().unsupported() == 0);

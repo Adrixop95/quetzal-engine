@@ -28,9 +28,10 @@ stay outside tracked files.
   Duplicate IDs have independent enablement, latches and execution traces;
   missing IDs do nothing. A forward enable can affect this pass, whereas a
   backward enable takes effect at the next update of that trigger.
-- **G:** file order substitutes for native pool traversal order. Existing timers
+- **G:** file order substitutes for native trigger-pool traversal order.
+- **V:** lazy timers prepend ahead of already-loaded triggers. Existing timers
   increment before triggers; timers created during a trigger pass first increment
-  on the next tick. The relative native timer/trigger pool phase remains open.
+  on the next tick. See the [phase reinspection](script_runtime_gap_list.md#camera-and-interface-follow-up-2026-11-25).
 - **V, static rule implemented:** a timer starts running at zero on its first
   evaluated condition or set/stop/start action. There is no special timer zero
   and no eager scan of conditions. Short-circuiting does not create skipped
@@ -43,8 +44,8 @@ stay outside tracked files.
   globalTime advance once per simulation tick, as established by the later
   corrections. **V:** StartTime is clamped to 0..7199. Local time advances before the first
   trigger evaluation on either tileset; single-player global time advances after
-  evaluation, so its first observed value is zero. Native timer/trigger pool
-  integration and multiplayer lockstep remain **G**.
+  evaluation, so its first observed value is zero. Trigger-to-trigger pool
+  traversal and multiplayer lockstep remain **G**.
 - **V, construction:** gameplay hashes include each trigger's latch and
   enablement, timer existence/value/pause, both clocks and tactic state. Diagnostic
   condition snapshots are read-only; previewing a missing timer as zero does not
@@ -92,11 +93,11 @@ codes identify the rules already documented in the linked surveys.
 | 0d, 0e, 0f, 10 | boat activate, submarine go, Johnka enable, Johnka disable | Existing vessel adapter, **G** for native transport/controller/effect parity; see [transport follow-up](campaign_scripts.md#transport-follow-up-2026-11-04-needs-live-run) |
 | 11 | side buildCommand | **Missing dependency:** execution remains explicitly unsupported. The town AI planner does not provide the native general side plan. Native `buildCommand(integer) {UGI_name,...}` now parses with ordered, duplicate-preserving requests and a safe 32-request limit; the earlier engine-only syntax remains accepted. Native build creates/replaces a plan from admitted available type requests. No campaign site in the supplied inventory exercises this action |
 | 12 | side moveCommand | **V:** supported no-op. The handler discards the result of a read-only nearest-town lookup; it does not move units |
-| 13, 21 | camera activate, deactivate | Existing stationary vision source and latest-source deactivation. **G:** lifetime/update phase and exact native camera integration; see [presentation contract](mission_script_presentation.md) |
-| 14 | centerView | Tile-origin view request; **G:** independent viewport clamping/scaling details |
+| 13, 21 | camera activate, deactivate | **V:** stationary per-side vision, latest-source deactivation and lifetime decrement after actions including creation. Original-save reconstruction remains separate; see [presentation contract](mission_script_presentation.md) |
+| 14 | centerView | **V:** tile-origin jump, lower-then-upper viewport clamps with four horizontal/one vertical pixel margins; engine zoom adapts viewport dimensions |
 | 15, 16, 17 | friendly, neutral, enemy | **V:** directional relation changes |
 | 18 | giftToSide | **V:** plain-group gift allocates a separate receiver group, even with a colliding donor scenario ID. Town gift uses the shared town ownership transfer, including members, owner lists and production ownership. **G:** fresh numeric identity substitutes for native group/follow hierarchy; pending town production cancellation/refund and child-group resets remain approximations |
-| 19 | printString | **V:** 16 ring slots leave capacity for 15 visible prints; insertion evicts the oldest when full. Deadline is 4000 ms of presentation time, independent of simulation ticks. Existing draw retirement removes at most one expired entry per second. UTF-8 presentation and exact layout remain **G** |
+| 19 | printString | **V:** 16 ring slots leave capacity for 15 visible prints; insertion evicts the oldest when full. Deadline is 4000 ms of presentation time, independent of simulation ticks. Existing draw retirement removes at most one expired entry per second. **V:** oldest-first, unwrapped, clipped lines at (10,20), 18-pixel pitch. Native debug suppression remains **G** |
 | 1a, 1b | lock, unlock | **V:** reserved teams are script-addressable; unlocking makes a plain team unreachable through that ID, including subsequent lock, kill or gift. Town fallback remains addressable. **G:** placed groups initially reserve their scenario IDs; map Locked fields and AI reuse of explicitly unlocked groups need fuller tactic integration |
 | 1c, 1d | addMoney, takeMoney | **V:** signed 32-bit addition/subtraction floored at zero; explicit wraparound avoids undefined signed overflow |
 | 1e | kill | **V:** kills all located members with no damage/attacker notification. **G:** native recursive child-tactic flags have no independent hierarchy equivalent |

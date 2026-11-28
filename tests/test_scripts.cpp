@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <memory>
+#include <limits>
 #include <set>
 #include <string>
 
@@ -11,6 +12,7 @@
 #include "engine/sim/game_sim.hpp"
 #include "engine/sim/sight.hpp"
 #include "engine/ui/hud.hpp"
+#include "engine/world/camera.hpp"
 #include "temp_dir.hpp"
 
 using namespace aztec;
@@ -600,7 +602,7 @@ static void presentation_contracts() {
       "side(local).cameraActivate(1,0) side(local).cameraActivate(2,-1) "
       "printString(\"First invented notice\") printStringR(\"Discarded alternate\") trigger(0).disable end");
   r.tick(sim, w); r.tick(sim, w); CHECK(w.script_cameras.size() == 3 && w.center_serial == 0);
-  CHECK(w.script_cameras[0].mask == 65 && w.script_cameras[0].ticks_left == 2);
+  CHECK(w.script_cameras[0].mask == 65 && w.script_cameras[0].ticks_left == 1);
   CHECK(w.script_cameras[1].mask == 64 && w.script_cameras[2].mask == 71);
   CHECK(w.messages.size() == 1 && w.messages[0].seconds_left == 4);
   // Fog stamps the owning side even when another side is being viewed.
@@ -608,7 +610,7 @@ static void presentation_contracts() {
   const auto& own = w.visibility.sides[2];
   CHECK(own.v[size_t(13) * own.w + 12] > 32);
   CHECK(w.visibility.sides[0].v[size_t(13) * own.w + 12] == 0);
-  r.tick(sim, w); CHECK(w.script_cameras[0].active && w.script_cameras[0].ticks_left == 1);
+  r.tick(sim, w); CHECK(!w.script_cameras[0].active && w.script_cameras[0].ticks_left == 0);
   r.tick(sim, w); CHECK(!w.script_cameras[0].active);
   CHECK(w.script_cameras[1].active && w.script_cameras[2].active);
   sim.tick(w); CHECK(w.visibility.sides[2].v[size_t(13) * own.w + 12] <= 32);
@@ -619,7 +621,7 @@ static void presentation_contracts() {
       "side(local).cameraActivate(99,1) side(99).cameraActivate(0,1) trigger(0).disable end "
       "trigger(1) conditions localTime == 2 actions side(local).cameraDeactivate(0) trigger(1).disable end");
   repeat.tick(sim, w); repeat.tick(sim, w);
-  CHECK(w.script_cameras.size() == 5);
+  CHECK(w.script_cameras.size() == 4);
   repeat.tick(sim, w);
   CHECK(w.script_cameras[w.script_cameras.size() - 2].active);
   CHECK(!w.script_cameras.back().active); // expired latest does not address older indefinite source
@@ -640,6 +642,125 @@ static void presentation_contracts() {
   advance_messages(w, 0.5); CHECK(w.messages.size() == 13);
   advance_messages(w, -10); CHECK(w.messages.size() == 13);
   sim.init(w); CHECK(w.script_cameras.empty() && w.messages.empty() && w.message_retirement == 0);
+}
+
+static void camera_view_and_input() {
+  World w = world();
+  SideDef first; first.index = 2; first.cameras = {{-1, 8, 6}};
+  SideDef second; second.index = 1; second.cameras = {{7, 9, 6}};
+  w.mission.sides = {first, second};
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+  Camera camera; camera.original_bounds = true;
+  camera.set_world(float(w.width_px()), float(w.height_px())); camera.set_view(400, 300);
+  camera.center_on(600, 600);
+  const auto x = camera.x, y = camera.y;
+  auto r = runner(w,
+      "trigger(0) conditions always actions side(1).cameraActivate(0,1) "
+      "side(local).cameraActivate(0,0) trigger(0).disable end");
+  r.tick(sim, w); CHECK(w.script_cameras.empty());
+  r.tick(sim, w);
+  CHECK(w.script_cameras.size() == 2 && !w.script_cameras[0].active && w.script_cameras[1].active);
+  CHECK(w.script_cameras[0].side == 1 && w.script_cameras[1].side == 2);
+  CHECK(w.script_cameras[1].x == -24); // off-map cameras keep their defined position
+  CHECK(w.local_side == 0 && w.script_side == 2 && w.center_serial == 0);
+  CHECK(camera.x == x && camera.y == y);
+  CameraInput input; input.dragging = true; input.drag_dx = 24; input.drag_dy = -12;
+  camera.update(input, 0.1f);
+  CHECK(camera.x == x - 24 && camera.y == y + 12); // vision sources do not gate input
+
+  auto center = runner(w,
+      "trigger(0) conditions always actions centerView(32,32) trigger(0).disable end");
+  center.tick(sim, w); CHECK(w.center_serial == 0);
+  center.tick(sim, w); CHECK(w.center_serial == 1 && w.center_x == 1536 && w.center_y == 1536);
+  camera.center_on(float(w.center_x), float(w.center_y));
+  CHECK(camera.x == 1132 && camera.y == 1235);
+  camera.update({}, 0.1f); CHECK(camera.x == 1132 && camera.y == 1235);
+  camera.center_on(-48, -48); CHECK(camera.x == 0 && camera.y == 0);
+  camera.set_view(401, 301); camera.center_on(600, 600);
+  CHECK(camera.x == 400 && camera.y == 450); // native integer division with an odd viewport
+  camera.set_view(1600, 1600); camera.center_on(0, 0);
+  CHECK(camera.x == -68 && camera.y == -65); // upper clamp follows the lower clamp
+  camera.set_view(400, 300); camera.set_zoom(2, 0, 0); camera.center_on(1536, 1536);
+  CHECK(camera.x == 1332 && camera.y == 1385);
+  w.mission.sides[0].cameras.push_back({-44739243, 44739242, std::numeric_limits<int32_t>::max()});
+  auto extreme = runner(w,
+      "trigger(0) conditions always actions side(local).cameraActivate(1,0) "
+      "centerView(2147483647,-2147483648) trigger(0).disable end");
+  extreme.tick(sim, w); extreme.tick(sim, w);
+  const auto& source = w.script_cameras.back();
+  CHECK(source.x == -2147483640 && source.y == 2147483640 && source.mask == 64);
+  CHECK(w.center_x == -48 && w.center_y == 0);
+  std::vector<uint8_t> grid(4, 152), mask(404, 0); mask[0] = mask[2] = 20;
+  stamp_sight(grid, 2, 2, data::LightMask({mask.data(), mask.size()}), source.x, source.y, true);
+  CHECK(std::all_of(grid.begin(), grid.end(), [](uint8_t value) { return value == 152; }));
+}
+
+static void timer_set_kill_delay() {
+  World w = world(); GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+  auto r = runner(w,
+      "trigger(0) conditions always actions timer(4).set(9) trigger(0).disable end "
+      "trigger(1) conditions timer(4) == 9 actions timer(4).kill trigger(1).disable end "
+      "trigger(2) conditions timer(4) == 0 actions side(local).addMoney(1) end");
+  r.tick(sim, w); CHECK(condition(r, w, "timer(4) == 0") && w.side_state[2].money == 0);
+  r.tick(sim, w); CHECK(condition(r, w, "timer(4) == 9") && w.side_state[2].money == 1);
+  r.tick(sim, w); CHECK(condition(r, w, "timer(4) == 0") && w.side_state[2].money == 1);
+  r.tick(sim, w); CHECK(condition(r, w, "timer(4) == 1") && w.side_state[2].money == 2);
+  // Killing an absent timer must leave the state unchanged, including pool membership.
+  auto absent = runner(w, "trigger(0) conditions always actions timer(77).kill trigger(0).disable end");
+  for (int i = 0; i < 4; ++i) absent.tick(sim, w);
+  CHECK(condition(absent, w, "timer(77) == 0"));
+  auto set_after_kill = runner(w,
+      "trigger(0) conditions always actions timer(8).stop timer(8).kill timer(8).set(17) trigger(0).disable end");
+  set_after_kill.tick(sim, w); set_after_kill.tick(sim, w);
+  CHECK(condition(set_after_kill, w, "timer(8) == 17"));
+  set_after_kill.tick(sim, w); CHECK(condition(set_after_kill, w, "timer(8) == 18"));
+}
+
+static void johnka_enable_selection() {
+  World w = world();
+  for (int side : {1, 2, 3}) {
+    object(w, 88, side, -1, 10, 10);
+    auto& o = w.objects.back(); o.source = ObjectSource::Johnka; o.scenario = 17; o.vessel_enabled = false;
+  }
+  w.objects.back().alive = false;
+  GameSim sim(rules(), Modifications::faithful()); sim.init(w);
+  auto r = runner(w, "trigger(0) conditions always actions johnka(17).enable trigger(0).disable end");
+  r.tick(sim, w); r.tick(sim, w);
+  CHECK(!w.objects[0].vessel_enabled && w.objects[1].vessel_enabled && !w.objects[2].vessel_enabled);
+  CHECK(w.objects[1].removed && !w.objects[1].vessel_route); // action changes only the byte
+  sim.tick(w); CHECK(!w.objects[1].removed && w.objects[1].vessel_route);
+  const auto position = w.objects[1].cur_x;
+  CHECK(sim.activate_vessel(w, 17, ObjectSource::Johnka));
+  CHECK(w.objects[1].cur_x == position); // repeated enable cannot reset a patrol
+  auto disable = runner(w, "trigger(0) conditions always actions johnka(17).disable trigger(0).disable end");
+  disable.tick(sim, w); disable.tick(sim, w);
+  CHECK(!w.objects[1].vessel_enabled && !w.objects[1].removed);
+  CHECK(!sim.activate_vessel(w, 999, ObjectSource::Johnka));
+  auto missing = runner(w, "trigger(0) conditions always actions johnka(999).enable trigger(0).disable end");
+  missing.tick(sim, w); missing.tick(sim, w); CHECK(w.messages.empty());
+}
+
+static void script_message_layout() {
+  SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, 100, 90, 32, SDL_PIXELFORMAT_ARGB8888);
+  CHECK(surface);
+  SDL_Renderer* renderer = SDL_CreateSoftwareRenderer(surface); CHECK(renderer);
+  {
+    Font font; CHECK(font.init(renderer));
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); SDL_RenderClear(renderer);
+    SDL_Rect previous{0, 0, 95, 90}; SDL_RenderSetClipRect(renderer, &previous);
+    std::vector<Message> messages = {{std::string(100, 'E'), 0, 4}, {"B", 0, 4}, {"C", 0, 4}, {"D", 0, 4}};
+    draw_script_messages(renderer, font, messages, {0, 0, 80, 70}, 1);
+    SDL_Rect restored{}; SDL_RenderGetClipRect(renderer, &restored);
+    CHECK(restored.x == 0 && restored.y == 0 && restored.w == 95 && restored.h == 90);
+    std::vector<uint32_t> pixels(100 * 90);
+    CHECK(SDL_RenderReadPixels(renderer, nullptr, SDL_PIXELFORMAT_ARGB8888, pixels.data(), 100 * 4) == 0);
+    auto lit = [&](int x, int y) { return (pixels[size_t(y) * 100 + x] & 0x00ffffffu) != 0; };
+    CHECK(lit(10, 20) && lit(10, 38) && lit(11, 56)); // oldest first; one entry per 18-pixel line
+    for (int y = 0; y < 90; ++y) for (int x = 0; x < 100; ++x) {
+      if (x < 10 || x >= 80 || y < 20 || (y >= 26 && y < 38) || y >= 70) CHECK(!lit(x, y));
+    }
+  }
+  SDL_DestroyRenderer(renderer); SDL_FreeSurface(surface);
 }
 
 static void campaign_outcome_requires_script() {
@@ -943,5 +1064,6 @@ int main() {
   campaign_outcome_requires_script(); campaign_gates(); town_tactics_and_capture(); embarked_script_identity(); tactic_idle_uses_controller(); distant_join_replay(); pending_path_uses_previous_latch();
   attacked_notification();
   source_locations(); order_and_enablement(); timers(); conditions_and_identity(); paths_and_gifts(); actions_and_outcomes(); defence_loading(); action_observation_contracts(); replay();
+  camera_view_and_input(); timer_set_kill_delay(); johnka_enable_selection(); script_message_layout();
   std::puts("Synthetic script contracts passed.");
 }

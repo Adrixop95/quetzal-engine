@@ -22,6 +22,8 @@ const Object* pick_object(const World& w, float wx, float wy, float alpha, float
 
 // Advance wall-clock script prints even while the simulation is paused. Hash-neutral.
 void advance_messages(World& w, double seconds);
+// Native print layout: one unwrapped line per entry, oldest first, clipped to the view.
+void draw_script_messages(SDL_Renderer* r, const Font& font, const std::vector<Message>& messages, const SDL_Rect& view, int scale);
 void draw_messages(SDL_Renderer* r, const Font& font, const std::vector<Message>& messages, const SDL_Rect& area, int scale, bool left_align = false, int line_pitch = 0);
 
 void draw_hud(SDL_Renderer* r, const Font& font, const World& w, const Camera& cam, const HudInfo& info, int scale);

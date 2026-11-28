@@ -2,6 +2,7 @@
 #pragma once
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <vector>
@@ -30,13 +31,13 @@ inline void stamp_sight(std::vector<uint8_t>& grid, int w, int h, data::LightMas
   if (!mask.ok() || w <= 0 || h <= 0 || grid.size() != size_t(w) * h) return;
   for (int my = 0; my < 20; ++my)
     for (int mx = 0; mx < 20; ++mx) if (mask.sample(mx, my) < 0) return;
-  int left = x - 9 * 48, top = y - 9 * 48;
-  auto floor_cell = [](int p) { return p >= 0 ? p / 48 : (p - 47) / 48; };
+  int64_t left = int64_t(x) - 9 * 48, top = int64_t(y) - 9 * 48;
+  auto floor_cell = [](int64_t p) { return int(p >= 0 ? p / 48 : (p - 47) / 48); };
   int x0 = floor_cell(left), y0 = floor_cell(top);
   for (int gy = std::max(0, y0); gy < h && gy < y0 + 19; ++gy)
     for (int gx = std::max(0, x0); gx < w && gx < x0 + 19; ++gx) {
       // Grid cells select the next mask vertex at aligned positions.
-      int dx = gx * 48 - left + 48, dy = gy * 48 - top + 48;
+      int dx = int(int64_t(gx) * 48 - left + 48), dy = int(int64_t(gy) * 48 - top + 48);
       int ix = dx / 48, iy = dy / 48, rx = dx % 48, ry = dy % 48;
       auto sample = [&](int xx, int yy) { return std::max(0, mask.sample(xx, yy)); };
       // Each weighted contribution truncates before the next axis is blended.
