@@ -1,9 +1,11 @@
 // Invented placements exercise tactic rules without a reference process or game installation.
 #include <cstdio>
+#include <fstream>
 #include <memory>
 #include "engine/sim/game_sim.hpp"
 #include "engine/sim/path/mover.hpp"
 #include "engine/world/visibility.hpp"
+#include "temp_dir.hpp"
 
 using namespace aztec;
 using namespace aztec::engine;
@@ -74,12 +76,57 @@ static void fog_and_tactics(std::shared_ptr<RulesData> rules) {
     step(sim, w);
     const auto& tactic = w.unit_tactics.at(tactic_key(w.objects[0]));
     CHECK(tactic.enemies.empty() == (brightness == 32));
-    CHECK(w.objects[0].target == (brightness == 33 && progress == 1000 ? 2u : 0u));
+    CHECK(w.objects[0].target == 0); // discovery does not make an ordinary building eligible
     std::fill(fog.begin(), fog.end(), 32);
     step(sim, w);
     CHECK(w.objects[0].target == 0);
     CHECK(w.building_memory[0].contains(2) == (brightness == 33));
   }
+}
+static void structure_targets(std::shared_ptr<RulesData> rules) {
+  // Ordinary buildings are not automatic tactic targets, even when a weapon
+  // can damage them. Defence structures and explicit focus orders differ.
+  for (int type : {10, 14, 17}) {
+    auto w = map(); add(w, 0, 20, 20, -1, 1); add(w, 1, 23, 20, 8, type);
+    // A mobile member lists the shared tactic, including its Defence member.
+    if (type == 17) add(w, 1, 26, 20, 8);
+    GameSim sim(rules, Modifications::faithful()); sim.init(w); step(sim, w);
+    CHECK(w.objects[0].target == (type == 17 ? 2u : 0u));
+  }
+  auto mixed = map(); add(mixed, 0, 20, 20, -1, 1); add(mixed, 1, 23, 20, 8, 14);
+  add(mixed, 1, 25, 20, 8);
+  GameSim pick(rules, Modifications::faithful()); pick.init(mixed); step(pick, mixed);
+  CHECK(mixed.objects[0].target == 3); // a nearer building must not hide a defender
+
+  auto focused = map(); add(focused, 0, 20, 20, -1, 1); add(focused, 1, 23, 20, 8, 14);
+  focused.objects[0].cooldown = 0;
+  GameSim focus(rules, Modifications::faithful()); focus.init(focused);
+  const int hp = focused.objects[1].hp;
+  Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
+  focus.submit(attack); step(focus, focused, 40);
+  CHECK(focused.objects[0].has_fired && focused.objects[1].hp < hp);
+
+  // An attack-move must continue into capture range of an undefended,
+  // indestructible hall instead of shooting it forever from weapon range.
+  auto initial = map(); initial.mission.towns = {{0, 1, 25, 20, 0, 0, 8}};
+  add(initial, 0, 20, 20, 5, 1); add(initial, 1, 25, 20, 8, 10);
+  initial.objects[1].town = 0; initial.objects[1].town_hall = true;
+  TempDir directory;
+  const auto script = (directory.path() / "capture.scn").string();
+  std::ofstream(script) << "trigger(50) conditions side(1).towns == 0 actions "
+      "side(local).victory trigger(50).disable end\n";
+  auto capture = initial;
+  GameSim march(rules, Modifications::faithful());
+  CHECK(march.attach_script(script)); march.init(capture);
+  Command move; move.type = Pct::AttackMove; move.ids = {1}; move.a = 25 * 48 + 24; move.b = 20 * 48 + 24;
+  march.submit(move); step(march, capture, 240);
+  CHECK(capture.mission.towns[0].side == 0 && capture.objects[1].side == 0);
+  CHECK(capture.objects[1].alive && capture.objects[1].hp == capture.objects[1].hp_max);
+  CHECK(!capture.objects[0].has_fired);
+  CHECK(capture.outcome == kVictory);
+  auto replay_world = initial;
+  auto replay = GameSim::replay(replay_world, rules, march.log(), 240, script, {}, Modifications::faithful());
+  CHECK(replay && replay->state_hash(replay_world) == march.state_hash(capture));
 }
 static void leash(std::shared_ptr<RulesData> rules) {
   CHECK(tactic_norm(3, 3) == 4 && tactic_norm(4, 4) == 5 && tactic_norm(6, 6) == 8);
@@ -344,6 +391,6 @@ static void tile_steps() {
 }
 int main() {
   auto rules = std::make_shared<RulesData>(); CHECK(rules->load_dir(AZTEC_TEST_RULES_DIR));
-  scan(rules); fog_and_tactics(rules); leash(rules); loss_and_visibility(rules); local_target_preference(rules); retaliation(rules); walking(rules); selection_split(rules); hierarchy(rules); losses_and_return(rules); tile_steps();
+  scan(rules); fog_and_tactics(rules); structure_targets(rules); leash(rules); loss_and_visibility(rules); local_target_preference(rules); retaliation(rules); walking(rules); selection_split(rules); hierarchy(rules); losses_and_return(rules); tile_steps();
   std::puts(failures ? "FAILED" : "OK"); return failures ? 1 : 0;
 }
