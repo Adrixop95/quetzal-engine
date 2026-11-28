@@ -475,6 +475,10 @@ const Object* GameSim::nearest_enemy(const World& w, const Object& o, bool fire_
     if (t.removed || !t.alive || t.type < 0 || t.carrier || t.type == 84 || t.progress < 1000 || !damageable(t) ||
         ferry_protected(t) || weapon_allied(w, o.side, t.side) || !object_visible(w, o.side, t)) continue;
     if (!tower) {
+      // V: normal tactic assignment excludes ordinary buildings. In particular,
+      // an indestructible hall must not interrupt an approach for town capture.
+      // Explicit focus orders and Defence acquisition use separate paths.
+      if (rules_->type(t.type).kind == 2) continue;
       const auto enemy_key = tactic_key(t);
       if (std::find(tactic.enemies.begin(), tactic.enemies.end(), enemy_key) == tactic.enemies.end()) continue;
       auto enemy = w.unit_tactics.find(enemy_key);

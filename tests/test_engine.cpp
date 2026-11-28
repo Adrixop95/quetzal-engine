@@ -276,7 +276,8 @@ static void test_sight() {
   enemy.teleport(to_fixed(20 * 48 + 7 * 48), to_fixed(20 * 48));
   initial.objects.push_back(enemy);
   initial.relation[0][1] = kEnemy;
-  // Automatic acquisition must use a building's corners, not its dark center.
+  // Visibility uses a building's corners, but ordinary buildings are excluded
+  // from automatic tactic assignment even when visible.
   for (int brightness : {32, 33}) {
     World corner = initial;
     corner.objects[0].attack_mode = AttackMode::Aggressive;
@@ -291,12 +292,13 @@ static void test_sight() {
     CHECK(!position_visible(corner, 0, 24 * 48, 20 * 48));
     CHECK(object_visible(corner, 0, corner.objects[1]) == (brightness == 33));
     corner.begin_tick(); acquisition.tick(corner);
-    CHECK(corner.objects[0].target == (brightness == 33 ? 2u : 0u));
+    CHECK(corner.objects[0].target == 0);
   }
   // Tick 1 acquisition consumes startup daylight minus loaded darkness. Its
   // result must not depend on the object mask stamped at the end of that tick.
   for (int darkness : {47, 48}) {
     World startup = initial;
+    startup.objects[1].type = 0;
     startup.objects[0].attack_mode = AttackMode::Aggressive;
     startup.objects[1].attack_mode = AttackMode::Direct;
     startup.visibility.sides.resize(8);
@@ -312,6 +314,7 @@ static void test_sight() {
     for (int t = 0; t < 22; ++t) { startup.begin_tick(); start.tick(startup); }
     CHECK(startup.objects[0].target == 2u);
     World replayed = initial;
+    replayed.objects[1].type = 0;
     replayed.objects[0].attack_mode = AttackMode::Aggressive;
     replayed.objects[1].attack_mode = AttackMode::Direct;
     replayed.visibility.sides.resize(8);
@@ -322,6 +325,7 @@ static void test_sight() {
   for (int ambient : {32, 33}) {
     for (auto& day : inputs->daylight) day.fill(uint8_t(ambient));
     World duel = initial;
+    duel.objects[1].type = 0;
     duel.objects[0].attack_mode = AttackMode::Aggressive;  // visibility gate test: mode 2 has an eight-tile group reach
     GameSim combat(rules, Modifications::faithful()); combat.init(duel);
     for (int t = 0; t < 23; ++t) { duel.begin_tick(); combat.tick(duel); }
@@ -383,6 +387,7 @@ static void test_sight() {
   CHECK(initial.visibility.sides.empty());
   for (int distance : {200, 500}) {
     World duel = initial;
+    duel.objects[1].type = 0;
     duel.objects[0].attack_mode = AttackMode::Aggressive;  // eight-tile leash plus firing reach
     duel.objects[1].teleport(to_fixed(20 * 48 + distance), to_fixed(20 * 48));
     GameSim combat(rules, Modifications::faithful()); combat.init(duel);
@@ -999,6 +1004,14 @@ static void test_siege_ranged() {
     CHECK(shot.range_px == range && shot.reload == reload);
     for (bool explicit_order : {false, true}) {
       World initial = scene(type, 180), w = initial;
+      if (!explicit_order) {
+        // Automatic acquisition uses a combat member; ordinary structures
+        // remain covered by the explicit-order half of this control.
+        initial.objects[1].type = 0;
+        initial.objects[1].attack_mode = AttackMode::Direct;
+        initial.objects[1].cooldown = 10000;
+        w = initial;
+      }
       GameSim sim(rules, Modifications::faithful()); sim.init(w);
       if (explicit_order) {
         Command attack; attack.type = Pct::Attack; attack.ids = {1}; attack.a = 2;
