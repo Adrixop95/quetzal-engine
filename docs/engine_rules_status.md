@@ -2858,3 +2858,44 @@ The final-binary isolated 720-tick sweep passed 15/15 missions and confirmed
 The retained manifest matches the binary and gap catalog. Pre-commit and
 `git diff --check` passed. These checks do not establish native parity or
 winning campaign routes.
+
+## Priority script codes (2026-11-25)
+
+**V static rules / synthetic implementation:** SideTowns reads the owning side's
+town-controller inventory, rather than completed hall objects. Duplicate scenario
+IDs count separately; capture/gifts change the owner. Attack-town selects the
+first matching global town and its designated hall, including friendly foreign
+towns. A town source's move slot is a no-op. Script town join uses a separate
+recruitment slot: living direct non-building members enter a fresh unreserved
+base group, then use task 178's follow/merge controller. This supersedes the
+previous assumption that move/attack launch town recruits.
+
+Gift creates a fresh unreserved receiving group, retains scenario identity,
+uses default balanced combat mode and clears the source script route. Same-owner
+town gifts still run production/repair resets. Path variants cancel old movement
+and joins, consume reached shared-anchor waypoints in forward/reverse order, and
+preserve an existing cycle flag across ordinary setters. Replay semantics are 18, incorporating develop's version-17 type-rule changes.
+
+**G / remaining dependencies:** exact plain-controller identities/validity-byte
+phase, hidden-child recovery and ownership, full town counters, member-order
+transfer effects, blocked-route cycling, ferry setters and native scheduling are
+incomplete. Task 178 supplies the base controller but explicitly leaves the full
+native hierarchy/lifetime model absent. Those dependencies remain labelled G;
+this follow-up does not certify all five codes. Aggregate approximation sites
+fall from 224 to 199 through closure of the 25 town-count sites; other partially
+corrected codes remain approximate. See the [audit](script_runtime_gap_list.md)
+and [aggregate report](script_approximation_report.md). Synthetic tests and
+headless clone smoke do not establish original-game parity.
+
+
+Develop integration verification on 2026-11-28 retained task 180's closed
+boat/submarine dispatch and silent missing-target behavior, plus the newer type
+rules. Replay semantics are 18 rather than reusing develop's version 17.
+A fresh develop source snapshot with these changes passed the Release build and
+all 86 CTest entries: 80 passes, six expected private-data/network skips, zero
+failures. The catalogue test covers the transport closures and SideTowns.
+Separate isolated private format/engine checks passed. The fresh 720-tick sweep
+passed all 15 missions and confirmed 199 approximate sites, zero unsupported
+sites and one intentional parser no-op; the private manifest matches the binary
+and gap catalogue. Pre-commit passed. Native Windows/macOS execution and original
+reference parity remain unverified.

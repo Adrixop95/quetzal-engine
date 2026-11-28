@@ -199,6 +199,7 @@ inline int tactic_reach(AttackMode mode) {
 enum class GroupState : uint8_t { Inactive = 0, Stopped = 1, Waiting = 2, Moving = 3 };
 
 struct UnitTactic {
+  int scenario_id = -1; // explicit scenario identity when a fresh internal group is gifted
   int x = 0, y = 0; // persistent tile anchor, initialized from the first member
   std::vector<uint32_t> members;
   std::vector<TacticKey> enemies;

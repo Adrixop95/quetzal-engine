@@ -31,6 +31,14 @@ Codes below identify reference behavior, not the independent enum values.
 | 0d | boat activate | **Closed script dispatch:** V last matching ferry scenario, force phase 3 and boat state 5 in any phase, preserve cargo/request and direction, no turn; missing controller is a silent no-op. Full trip and loss controls use the shared task-159 transport state machine; see the transport boundaries below |
 | 0e | submarine go | **Closed script dispatch:** V last matching decoration scenario, replace idle resource-27 loop with finite animation 1 at its anchor and retire controller. No route, passengers or combat; missing controller is a silent no-op. See the transport boundaries below |
 | 0f, 10 | Johnka enable, disable | V one last matching live controller, independent of side; action changes only its enable byte, missing target is silent. G visual-think scheduling and complete patrol fidelity |
+| 02 | attackTown | V first global town scenario match, current owner check, designated hall tile; town-source move is a no-op. G flat source lookup and controller lifetime |
+| 03 | moveTo | V shared base-group movement; town move slot is a no-op. G full movement/controller equivalence |
+| 04 | joinTactic | V both lookups required; plain groups follow and merge strictly inside reach, retaining source identity until arrival and redirecting followers. V town sources recruit living non-building direct members into a fresh unreserved group before joining. G nested controller lifetime and movement scheduling |
+| 05, 06, 07, 08 | timer set, stop, start, kill | V lazy running-zero creation, set preserves pause, kill does not create; G timer-versus-trigger pool phase |
+| 09, 0a, 0b, 0c | path variants | V cancel old movement/follow before replacement, traverse forward/reverse, consume reached shared-anchor waypoints, retain the cycle flag across ordinary setters. Town path search cannot launch movement. G exact native path/controller scheduling, blocked-route cycling and ferry-specific setter behavior remain incomplete |
+| 0d | boat activate | **Closed script dispatch:** V last matching ferry scenario, force phase 3 and boat state 5 in any phase, preserve cargo/request and direction, no turn; missing controller is a silent no-op. Full trip and loss controls use the shared task-159 transport state machine; see the transport boundaries below |
+| 0e | submarine go | **Closed script dispatch:** V last matching decoration scenario, replace idle resource-27 loop with finite animation 1 at its anchor and retire controller. No route, passengers or combat; missing controller is a silent no-op. See the transport boundaries below |
+| 0f, 10 | Johnka enable, disable | Existing patrol adapter; G visual-think scheduling and complete transport fidelity. Disable is not an ignored branch |
 | 11 | buildCommand | **Unsupported execution.** V native parser `0x437fb0` accepts `buildCommand(integer) {UGI_name,...}`; handler `0x402180` builds a side plan from available type requests and replaces the previous plan only if requests were admitted. Native grammar is now parsed, retaining order/duplicates with a safe 32-request bound. The earlier engine-only `(UGI_name,integer,...)` syntax remains accepted. Both forms report unsupported execution; neither is silently dropped |
 | 12 | moveCommand | **Closed:** V handler `0x4022e0` only calls a read-only nearest-town lookup and discards its result. Explicit supported no-op; no movement, queue or money changes |
 | 13, 21 | camera activate, deactivate | V stationary side vision at the defined tile center, mask clamp 64..71, positive lifetime decremented after actions including creation tick, nonpositive indefinite, latest-source deactivation. Neither view position nor input changes |
@@ -38,6 +46,8 @@ Codes below identify reference behavior, not the independent enum values.
 | 15, 16, 17 | setFriendlyTo, setNeutralTo, setEnemyTo | V directional relation changes |
 | 18 | giftToSide | V distinct receiver group or shared town ownership transfer. G native follow/child hierarchy and full town queue/counter resets |
 | 19 | printString | V 16-slot ring retains 15 messages, 4000 ms wall-clock deadlines, one expired retirement per second; oldest first at (10,20), 18-pixel pitch, one clipped line per entry. G native debug-overlay suppression |
+| 18 | giftToSide | V fresh unreserved receiver group with copied scenario ID and default combat mode, or shared town ownership transfer including same-owner resets. G native follow/child hierarchy, member-order side effects and full town counter resets |
+| 19 | printString | V 16-slot ring retains 15 messages, 4000 ms presentation deadlines. G layout/encoding and native draw scheduling |
 | 1a, 1b | lock, unlock | V only reserved plain tactics are script-addressable; towns are fallback. G map Locked loading, empty-group lifetime and AI reuse integration |
 | 1c, 1d | addMoney, takeMoney | V signed 32-bit wrapping arithmetic floored at zero, without C++ signed overflow |
 | 1e | kill | V death without a damage source; G recursive child-group flags cannot be represented by flat group IDs |
@@ -51,7 +61,8 @@ consumes and discards it. This intentional no-op is supported.
 | Code | Parsed condition | Runtime disposition and remaining gap |
 | --- | --- | --- |
 | 00, 01 | always, money | V implemented |
-| 02, 03 | tactics, towns | G distinct living group IDs and completed halls substitute for native lists; empty groups and duplicate scenario identities remain incomplete |
+| 02 | tactics | G distinct living group IDs substitute for native lists; empty groups and duplicate scenario identities remain incomplete |
+| 03 | towns | V count town-controller records by current owning side, including duplicate scenario IDs, independently of hall type/progress and diplomacy |
 | 04 | enemies | V hostile active sides; G activity inferred from objects/halls instead of native list counters |
 | 05, 06 | units, unitsOfId | G independent living object counts; embarked living passengers retain identity |
 | 07 | localTime | V StartTime clamped to 0..7199; advance before first and subsequent trigger updates on both tilesets, wrap at 7200. Startup phase closed |
@@ -60,7 +71,7 @@ consumes and discards it. This intentional no-op is supported.
 | 0a | tactic idle | V missing lookup false; query group states 0/1 (inactive/stopped), independently of member orders; waiting/moving are nonidle. G native empty-controller lifetime and town/controller identity |
 | 0b | tactic attacked | V persistent notifying nonfriendly side, initially -1; G combat notification adapter and native controller lifetime |
 | 0e, 0f, 10 | isFriendly, isNeutral, isEnemy | V directional comparisons |
-| 11, 12 | tactic valid, locked | V reserved lookup/town fallback and missing-object rules; G flat object membership and map reservation metadata |
+| 11, 12 | tactic valid, locked | V reserved plain-group priority, first-town fallback (including empty towns), missing-object comparisons; G validity byte timing, flat object membership, hidden-child recovery and map reservation metadata |
 | 13, 14 | unitsInRect, unitsOfUGIInRect | **Closed geometry gap:** V sorted tile corners converted to pixels, strict object-box overlap, no extra maximum tile, degenerate rectangles empty. Living runtime categories 0/1/6/7 only. G engine render height substitutes for virtual height offset; absent descriptors use common default bounds |
 | 15 | defence valid | G independent defence provenance/type/scenario lookup; native object/controller identity remains incomplete |
 
@@ -221,3 +232,37 @@ including headless view edges, ungated drag input, one-tick camera expiry,
 foreign-side activation, timer kill/recreation and duplicate Johnka IDs.
 Replay semantics advance to 17 for the changed camera and vessel behavior.
 No original executable or reference runtime was launched.
+
+## Priority script follow-up (2026-11-25)
+
+Static inspection supersedes the earlier town-launch hypothesis. The town vtable
+(`0x494648`) has a no-op move slot (`0x402880`) and a false-returning path search
+(`0x402970`). The script join handler (`0x401bb0`) uses the separate town recruitment
+slot (`0x45c9d0`), rather than its rally setter (`0x45ca80`): recruit living
+non-buildings into a fresh base group, then join through the existing controller.
+Ordinary base-group joins retain task 178's deferred absorption and follower rules.
+Town-specific child recruitment beyond direct members remains outside this adapter.
+
+The side town counter is the list length (`0x417bb0`, `0x446fe0`, `0x447220`);
+`MissionDef::towns` is the engine's persistent controller inventory, and capture
+and gifts update its owner. Unattached hall-shaped buildings add no controller.
+Attack-town uses `TownState::hall`, independently of member ordering and hall
+scenario IDs. Plain-group lookup still precedes town fallback; duplicate plain
+controller identities and exact validity-byte updates remain G.
+
+Gift creates an unreserved base group (`0x402d50`, `0x4474d0`, `0x44f5c0`),
+transfers direct members and copies the source scenario ID. The adapter retains
+that ID in the receiving controller while using a distinct internal group
+number, avoiding collision with existing receiving groups. New groups default
+to balanced mode and do not inherit the source route/follow/attacked state.
+Town gifts use the shared ownership reset even when owner and recipient match
+(`0x45da00`). Nested child ownership/notification and exact member-order side
+effects remain G; the existing stop-on-transfer policy is retained explicitly.
+
+Path setters cancel first (`0x401d00`, `0x401dc0`, `0x401e80`, `0x401f40`).
+Only the cycled variants set the cycle byte; cancellation and ordinary setters
+do not clear it (`0x4543e0`, `0x408c80`). Reached anchor duplicates are consumed
+(`0x453570`). Native cycle rotation also has an obstructed-route branch
+(`0x4551d3`, `0x455302`); independent pathfinding/readiness cannot certify that
+branch, which remains G. Invalid paths safely cancel rather than reproducing a
+fatal native diagnostic. Replay semantics advance to 18, preserving develop's version-17 type-rule changes.

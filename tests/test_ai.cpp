@@ -901,6 +901,7 @@ static void expansion_rules(const RulesData& rules) {
 
 static void scripted(std::shared_ptr<const RulesData> rules) {
   auto a = world(); a.objects[0].scenario = 999;
+  a.objects[0].town_hall = a.objects[1].town_hall = true;
   a.mission.towns[0].scenario_id = 42; // script IDs belong to town controllers
   object(a, 0, 1, 1, 25, 26, 7); object(a, 0, 1, 1, 26, 26, 8);
   a.mission.paths = {{{24, 22}, {23, 21}}};
