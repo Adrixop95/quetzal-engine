@@ -12,6 +12,10 @@ The baseline Release sweep passed all 15 missions through 720 ticks and
 reported **255 approximate sites**. After the clock and transport dispatch
 corrections, **224 sites** remain approximate, a reduction of **31** (16 clock
 and 15 transport sites). Unsupported execution sites remain zero; the intentional parser no-op count remains one. Partial controller fixes
+reported **255 approximate sites**. The clock corrections left 239. The camera
+and interface follow-up closes another 20 runtime sites, leaving **219 sites**
+approximate, a cumulative reduction of **36**. Unsupported execution sites remain
+zero; the intentional parser no-op count remains one. Partial controller fixes
 retain approximate dispositions wherever native integration is still missing.
 
 | Rank | Section | Native code | Kind | Before | After |
@@ -25,6 +29,8 @@ retain approximate dispositions wherever native integration is still missing.
 | 7 | action | 04 | TacticJoinTactic | 13 | 13 |
 | 8 | action | 0d | BoatActivate | 12 | 0 |
 | 9 | action | 13 | SideCameraActivate | 11 | 11 |
+| 8 | action | 0d | BoatActivate | 12 | 12 |
+| 9 | action | 13 | SideCameraActivate | 11 | 0 |
 | 10 | condition | 0b | TacticAttacked | 11 | 11 |
 | 11 | action | 03 | TacticMoveTo | 10 | 10 |
 | 12 | action | 09 | TacticSetPath | 10 | 10 |
@@ -32,13 +38,13 @@ retain approximate dispositions wherever native integration is still missing.
 | 14 | condition | 04 | SideEnemies | 8 | 8 |
 | 15 | condition | 07 | LocalTime | 7 | 0 |
 | 16 | condition | 13 | SideUnitsInRect | 7 | 7 |
-| 17 | action | 14 | CenterView | 5 | 5 |
+| 17 | action | 14 | CenterView | 5 | 0 |
 | 18 | action | 0f | JohnkaEnable | 4 | 4 |
 | 19 | action | 0e | SubmarineGo | 3 | 0 |
 | 20 | condition | 06 | SideUnitsOfId | 3 | 3 |
 | 21 | condition | 14 | SideUnitsOfUGIInRect | 3 | 3 |
-| 22 | action | 05 | TimerSet | 2 | 2 |
-| 23 | action | 08 | TimerKill | 2 | 2 |
+| 22 | action | 05 | TimerSet | 2 | 0 |
+| 23 | action | 08 | TimerKill | 2 | 0 |
 | 24 | condition | 0a | TacticIdle | 2 | 2 |
 | 25 | action | 19 | PrintString | 1 | 1 |
 | 26 | action | 1e | TacticKill | 1 | 1 |
@@ -93,7 +99,7 @@ readiness are dependencies absent from this checkout. The independent base-group
 and clock changes do not require them. This report does not claim that all 255
 sites now match native behavior.
 
-## Validation
+## Validation before the camera and interface follow-up
 
 Baseline: Release build, all 85 CTest entries (79 passed, six skipped),
 and all pre-commit hooks passed before edits. Private smoke used a fresh
@@ -153,3 +159,68 @@ binary and gap-list hashes. Private checks used installation copies with immutab
 asset symlinks, private profiles, dummy SDL, timeouts and `unshare -rn`; outputs
 remain ignored under `work/transport180/`. No original executable or reference
 runtime was launched. Native Windows/macOS CI was not run in this worktree.
+## Camera and interface follow-up (2026-11-25)
+
+**V runtime rules / synthetic verification:** camera activation creates vision
+for its owning side, without moving the view or disabling any input. Its defined
+tile center is retained even off-map; mask addition and pixel conversion use
+explicit signed-32-bit wrapping. Visual-object updates follow scripts, so the
+creation update consumes one lifetime tick; duration one expires that update.
+Positive lifetimes expire at zero; nonpositive lifetimes persist. Repeated
+activation creates independent sources, while deactivation addresses only the
+latest source for the side and index, even after that latest source expires.
+These rules close eleven camera action sites; original-save reconstruction and
+exact fog rendering remain separate integration work.
+
+**V centerView:** jump to the tile origin, reset scroll velocity, clamp first
+against zero and then against map extent minus viewport minus four horizontal
+pixels and one vertical pixel. This also preserves the native upper bound for
+undersized maps. Odd viewport halves round down as native integer division
+does. Five view sites are closed. Original-layout mode uses these bounds from
+startup; modern mode retains its startup framing until a script view jump.
+Zoom is an independent engine extension; its viewport is converted to world
+pixels before applying margins.
+
+**V timers:** pool prepend/traversal confirms that existing timers update before
+loaded triggers and newly created/recreated timers first advance next update.
+Set preserves a stopped flag; kill erases without creating, and later lookup
+recreates a running zero counter. Actions retain the one-update condition latch.
+The two set and two kill sites are closed. Trigger-to-trigger traversal order
+remains a separate approximation.
+
+**V partial interface/Johnka corrections:** prints retain the existing fifteen
+entry ring, four-second wall-clock deadlines and one-second retirement spacing.
+Rendering now uses installed font slot 4, palette state 0, with one unwrapped
+entry per line, oldest first, at (10,20), 18-pixel pitch and viewport clipping.
+Native debug-overlay suppression remains missing, so the one print site stays
+approximate. Johnka
+selects one matching live controller independent of side and only changes its
+enable byte; startup is handled by the patrol update, repeated enabling preserves
+position, and missing targets are silent. The four Johnka sites stay approximate
+for native controller-list ordering and visual patrol scheduling.
+
+The source inventory reduction is **20**, not 25: partial print/Johnka fixes
+retain all five approximate sites. No original executable or reference runtime
+was launched. Replay semantics advance to 17; older incompatible replay saves
+are rejected. New tests use invented scripts/worlds and software-rendered text.
+Native Windows/macOS execution and live reference parity remain unverified.
+
+## Follow-up validation (completed 2026-11-28)
+
+The baseline and final Linux Release builds passed. The final full CTest run
+completed all 85 entries: 79 passed, six private-data/network entries skipped,
+and zero failed. This includes the corrected modern small-map transport UI
+control, odd-viewport camera centering, script lifetimes, timer delay,
+Johnka selection and software-rendered print placement. Separate private format
+and engine-data checks passed under dummy SDL and `unshare -rn`, each using a
+fresh private installation/profile copy. No original executable or reference
+runtime was launched. Native Windows/macOS CI and live parity remain unverified.
+
+The final-binary 720-tick isolated campaign sweep passed all fifteen missions,
+confirming 219 approximate sites, zero unsupported sites and one intentional
+parser no-op. Resumption retained twelve completed cases with matching binary
+and gap-catalog SHA-256 values and ran the remaining three in fresh private
+copies; partial interrupted output was preserved separately. The completed
+manifest matches the final binary and catalog. These passive smoke results do
+not establish campaign completion or native parity. Pre-commit and
+`git diff --check` passed; all changes remain uncommitted.

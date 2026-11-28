@@ -184,6 +184,7 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
     bool use_light = o.light && daylight.load_from_exe(find_file_ci(o.game_dir, "Aztec.exe"));
     if (o.light && !use_light) std::fprintf(stderr, "note: no daylight tables (Aztec.exe not found), neutral light\n");
     Camera cam;
+    cam.original_bounds = o.interface_layout == InterfaceLayout::Original;
     cam.set_world(float(world.width_px()), float(world.height_px()));
     int ow, oh;
     win.output_size(ow, oh);
@@ -522,7 +523,11 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       float alpha = (o.original_look || paused || pause.open) ? 1.f : float(stepper.alpha());
 
       // Script view jumps and mission end. Vision cameras do not control UI input.
-      if (world.center_serial != seen_center) { seen_center = world.center_serial; cam.center_on(float(world.center_x), float(world.center_y)); }
+      if (world.center_serial != seen_center) {
+        seen_center = world.center_serial;
+        cam.original_bounds = true;
+        cam.center_on(float(world.center_x), float(world.center_y));
+      }
       if (world.outcome != kRunning && !end_shown) {
         end_shown = true; paused = true; pause.open = false; cmdui.cancel_mode();
         consume_input();
@@ -646,8 +651,8 @@ static PlayExit play_mission(Window& win, GameData& data, Options& o, AudioSyste
       hud.mouse_x = in.mx; hud.mouse_y = in.my; hud.alpha = alpha;
       hud.sprites = scene.stats.sprites; hud.placeholders = scene.stats.placeholders; hud.geometry_calls = scene.stats.geometry_calls;
       {  // script messages (printString) and end-of-mission banner
-        draw_messages(win.renderer(), scene.font(), world.messages,
-                      SDL_Rect{10 * pscale, 20 * pscale, view_w - 20 * pscale, oh / 2}, pscale, true, o.interface_layout == InterfaceLayout::Original ? 18 * pscale : 0);
+        draw_script_messages(win.renderer(), scene.font(), world.messages,
+                             SDL_Rect{0, 0, view_w, oh}, pscale);
         if (audio && !audio->subtitle().empty()) draw_messages(win.renderer(), scene.font(), {{audio->subtitle(), 1}},
             SDL_Rect{8 * pscale, oh - 150 * pscale, view_w - 16 * pscale, 60 * pscale}, pscale);
       }

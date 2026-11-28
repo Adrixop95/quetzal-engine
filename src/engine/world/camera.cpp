@@ -15,6 +15,12 @@ float Camera::step_zoom(float z, int dir) {
 
 void Camera::clamp() {
   float vw = view_w / zoom, vh = view_h / zoom;
+  if (original_bounds) {
+    // Preserve the native lower-then-upper clamp even for an undersized map.
+    x = std::min(std::max(x, 0.f), world_w - vw - 4);
+    y = std::min(std::max(y, 0.f), world_h - vh - 1);
+    return;
+  }
   // If the world is smaller than the view, centre it; otherwise keep the view inside.
   x = world_w <= vw ? (world_w - vw) / 2 : std::clamp(x, 0.f, world_w - vw);
   y = world_h <= vh ? (world_h - vh) / 2 : std::clamp(y, 0.f, world_h - vh);

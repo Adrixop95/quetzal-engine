@@ -141,20 +141,16 @@ void GameSim::unload(World& w, Object& boat, int, int) {
 bool GameSim::activate_vessel(World& w, int scenario, ObjectSource source, bool enabled) {
   bool found = false;
   uint32_t last = 0;
-  if (source != ObjectSource::Johnka)
-    for (const auto& o : w.objects)
-      if (o.alive && !o.removed && o.scenario == scenario && o.source == source) last = o.id;
+  for (const auto& o : w.objects)
+    if (o.alive && (!o.removed || source == ObjectSource::Johnka) &&
+        o.scenario == scenario && o.source == source) last = o.id;
   for (auto& o : w.objects) {
-    if (source != ObjectSource::Johnka && o.id != last) continue;
+    if (o.id != last) continue;
     if (!o.alive || (o.removed && source != ObjectSource::Johnka) ||
         o.scenario != scenario || o.source != source) continue;
     found = true; o.vessel_enabled = enabled;
     if (source == ObjectSource::Johnka) {
-      // V: disabling waits for the next turn; enabling starts a dormant patrol.
-      if (enabled && !o.vessel_route) {
-        o.removed = false; o.vessel_route = true; o.transport_phase = 1;
-        o.teleport(tile_center_fixed(tile(o.cur_x)), tile_center_fixed(tile(o.cur_y)));
-      }
+      // V: the action changes only the enable byte; the visual think handles it.
       continue;
     }
     if (source == ObjectSource::Submarine) {
@@ -174,7 +170,12 @@ bool GameSim::activate_vessel(World& w, int scenario, ObjectSource source, bool 
 
 void GameSim::transport_tick(World& w) {
   for (auto& vessel : w.objects) {
-    if (vessel.source != ObjectSource::Johnka || !vessel.alive || !vessel.vessel_route) continue;
+    if (vessel.source != ObjectSource::Johnka || !vessel.alive) continue;
+    if (!vessel.vessel_route && vessel.vessel_enabled) {
+      vessel.removed = false; vessel.vessel_route = true; vessel.transport_phase = 1;
+      vessel.teleport(tile_center_fixed(tile(vessel.cur_x)), tile_center_fixed(tile(vessel.cur_y)));
+    }
+    if (!vessel.vessel_route) continue;
     if (vessel.transport_phase == 1 && !vessel.vessel_enabled) {
       vessel.vessel_route = false; vessel.removed = true;
       vessel.target = 0; vessel.order = uint8_t(Order::Idle);

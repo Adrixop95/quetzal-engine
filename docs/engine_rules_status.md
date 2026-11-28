@@ -576,13 +576,13 @@ not a live parity result; G explicitly identifies approximations.
 | --- | --- | --- |
 | Enabled trigger executes previous latch, then short-circuit AND; empty conditions false | V static rule / synthetic | Initial latch false, all enabled, one-tick latency, every-tick repetition; disable freezes latch; self-disable finishes evaluation |
 | Trigger IDs | V static rule / synthetic | First matching ID addressed; duplicates retain separate latches, enablement and traces; G file order substitutes for pool order |
-| Timer lifecycle | V static rule / synthetic | Lazy zero/running creation; set preserves pause, stop/start retain value, kill erases and a later condition recreates; signed 32-bit counter. G existing timers advance before trigger pass |
-| Operators and clocks | V operators/day-clock rule; G clock integration | Signed operator codes, StartTime-based localTime wrapping at 7200; both clocks advance once per simulation tick, globalTime uses active elapsed ticks; startup and timer/trigger pool phase remain G |
+| Timer lifecycle | V static rule / synthetic | Lazy zero/running creation; set preserves pause, stop/start retain value, kill erases and a later condition recreates; signed 32-bit counter. V existing timers advance before triggers; new/recreated timers first advance next update |
+| Operators and clocks | V static rules / synthetic; G multiplayer integration | Signed operator codes, StartTime clamped to 0..7199; LocalTime advances before evaluation on both tilesets, GlobalTime advances after evaluation and initially reads zero. Trigger-to-trigger pool order and multiplayer phase remain G |
 | Side counters and rectangles | V hostile-side count and normalized axes; G counter/spatial adapters | Enemies counts active sides, not objects. Rectangles admit living runtime categories 0/1/6/7 (units, structures and vessels, excluding cameras); construction-class numbers are a different namespace. Strict pixel-box overlap replaces inclusive tile edges; equal corners count nothing. Render-height mapping and missing-descriptor bounds remain G. Empty native groups and town-list lifetimes remain incomplete |
 | Tactic lookup, lock/unlock and kill | V static lookup / synthetic; G hierarchy | Reserved plain groups before town fallback; unlocked plain group cannot be readdressed by ID. Kill uses member death without an attacker; recursive child groups, map Locked fields and AI reuse remain incomplete |
 | Group/town gift and join | V distinct gift group / synthetic; G hierarchy/production details | Gift allocates receiver group without merging colliding IDs; town gift uses shared ownership transfer. Join requires both lookups. Native nested membership and town queue cancellation/refund parity remain open |
 | Relations, money and outcomes | V static rules / synthetic | Directional relation changes; signed money adjustment floored at zero; first side outcome wins while playing, only human side ends mission |
-| printString and presentation | V ring/deadline rules / synthetic; G visual integration | 16 ring slots retain 15 prints; 4000 ms presentation deadlines, staggered retirement, alternate print discarded. Camera vision/deactivation implemented; exact layout and camera phase remain G |
+| printString and presentation | V ring/deadline rules / synthetic; G visual integration | 16 ring slots retain 15 prints; 4000 ms presentation deadlines, staggered retirement, alternate print discarded. V per-side camera vision/latest deactivation and creation-update lifetime decrement; messages use unwrapped clipped lines at (10,20), pitch 18. Native debug suppression remains G |
 | Paths, attack/move and vessels | G existing adapters / synthetic | Path variants, whole-group orders and vessel activation exist; native hierarchy/controller parity unverified |
 | Side build command; condition codes 0c/0d | Missing side-plan dependency | Native build list grammar parses with bounded ordered requests, but execution stays explicitly unsupported; native plan conditions have no identified grammar producer or independent side-plan equivalent |
 | Side move command | V static no-op / synthetic | The handler discards a read-only nearest-town lookup, so it now reports supported without issuing movement |
@@ -2772,7 +2772,7 @@ hashed and reconstructed through command-log replay.
 
 **G / remaining dependencies:** town-specific recruitment/launch, native nested
 controller ownership and empty lifetime, path budgeting/member readiness,
-assignment scoring and native timer/trigger pool ordering remain incomplete.
+assignment scoring and native trigger-to-trigger pool ordering remain incomplete.
 The corrected controller subrules retain approximate site classifications
 where these dependencies apply. General side plans remain absent. No original
 executable or reference runtime was launched. See the
@@ -2809,3 +2809,52 @@ reached 720 ticks per mission and confirmed 224 approximate sites, zero
 unsupported sites and one intentional parser no-op. Private logs remain ignored
 under `work/transport180/`. These are Linux implementation checks, not live
 reference or native Windows/macOS results.
+## Mission camera and interface actions (2026-11-25)
+
+V static rules / synthetic checks: stationary cameras reveal their own side,
+retain defined off-map tile centers and use mask IDs 64..71. Lifetime updates
+follow script actions, including creation: duration one expires before the
+update's fog stamp, while nonpositive durations persist. Latest-source
+references preserve repeated-activation/deactivation behavior. Activation
+changes neither the view nor input. CenterView jumps at tile origins with native
+lower-then-upper clamps and four/one-pixel margins; odd viewport halves round
+down and view jumps reset momentum.
+Signed pixel/mask conversion wraps explicitly, and widened sight intermediates
+avoid overflow for extreme positions. Replay semantics are now 17.
+
+V timer phase: lazy allocation prepends timers ahead of loaded triggers;
+existing counters update first, new/recreated counters start advancing next
+update. Set retains pause, kill does not create, and actions retain the one-update
+latch delay. File-order trigger traversal remains an independent approximation.
+V Johnka action: select one matching live controller regardless of side, change
+only its enable byte, and let the patrol update start motion. Repeated enable
+preserves position; missing vessel targets silently do nothing. G controller-list
+ordering, native visual cadence and full patrol equivalence remain unresolved.
+
+V print geometry: installed font slot 4, palette state 0, oldest first, one
+clipped unwrapped entry per line at (10,20) with 18-pixel pitch; existing
+four-second wall deadlines, fifteen-entry capacity and one-second retirement
+spacing remain. G native debug-overlay suppression still needs integration.
+Original-save camera reconstruction and
+exact fog/render parity remain separate dependencies. The aggregate inventory
+closes twenty sites and retains print/Johnka approximations; see the
+[report](script_approximation_report.md#camera-and-interface-follow-up-2026-11-25)
+and [gap list](script_runtime_gap_list.md#camera-and-interface-follow-up-2026-11-25).
+
+Synthetic controls cover per-side camera state, creation-tick expiry, off-map
+positions, unchanged view/input, viewport edges/zoom, timer assignment and
+kill/recreation delay, duplicate Johnka scenario IDs, deferred startup and
+software-rendered print placement/clipping. No original executable or reference
+runtime was launched. Native Windows/macOS and live parity remain unverified.
+
+Validation completed on 2026-11-28: final Linux Release build and all 85 CTest
+entries finished with zero failures (79 passed, six private-data/network skips).
+Separate isolated private format and engine-data checks passed. Modern small-map
+startup framing remains compatible with the existing transport UI control;
+script jumps and original-layout mode use native bounds and integer centering.
+
+The final-binary isolated 720-tick sweep passed 15/15 missions and confirmed
+219 approximate sites, zero unsupported sites and one intentional parser no-op.
+The retained manifest matches the binary and gap catalog. Pre-commit and
+`git diff --check` passed. These checks do not establish native parity or
+winning campaign routes.

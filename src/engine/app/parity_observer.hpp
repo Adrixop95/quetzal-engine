@@ -64,7 +64,7 @@ class ParityObserver {
     commands_->draw_menu(window_.renderer(), scene_->store(), scene_->font(), strings_, w, panel_.rect(), 1, 400, 300);
     minimap_.set_tint(scene_->light_tint());
     minimap_.draw(window_.renderer(), camera, 1.f, &scene_->fog());
-    draw_messages(window_.renderer(), scene_->font(), w.messages, SDL_Rect{8, 40, int(camera.view_w) - 16, 150}, 1);
+    draw_script_messages(window_.renderer(), scene_->font(), w.messages, SDL_Rect{0, 0, int(camera.view_w), 600}, 1);
     cursor_.draw(window_.renderer(), scene_->store(), 400, 300, CursorKind::Arrow, 1, uint32_t(w.tick * 1000 / 12));
     std::vector<uint8_t> pixels(800 * 600 * 3);
     if (SDL_RenderReadPixels(window_.renderer(), nullptr, SDL_PIXELFORMAT_RGB24, pixels.data(), 800 * 3))

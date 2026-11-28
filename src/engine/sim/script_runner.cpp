@@ -309,10 +309,8 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
     case ActKind::SubmarineGo: {
       ObjectSource source = a.kind == ActKind::BoatActivate ? ObjectSource::Boat :
           a.kind == ActKind::SubmarineGo ? ObjectSource::Submarine : ObjectSource::Johnka;
-      // V: boat/submarine lookup silently does nothing once no controller matches.
-      const bool found = sim.activate_vessel(w, a.id, source, a.kind != ActKind::JohnkaDisable);
-      if (!found && source == ObjectSource::Johnka)
-        w.messages.push_back({"Vessel action: no living vessel for scenario " + std::to_string(a.id), 72});
+      // V: vessel lookup silently does nothing once no controller matches.
+      sim.activate_vessel(w, a.id, source, a.kind != ActKind::JohnkaDisable);
       break;
     }
     case ActKind::TriggerEnable: set_enabled(a.id, true); break;
@@ -329,8 +327,8 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
     case ActKind::CenterView:
       // V: centerView uses tile origins; the view camera clamps its viewport.
       w.center_view = true;
-      w.center_x = std::clamp(a.a, 0, std::max(0, w.terrain.w - 1)) * kTilePx;
-      w.center_y = std::clamp(a.b, 0, std::max(0, w.terrain.h - 1)) * kTilePx;
+      w.center_x = std::bit_cast<int32_t>(uint32_t(a.a) * uint32_t(kTilePx));
+      w.center_y = std::bit_cast<int32_t>(uint32_t(a.b) * uint32_t(kTilePx));
       w.center_serial++;
       break;
     case ActKind::SideCameraActivate: {
@@ -340,10 +338,10 @@ void ScriptRunner::run(GameSim& sim, World& w, const Action& a) {
           // V: repeated activation creates another source; deactivate addresses the latest.
           for (auto& previous : w.script_cameras)
             if (previous.side == side && previous.index == a.a) previous.latest = false;
-          const int x = std::clamp(camera[0], 0, std::max(0, w.terrain.w - 1)) * kTilePx + kTilePx / 2;
-          const int y = std::clamp(camera[1], 0, std::max(0, w.terrain.h - 1)) * kTilePx + kTilePx / 2;
-          // V: camera size selects one of the eight vision masks. Widen before adding.
-          const int mask = int(std::clamp(int64_t(camera[2]) + 59, int64_t(64), int64_t(71)));
+          const int x = std::bit_cast<int32_t>(uint32_t(camera[0]) * uint32_t(kTilePx) + kTilePx / 2);
+          const int y = std::bit_cast<int32_t>(uint32_t(camera[1]) * uint32_t(kTilePx) + kTilePx / 2);
+          // V: signed x86 addition followed by the eight-mask clamp.
+          const int mask = std::clamp(std::bit_cast<int32_t>(uint32_t(camera[2]) + 59u), 64, 71);
           w.script_cameras.push_back({side, a.a, x, y, mask, a.b});
         }
       break;
@@ -542,13 +540,9 @@ uint64_t ScriptRunner::state_hash() const {
 }
 
 void ScriptRunner::tick(GameSim& sim, World& w) {
-  // G: age existing sources before this tick's actions; native creation/update phase needs measurement.
-  for (auto& camera : w.script_cameras)
-    if (camera.active && camera.ticks_left > 0 && --camera.ticks_left == 0) camera.active = false;
-  w.script_cameras.erase(std::remove_if(w.script_cameras.begin(), w.script_cameras.end(),
-      [](const ScriptCamera& camera) { return !camera.active && !camera.latest; }), w.script_cameras.end());
   local_time_ = (local_time_ + 1) % 7200;
-  // G: existing timers advance before triggers; pool ordering still needs measurement.
+  // V: lazy timers prepend to the shared pool, ahead of the loaded triggers.
+  // A timer created during this pass first advances on the next update.
   for (auto& kv : timers_)
     if (kv.second.running) kv.second.value = std::bit_cast<int32_t>(uint32_t(kv.second.value) + 1u);
   for (size_t i = 0; i < script_.triggers.size(); ++i) {
@@ -577,6 +571,11 @@ void ScriptRunner::tick(GameSim& sim, World& w) {
     latched_[i] = ok;
   }
   ++elapsed_ticks_; // V: single-player globalTime advances after trigger evaluation.
+  // V: visual-object updates follow the script pool, including newly created cameras.
+  for (auto& camera : w.script_cameras)
+    if (camera.active && camera.ticks_left > 0 && --camera.ticks_left == 0) camera.active = false;
+  w.script_cameras.erase(std::remove_if(w.script_cameras.begin(), w.script_cameras.end(),
+      [](const ScriptCamera& camera) { return !camera.active && !camera.latest; }), w.script_cameras.end());
   follow_paths(sim, w);
   for (Message& m : w.messages) if (m.seconds_left < 0) m.ticks_left--;
   w.messages.erase(std::remove_if(w.messages.begin(), w.messages.end(), [](const Message& m) { return m.seconds_left < 0 && m.ticks_left <= 0; }), w.messages.end());
